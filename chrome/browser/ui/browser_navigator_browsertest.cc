@@ -10,7 +10,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -113,7 +112,7 @@ Browser* BrowserNavigatorTest::CreateEmptyBrowserForType(Browser::Type type,
                                                          Profile* profile) {
   Browser* browser = new Browser(
       Browser::CreateParams(type, profile, chrome::GetActiveDesktop()));
-  chrome::AddBlankTabAt(browser, -1, true);
+  chrome::AddTabAt(browser, GURL(), -1, true);
   return browser;
 }
 
@@ -123,7 +122,7 @@ Browser* BrowserNavigatorTest::CreateEmptyBrowserForApp(Browser::Type type,
       Browser::CreateParams::CreateForApp(
           Browser::TYPE_POPUP, "Test", gfx::Rect(), profile,
           chrome::GetActiveDesktop()));
-  chrome::AddBlankTabAt(browser, -1, true);
+  chrome::AddTabAt(browser, GURL(), -1, true);
   return browser;
 }
 
@@ -1093,9 +1092,8 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
   p.url = GURL(chrome::kChromeUINewTabURL);
   ui_test_utils::NavigateToURL(&p);
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
-  EXPECT_TRUE(chrome::IsNTPURL(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetURL(),
-      browser()->profile()));
+  EXPECT_EQ(GURL(chrome::kChromeUINewTabURL),
+            browser()->tab_strip_model()->GetActiveWebContents()->GetURL());
 
   {
     content::WindowedNotificationObserver observer(

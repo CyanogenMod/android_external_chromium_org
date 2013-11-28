@@ -8,21 +8,9 @@
 
 #include "base/mac/foundation_util.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_section_container.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
-#include "skia/ext/skia_utils_mac.h"
-
-namespace {
-
-// Imported constant from Views version. TODO(groby): Share.
-SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
-
-}  // namespace
-
-@interface AutofillDetailsContainer ()
-// Compute infobubble origin based on anchor/view.
-- (NSPoint)originFromAnchorView:(NSView*)view;
-@end
 
 @implementation AutofillDetailsContainer
 
@@ -60,22 +48,6 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
 
   for (AutofillSectionContainer* container in details_.get())
     [[scrollView_ documentView] addSubview:[container view]];
-
-  errorBubble_.reset([[InfoBubbleView alloc] initWithFrame:NSZeroRect]);
-  [errorBubble_ setBackgroundColor:
-      gfx::SkColorToCalibratedNSColor(kWarningColor)];
-  [errorBubble_ setArrowLocation:info_bubble::kTopCenter];
-  [errorBubble_ setAlignment:info_bubble::kAlignArrowToAnchor];
-  [errorBubble_ setHidden:YES];
-
-  base::scoped_nsobject<NSTextField> label([[NSTextField alloc] init]);
-  [label setEditable:NO];
-  [label setBordered:NO];
-  [label setDrawsBackground:NO];
-  [label setTextColor:[NSColor whiteColor]];
-  [errorBubble_ addSubview:label];
-
-  [[scrollView_ documentView] addSubview:errorBubble_];
 
   [self performLayout];
 }
@@ -126,22 +98,126 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
   return allValid;
 }
 
-- (void)updateErrorBubble {
-  if (!delegate_->ShouldShowErrorBubble())
-    [errorBubble_ setHidden:YES];
+- (NSView*)firstInvalidField {
+  base::scoped_nsobject<NSMutableArray> fields([[NSMutableArray alloc] init]);
+
+  for (AutofillSectionContainer* details in details_.get()) {
+    if (![[details view] isHidden])
+      [details addInputsToArray:fields];
+  }
+
+  NSPoint selectedFieldOrigin = NSZeroPoint;
+  NSView* selectedField = nil;
+  for (NSView<AutofillInputField>* field in fields.get()) {
+    if (!base::mac::ObjCCast<NSView>(field))
+      continue;
+    if (![field conformsToProtocol:@protocol(AutofillInputField)])
+      continue;
+    if ([field isHiddenOrHasHiddenAncestor])
+      continue;
+    if (![field invalid])
+      continue;
+
+    NSPoint fieldOrigin = [field convertPoint:[field bounds].origin toView:nil];
+    if (fieldOrigin.y < selectedFieldOrigin.y)
+      continue;
+    if (fieldOrigin.y == selectedFieldOrigin.y &&
+        fieldOrigin.x > selectedFieldOrigin.x)
+      continue;
+
+    selectedField = field;
+    selectedFieldOrigin = fieldOrigin;
+  }
+
+  return selectedField;
 }
 
-// TODO(groby): Unify with BaseBubbleController's originFromAnchor:view:.
-- (NSPoint)originFromAnchorView:(NSView*)view {
-  // All math done in window coordinates, since views might be flipped.
-  NSRect viewRect = [view convertRect:[view bounds] toView:nil];
-  NSPoint anchorPoint =
-      NSMakePoint(NSMidX(viewRect), NSMinY(viewRect));
-  NSRect bubbleRect = [errorBubble_ convertRect:[errorBubble_ bounds]
-                                         toView:nil];
-  NSPoint bubbleOrigin = NSMakePoint(anchorPoint.x - NSWidth(bubbleRect) / 2.0,
-                                     anchorPoint.y - NSHeight(bubbleRect));
-  return [[errorBubble_ superview] convertPoint:bubbleOrigin fromView:nil];
+- (void)scrollToView:(NSView*)field {
+  const CGFloat bottomPadding = 5.0;  // Padding below the visible field.
+
+  NSClipView* clipView = [scrollView_ contentView];
+  NSRect fieldRect = [field convertRect:[field bounds] toView:clipView];
+
+  // If the entire field is already visible, let's not scroll.
+  NSRect documentRect = [clipView documentVisibleRect];
+  documentRect = [[clipView documentView] convertRect:documentRect
+                                               toView:clipView];
+  if (NSContainsRect(documentRect, fieldRect))
+    return;
+
+  NSPoint scrollPoint = [clipView constrainScrollPoint:
+      NSMakePoint(NSMinX(fieldRect), NSMinY(fieldRect) - bottomPadding)];
+  [clipView scrollToPoint:scrollPoint];
+  [scrollView_ reflectScrolledClipView:clipView];
+  [self updateErrorBubble];
+}
+
+- (void)updateErrorBubble {
+  if (!delegate_->ShouldShowErrorBubble()) {
+    [errorBubbleController_ close];
+  }
+}
+
+- (void)errorBubbleWindowWillClose:(NSNotification*)notification {
+  DCHECK_EQ([notification object], [errorBubbleController_ window]);
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center removeObserver:self
+                    name:NSWindowWillCloseNotification
+                  object:[errorBubbleController_ window]];
+  errorBubbleController_ = nil;
+}
+
+- (void)showErrorBubbleForField:(NSControl<AutofillInputField>*)field {
+  if (errorBubbleController_)
+    [errorBubbleController_ close];
+  DCHECK(!errorBubbleController_);
+  NSWindow* parentWindow = [field window];
+  DCHECK(parentWindow);
+  errorBubbleController_ =
+        [[AutofillBubbleController alloc]
+            initWithParentWindow:parentWindow
+                         message:[field validityMessage]];
+
+  // Handle bubble self-deleting.
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center addObserver:self
+             selector:@selector(errorBubbleWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:[errorBubbleController_ window]];
+
+  // Compute anchor point (in window coords - views might be flipped).
+  NSRect viewRect = [field convertRect:[field bounds] toView:nil];
+
+  // If a bubble at maximum size with a left-aligned edge would exceed the
+  // window width, align the right edge of bubble and view. In all other
+  // cases, align the left edge of the bubble and the view.
+  // Alignment is based on maximum width to avoid the arrow changing positions
+  // if the validation bubble stays on the same field but gets a message of
+  // differing length. (E.g. "Field is required"/"Invalid Zip Code. Please
+  // check and try again" if an empty zip field gets changed to a bad zip).
+  NSPoint anchorPoint;
+  if ((NSMinX(viewRect) + [errorBubbleController_ maxWidth]) >
+      NSWidth([parentWindow frame])) {
+    anchorPoint = NSMakePoint(NSMaxX(viewRect), NSMinY(viewRect));
+    [[errorBubbleController_ bubble] setArrowLocation:info_bubble::kTopRight];
+    [[errorBubbleController_ bubble] setAlignment:
+        info_bubble::kAlignRightEdgeToAnchorEdge];
+
+  } else {
+    anchorPoint = NSMakePoint(NSMinX(viewRect), NSMinY(viewRect));
+    [[errorBubbleController_ bubble] setArrowLocation:info_bubble::kTopLeft];
+    [[errorBubbleController_ bubble] setAlignment:
+        info_bubble::kAlignLeftEdgeToAnchorEdge];
+  }
+  [errorBubbleController_ setAnchorPoint:
+      [parentWindow convertBaseToScreen:anchorPoint]];
+
+  [errorBubbleController_ showWindow:self];
+}
+
+- (void)hideErrorBubble {
+  [errorBubble_ setHidden:YES];
 }
 
 - (void)updateMessageForField:(NSControl<AutofillInputField>*)field {
@@ -152,27 +228,15 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
       base::mac::ObjCCast<NSView>([[field window] firstResponder]);
   if (![firstResponderView isDescendantOf:field])
     return;
-
   if (!delegate_->ShouldShowErrorBubble()) {
-    DCHECK([errorBubble_ isHidden]);
+    DCHECK(!errorBubbleController_);
     return;
   }
 
   if ([field invalid]) {
-    const CGFloat labelInset = 3.0;
-
-    NSTextField* label = [[errorBubble_ subviews] objectAtIndex:0];
-    [label setStringValue:[field validityMessage]];
-    [label sizeToFit];
-    NSSize bubbleSize = [label frame].size;
-    bubbleSize.width += 2 * labelInset;
-    bubbleSize.height += 2 * labelInset + info_bubble::kBubbleArrowHeight;
-    [errorBubble_ setFrameSize:bubbleSize];
-    [label setFrameOrigin:NSMakePoint(labelInset, labelInset)];
-    [errorBubble_ setFrameOrigin:[self originFromAnchorView:field]];
-    [errorBubble_ setHidden:NO];
+    [self showErrorBubbleForField:field];
   } else {
-    [errorBubble_ setHidden:YES];
+    [errorBubbleController_ close];
   }
 }
 

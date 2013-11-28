@@ -18,29 +18,29 @@ class MediaKeys;
 namespace content {
 
 class WebContentDecryptionModuleSessionImpl;
-class SessionIdAdapter;
+class ReferenceIdAdapter;
 
 class WebContentDecryptionModuleImpl
-    : public WebKit::WebContentDecryptionModule {
+    : public blink::WebContentDecryptionModule {
  public:
   static WebContentDecryptionModuleImpl* Create(const string16& key_system);
 
   virtual ~WebContentDecryptionModuleImpl();
 
-  // WebKit::WebContentDecryptionModule implementation.
-  virtual WebKit::WebContentDecryptionModuleSession* createSession(
-      WebKit::WebContentDecryptionModuleSession::Client* client);
+  // blink::WebContentDecryptionModule implementation.
+  virtual blink::WebContentDecryptionModuleSession* createSession(
+      blink::WebContentDecryptionModuleSession::Client* client);
 
  private:
   // Takes ownership of |media_keys| and |adapter|.
   WebContentDecryptionModuleImpl(scoped_ptr<media::MediaKeys> media_keys,
-                                 scoped_ptr<SessionIdAdapter> adapter);
+                                 scoped_ptr<ReferenceIdAdapter> adapter);
 
   // Called when a WebContentDecryptionModuleSessionImpl is closed.
-  void OnSessionClosed(const std::string& session_id);
+  void OnSessionClosed(uint32 reference_id);
 
   scoped_ptr<media::MediaKeys> media_keys_;
-  scoped_ptr<SessionIdAdapter> adapter_;
+  scoped_ptr<ReferenceIdAdapter> adapter_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentDecryptionModuleImpl);
 };

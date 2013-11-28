@@ -52,12 +52,6 @@ QuicPacketCreator* QuicConnectionPeer::GetPacketCreator(
   return &connection->packet_creator_;
 }
 
-// static
-QuicCongestionManager* QuicConnectionPeer::GetCongestionManager(
-    QuicConnection* connection) {
-  return &connection->congestion_manager_;
-}
-
 bool QuicConnectionPeer::GetReceivedTruncatedAck(QuicConnection* connection) {
     return connection->received_truncated_ack_;
 }
@@ -78,11 +72,10 @@ bool QuicConnectionPeer::IsSavedForRetransmission(
 }
 
 // static
-size_t QuicConnectionPeer::GetRetransmissionCount(
+bool QuicConnectionPeer::IsRetransmission(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
-  return connection->sent_packet_manager_.GetRetransmissionCount(
-      sequence_number);
+  return connection->sent_packet_manager_.IsRetransmission(sequence_number);
 }
 
 // static
@@ -177,6 +170,11 @@ QuicAlarm* QuicConnectionPeer::GetAckAlarm(QuicConnection* connection) {
 QuicAlarm* QuicConnectionPeer::GetRetransmissionAlarm(
     QuicConnection* connection) {
   return connection->retransmission_alarm_.get();
+}
+
+// static
+QuicAlarm* QuicConnectionPeer::GetAbandonFecAlarm(QuicConnection* connection) {
+  return connection->abandon_fec_alarm_.get();
 }
 
 // static

@@ -11,17 +11,25 @@
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/frame_time.h"
 
-using WebKit::WebFloatPoint;
-using WebKit::WebFloatSize;
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
-using WebKit::WebPoint;
-using WebKit::WebTouchEvent;
+using blink::WebFloatPoint;
+using blink::WebFloatSize;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
+using blink::WebPoint;
+using blink::WebTouchEvent;
 
 namespace {
+
+// Validate provided event timestamps that interact with animation timestamps.
+const double kBadTimestampDeltaFromNowInS = 60. * 60. * 24. * 7.;
+
+double InSecondsF(const base::TimeTicks& time) {
+  return (time - base::TimeTicks()).InSecondsF();
+}
 
 void SendScrollLatencyUma(const WebInputEvent& event,
                           const ui::LatencyInfo& latency_info) {
@@ -263,13 +271,19 @@ InputHandlerProxy::HandleGestureFling(
           gesture_event.sourceDevice,
           WebFloatPoint(gesture_event.data.flingStart.velocityX,
                         gesture_event.data.flingStart.velocityY),
-          WebKit::WebSize()));
+          blink::WebSize()));
       fling_overscrolled_horizontally_ = false;
       fling_overscrolled_vertically_ = false;
       TRACE_EVENT_ASYNC_BEGIN0(
           "renderer",
           "InputHandlerProxy::HandleGestureFling::started",
           this);
+      if (gesture_event.timeStampSeconds) {
+        fling_parameters_.startTime = gesture_event.timeStampSeconds;
+        DCHECK_LT(fling_parameters_.startTime -
+                      InSecondsF(gfx::FrameTime::Now()),
+                  kBadTimestampDeltaFromNowInS);
+      }
       fling_parameters_.delta =
           WebFloatPoint(gesture_event.data.flingStart.velocityX,
                         gesture_event.data.flingStart.velocityY);
@@ -310,7 +324,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
   if (!fling_curve_)
     return;
 
-  double monotonic_time_sec = (time - base::TimeTicks()).InSecondsF();
+  double monotonic_time_sec = InSecondsF(time);
   if (!fling_parameters_.startTime) {
     fling_parameters_.startTime = monotonic_time_sec;
     input_handler_->ScheduleAnimation();
@@ -365,7 +379,7 @@ bool InputHandlerProxy::CancelCurrentFling() {
                        had_fling_animation);
   fling_curve_.reset();
   gesture_scroll_on_impl_thread_ = false;
-  fling_parameters_ = WebKit::WebActiveWheelFlingParameters();
+  fling_parameters_ = blink::WebActiveWheelFlingParameters();
   return had_fling_animation;
 }
 

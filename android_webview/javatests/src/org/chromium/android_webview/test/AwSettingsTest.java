@@ -7,13 +7,14 @@ package org.chromium.android_webview.test;
 import android.content.Context;
 import android.graphics.Point;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.SystemClock;
 import android.test.suitebuilder.annotation.LargeTest;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
-import android.view.MotionEvent;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 
 import org.apache.http.Header;
@@ -1503,10 +1504,12 @@ public class AwSettingsTest extends AwTestBase {
         final AwContents awContents = testContainerView.getAwContents();
         AwSettings settings = getAwSettingsOnUiThread(awContents);
         final String actualUserAgentString = settings.getUserAgentString();
+        assertEquals(actualUserAgentString, AwSettings.getDefaultUserAgent());
         final String patternString =
                 "Mozilla/5\\.0 \\(Linux;( U;)? Android ([^;]+);( (\\w+)-(\\w+);)?" +
                 "\\s?(.*)\\sBuild/(.+)\\) AppleWebKit/(\\d+)\\.(\\d+) \\(KHTML, like Gecko\\) " +
-                "Version/\\d+\\.\\d+( Mobile)? Safari/(\\d+)\\.(\\d+)";
+                "Version/\\d+\\.\\d Chrome/\\d+\\.\\d+\\.\\d+\\.\\d+" +
+                "( Mobile)? Safari/(\\d+)\\.(\\d+)";
         final Pattern userAgentExpr = Pattern.compile(patternString);
         Matcher patternMatcher = userAgentExpr.matcher(actualUserAgentString);
         assertTrue(String.format("User agent string did not match expected pattern. %nExpected " +
@@ -1921,6 +1924,71 @@ public class AwSettingsTest extends AwTestBase {
             assertEquals("img_onload_fired", getTitleOnUiThread(awContents));
         } finally {
             if (fileName != null) TestFileUtil.deleteFile(fileName);
+            if (webServer != null) webServer.shutdown();
+        }
+    }
+
+    public static class AudioEvent {
+        private CallbackHelper mCallback;
+        public AudioEvent(CallbackHelper callback) {
+            mCallback = callback;
+        }
+
+        @JavascriptInterface
+        public void onCanPlay() {
+            mCallback.notifyCalled();
+        }
+
+        @JavascriptInterface
+        public void onError() {
+            mCallback.notifyCalled();
+        }
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    public void testBlockNetworkLoadsWithAudio() throws Throwable {
+        final TestAwContentsClient contentClient = new TestAwContentsClient();
+        final AwTestContainerView testContainer =
+                createAwTestContainerViewOnMainSync(contentClient);
+        final AwContents awContents = testContainer.getAwContents();
+        final AwSettings awSettings = getAwSettingsOnUiThread(awContents);
+        CallbackHelper callback = new CallbackHelper();
+        awSettings.setJavaScriptEnabled(true);
+
+        TestWebServer webServer = null;
+        try {
+            webServer = new TestWebServer(false);
+            final String httpPath = "/audio.mp3";
+            // Don't care about the response is correct or not, just want
+            // to know whether Url is accessed.
+            final String audioUrl = webServer.setResponse(httpPath, "1", null);
+
+            String pageHtml ="<html><body><audio controls src='" + audioUrl + "' " +
+                    "oncanplay=\"AudioEvent.onCanPlay();\" " +
+                    "onerror=\"AudioEvent.onError();\" /> </body></html>";
+            // Actual test. Blocking should trigger onerror handler.
+            awSettings.setBlockNetworkLoads(true);
+            awContents.addPossiblyUnsafeJavascriptInterface(
+                    new AudioEvent(callback), "AudioEvent", null);
+            int count = callback.getCallCount();
+            loadDataSync(awContents, contentClient.getOnPageFinishedHelper(), pageHtml,
+                    "text/html", false);
+            callback.waitForCallback(count, 1);
+            assertEquals(0, webServer.getRequestCount(httpPath));
+
+            // The below test failed in Nexus Galaxy.
+            // See https://code.google.com/p/chromium/issues/detail?id=313463
+            // Unblock should load normally.
+            /*
+            awSettings.setBlockNetworkLoads(false);
+            count = callback.getCallCount();
+            loadDataSync(awContents, contentClient.getOnPageFinishedHelper(), pageHtml,
+                    "text/html", false);
+            callback.waitForCallback(count, 1);
+            assertTrue(0 != webServer.getRequestCount(httpPath));
+            */
+        } finally {
             if (webServer != null) webServer.shutdown();
         }
     }
@@ -2391,19 +2459,16 @@ public class AwSettingsTest extends AwTestBase {
                 contentClient.getOnPageFinishedHelper());
     }
 
-    /*
     @MediumTest
     @Feature({"AndroidWebView", "Preferences"})
-    http://crbug.com/239144
-    */
-    @DisabledTest
     public void testUseWideViewportControlsDoubleTabToZoom() throws Throwable {
         final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
                 createAwTestContainerViewOnMainSync(contentClient);
         final AwContents awContents = testContainerView.getAwContents();
-        AwSettings settings = getAwSettingsOnUiThread(awContents);
         CallbackHelper onPageFinishedHelper = contentClient.getOnPageFinishedHelper();
+        AwSettings settings = getAwSettingsOnUiThread(awContents);
+        settings.setBuiltInZoomControls(true);
 
         final String page = "<html><body>Page Text</body></html>";
         assertFalse(settings.getUseWideViewPort());
@@ -2423,12 +2488,8 @@ public class AwSettingsTest extends AwTestBase {
                 zoomedOutScale < initialScale);
     }
 
-    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
-    http://crbug.com/239144
-    */
-    @DisabledTest
     public void testLoadWithOverviewModeWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         runPerViewSettingsTest(
@@ -2438,12 +2499,8 @@ public class AwSettingsTest extends AwTestBase {
                         views.getContents1(), views.getClient1(), false));
     }
 
-    /*
-     @SmallTest
-     @Feature({"AndroidWebView", "Preferences"})
-     http://crbug.com/239144
-     */
-    @DisabledTest
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
     public void testLoadWithOverviewModeViewportTagWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         runPerViewSettingsTest(
@@ -2453,12 +2510,8 @@ public class AwSettingsTest extends AwTestBase {
                         views.getContents1(), views.getClient1(), true));
     }
 
-    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
-    http://crbug.com/304548
-    */
-    @DisabledTest
     public void testSetInitialScale() throws Throwable {
         final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -2760,26 +2813,14 @@ public class AwSettingsTest extends AwTestBase {
 
     private void simulateDoubleTapCenterOfWebViewOnUiThread(final AwTestContainerView webView)
             throws Throwable {
+        final int x = (int)(webView.getRight() - webView.getLeft()) / 2;
+        final int y = (int)(webView.getBottom() - webView.getTop()) / 2;
         final AwContents awContents = webView.getAwContents();
         runTestOnUiThread(new Runnable() {
             @Override
             public void run() {
-                long firstTapTime = SystemClock.uptimeMillis();
-                float x = (float)(webView.getRight() - webView.getLeft()) / 2;
-                float y = (float)(webView.getBottom() - webView.getTop()) / 2;
-                awContents.onTouchEvent(MotionEvent.obtain(
-                        firstTapTime, firstTapTime, MotionEvent.ACTION_DOWN,
-                        x, y, 0));
-                awContents.onTouchEvent(MotionEvent.obtain(
-                        firstTapTime, firstTapTime, MotionEvent.ACTION_UP,
-                        x, y, 0));
-                long secondTapTime = firstTapTime + 200;
-                awContents.onTouchEvent(MotionEvent.obtain(
-                        secondTapTime, secondTapTime, MotionEvent.ACTION_DOWN,
-                        x, y, 0));
-                awContents.onTouchEvent(MotionEvent.obtain(
-                        secondTapTime, secondTapTime, MotionEvent.ACTION_UP,
-                        x, y, 0));
+                awContents.getContentViewCore().sendDoubleTapForTest(
+                        SystemClock.uptimeMillis(), x, y, new Bundle());
             }
         });
     }

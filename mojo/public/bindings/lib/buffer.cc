@@ -11,10 +11,31 @@
 #include <algorithm>
 
 #include "mojo/public/bindings/lib/bindings_serialization.h"
+#include "mojo/public/bindings/lib/bindings_support.h"
 
 namespace mojo {
 
 //-----------------------------------------------------------------------------
+
+Buffer::Buffer() {
+  previous_ = BindingsSupport::Get()->SetCurrentBuffer(this);
+}
+
+Buffer::~Buffer() {
+#ifndef NDEBUG
+  Buffer* buf =
+#endif
+      BindingsSupport::Get()->SetCurrentBuffer(previous_);
+  assert(buf == this);
+}
+
+Buffer* Buffer::current() {
+  return BindingsSupport::Get()->GetCurrentBuffer();
+}
+
+//-----------------------------------------------------------------------------
+
+namespace internal {
 
 ScratchBuffer::ScratchBuffer()
     : overflow_(NULL) {
@@ -34,13 +55,18 @@ ScratchBuffer::~ScratchBuffer() {
 void* ScratchBuffer::Allocate(size_t delta) {
   delta = internal::Align(delta);
 
-  void* result =
-      AllocateInSegment((overflow_ != NULL) ? overflow_ : &fixed_, delta);
+  void* result = AllocateInSegment(&fixed_, delta);
   if (result)
     return result;
 
+  if (overflow_) {
+    result = AllocateInSegment(overflow_, delta);
+    if (result)
+      return result;
+  }
+
   AddOverflowSegment(delta);
-  return Allocate(delta);
+  return AllocateInSegment(overflow_, delta);
 }
 
 void* ScratchBuffer::AllocateInSegment(Segment* segment, size_t delta) {
@@ -106,4 +132,5 @@ void* FixedBuffer::Leak() {
   return ptr;
 }
 
+}  // namespace internal
 }  // namespace mojo

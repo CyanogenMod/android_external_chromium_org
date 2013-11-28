@@ -10,6 +10,7 @@
 #include "ash/system/tray/default_system_tray_delegate.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
+#include "chrome/browser/accessibility/accessibility_events.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -122,6 +123,14 @@ class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
   virtual void SilenceSpokenFeedback() const OVERRIDE {
   }
 
+  virtual void TriggerAccessibilityAlert(
+      ash::AccessibilityAlert alert) OVERRIDE {
+  }
+
+  virtual ash::AccessibilityAlert GetLastAccessibilityAlert() OVERRIDE {
+    return ash::A11Y_ALERT_NONE;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(EmptyAccessibilityDelegate);
 };
@@ -209,14 +218,14 @@ void ChromeShellDelegate::Observe(int type,
         Browser* browser =
             chrome::FindBrowserWithWindow(ash::wm::GetActiveWindow());
         if (browser && browser->is_type_tabbed()) {
-          chrome::AddBlankTabAt(browser, -1, true);
+          chrome::AddTabAt(browser, GURL(), -1, true);
           return;
         }
 
         chrome::ScopedTabbedBrowserDisplayer displayer(
             ProfileManager::GetDefaultProfileOrOffTheRecord(),
             chrome::HOST_DESKTOP_TYPE_ASH);
-        chrome::AddBlankTabAt(displayer.browser(), -1, true);
+        chrome::AddTabAt(displayer.browser(), GURL(), -1, true);
       }
       break;
     }

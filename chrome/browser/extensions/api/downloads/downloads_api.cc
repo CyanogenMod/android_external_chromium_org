@@ -38,9 +38,7 @@
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/download/drag_download_item.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -56,8 +54,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/api/downloads.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
@@ -74,6 +70,9 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
@@ -894,12 +893,12 @@ std::map<DownloadManager*, ManagerDestructionObserver*>*
 void OnDeterminingFilenameWillDispatchCallback(
     bool* any_determiners,
     ExtensionDownloadsEventRouterData* data,
-    Profile* profile,
+    content::BrowserContext* context,
     const extensions::Extension* extension,
     base::ListValue* event_args) {
   *any_determiners = true;
-  base::Time installed = extensions::ExtensionSystem::Get(
-      profile)->extension_service()->extension_prefs()->
+  base::Time installed = extensions::ExtensionSystem::GetForBrowserContext(
+      context)->extension_service()->extension_prefs()->
     GetInstallTime(extension->id());
   data->AddPendingDeterminer(extension->id(), installed);
 }
@@ -1199,7 +1198,9 @@ bool DownloadsEraseFunction::RunImpl() {
   return true;
 }
 
-DownloadsRemoveFileFunction::DownloadsRemoveFileFunction() {}
+DownloadsRemoveFileFunction::DownloadsRemoveFileFunction()
+    : item_(NULL) {
+}
 
 DownloadsRemoveFileFunction::~DownloadsRemoveFileFunction() {
   if (item_) {
@@ -1876,7 +1877,7 @@ void ExtensionDownloadsEventRouter::DispatchEvent(
   // chrome://downloads works. The "restrict_to_profile" mechanism does not
   // anticipate this, so it does not automatically prevent sharing off-record
   // events with on-record extension renderers.
-  event->restrict_to_profile =
+  event->restrict_to_browser_context =
       (include_incognito && !profile_->IsOffTheRecord()) ? NULL : profile_;
   event->will_dispatch_callback = will_dispatch_callback;
   extensions::ExtensionSystem::Get(profile_)->event_router()->

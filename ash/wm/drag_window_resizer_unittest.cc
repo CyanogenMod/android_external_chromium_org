@@ -13,6 +13,7 @@
 #include "ash/test/cursor_manager_test_api.h"
 #include "ash/wm/drag_window_controller.h"
 #include "ash/wm/window_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
@@ -126,7 +127,7 @@ class DragWindowResizerTest : public test::AshTestBase {
         aura::client::WINDOW_MOVE_SOURCE_MOUSE).release();
   }
 
-  bool WarpMouseCursorIfNecessary(aura::RootWindow* target_root,
+  bool WarpMouseCursorIfNecessary(aura::Window* target_root,
                                   const gfx::Point& point_in_screen) {
     MouseCursorEventFilter* event_filter =
         Shell::GetInstance()->mouse_cursor_filter();
@@ -162,7 +163,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
   // The secondary display is logically on the right, but on the system (e.g. X)
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("800x600,800x600");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   window_->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
@@ -191,10 +192,13 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
     scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
-    resizer->Drag(CalculateDragPoint(*resizer, 790, 10), 0);
+    resizer->Drag(CalculateDragPoint(*resizer, 795, 10), 0);
+    // Window should be adjusted for minimum visibility (10px) during the drag.
+    EXPECT_EQ("790,10 50x60", window_->bounds().ToString());
     resizer->CompleteDrag(0);
     // Since the pointer is still on the primary root window, the parent should
     // not be changed.
+    // Window origin should be adjusted for minimum visibility (10px).
     EXPECT_EQ(root_windows[0], window_->GetRootWindow());
     EXPECT_EQ("790,10 50x60", window_->bounds().ToString());
   }
@@ -214,7 +218,10 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
     // even though only small fraction of the window is within the secondary
     // root window's bounds.
     EXPECT_EQ(root_windows[1], window_->GetRootWindow());
-    EXPECT_EQ("-49,10 50x60", window_->bounds().ToString());
+    // Window origin should be adjusted for minimum visibility (10px).
+    int expected_x = -50 + 10;
+    EXPECT_EQ(base::IntToString(expected_x) + ",10 50x60",
+              window_->bounds().ToString());
   }
 }
 
@@ -227,7 +234,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplaysActiveRoot) {
   // The secondary display is logically on the right, but on the system (e.g. X)
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("800x600,800x600");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   aura::test::TestWindowDelegate delegate;
@@ -264,7 +271,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplaysRightToLeft) {
     return;
 
   UpdateDisplay("800x600,800x600");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   window_->SetBoundsInScreen(
@@ -280,7 +287,10 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplaysRightToLeft) {
     resizer->Drag(CalculateDragPoint(*resizer, -2, 0), ui::EF_CONTROL_DOWN);
     resizer->CompleteDrag(0);
     EXPECT_EQ(root_windows[0], window_->GetRootWindow());
-    EXPECT_EQ("798,0 50x60", window_->bounds().ToString());
+    // Window origin should be adjusted for minimum visibility (10px).
+    int expected_x = 800 - 10;
+    EXPECT_EQ(base::IntToString(expected_x) + ",0 50x60",
+              window_->bounds().ToString());
   }
 }
 
@@ -290,7 +300,7 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
     return;
 
   UpdateDisplay("800x600,800x600");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   window_->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
@@ -426,7 +436,7 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
   // The secondary display is logically on the right, but on the system (e.g. X)
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("400x400,800x800*2");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   test::CursorManagerTestApi cursor_test_api(
@@ -478,7 +488,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("400x400,400x400");
 
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   // Normal window can be moved across display.

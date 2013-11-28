@@ -8,7 +8,6 @@
 #include "ash/wm/window_animations.h"
 #include "chrome/browser/chromeos/input_method/mode_indicator_view.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/rect.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/bubble/bubble_border.h"
 
@@ -36,25 +35,25 @@ ModeIndicatorWidget::ModeIndicatorWidget()
 
   // Pass the ownership.
   SetContentsView(mode_view_);
-
-  SetBounds(gfx::Rect(0, 0, 60, 60));  // x, y, w, h
 }
 
 ModeIndicatorWidget::~ModeIndicatorWidget() {
 }
 
-void ModeIndicatorWidget::SetCursorLocation(const gfx::Rect& cursor_location) {
+void ModeIndicatorWidget::SetCursorBounds(const gfx::Rect& cursor_bounds) {
+  cursor_bounds_ = cursor_bounds;
   gfx::Rect bound(GetClientAreaBoundsInScreen());
-  bound.set_x(cursor_location.x() - bound.width() / 2);
-  bound.set_y(cursor_location.bottom());
+  bound.set_x(cursor_bounds.x() - bound.width() / 2);
+  bound.set_y(cursor_bounds.bottom());
   SetBounds(bound);
 }
 
 void ModeIndicatorWidget::SetLabelTextUtf8(const std::string& text_utf8) {
-  if (mode_view_) {
-    // TODO(komatsu): Nice to resize the widget size based on the text length.
-    mode_view_->SetLabelTextUtf8(text_utf8);
-  }
+  DCHECK(mode_view_);
+
+  mode_view_->SetLabelTextUtf8(text_utf8);
+  SetSize(mode_view_->size());
+  SetCursorBounds(cursor_bounds_);
 }
 
 }  // namespace input_method

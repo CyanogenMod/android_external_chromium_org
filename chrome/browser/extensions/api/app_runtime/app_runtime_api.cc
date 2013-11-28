@@ -11,14 +11,14 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_runtime.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
@@ -46,7 +46,7 @@ void DispatchOnLaunchedEventImpl(const std::string& extension_id,
       extensions::ExtensionSystem::Get(profile);
   scoped_ptr<Event> event(new Event(app_runtime::OnLaunched::kEventName,
                                     args.Pass()));
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   system->event_router()->DispatchEventWithLazyListener(extension_id,
                                                         event.Pass());
   system->extension_service()->extension_prefs()->SetLastLaunchTime(
@@ -68,7 +68,7 @@ void AppEventRouter::DispatchOnRestartedEvent(Profile* profile,
   scoped_ptr<base::ListValue> arguments(new base::ListValue());
   scoped_ptr<Event> event(new Event(app_runtime::OnRestarted::kEventName,
                                     arguments.Pass()));
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   extensions::ExtensionSystem::Get(profile)->event_router()->
       DispatchEventToExtension(extension->id(), event.Pass());
 }

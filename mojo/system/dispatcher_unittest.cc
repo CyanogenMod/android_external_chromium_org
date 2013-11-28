@@ -25,6 +25,11 @@ class TrivialDispatcher : public Dispatcher {
   friend class base::RefCountedThreadSafe<TrivialDispatcher>;
   virtual ~TrivialDispatcher() {}
 
+  virtual scoped_refptr<Dispatcher>
+      CreateEquivalentDispatcherAndCloseImplNoLock() OVERRIDE {
+    return scoped_refptr<Dispatcher>(new TrivialDispatcher());
+  }
+
   DISALLOW_COPY_AND_ASSIGN(TrivialDispatcher);
 };
 
@@ -32,9 +37,9 @@ TEST(DispatcherTest, Basic) {
   scoped_refptr<Dispatcher> d(new TrivialDispatcher());
 
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            d->WriteMessage(NULL, 0, NULL, 0, MOJO_WRITE_MESSAGE_FLAG_NONE));
+            d->WriteMessage(NULL, 0, NULL, MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            d->ReadMessage(NULL, NULL, NULL, NULL,
+            d->ReadMessage(NULL, NULL, 0, NULL,
                            MOJO_WRITE_MESSAGE_FLAG_NONE));
   Waiter w;
   w.Init();
@@ -47,9 +52,9 @@ TEST(DispatcherTest, Basic) {
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
 
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            d->WriteMessage(NULL, 0, NULL, 0, MOJO_WRITE_MESSAGE_FLAG_NONE));
+            d->WriteMessage(NULL, 0, NULL, MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            d->ReadMessage(NULL, NULL, NULL, NULL,
+            d->ReadMessage(NULL, NULL, 0, NULL,
                            MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->AddWaiter(&w, MOJO_WAIT_FLAG_EVERYTHING, 0));
@@ -97,12 +102,12 @@ class ThreadSafetyStressThread : public base::SimpleThread {
       }
       case WRITE_MESSAGE:
         EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-                  dispatcher_->WriteMessage(NULL, 0, NULL, 0,
+                  dispatcher_->WriteMessage(NULL, 0, NULL,
                                             MOJO_WRITE_MESSAGE_FLAG_NONE));
         break;
       case READ_MESSAGE:
         EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-                  dispatcher_->ReadMessage(NULL, NULL, NULL, NULL,
+                  dispatcher_->ReadMessage(NULL, NULL, 0, NULL,
                                            MOJO_WRITE_MESSAGE_FLAG_NONE));
         break;
       case ADD_WAITER: {

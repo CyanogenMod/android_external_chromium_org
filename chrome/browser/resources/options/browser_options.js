@@ -169,6 +169,11 @@ cr.define('options', function() {
       };
       $('default-search-engine').addEventListener('change',
           this.setDefaultSearchEngine_);
+      // Without this, the bubble would overlap the uber frame navigation pane
+      // and would not get mouse event as explained in crbug.com/311421.
+      document.querySelector(
+          '#default-search-engine + .controlled-setting-indicator').location =
+              cr.ui.ArrowLocation.TOP_START;
 
       // Users section.
       if (loadTimeData.valueExists('profilesInfo')) {
@@ -209,21 +214,6 @@ cr.define('options', function() {
       }
 
       if (cr.isChromeOS) {
-        if (!UIAccountTweaks.loggedInAsGuest()) {
-          var pictureWrapper = $('account-picture-wrapper');
-          pictureWrapper.setAttribute('role', 'button');
-          pictureWrapper.tabIndex = 0;
-          function activate(event) {
-            if (event.type == 'click' ||
-                (event.type == 'keydown' && event.keyCode == 32)) {
-              OptionsPage.navigateToPage('changePicture');
-            }
-          };
-          pictureWrapper.onclick = activate;
-          pictureWrapper.addEventListener('keydown', activate);
-
-        }
-
         // Username (canonical email) of the currently logged in user or
         // |kGuestUser| if a guest session is active.
         this.username_ = loadTimeData.getString('username');
@@ -232,6 +222,10 @@ cr.define('options', function() {
 
         $('account-picture-wrapper').oncontextmenu = function(e) {
           e.preventDefault();
+        };
+
+        $('account-picture').onclick = function() {
+          OptionsPage.navigateToPage('changePicture');
         };
 
         $('manage-accounts-button').onclick = function(event) {
@@ -274,8 +268,9 @@ cr.define('options', function() {
       };
       $('privacyClearDataButton').hidden = OptionsPage.isSettingsApp();
       // 'metricsReportingEnabled' element is only present on Chrome branded
-      // builds.
-      if ($('metricsReportingEnabled')) {
+      // builds, and the 'metricsReportingCheckboxAction' message is only
+      // handled on ChromeOS.
+      if ($('metricsReportingEnabled') && cr.isChromeOS) {
         $('metricsReportingEnabled').onclick = function(event) {
           chrome.send('metricsReportingCheckboxAction',
               [String(event.currentTarget.checked)]);
@@ -1197,6 +1192,14 @@ cr.define('options', function() {
     },
 
     /**
+     * Enables or disables the Manage SSL Certificates button.
+     * @private
+     */
+    enableCertificateButton_: function(enabled) {
+      $('certificatesManageButton').disabled = !enabled;
+    },
+
+    /**
      * Enables factory reset section.
      * @private
      */
@@ -1506,6 +1509,7 @@ cr.define('options', function() {
   //Forward public APIs to private implementations.
   [
     'addBluetoothDevice',
+    'enableCertificateButton',
     'enableFactoryResetSection',
     'getCurrentProfile',
     'getStartStopSyncButton',

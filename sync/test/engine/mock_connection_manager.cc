@@ -83,7 +83,8 @@ bool MockConnectionManager::PostBufferToPath(PostBufferParams* params,
   CHECK(post.has_protocol_version());
   CHECK(post.has_api_key());
   CHECK(post.has_bag_of_chips());
-  last_request_.CopyFrom(post);
+
+  requests_.push_back(post);
   client_stuck_ = post.sync_problem_detected();
   sync_pb::ClientToServerResponse response;
   response.Clear();
@@ -496,18 +497,6 @@ void MockConnectionManager::ProcessGetUpdates(
               gu.caller_info().source());
   }
 
-  // Verify that the GetUpdates filter sent by the Syncer matches the test
-  // expectation.
-  ModelTypeSet protocol_types = ProtocolTypes();
-  for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
-       iter.Inc()) {
-    ModelType model_type = iter.Get();
-    sync_pb::DataTypeProgressMarker const* progress_marker =
-        GetProgressMarkerForType(gu.from_progress_marker(), model_type);
-    EXPECT_EQ(expected_filter_.Has(model_type), (progress_marker != NULL))
-        << "Syncer requested_types differs from test expectation.";
-  }
-
   // Verify that the items we're about to send back to the client are of
   // the types requested by the client.  If this fails, it probably indicates
   // a test bug.
@@ -684,6 +673,17 @@ const CommitMessage& MockConnectionManager::last_sent_commit() const {
 const CommitResponse& MockConnectionManager::last_commit_response() const {
   EXPECT_TRUE(!commit_responses_.empty());
   return *commit_responses_.back();
+}
+
+const sync_pb::ClientToServerMessage&
+    MockConnectionManager::last_request() const {
+  EXPECT_TRUE(!requests_.empty());
+  return requests_.back();
+}
+
+const std::vector<sync_pb::ClientToServerMessage>&
+    MockConnectionManager::requests() const {
+  return requests_;
 }
 
 bool MockConnectionManager::IsModelTypePresentInSpecifics(

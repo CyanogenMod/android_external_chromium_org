@@ -18,6 +18,7 @@
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_utils.h"
 
+using base::StringPiece;
 using std::make_pair;
 
 namespace net {
@@ -111,13 +112,18 @@ QuicTimeWaitListManager::~QuicTimeWaitListManager() {
   guid_clean_up_alarm_->UnregisterIfRegistered();
   STLDeleteElements(&time_ordered_guid_list_);
   STLDeleteElements(&pending_packets_queue_);
+  for (GuidMapIterator it = guid_map_.begin(); it != guid_map_.end(); ++it) {
+    delete it->second.close_packet;
+  }
 }
 
-void QuicTimeWaitListManager::AddGuidToTimeWait(QuicGuid guid,
-                                                QuicVersion version) {
+void QuicTimeWaitListManager::AddGuidToTimeWait(
+    QuicGuid guid,
+    QuicVersion version,
+    QuicEncryptedPacket* close_packet) {
   DCHECK(!IsGuidInTimeWait(guid));
   // Initialize the guid with 0 packets received.
-  GuidData data(0, version);
+  GuidData data(0, version, close_packet);
   guid_map_.insert(make_pair(guid, data));
   time_ordered_guid_list_.push_back(new GuidAddTime(guid,
                                                     clock_.ApproximateNow()));
@@ -173,41 +179,25 @@ bool QuicTimeWaitListManager::OnProtocolVersionMismatch(
   return false;
 }
 
-bool QuicTimeWaitListManager::OnStreamFrame(const QuicStreamFrame& frame) {
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnAckFrame(const QuicAckFrame& frame) {
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnCongestionFeedbackFrame(
-    const QuicCongestionFeedbackFrame& frame) {
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnRstStreamFrame(
-    const QuicRstStreamFrame& frame) {
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnConnectionCloseFrame(
-    const QuicConnectionCloseFrame & frame) {
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnGoAwayFrame(const QuicGoAwayFrame& frame) {
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnPacketHeader(const QuicPacketHeader& header) {
+bool QuicTimeWaitListManager::OnUnauthenticatedHeader(
+    const QuicPacketHeader& header) {
   // TODO(satyamshekhar): Think about handling packets from different client
   // addresses.
   GuidMapIterator it = guid_map_.find(header.public_header.guid);
   DCHECK(it != guid_map_.end());
   // Increment the received packet count.
   ++((it->second).num_packets);
-  if (ShouldSendPublicReset((it->second).num_packets)) {
+  if (!ShouldSendResponse((it->second).num_packets)) {
+    return false;
+  }
+  if (it->second.close_packet) {
+     QueuedPacket* queued_packet =
+         new QueuedPacket(server_address_,
+                          client_address_,
+                          it->second.close_packet->Clone());
+     // Takes ownership of the packet.
+     SendOrQueuePacket(queued_packet);
+  } else {
     // We don't need the packet anymore. Just tell the client what sequence
     // number we rejected.
     SendPublicReset(server_address_,
@@ -219,9 +209,59 @@ bool QuicTimeWaitListManager::OnPacketHeader(const QuicPacketHeader& header) {
   return false;
 }
 
+bool QuicTimeWaitListManager::OnPacketHeader(const QuicPacketHeader& header) {
+  DCHECK(false);
+  return false;
+}
+
+void QuicTimeWaitListManager::OnRevivedPacket() {
+  DCHECK(false);
+}
+
+void QuicTimeWaitListManager::OnFecProtectedPayload(StringPiece /*payload*/) {
+  DCHECK(false);
+}
+
+bool QuicTimeWaitListManager::OnStreamFrame(const QuicStreamFrame& /*frame*/) {
+  DCHECK(false);
+  return false;
+}
+
+bool QuicTimeWaitListManager::OnAckFrame(const QuicAckFrame& /*frame*/) {
+  DCHECK(false);
+  return false;
+}
+
+bool QuicTimeWaitListManager::OnCongestionFeedbackFrame(
+    const QuicCongestionFeedbackFrame& /*frame*/) {
+  DCHECK(false);
+  return false;
+}
+
+bool QuicTimeWaitListManager::OnRstStreamFrame(
+    const QuicRstStreamFrame& /*frame*/) {
+  DCHECK(false);
+  return false;
+}
+
+bool QuicTimeWaitListManager::OnConnectionCloseFrame(
+    const QuicConnectionCloseFrame & /*frame*/) {
+  DCHECK(false);
+  return false;
+}
+
+bool QuicTimeWaitListManager::OnGoAwayFrame(const QuicGoAwayFrame& /*frame*/) {
+  DCHECK(false);
+  return false;
+}
+
+void QuicTimeWaitListManager::OnFecData(const QuicFecData& /*fec*/) {
+  DCHECK(false);
+}
+
 // Returns true if the number of packets received for this guid is a power of 2
 // to throttle the number of public reset packets we send to a client.
-bool QuicTimeWaitListManager::ShouldSendPublicReset(int received_packet_count) {
+bool QuicTimeWaitListManager::ShouldSendResponse(int received_packet_count) {
   return (received_packet_count & (received_packet_count - 1)) == 0;
 }
 
@@ -240,7 +280,7 @@ void QuicTimeWaitListManager::SendPublicReset(
   QueuedPacket* queued_packet = new QueuedPacket(
       server_address,
       client_address,
-      framer_.BuildPublicResetPacket(packet));
+      QuicFramer::BuildPublicResetPacket(packet));
   // Takes ownership of the packet.
   SendOrQueuePacket(queued_packet);
 }
@@ -309,6 +349,9 @@ void QuicTimeWaitListManager::CleanUpOldGuids() {
       break;
     }
     // This guid has lived its age, retire it now.
+    GuidMapIterator it = guid_map_.find(oldest_guid->guid);
+    DCHECK(it != guid_map_.end());
+    delete it->second.close_packet;
     guid_map_.erase(oldest_guid->guid);
     time_ordered_guid_list_.pop_front();
     delete oldest_guid;

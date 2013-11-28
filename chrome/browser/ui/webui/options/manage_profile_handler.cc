@@ -62,20 +62,6 @@ bool GetProfilePathFromArgs(const ListValue* args,
   return base::GetValueAsFilePath(*file_path_value, profile_file_path);
 }
 
-void OnNewDefaultProfileCreated(
-    chrome::HostDesktopType desktop_type,
-    Profile* profile,
-    Profile::CreateStatus status) {
-  if (status == Profile::CREATE_STATUS_INITIALIZED) {
-    profiles::FindOrCreateNewWindowForProfile(
-        profile,
-        chrome::startup::IS_PROCESS_STARTUP,
-        chrome::startup::IS_FIRST_RUN,
-        desktop_type,
-        false);
-  }
-}
-
 }  // namespace
 
 ManageProfileHandler::ManageProfileHandler()
@@ -331,26 +317,7 @@ void ManageProfileHandler::SetProfileIconAndName(const ListValue* args) {
   if (!args->GetString(2, &new_profile_name))
     return;
 
-  if ((new_profile_name ==
-           cache.GetGAIAGivenNameOfProfileAtIndex(profile_index)) ||
-      (new_profile_name == cache.GetGAIANameOfProfileAtIndex(profile_index))) {
-    // Set the profile to use the GAIA name as the profile name. Note, this
-    // is a little weird if the user typed their GAIA name manually but
-    // it's not a big deal.
-    cache.SetIsUsingGAIANameOfProfileAtIndex(profile_index, true);
-  } else {
-    PrefService* pref_service = profile->GetPrefs();
-    // Updating the profile preference will cause the cache to be updated for
-    // this preference.
-    pref_service->SetString(prefs::kProfileName, UTF16ToUTF8(new_profile_name));
-
-    // Changing the profile name can invalidate the profile index.
-    profile_index = cache.GetIndexOfProfileWithPath(profile_file_path);
-    if (profile_index == std::string::npos)
-      return;
-
-    cache.SetIsUsingGAIANameOfProfileAtIndex(profile_index, false);
-  }
+  profiles::UpdateProfileName(profile, new_profile_name);
 }
 
 #if defined(ENABLE_SETTINGS_APP)

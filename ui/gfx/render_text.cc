@@ -62,8 +62,13 @@ int DetermineBaselineCenteringText(const Rect& display_rect,
   const int baseline = font_list.GetBaseline();
   const int cap_height = font_list.GetCapHeight();
   const int internal_leading = baseline - cap_height;
-  const int baseline_shift =
-      (display_height - cap_height) / 2 - internal_leading;
+  // Some platforms don't support getting the cap height, and simply return
+  // the entire font ascent from GetCapHeight().  Centering the ascent makes
+  // the font look too low, so if GetCapHeight() returns the ascent, center
+  // the entire font height instead.
+  const int space =
+      display_height - ((internal_leading != 0) ? cap_height : font_height);
+  const int baseline_shift = space / 2 - internal_leading;
   return baseline + std::max(min_shift, std::min(max_shift, baseline_shift));
 }
 
@@ -626,6 +631,7 @@ void RenderText::SetDirectionalityMode(DirectionalityMode mode) {
 
   directionality_mode_ = mode;
   text_direction_ = base::i18n::UNKNOWN_DIRECTION;
+  cached_bounds_and_offset_valid_ = false;
   ResetLayout();
 }
 
@@ -993,7 +999,16 @@ Vector2d RenderText::GetAlignmentOffset(size_t line_number) {
     if (horizontal_alignment_ == ALIGN_CENTER)
       offset.set_x(offset.x() / 2);
   }
-  offset.set_y(GetBaseline() - GetLayoutTextBaseline());
+
+  // Vertically center the text.
+  if (multiline_) {
+    const int text_height = lines_.back().preceding_heights +
+        lines_.back().size.height();
+    offset.set_y((display_rect_.height() - text_height) / 2);
+  } else {
+    offset.set_y(GetBaseline() - GetLayoutTextBaseline());
+  }
+
   return offset;
 }
 

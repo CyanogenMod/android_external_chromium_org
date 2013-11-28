@@ -23,6 +23,7 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/net/net_resource_provider.h"
 #include "chrome/common/render_messages.h"
@@ -53,12 +54,12 @@
 #include "base/win/iat_patch_function.h"
 #endif
 
-using WebKit::WebCache;
-using WebKit::WebCrossOriginPreflightResultCache;
-using WebKit::WebFontCache;
-using WebKit::WebRuntimeFeatures;
-using WebKit::WebSecurityPolicy;
-using WebKit::WebString;
+using blink::WebCache;
+using blink::WebCrossOriginPreflightResultCache;
+using blink::WebFontCache;
+using blink::WebRuntimeFeatures;
+using blink::WebSecurityPolicy;
+using blink::WebString;
 using content::RenderThread;
 
 namespace {
@@ -253,7 +254,7 @@ void HeapStatisticsCollector::SendStatsToBrowser(int round_id) {
 bool ChromeRenderProcessObserver::is_incognito_process_ = false;
 
 ChromeRenderProcessObserver::ChromeRenderProcessObserver(
-    chrome::ChromeContentRendererClient* client)
+    ChromeContentRendererClient* client)
     : client_(client),
       clear_cache_pending_(false),
       webkit_initialized_(false),
@@ -266,8 +267,19 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
   }
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
+#if defined(OS_MACOSX)
+  bool enable_autofill = command_line.HasSwitch(
+      autofill::switches::kEnableInteractiveAutocomplete);
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel != chrome::VersionInfo::CHANNEL_BETA &&
+      channel != chrome::VersionInfo::CHANNEL_STABLE) {
+    enable_autofill = !command_line.HasSwitch(
+        autofill::switches::kDisableInteractiveAutocomplete);
+  }
+#else
   bool enable_autofill = !command_line.HasSwitch(
       autofill::switches::kDisableInteractiveAutocomplete);
+#endif
   WebRuntimeFeatures::enableRequestAutocomplete(
       enable_autofill ||
       command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures));

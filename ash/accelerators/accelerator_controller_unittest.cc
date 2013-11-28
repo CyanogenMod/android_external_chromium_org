@@ -5,9 +5,11 @@
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/accelerators/accelerator_table.h"
 #include "ash/accessibility_delegate.h"
+#include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/ime_control_delegate.h"
+#include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/brightness_control_delegate.h"
@@ -20,6 +22,7 @@
 #include "ash/volume_control_delegate.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "base/command_line.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
@@ -28,7 +31,7 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
-#include "ui/events/x/events_x_utils.h"
+#include "ui/events/test/events_test_utils_x11.h"
 #endif
 
 namespace ash {
@@ -466,6 +469,9 @@ TEST_F(AcceleratorControllerTest, IsRegistered) {
 }
 
 TEST_F(AcceleratorControllerTest, WindowSnap) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kAshMultipleSnapWindowWidths);
+
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
   const ui::Accelerator dummy;
@@ -531,14 +537,38 @@ TEST_F(AcceleratorControllerTest, WindowSnap) {
   }
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
-// Bug 297650.
-#define MAYBE_ControllerContext DISABLED_ControllerContext
-#else
-#define MAYBE_ControllerContext ControllerContext
-#endif
+TEST_F(AcceleratorControllerTest, CenterWindowAccelerator) {
+  scoped_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+  const ui::Accelerator dummy;
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  window_state->Activate();
 
-TEST_F(AcceleratorControllerTest, MAYBE_ControllerContext) {
+  // Center the window using accelerator.
+  GetController()->PerformAction(WINDOW_POSITION_CENTER, dummy);
+  gfx::Rect work_area =
+      Shell::GetScreen()->GetDisplayNearestWindow(window.get()).work_area();
+  gfx::Rect bounds = window->GetBoundsInScreen();
+  EXPECT_NEAR(bounds.x() - work_area.x(),
+              work_area.right() - bounds.right(),
+              1);
+  EXPECT_NEAR(bounds.y() - work_area.y(),
+              work_area.bottom() - bounds.bottom(),
+              1);
+
+  // Add the window to docked container and try to center it.
+  window->SetBounds(gfx::Rect(0, 0, 20, 20));
+  aura::Window* docked_container = Shell::GetContainer(
+      window->GetRootWindow(), internal::kShellWindowId_DockedContainer);
+  docked_container->AddChild(window.get());
+  gfx::Rect docked_bounds = window->GetBoundsInScreen();
+  GetController()->PerformAction(WINDOW_POSITION_CENTER, dummy);
+  // It should not get centered and should remain docked.
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
+  EXPECT_EQ(docked_bounds.ToString(), window->GetBoundsInScreen().ToString());
+}
+
+TEST_F(AcceleratorControllerTest, ControllerContext) {
   ui::Accelerator accelerator_a(ui::VKEY_A, ui::EF_NONE);
   ui::Accelerator accelerator_a2(ui::VKEY_A, ui::EF_NONE);
   ui::Accelerator accelerator_b(ui::VKEY_B, ui::EF_NONE);
@@ -603,8 +633,15 @@ TEST_F(AcceleratorControllerTest, MAYBE_SuppressToggleMaximized) {
   EXPECT_FALSE(window_state->IsMaximized());
 }
 
+#if defined(OS_WIN) && defined(USE_AURA)
+// crbug.com/317592
+#define MAYBE_ProcessOnce DISABLED_ProcessOnce
+#else
+#define MAYBE_ProcessOnce ProcessOnce
+#endif
+
 #if defined(OS_WIN) || defined(USE_X11)
-TEST_F(AcceleratorControllerTest, ProcessOnce) {
+TEST_F(AcceleratorControllerTest, MAYBE_ProcessOnce) {
   ui::Accelerator accelerator_a(ui::VKEY_A, ui::EF_NONE);
   TestTarget target;
   GetController()->Register(accelerator_a, &target);
@@ -628,24 +665,18 @@ TEST_F(AcceleratorControllerTest, ProcessOnce) {
   EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
       &key_event3));
 #elif defined(USE_X11)
-  XEvent key_event;
-  ui::InitXKeyEventForTesting(ui::ET_KEY_PRESSED,
-                              ui::VKEY_A,
-                              0,
-                              &key_event);
-  ui::TranslatedKeyEvent key_event1(&key_event, false);
+  ui::ScopedXI2Event key_event;
+  key_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
+  ui::TranslatedKeyEvent key_event1(key_event, false);
   EXPECT_TRUE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
       &key_event1));
 
-  ui::TranslatedKeyEvent key_event2(&key_event, true);
+  ui::TranslatedKeyEvent key_event2(key_event, true);
   EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
       &key_event2));
 
-  ui::InitXKeyEventForTesting(ui::ET_KEY_RELEASED,
-                              ui::VKEY_A,
-                              0,
-                              &key_event);
-  ui::TranslatedKeyEvent key_event3(&key_event, false);
+  key_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
+  ui::TranslatedKeyEvent key_event3(key_event, false);
   EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
       &key_event3));
 #endif
@@ -1324,5 +1355,36 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
   }
 }
 #endif
+
+TEST_F(AcceleratorControllerTest, DisallowedWithNoWindow) {
+  const ui::Accelerator dummy;
+  AccessibilityDelegate* delegate =
+      ash::Shell::GetInstance()->accessibility_delegate();
+
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
+    EXPECT_TRUE(
+        GetController()->PerformAction(kActionsNeedingWindow[i], dummy));
+    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_WINDOW_NEEDED);
+  }
+
+  // Make sure we don't alert if we do have a window.
+  scoped_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+  wm::ActivateWindow(window.get());
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
+    GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
+    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_NONE);
+  }
+
+  // Don't alert if we have a minimized window either.
+  GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
+    GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
+    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_NONE);
+  }
+}
 
 }  // namespace ash

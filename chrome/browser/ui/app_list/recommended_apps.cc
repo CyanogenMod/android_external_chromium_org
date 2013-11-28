@@ -14,8 +14,8 @@
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/ui/app_list/recommended_apps_observer.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/common/extension.h"
 
 namespace app_list {
 
@@ -98,11 +98,8 @@ void RecommendedApps::Update() {
   }
 }
 
-void RecommendedApps::OnBeginExtensionInstall(const std::string& extension_id,
-                                     const std::string& extension_name,
-                                     const gfx::ImageSkia& installing_icon,
-                                     bool is_app,
-                                     bool is_platform_app) {}
+void RecommendedApps::OnBeginExtensionInstall(
+    const ExtensionInstallParams& params) {}
 
 void RecommendedApps::OnDownloadProgress(const std::string& extension_id,
                                 int percent_downloaded) {}

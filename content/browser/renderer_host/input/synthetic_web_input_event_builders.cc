@@ -10,23 +10,23 @@
 
 namespace content {
 
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebGestureEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
-using WebKit::WebTouchEvent;
-using WebKit::WebTouchPoint;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebGestureEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
+using blink::WebTouchEvent;
+using blink::WebTouchPoint;
 
 WebMouseEvent SyntheticWebMouseEventBuilder::Build(
-    WebKit::WebInputEvent::Type type) {
+    blink::WebInputEvent::Type type) {
   WebMouseEvent result;
   result.type = type;
   return result;
 }
 
 WebMouseEvent SyntheticWebMouseEventBuilder::Build(
-    WebKit::WebInputEvent::Type type,
+    blink::WebInputEvent::Type type,
     int window_x,
     int window_y,
     int modifiers) {
@@ -166,6 +166,12 @@ void SyntheticWebTouchEvent::ReleasePoint(int index) {
   CHECK(index >= 0 && index < touchesLengthCap);
   touches[index].state = WebTouchPoint::StateReleased;
   type = WebInputEvent::TouchEnd;
+}
+
+void SyntheticWebTouchEvent::CancelPoint(int index) {
+  CHECK(index >= 0 && index < touchesLengthCap);
+  touches[index].state = WebTouchPoint::StateCancelled;
+  type = WebInputEvent::TouchCancel;
 }
 
 void SyntheticWebTouchEvent::SetTimestamp(base::TimeDelta timestamp) {

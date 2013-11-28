@@ -97,7 +97,7 @@ class DesktopNotificationService : public BrowserContextKeyedService,
   static string16 CreateDataUrl(const GURL& icon_url,
                                 const string16& title,
                                 const string16& body,
-                                WebKit::WebTextDirection dir);
+                                blink::WebTextDirection dir);
 
   // Creates a data:xxxx URL which contains the full HTML for a notification
   // using resource template which contains the standard formatting for
@@ -150,11 +150,6 @@ class DesktopNotificationService : public BrowserContextKeyedService,
   void ResetAllOrigins();
 
   ContentSetting GetContentSetting(const GURL& origin);
-
-  // Checks to see if a given origin has permission to create desktop
-  // notifications.
-  WebKit::WebNotificationPresenter::Permission
-      HasPermission(const GURL& origin);
 
   // Returns true if the notifier with |notifier_id| is allowed to send
   // notifications.

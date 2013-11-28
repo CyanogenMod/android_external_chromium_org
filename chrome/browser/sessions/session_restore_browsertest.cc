@@ -15,7 +15,6 @@
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -206,7 +205,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, NoSessionRestoreNewWindowChromeOS) {
   ui_test_utils::NavigateToURL(browser(), url);
 
   Browser* incognito_browser = CreateIncognitoBrowser();
-  chrome::AddBlankTabAt(incognito_browser, -1, true);
+  chrome::AddTabAt(incognito_browser, GURL(), -1, true);
   incognito_browser->window()->Show();
 
   // Close the normal browser. After this we only have the incognito window
@@ -220,9 +219,8 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, NoSessionRestoreNewWindowChromeOS) {
 
   ASSERT_TRUE(new_browser);
   EXPECT_EQ(1, new_browser->tab_strip_model()->count());
-  EXPECT_TRUE(chrome::IsNTPURL(
-      new_browser->tab_strip_model()->GetWebContentsAt(0)->GetURL(),
-      new_browser->profile()));
+  EXPECT_EQ(GURL(chrome::kChromeUINewTabURL),
+            new_browser->tab_strip_model()->GetWebContentsAt(0)->GetURL());
 }
 
 // Test that maximized applications get restored maximized.
@@ -441,7 +439,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, IncognitotoNonIncognito) {
 
   // Create a new incognito window.
   Browser* incognito_browser = CreateIncognitoBrowser();
-  chrome::AddBlankTabAt(incognito_browser, -1, true);
+  chrome::AddTabAt(incognito_browser, GURL(), -1, true);
   incognito_browser->window()->Show();
 
   // Close the normal browser. After this we only have the incognito window
@@ -650,7 +648,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, Basic) {
 }
 
 IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreWebUI) {
-  const GURL webui_url("chrome://newtab");
+  const GURL webui_url("chrome://omnibox");
   ui_test_utils::NavigateToURL(browser(), webui_url);
   const content::WebContents* old_tab =
       browser()->tab_strip_model()->GetActiveWebContents();

@@ -28,7 +28,8 @@
 #if defined(OS_CHROMEOS)
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/test_screen.h"
-#include "ui/shell/minimal_shell.h"
+#include "ui/aura/window.h"
+#include "ui/wm/test/wm_test_helper.h"
 #endif
 
 namespace views {
@@ -49,12 +50,13 @@ void ExamplesBrowserMainParts::PreMainMessageLoopRun() {
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, aura::TestScreen::Create());
   // Set up basic pieces of views::corewm.
-  minimal_shell_.reset(new shell::MinimalShell(gfx::Size(800, 600)));
+  wm_test_helper_.reset(new wm::WMTestHelper(gfx::Size(800, 600)));
   // Ensure the X window gets mapped.
-  minimal_shell_->root_window()->ShowRootWindow();
+  wm_test_helper_->root_window()->host()->Show();
   // Ensure Aura knows where to open new windows.
-  window_context = minimal_shell_->root_window();
+  window_context = wm_test_helper_->root_window()->window();
 #elif defined(USE_AURA)
+  aura::Env::CreateInstance();
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, CreateDesktopScreen());
 #endif
@@ -67,7 +69,7 @@ void ExamplesBrowserMainParts::PreMainMessageLoopRun() {
 void ExamplesBrowserMainParts::PostMainMessageLoopRun() {
   browser_context_.reset();
 #if defined(OS_CHROMEOS)
-  minimal_shell_.reset();
+  wm_test_helper_.reset();
 #endif
   views_delegate_.reset();
 #if defined(USE_AURA)

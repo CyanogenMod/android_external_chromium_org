@@ -51,6 +51,8 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
                         OnConnectedToRemoteDevice)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DisconnectedFromRemoteDevice,
                         OnDisconnectedFromRemoteDevice)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_RequestFullscreen,
+                        OnRequestFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidEnterFullscreen, OnDidEnterFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
@@ -58,6 +60,7 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaKeysMsg_KeyAdded, OnKeyAdded)
     IPC_MESSAGE_HANDLER(MediaKeysMsg_KeyError, OnKeyError)
     IPC_MESSAGE_HANDLER(MediaKeysMsg_KeyMessage, OnKeyMessage)
+    IPC_MESSAGE_HANDLER(MediaKeysMsg_SetSessionId, OnSetSessionId)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -206,6 +209,12 @@ void RendererMediaPlayerManager::OnPlayerPause(int player_id) {
     player->OnMediaPlayerPause();
 }
 
+void RendererMediaPlayerManager::OnRequestFullscreen(int player_id) {
+  WebMediaPlayerAndroid* player = GetMediaPlayer(player_id);
+  if (player)
+    player->OnRequestFullscreen();
+}
+
 void RendererMediaPlayerManager::EnterFullscreen(int player_id) {
   Send(new MediaPlayerHostMsg_EnterFullscreen(routing_id(), player_id));
 }
@@ -225,52 +234,60 @@ void RendererMediaPlayerManager::InitializeCDM(int media_keys_id,
 
 void RendererMediaPlayerManager::GenerateKeyRequest(
     int media_keys_id,
+    uint32 reference_id,
     const std::string& type,
     const std::vector<uint8>& init_data) {
   Send(new MediaKeysHostMsg_GenerateKeyRequest(
-      routing_id(), media_keys_id, type, init_data));
+      routing_id(), media_keys_id, reference_id, type, init_data));
 }
 
 void RendererMediaPlayerManager::AddKey(int media_keys_id,
+                                        uint32 reference_id,
                                         const std::vector<uint8>& key,
-                                        const std::vector<uint8>& init_data,
-                                        const std::string& session_id) {
+                                        const std::vector<uint8>& init_data) {
   Send(new MediaKeysHostMsg_AddKey(
-      routing_id(), media_keys_id, key, init_data, session_id));
+      routing_id(), media_keys_id, reference_id, key, init_data));
 }
 
-void RendererMediaPlayerManager::CancelKeyRequest(
-    int media_keys_id,
-    const std::string& session_id) {
+void RendererMediaPlayerManager::CancelKeyRequest(int media_keys_id,
+                                                  uint32 reference_id) {
   Send(new MediaKeysHostMsg_CancelKeyRequest(
-      routing_id(), media_keys_id, session_id));
+      routing_id(), media_keys_id, reference_id));
 }
 
 void RendererMediaPlayerManager::OnKeyAdded(int media_keys_id,
-                                            const std::string& session_id) {
+                                            uint32 reference_id) {
   ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
   if (media_keys)
-    media_keys->OnKeyAdded(session_id);
+    media_keys->OnKeyAdded(reference_id);
 }
 
 void RendererMediaPlayerManager::OnKeyError(
     int media_keys_id,
-    const std::string& session_id,
+    uint32 reference_id,
     media::MediaKeys::KeyError error_code,
     int system_code) {
   ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
   if (media_keys)
-    media_keys->OnKeyError(session_id, error_code, system_code);
+    media_keys->OnKeyError(reference_id, error_code, system_code);
 }
 
 void RendererMediaPlayerManager::OnKeyMessage(
     int media_keys_id,
-    const std::string& session_id,
+    uint32 reference_id,
     const std::vector<uint8>& message,
     const std::string& destination_url) {
   ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
   if (media_keys)
-    media_keys->OnKeyMessage(session_id, message, destination_url);
+    media_keys->OnKeyMessage(reference_id, message, destination_url);
+}
+
+void RendererMediaPlayerManager::OnSetSessionId(int media_keys_id,
+                                                uint32 reference_id,
+                                                const std::string& session_id) {
+  ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
+  if (media_keys)
+    media_keys->OnSetSessionId(reference_id, session_id);
 }
 
 int RendererMediaPlayerManager::RegisterMediaPlayer(
@@ -324,11 +341,11 @@ ProxyMediaKeys* RendererMediaPlayerManager::GetMediaKeys(int media_keys_id) {
   return (iter != media_keys_.end()) ? iter->second : NULL;
 }
 
-bool RendererMediaPlayerManager::CanEnterFullscreen(WebKit::WebFrame* frame) {
+bool RendererMediaPlayerManager::CanEnterFullscreen(blink::WebFrame* frame) {
   return !fullscreen_frame_ || IsInFullscreen(frame);
 }
 
-void RendererMediaPlayerManager::DidEnterFullscreen(WebKit::WebFrame* frame) {
+void RendererMediaPlayerManager::DidEnterFullscreen(blink::WebFrame* frame) {
   fullscreen_frame_ = frame;
 }
 
@@ -336,7 +353,7 @@ void RendererMediaPlayerManager::DidExitFullscreen() {
   fullscreen_frame_ = NULL;
 }
 
-bool RendererMediaPlayerManager::IsInFullscreen(WebKit::WebFrame* frame) {
+bool RendererMediaPlayerManager::IsInFullscreen(blink::WebFrame* frame) {
   return fullscreen_frame_ == frame;
 }
 

@@ -4,10 +4,7 @@
 
 package org.chromium.chrome.browser.input;
 
-import android.test.suitebuilder.annotation.LargeTest;
-
 import org.chromium.base.test.util.DisabledTest;
-import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.input.SelectPopupDialog;
@@ -18,12 +15,10 @@ import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.chrome.browser.ContentViewUtil;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.ui.WindowAndroid;
-
-import java.util.concurrent.TimeUnit;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
-    private static final int WAIT_TIMEOUT_SECONDS = 2;
     private static final String SELECT_URL = UrlUtils.encodeHtmlDataUri(
             "<html><body>" +
             "Which animal is the strongest:<br/>" +
@@ -76,8 +71,8 @@ public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
         UiUtils.runOnUiThread(getActivity(), new Runnable() {
             @Override
             public void run() {
-                int nativeWebContents = ContentViewUtil.createNativeWebContents(false);
-                WindowAndroid windowAndroid = new WindowAndroid(getActivity());
+                long nativeWebContents = ContentViewUtil.createNativeWebContents(false);
+                WindowAndroid windowAndroid = new ActivityWindowAndroid(getActivity());
                 ContentView contentView = ContentView.newInstance(
                         getActivity(), nativeWebContents, windowAndroid);
                 contentView.destroy();

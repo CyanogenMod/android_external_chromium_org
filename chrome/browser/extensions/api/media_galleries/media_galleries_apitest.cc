@@ -246,18 +246,20 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
       << message_;
 }
 
-// Flaky: crbug.com/314576
-#if defined(OS_WIN)
-IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
-                       DISABLED_MediaGalleriesCopyTo) {
-#else
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
                        MediaGalleriesCopyTo) {
-#endif
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   MakeFakeMediaGalleryForTest(browser()->profile(), temp_dir.path());
   ASSERT_TRUE(RunMediaGalleriesTest("copy_to_access")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
+                       MediaGalleriesDelete) {
+  base::ListValue custom_args;
+  custom_args.AppendInteger(num_galleries());
+  ASSERT_TRUE(RunMediaGalleriesTestWithArg("delete_access", custom_args))
+      << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
@@ -272,11 +274,6 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
       << message_;
 
   DetachFakeDevice();
-}
-
-IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
-                       GetFilesystemMetadata) {
-  ASSERT_TRUE(RunMediaGalleriesTest("metadata")) << message_;
 }
 
 #if defined(OS_WIN)|| defined(OS_MACOSX)

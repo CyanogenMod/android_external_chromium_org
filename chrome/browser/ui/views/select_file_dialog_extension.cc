@@ -17,9 +17,9 @@
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/select_file_dialog_util.h"
 #include "chrome/browser/chromeos/file_manager/url_util.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
@@ -163,7 +163,8 @@ void SelectFileDialogExtension::ExtensionTerminated(
   // reload the extension at all - when we try to open the extension the next
   // time, the extension subsystem would automatically reload it for us. At
   // this time though this is broken because of some faulty wiring in
-  // ExtensionProcessManager::CreateViewHost. Once that is fixed, remove this.
+  // extensions::ProcessManager::CreateViewHost. Once that is fixed, remove
+  // this.
   if (profile_) {
     base::MessageLoop::current()->PostTask(
         FROM_HERE,

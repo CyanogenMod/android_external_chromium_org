@@ -42,8 +42,6 @@ class RemoveUserDelegate;
 class SupervisedUserManagerImpl;
 class SessionLengthLimiter;
 
-struct UpdateUserAccountDataCallbackData;
-
 // Implementation of the UserManager.
 class UserManagerImpl
     : public UserManager,
@@ -75,26 +73,28 @@ class UserManagerImpl
   virtual void RemoveUserFromList(const std::string& user_id) OVERRIDE;
   virtual bool IsKnownUser(const std::string& user_id) const OVERRIDE;
   virtual const User* FindUser(const std::string& user_id) const OVERRIDE;
+  virtual User* FindUserAndModify(const std::string& user_id) OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetActiveUser() const OVERRIDE;
   virtual User* GetActiveUser() OVERRIDE;
   virtual const User* GetPrimaryUser() const OVERRIDE;
   virtual User* GetUserByProfile(Profile* profile) const OVERRIDE;
+  virtual Profile* GetProfileByUser(const User* user) const OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& user_id,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE;
   virtual void SaveUserDisplayName(const std::string& user_id,
                                    const string16& display_name) OVERRIDE;
-  virtual void UpdateUserAccountData(const std::string& user_id,
-                                     const string16& display_name,
-                                     const std::string& locale) OVERRIDE;
   virtual string16 GetUserDisplayName(
       const std::string& user_id) const OVERRIDE;
   virtual void SaveUserDisplayEmail(const std::string& user_id,
                                     const std::string& display_email) OVERRIDE;
   virtual std::string GetUserDisplayEmail(
       const std::string& user_id) const OVERRIDE;
+  virtual void UpdateUserAccountData(
+      const std::string& user_id,
+      const UserAccountData& account_data) OVERRIDE;
   virtual bool IsCurrentUserOwner() const OVERRIDE;
   virtual bool IsCurrentUserNew() const OVERRIDE;
   virtual bool IsCurrentUserNonCryptohomeDataEphemeral() const OVERRIDE;
@@ -143,8 +143,10 @@ class UserManagerImpl
   virtual void OnPolicyUpdated(const std::string& user_id) OVERRIDE;
   virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
 
-  virtual void RespectLocalePreference(Profile* profile, const User* user) const
-      OVERRIDE;
+  virtual bool RespectLocalePreference(
+      Profile* profile,
+      const User* user,
+      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
  private:
   friend class SupervisedUserManagerImpl;
@@ -152,6 +154,14 @@ class UserManagerImpl
   friend class WallpaperManager;
   friend class UserManagerTest;
   friend class WallpaperManagerTest;
+
+  // Stages of loading user list from preferences. Some methods can have
+  // different behavior depending on stage.
+  enum UserLoadStage {
+    STAGE_NOT_LOADED = 0,
+    STAGE_LOADING,
+    STAGE_LOADED
+  };
 
   UserManagerImpl();
 
@@ -177,13 +187,12 @@ class UserManagerImpl
   UserList& GetUsersAndModify();
 
   // Returns the user with the given email address if found in the persistent
-  // list or currently logged in as ephemeral. Returns |NULL| otherwise.
-  // Same as FindUser but returns non-const pointer to User object.
-  User* FindUserAndModify(const std::string& user_id);
-
-  // Returns the user with the given email address if found in the persistent
   // list. Returns |NULL| otherwise.
   const User* FindUserInList(const std::string& user_id) const;
+
+  // Returns |true| if user with the given id is found in the persistent list.
+  // Returns |false| otherwise. Does not trigger user loading.
+  const bool UserExistsInList(const std::string& user_id) const;
 
   // Same as FindUserInList but returns non-const pointer to User object.
   User* FindUserInListAndModify(const std::string& user_id);
@@ -298,26 +307,27 @@ class UserManagerImpl
   // Sends metrics in response to a regular user logging in.
   void SendRegularUserLoginMetrics(const std::string& user_id);
 
-  // UpdateUserAccountData() + SaveUserDisplayName() .
-  void UpdateUserAccountDataImpl(const std::string& user_id,
-                                 const string16& display_name,
-                                 const std::string* locale);
+  // Implementation for RemoveUser method. This is an asynchronous part of the
+  // method, that verifies that owner will not get deleted, and calls
+  // |RemoveNonOwnerUserInternal|.
+  void RemoveUserInternal(const std::string& user_email,
+                          RemoveUserDelegate* delegate);
 
-  // Account locale needs to be translated to device locale.
-  // This might be called as callback after FILE thread translates locale.
-  void UpdateUserAccountDataImplCallback(
-      const std::string& user_id,
-      const string16& display_name,
-      const std::string* resolved_account_locale);
-
-  // Decorator to the previous function.
-  void UpdateUserAccountDataImplCallbackDecorator(
-      const scoped_ptr<UpdateUserAccountDataCallbackData>& data);
-
-  Profile* GetProfileByUser(const User* user) const;
+  // Implementation for RemoveUser method. It is synchronous. It is called from
+  // RemoveUserInternal after owner check.
+  void RemoveNonOwnerUserInternal(const std::string& user_email,
+                                  RemoveUserDelegate* delegate);
 
   // MultiProfileUserControllerDelegate implementation:
   virtual void OnUserNotAllowed() OVERRIDE;
+
+  // Sets account locale for user with id |user_id|.
+  virtual void UpdateUserAccountLocale(const std::string& user_id,
+                                       const std::string& locale);
+
+  // Updates user account after locale was resolved.
+  void DoUpdateAccountLocale(const std::string& user_id,
+                             const std::string& resolved_locale);
 
   // Interface to the signed settings store.
   CrosSettings* cros_settings_;
@@ -325,8 +335,8 @@ class UserManagerImpl
   // Interface to device-local account definitions and associated policy.
   policy::DeviceLocalAccountPolicyService* device_local_account_policy_service_;
 
-  // True if users have been loaded from prefs already.
-  bool users_loaded_;
+  // Indicates stage of loading user from prefs.
+  UserLoadStage user_loading_stage_;
 
   // List of all known users. User instances are owned by |this|. Regular users
   // are removed by |RemoveUserFromList|, public accounts by

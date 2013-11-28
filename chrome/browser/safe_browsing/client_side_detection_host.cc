@@ -260,7 +260,7 @@ ClientSideDetectionHost::ClientSideDetectionHost(WebContents* tab)
   DCHECK(tab);
   // Note: csd_service_ and sb_service will be NULL here in testing.
   csd_service_ = g_browser_process->safe_browsing_detection_service();
-  feature_extractor_.reset(new BrowserFeatureExtractor(tab, csd_service_));
+  feature_extractor_.reset(new BrowserFeatureExtractor(tab, this));
   registrar_.Add(this, content::NOTIFICATION_RESOURCE_RESPONSE_STARTED,
                  content::Source<WebContents>(tab));
 
@@ -331,6 +331,7 @@ void ClientSideDetectionHost::DidNavigateMainFrame(
   }
   browse_info_->host_redirects = cur_host_redirects_;
   browse_info_->url_redirects = params.redirects;
+  browse_info_->referrer = params.referrer.url;
   browse_info_->http_status_code = details.http_status_code;
 
   // Notify the renderer if it should classify this URL.
@@ -359,6 +360,11 @@ void ClientSideDetectionHost::OnSafeBrowsingHit(
     unsafe_resource_.reset(new SafeBrowsingUIManager::UnsafeResource(resource));
     unsafe_resource_->callback.Reset();  // Don't do anything stupid.
   }
+}
+
+scoped_refptr<SafeBrowsingDatabaseManager>
+ClientSideDetectionHost::database_manager() {
+    return database_manager_;
 }
 
 void ClientSideDetectionHost::WebContentsDestroyed(WebContents* tab) {
@@ -399,9 +405,17 @@ void ClientSideDetectionHost::OnPhishingDetectionDone(
       // Start browser-side malware feature extraction.  Once we're done it will
       // send the malware client verdict request.
       malware_verdict->set_url(verdict->url());
+      const GURL& referrer = browse_info_->referrer;
+      if (referrer.SchemeIs("http")) {  // Only send http urls.
+          malware_verdict->set_referrer_url(referrer.spec());
+      }
+      // This function doesn't expect browse_info_ to stay around after this
+      // function returns.
       feature_extractor_->ExtractMalwareFeatures(
-          browse_info_.get(), malware_verdict.get());
-      MalwareFeatureExtractionDone(malware_verdict.Pass());
+          browse_info_.get(),
+          malware_verdict.release(),
+          base::Bind(&ClientSideDetectionHost::MalwareFeatureExtractionDone,
+                     weak_factory_.GetWeakPtr()));
     }
 
     // We only send phishing verdict to the server if the verdict is phishing or
@@ -490,10 +504,7 @@ void ClientSideDetectionHost::MaybeShowMalwareWarning(GURL original_url,
 void ClientSideDetectionHost::FeatureExtractionDone(
     bool success,
     ClientPhishingRequest* request) {
-  if (!request) {
-    DLOG(FATAL) << "Invalid request object in FeatureExtractionDone";
-    return;
-  }
+  DCHECK(request);
   VLOG(2) << "Feature extraction done (success:" << success << ") for URL: "
           << request->url() << ". Start sending client phishing request.";
   ClientSideDetectionService::ClientReportPhishingRequestCallback callback;
@@ -510,23 +521,19 @@ void ClientSideDetectionHost::FeatureExtractionDone(
 }
 
 void ClientSideDetectionHost::MalwareFeatureExtractionDone(
+    bool feature_extraction_success,
     scoped_ptr<ClientMalwareRequest> request) {
-  if (!request) {
-    DLOG(FATAL) << "Invalid request object in MalwareFeatureExtractionDone";
-    return;
-  }
+  DCHECK(request.get());
   VLOG(2) << "Malware Feature extraction done for URL: " << request->url()
           << ", with features count:" << request->feature_map_size();
 
   // Send ping if there is matching features.
-  if (request->feature_map_size() > 0) {
+  if (feature_extraction_success && request->feature_map_size() > 0) {
     VLOG(1) << "Start sending client malware request.";
     ClientSideDetectionService::ClientReportMalwareRequestCallback callback;
     callback = base::Bind(&ClientSideDetectionHost::MaybeShowMalwareWarning,
                           weak_factory_.GetWeakPtr());
-    csd_service_->SendClientReportMalwareRequest(
-        request.release(),  // The service takes ownership of the request object
-        callback);
+    csd_service_->SendClientReportMalwareRequest(request.release(), callback);
   }
 }
 

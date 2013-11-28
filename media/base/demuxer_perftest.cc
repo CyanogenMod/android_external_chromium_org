@@ -17,7 +17,7 @@
 
 namespace media {
 
-static const int kBenchmarkIterations = 5000;
+static const int kBenchmarkIterations = 500;
 
 class DemuxerHostImpl : public media::DemuxerHost {
  public:
@@ -33,6 +33,9 @@ class DemuxerHostImpl : public media::DemuxerHost {
   // DemuxerHost implementation.
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE {}
   virtual void OnDemuxerError(media::PipelineStatus error) OVERRIDE {}
+  virtual void AddTextStream(media::DemuxerStream* text_stream,
+                             const media::TextTrackConfig& config) OVERRIDE {}
+  virtual void RemoveTextStream(media::DemuxerStream* text_stream) OVERRIDE {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DemuxerHostImpl);
@@ -46,7 +49,7 @@ static void QuitLoopWithStatus(base::MessageLoop* message_loop,
 
 static void NeedKey(const std::string& type,
                     const std::vector<uint8>& init_data) {
-  LOG(INFO) << "File is encrypted.";
+  VLOG(0) << "File is encrypted.";
 }
 
 typedef std::vector<media::DemuxerStream* > Streams;
@@ -64,7 +67,7 @@ class StreamReader {
   // Returns true when all streams have reached end of stream.
   bool IsDone();
 
-  int number_of_streams() { return streams_.size(); }
+  int number_of_streams() { return static_cast<int>(streams_.size()); }
   const Streams& streams() { return streams_; }
   const std::vector<int>& counts() { return counts_; }
 
@@ -182,8 +185,9 @@ static void RunDemuxerBenchmark(const std::string& filename) {
                           need_key_cb,
                           new MediaLog());
 
-    demuxer.Initialize(&demuxer_host, base::Bind(
-        &QuitLoopWithStatus, &message_loop));
+    demuxer.Initialize(&demuxer_host,
+                       base::Bind(&QuitLoopWithStatus, &message_loop),
+                       false);
     message_loop.Run();
     StreamReader stream_reader(&demuxer, false);
 
@@ -208,18 +212,18 @@ static void RunDemuxerBenchmark(const std::string& filename) {
 }
 
 TEST(DemuxerPerfTest, Demuxer) {
-  RunDemuxerBenchmark("media/test/data/bear.ogv");
-  RunDemuxerBenchmark("media/test/data/bear-640x360.webm");
-  RunDemuxerBenchmark("media/test/data/sfx_s16le.wav");
+  RunDemuxerBenchmark("bear.ogv");
+  RunDemuxerBenchmark("bear-640x360.webm");
+  RunDemuxerBenchmark("sfx_s16le.wav");
 #if defined(USE_PROPRIETARY_CODECS)
-  RunDemuxerBenchmark("media/test/data/bear-1280x720.mp4");
-  RunDemuxerBenchmark("media/test/data/sfx.mp3");
+  RunDemuxerBenchmark("bear-1280x720.mp4");
+  RunDemuxerBenchmark("sfx.mp3");
 #endif
 #if defined(OS_CHROMEOS)
-  RunDemuxerBenchmark("media/test/data/bear.flac");
+  RunDemuxerBenchmark("bear.flac");
 #endif
 #if defined(USE_PROPRIETARY_CODECS) && defined(OS_CHROMEOS)
-  RunDemuxerBenchmark("media/test/data/bear.avi");
+  RunDemuxerBenchmark("bear.avi");
 #endif
 }
 

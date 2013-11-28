@@ -7,12 +7,11 @@
 #include "base/logging.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.h"
+#include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
-#include "content/port/browser/synthetic_gesture.h"
-#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -377,8 +376,15 @@ void RenderWidgetHostViewBase::DetachPluginsHelper(HWND parent) {
 
 #endif  // OS_WIN
 
+namespace {
+
+// How many microseconds apart input events should be flushed.
+const int kFlushInputRateInUs = 16666;
+
+}
+
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
-    : popup_type_(WebKit::WebPopupTypeNone),
+    : popup_type_(blink::WebPopupTypeNone),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
@@ -446,12 +452,12 @@ bool RenderWidgetHostViewBase::IsMouseLocked() {
 }
 
 void RenderWidgetHostViewBase::UnhandledWheelEvent(
-    const WebKit::WebMouseWheelEvent& event) {
+    const blink::WebMouseWheelEvent& event) {
   // Most implementations don't need to do anything here.
 }
 
 InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
-    const WebKit::WebInputEvent& input_event) {
+    const blink::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
@@ -461,17 +467,24 @@ void RenderWidgetHostViewBase::OnDidFlushInput() {
 }
 
 void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
-  NOTIMPLEMENTED();
+  if (flush_input_timer_.IsRunning())
+    return;
+
+  flush_input_timer_.Start(
+      FROM_HERE,
+      base::TimeDelta::FromMicroseconds(kFlushInputRateInUs),
+      this,
+      &RenderWidgetHostViewBase::FlushInput);
 }
 
 void RenderWidgetHostViewBase::GestureEventAck(int gesture_event_type,
                                                InputEventAckState ack_result) {}
 
-void RenderWidgetHostViewBase::SetPopupType(WebKit::WebPopupType popup_type) {
+void RenderWidgetHostViewBase::SetPopupType(blink::WebPopupType popup_type) {
   popup_type_ = popup_type;
 }
 
-WebKit::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
+blink::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
   return popup_type_;
 }
 
@@ -509,23 +522,16 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   return true;
 }
 
-SyntheticGesture* RenderWidgetHostViewBase::CreateSmoothScrollGesture(
-    bool scroll_down, int pixels_to_scroll, int mouse_event_x,
-    int mouse_event_y) {
-  return new BasicMouseWheelSmoothScrollGesture(scroll_down, pixels_to_scroll,
-                                                mouse_event_x, mouse_event_y);
-}
-
-SyntheticGesture* RenderWidgetHostViewBase::CreatePinchGesture(
-    bool zoom_in, int pixels_to_move, int anchor_x,
-    int anchor_y) {
-  // There is no generic implementation for pinch gestures.
-  NOTIMPLEMENTED();
-  return NULL;
-}
-
 void RenderWidgetHostViewBase::ProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
+}
+
+scoped_ptr<SyntheticGestureTarget>
+RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  return scoped_ptr<SyntheticGestureTarget>(
+      new SyntheticGestureTargetBase(host));
 }
 
 // Platform implementation should override this method to allow frame
@@ -575,6 +581,15 @@ uint32 RenderWidgetHostViewBase::RendererFrameNumber() {
 
 void RenderWidgetHostViewBase::DidReceiveRendererFrame() {
   ++renderer_frame_number_;
+}
+
+void RenderWidgetHostViewBase::FlushInput() {
+  RenderWidgetHostImpl* impl = NULL;
+  if (GetRenderWidgetHost())
+    impl = RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (!impl)
+    return;
+  impl->FlushInput();
 }
 
 }  // namespace content

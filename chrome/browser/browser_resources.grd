@@ -37,7 +37,12 @@
       <structure name="IDR_DOWNLOADS_HTML" file="resources\downloads\downloads.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
       <structure name="IDR_EXTENSIONS_HTML" file="resources\extensions\extensions.html" flattenhtml="true" type="chrome_html" />
       <if expr="pp_ifdef('chromeos')">
-        <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html"/>
+        <if expr="not pp_ifdef('_google_chrome')">
+          <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html" variables="GREETING_IMAGE=disabled" expand_variables="true"/>
+        </if>
+        <if expr="pp_ifdef('_google_chrome')">
+          <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html" variables="GREETING_IMAGE=enabled" expand_variables="true"/>
+        </if>
         <structure name="IDR_FIRST_RUN_JS" file="resources\chromeos\first_run\first_run.js" flattenhtml="true" type="chrome_html" />
       </if>
       <structure name="IDR_HELP_CSS" file="resources\help\help.css" flattenhtml="true" type="chrome_html" />
@@ -80,7 +85,7 @@
       </if>
       <include name="IDR_ABOUT_FLASH_HTML" file="resources\about_flash.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_ABOUT_FLASH_JS" file="resources\about_flash.js" type="BINDATA" />
-      <include name="IDR_ABOUT_MEMORY_JS" file="resources\about_memory.js" type="BINDATA" />
+      <include name="IDR_ABOUT_MEMORY_JS" file="resources\about_memory.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_ABOUT_NACL_HTML" file="resources\about_nacl.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_ABOUT_NACL_CSS" file="resources\about_nacl.css" flattenhtml="true" type="chrome_html" />
       <include name="IDR_ABOUT_NACL_JS" file="resources\about_nacl.js" type="BINDATA" />
@@ -305,12 +310,6 @@
         <include name="IDR_CONNECTIVITY_DIAGNOSTICS_LAUNCHER_MANIFEST" file="resources\chromeos\connectivity_diagnostics_launcher\manifest.json" type="BINDATA" />
         <!-- manifest file of built-in speech synthesis extension -->
         <include name="IDR_SPEECH_SYNTHESIS_MANIFEST" file="resources\chromeos\speech_synthesis\manifest.json" type="BINDATA" />
-        <include name="IDR_DIAGNOSTICS_MAIN_CSS" file="resources\chromeos\diagnostics\main.css" type="BINDATA" />
-        <include name="IDR_DIAGNOSTICS_MAIN_HTML" file="resources\chromeos\diagnostics\main.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_DIAGNOSTICS_MAIN_JS" file="resources\chromeos\diagnostics\main.js" type="BINDATA" />
-        <include name="IDR_DIAGNOSTICS_IMAGES_FAIL" file="resources\chromeos\diagnostics\fail.png" type="BINDATA" />
-        <include name="IDR_DIAGNOSTICS_IMAGES_TICK" file="resources\chromeos\diagnostics\tick.png" type="BINDATA" />
-        <include name="IDR_DIAGNOSTICS_IMAGES_WARNING" file="resources\chromeos\diagnostics\warning.png" type="BINDATA" />
         <include name="IDR_DRIVE_INTERNALS_CSS" file="resources\chromeos\drive_internals.css" type="BINDATA" />
         <include name="IDR_DRIVE_INTERNALS_HTML" file="resources\chromeos\drive_internals.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_DRIVE_INTERNALS_JS" file="resources\chromeos\drive_internals.js" type="BINDATA" />
@@ -401,7 +400,7 @@
         <include name="IDR_AUTOMATIC_PROFILE_RESET_RULES_DRY" file="internal\resources\profile_reset\automatic_profile_reset_rules_dry.dat" type="BINDATA" />
         <include name="IDR_AUTOMATIC_PROFILE_RESET_HASH_SEED" file="internal\resources\profile_reset\automatic_profile_reset_hash_seed.dat" type="BINDATA" />
         <include name="IDR_AUTOMATIC_PROFILE_RESET_HASH_SEED_DRY" file="internal\resources\profile_reset\automatic_profile_reset_hash_seed_dry.dat" type="BINDATA" />
-        <include name="IDR_ADDITIONAL_MODULES_LIST" file="${additional_modules_list_file}" use_base_dir="false" type="BINDATA" />
+        <include name="IDR_ADDITIONAL_MODULE_IDS" file="${additional_modules_list_file}" use_base_dir="false" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_SOUND_STARTUP_WAV" file="resources\chromeos\sounds\startup.wav" type="BINDATA" />

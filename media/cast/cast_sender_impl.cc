@@ -7,22 +7,10 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "media/base/video_frame.h"
 
 namespace media {
 namespace cast {
-
-// static
-void FrameInput::DeleteAudioFrame(const PcmAudioFrame* frame) {
-  delete frame;
-}
-
-// static
-void FrameInput::DeleteVideoFrame(const I420VideoFrame* video_frame) {
-  delete [] video_frame->y_plane.data;
-  delete [] video_frame->u_plane.data;
-  delete [] video_frame->v_plane.data;
-  delete video_frame;
-}
 
 // The LocalFrameInput class posts all incoming frames; audio and video to the
 // main cast thread for processing.
@@ -36,9 +24,10 @@ class LocalFrameInput : public FrameInput {
        audio_sender_(audio_sender),
        video_sender_(video_sender) {}
 
-  virtual void InsertRawVideoFrame(const I420VideoFrame* video_frame,
-                                   const base::TimeTicks& capture_time,
-                                   const base::Closure callback) OVERRIDE {
+  virtual void InsertRawVideoFrame(
+      const scoped_refptr<media::VideoFrame>& video_frame,
+      const base::TimeTicks& capture_time,
+      const base::Closure& callback) OVERRIDE {
     cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
         base::Bind(&VideoSender::InsertRawVideoFrame, video_sender_,
             video_frame, capture_time, callback));
@@ -52,12 +41,12 @@ class LocalFrameInput : public FrameInput {
             video_frame, capture_time, callback));
   }
 
-  virtual void InsertRawAudioFrame(const PcmAudioFrame* audio_frame,
-                                   const base::TimeTicks& recorded_time,
-                                   const base::Closure callback) OVERRIDE {
+  virtual void InsertAudio(const AudioBus* audio_bus,
+                           const base::TimeTicks& recorded_time,
+                           const base::Closure& done_callback) OVERRIDE {
     cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
-        base::Bind(&AudioSender::InsertRawAudioFrame, audio_sender_,
-            audio_frame, recorded_time, callback));
+        base::Bind(&AudioSender::InsertAudio, audio_sender_,
+            audio_bus, recorded_time, done_callback));
   }
 
   virtual void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,

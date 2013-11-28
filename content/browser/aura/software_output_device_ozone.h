@@ -6,6 +6,8 @@
 #define CONTENT_BROWSER_AURA_SOFTWARE_OUTPUT_DEVICE_OZONE_H_
 
 #include "cc/output/software_output_device.h"
+#include "content/common/content_export.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace ui {
 class Compositor;
@@ -16,7 +18,8 @@ namespace content {
 // Ozone implementation which relies on software rendering. Ozone will present
 // an accelerated widget as a SkCanvas. SoftwareOutputDevice will then use the
 // Ozone provided canvas to draw.
-class SoftwareOutputDeviceOzone : public cc::SoftwareOutputDevice {
+class CONTENT_EXPORT SoftwareOutputDeviceOzone
+    : public cc::SoftwareOutputDevice {
  public:
   explicit SoftwareOutputDeviceOzone(ui::Compositor* compositor);
   virtual ~SoftwareOutputDeviceOzone();
@@ -27,6 +30,8 @@ class SoftwareOutputDeviceOzone : public cc::SoftwareOutputDevice {
 
  private:
   ui::Compositor* compositor_;
+
+  gfx::AcceleratedWidget realized_widget_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareOutputDeviceOzone);
 };

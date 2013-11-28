@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
 #include "chrome/browser/managed_mode/managed_users.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
@@ -21,6 +20,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/management_policy.h"
 
 class Browser;
 class GoogleServiceAuthError;
@@ -130,10 +130,6 @@ class ManagedUserService : public BrowserContextKeyedService,
                            const std::string& managed_user_id,
                            const AuthErrorCallback& callback);
 
-  // Returns a pseudo-email address for systems that expect well-formed email
-  // addresses (like Sync), even though we're not signed in.
-  static const char* GetManagedUserPseudoEmail();
-
   void set_elevated_for_testing(bool skip) {
     elevated_for_testing_ = skip;
   }
@@ -242,8 +238,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   // Each entry is a dictionary which has the timestamp of the event.
   void RecordProfileAndBrowserEventsHelper(const char* key_prefix);
 
-  base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
-
   // Owns us via the BrowserContextKeyedService mechanism.
   Profile* profile_;
 
@@ -263,6 +257,8 @@ class ManagedUserService : public BrowserContextKeyedService,
   bool did_shutdown_;
 
   URLFilterContext url_filter_context_;
+
+  base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
 };
 
 #endif  // CHROME_BROWSER_MANAGED_MODE_MANAGED_USER_SERVICE_H_

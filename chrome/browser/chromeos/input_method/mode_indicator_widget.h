@@ -9,10 +9,7 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/chromeos/input_method/delayable_widget.h"
-
-namespace gfx {
-class Rect;
-}  // namespace gfx
+#include "ui/gfx/rect.h"
 
 namespace chromeos {
 namespace input_method {
@@ -27,11 +24,12 @@ class ModeIndicatorWidget : public DelayableWidget {
 
   // Set cursor location, which is the base point to display this indicator.
   // Bacisally this indicator is displayed underneath the cursor.
-  void SetCursorLocation(const gfx::Rect& corsor_location);
+  void SetCursorBounds(const gfx::Rect& corsor_bounds);
   void SetLabelTextUtf8(const std::string& text_utf8);
 
  private:
   ModeIndicatorView* mode_view_;
+  gfx::Rect cursor_bounds_;
 
   DISALLOW_COPY_AND_ASSIGN(ModeIndicatorWidget);
 };

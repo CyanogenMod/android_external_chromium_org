@@ -10,6 +10,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/layers/delegated_frame_resource_collection.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "ui/gfx/size.h"
@@ -28,7 +29,7 @@ class DelegatedFrameResourceCollection;
 class DelegatedRendererLayer;
 }
 
-namespace WebKit {
+namespace blink {
 class WebPluginContainer;
 class WebLayer;
 }
@@ -38,9 +39,10 @@ namespace content {
 class BrowserPluginManager;
 
 class CONTENT_EXPORT BrowserPluginCompositingHelper :
-    public base::RefCounted<BrowserPluginCompositingHelper> {
+    public base::RefCounted<BrowserPluginCompositingHelper>,
+    public cc::DelegatedFrameResourceCollectionClient {
  public:
-  BrowserPluginCompositingHelper(WebKit::WebPluginContainer* container,
+  BrowserPluginCompositingHelper(blink::WebPluginContainer* container,
                                  BrowserPluginManager* manager,
                                  int instance_id,
                                  int host_routing_id);
@@ -57,6 +59,11 @@ class CONTENT_EXPORT BrowserPluginCompositingHelper :
                                 uint32 output_surface_id,
                                 int host_id);
   void UpdateVisibility(bool);
+
+  // cc::DelegatedFrameProviderClient implementation.
+  virtual void UnusedResourcesAreAvailable() OVERRIDE;
+  void SetContentsOpaque(bool);
+
  protected:
   // Friend RefCounted so that the dtor can be non-public.
   friend class base::RefCounted<BrowserPluginCompositingHelper>;
@@ -78,16 +85,18 @@ class CONTENT_EXPORT BrowserPluginCompositingHelper :
     unsigned software_frame_id;
     base::SharedMemory* shared_memory;
   };
-  ~BrowserPluginCompositingHelper();
-  void CheckSizeAndAdjustLayerBounds(const gfx::Size& new_size,
-                                     float device_scale_factor,
-                                     cc::Layer* layer);
+  virtual ~BrowserPluginCompositingHelper();
+  void CheckSizeAndAdjustLayerProperties(const gfx::Size& new_size,
+                                         float device_scale_factor,
+                                         cc::Layer* layer);
   void OnBuffersSwappedPrivate(const SwapBuffersInfo& mailbox,
                                unsigned sync_point,
                                float device_scale_factor);
   void MailboxReleased(SwapBuffersInfo mailbox,
                        unsigned sync_point,
                        bool lost_resource);
+  void SendReturnedDelegatedResources();
+
   int instance_id_;
   int host_routing_id_;
   int last_route_id_;
@@ -96,6 +105,7 @@ class CONTENT_EXPORT BrowserPluginCompositingHelper :
   bool last_mailbox_valid_;
   bool ack_pending_;
   bool software_ack_pending_;
+  bool opaque_;
   std::vector<unsigned> unacked_software_frames_;
 
   gfx::Size buffer_size_;
@@ -106,8 +116,8 @@ class CONTENT_EXPORT BrowserPluginCompositingHelper :
   scoped_refptr<cc::SolidColorLayer> background_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_layer_;
-  scoped_ptr<WebKit::WebLayer> web_layer_;
-  WebKit::WebPluginContainer* container_;
+  scoped_ptr<blink::WebLayer> web_layer_;
+  blink::WebPluginContainer* container_;
 
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 };

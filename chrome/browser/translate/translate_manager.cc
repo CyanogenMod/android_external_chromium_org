@@ -406,14 +406,9 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
   // automatically translate.  Note that in incognito mode we disable that
   // feature; the user will get an infobar, so they can control whether the
   // page's text is sent to the translate server.
-  std::string auto_target_lang;
-  if (!web_contents->GetBrowserContext()->IsOffTheRecord() &&
-      TranslatePrefs::ShouldAutoTranslate(prefs, language_code,
-          &auto_target_lang)) {
-    // We need to confirm that the saved target language is still supported.
-    // Also, GetLanguageCode will take care of removing country code if any.
-    auto_target_lang = GetLanguageCode(auto_target_lang);
-    if (IsSupportedLanguage(auto_target_lang)) {
+  if (!web_contents->GetBrowserContext()->IsOffTheRecord()) {
+    std::string auto_target_lang = GetAutoTargetLanguage(language_code, prefs);
+    if (!auto_target_lang.empty()) {
       TranslateBrowserMetrics::ReportInitiationStatus(
           TranslateBrowserMetrics::INITIATION_STATUS_AUTO_BY_CONFIG);
       TranslatePage(web_contents, language_code, auto_target_lang);
@@ -436,9 +431,10 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
 
   if (IsEnabledTranslateNewUX()) {
     language_state.SetTranslateEnabled(true);
-    if (language_state.HasLanguageChanged())
+    if (language_state.HasLanguageChanged()) {
       ShowBubble(web_contents,
                  TranslateBubbleModel::VIEW_STATE_BEFORE_TRANSLATE);
+    }
   } else {
     // Prompts the user if he/she wants the page translated.
     TranslateInfoBarDelegate::Create(
@@ -546,7 +542,7 @@ void TranslateManager::RevertTranslation(WebContents* web_contents) {
 
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(web_contents);
-  translate_tab_helper->language_state().set_current_language(
+  translate_tab_helper->language_state().SetCurrentLanguage(
       translate_tab_helper->language_state().original_language());
 }
 
@@ -721,8 +717,28 @@ void TranslateManager::ShowBubble(WebContents* web_contents,
   // The bubble is implemented only on the desktop platforms.
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
-  BrowserWindow* window = browser ? browser->window() : NULL;
-  TranslateBubbleFactory::Show(window, web_contents, view_state);
+
+  // |browser| might be NULL when testing. In this case, Show(...) should be
+  // called because the implementation for testing is used.
+  if (!browser) {
+    TranslateBubbleFactory::Show(NULL, web_contents, view_state);
+    return;
+  }
+
+  if (web_contents != browser->tab_strip_model()->GetActiveWebContents())
+    return;
+
+  // This ShowBubble function is also used for upating the existing bubble.
+  // However, with the bubble shown, any browser windows are NOT activated
+  // because the bubble takes the focus from the other widgets including the
+  // browser windows. So it is checked that |browser| is the last activated
+  // browser, not is now activated.
+  if (browser !=
+      chrome::FindLastActiveWithHostDesktopType(browser->host_desktop_type())) {
+    return;
+  }
+
+  TranslateBubbleFactory::Show(browser->window(), web_contents, view_state);
 #else
   NOTREACHED();
 #endif
@@ -731,7 +747,9 @@ void TranslateManager::ShowBubble(WebContents* web_contents,
 // static
 std::string TranslateManager::GetTargetLanguage(PrefService* prefs) {
   std::string ui_lang =
-      GetLanguageCode(g_browser_process->GetApplicationLocale());
+      TranslatePrefs::ConvertLangCodeForTranslation(
+          GetLanguageCode(g_browser_process->GetApplicationLocale()));
+
   if (IsSupportedLanguage(ui_lang))
     return ui_lang;
 
@@ -749,6 +767,22 @@ std::string TranslateManager::GetTargetLanguage(PrefService* prefs) {
     std::string lang_code = GetLanguageCode(*iter);
     if (IsSupportedLanguage(lang_code))
       return lang_code;
+  }
+  return std::string();
+}
+
+// static
+std::string TranslateManager::GetAutoTargetLanguage(
+    const std::string& original_language,
+    PrefService* prefs) {
+  std::string auto_target_lang;
+  if (TranslatePrefs::ShouldAutoTranslate(prefs, original_language,
+                                          &auto_target_lang)) {
+    // We need to confirm that the saved target language is still supported.
+    // Also, GetLanguageCode will take care of removing country code if any.
+    auto_target_lang = GetLanguageCode(auto_target_lang);
+    if (IsSupportedLanguage(auto_target_lang))
+      return auto_target_lang;
   }
   return std::string();
 }

@@ -22,6 +22,12 @@ class RtcpReceiverFeedback {
 
   virtual void OnReceivedSendReportRequest() = 0;
 
+  virtual void OnReceivedReceiverLog(
+      const RtcpReceiverLogMessage& receiver_log) = 0;
+
+  virtual void OnReceivedSenderLog(
+      const RtcpSenderLogMessage& sender_log) = 0;
+
   virtual ~RtcpReceiverFeedback() {}
 };
 
@@ -37,7 +43,8 @@ class RtcpRttFeedback {
 
 class RtcpReceiver {
  public:
-  explicit RtcpReceiver(RtcpSenderFeedback* sender_feedback,
+  explicit RtcpReceiver(scoped_refptr<CastEnvironment> cast_environment,
+                        RtcpSenderFeedback* sender_feedback,
                         RtcpReceiverFeedback* receiver_feedback,
                         RtcpRttFeedback* rtt_feedback,
                         uint32 local_ssrc);
@@ -89,6 +96,12 @@ class RtcpReceiver {
       const RtcpField* rtcp_field,
       MissingFramesAndPacketsMap* missing_frames_and_packets);
 
+  void HandleApplicationSpecificCastReceiverLog(RtcpParser* rtcp_parser);
+  void HandleApplicationSpecificCastSenderLog(RtcpParser* rtcp_parser);
+  void HandleApplicationSpecificCastReceiverEventLog(
+      RtcpParser* rtcp_parser,
+      RtcpReceiverEventLogMessages* event_log_messages);
+
   const uint32 ssrc_;
   uint32 remote_ssrc_;
 
@@ -96,6 +109,9 @@ class RtcpReceiver {
   RtcpSenderFeedback* const sender_feedback_;
   RtcpReceiverFeedback* const receiver_feedback_;
   RtcpRttFeedback* const rtt_feedback_;
+  scoped_refptr<CastEnvironment> cast_environment_;
+
+  FrameIdWrapHelper ack_frame_id_wrap_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(RtcpReceiver);
 };

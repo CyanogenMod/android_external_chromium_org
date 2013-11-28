@@ -20,27 +20,33 @@
 #include "chrome/browser/ui/autofill/test_generated_credit_card_bubble_controller.h"
 #include "chrome/browser/ui/autofill/testable_autofill_dialog_view.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/content/browser/risk/proto/fingerprint.pb.h"
 #include "components/autofill/content/browser/wallet/mock_wallet_client.h"
 #include "components/autofill/content/browser/wallet/wallet_test_util.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_personal_data_manager.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -99,11 +105,16 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
                 GetRequestContext(), this, form_data.origin),
         message_loop_runner_(runner),
         use_validation_(false),
-        weak_ptr_factory_(this) {}
+        weak_ptr_factory_(this),
+        sign_in_user_index_(0U) {}
 
   virtual ~TestAutofillDialogController() {}
 
   virtual GURL SignInUrl() const OVERRIDE {
+    return GURL(chrome::kChromeUIVersionURL);
+  }
+
+  GURL SignInContinueUrl() const {
     return GURL(content::kAboutBlankURL);
   }
 
@@ -124,7 +135,7 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
 
   virtual ValidityMessages InputsAreValid(
       DialogSection section,
-      const DetailOutputMap& inputs) OVERRIDE {
+      const FieldValueMap& inputs) OVERRIDE {
     if (!use_validation_)
       return ValidityMessages();
     return AutofillDialogControllerImpl::InputsAreValid(section, inputs);
@@ -159,7 +170,7 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   }
 
   using AutofillDialogControllerImpl::IsEditingExistingData;
-  using AutofillDialogControllerImpl::IsManuallyEditingSection;
+  using AutofillDialogControllerImpl::IsPayingWithWallet;
   using AutofillDialogControllerImpl::IsSubmitPausedOn;
   using AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData;
   using AutofillDialogControllerImpl::AccountChooserModelForTesting;
@@ -176,6 +187,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
     return &mock_wallet_client_;
   }
 
+  void set_sign_in_user_index(size_t sign_in_user_index) {
+    sign_in_user_index_ = sign_in_user_index;
+  }
+
  protected:
   virtual PersonalDataManager* GetManager() OVERRIDE {
     return &test_manager_;
@@ -185,8 +200,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
     return &mock_wallet_client_;
   }
 
-  virtual bool IsSignInContinueUrl(const GURL& url) const OVERRIDE {
-    return true;
+  virtual bool IsSignInContinueUrl(const GURL& url, size_t* user_index) const
+      OVERRIDE {
+    *user_index = sign_in_user_index_;
+    return url == SignInContinueUrl();
   }
 
  private:
@@ -208,7 +225,44 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   // Allows generation of WeakPtrs, so controller liveness can be tested.
   base::WeakPtrFactory<TestAutofillDialogController> weak_ptr_factory_;
 
+  // The user index that is assigned in IsSignInContinueUrl().
+  size_t sign_in_user_index_;
+
   DISALLOW_COPY_AND_ASSIGN(TestAutofillDialogController);
+};
+
+// This is a copy of ui_test_utils::UrlLoadObserver, except it observes
+// NAV_ENTRY_COMMITTED instead of LOAD_STOP. This is to match the notification
+// that AutofillDialogControllerImpl observes. Since NAV_ENTRY_COMMITTED comes
+// before LOAD_STOP, and the controller deletes the web contents after receiving
+// the former, we will sometimes fail to observe a LOAD_STOP.
+// TODO(estade): Should the controller observe LOAD_STOP instead?
+class NavEntryCommittedObserver : public content::WindowedNotificationObserver {
+ public:
+  NavEntryCommittedObserver(const GURL& url,
+                            const content::NotificationSource& source)
+    : WindowedNotificationObserver(content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+                                   source),
+      url_(url) {}
+
+  virtual ~NavEntryCommittedObserver() {}
+
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE {
+    content::LoadCommittedDetails* load_details =
+        content::Details<content::LoadCommittedDetails>(details).ptr();
+    if (load_details->entry->GetVirtualURL() != url_)
+      return;
+
+    WindowedNotificationObserver::Observe(type, source, details);
+  }
+
+ private:
+  GURL url_;
+
+  DISALLOW_COPY_AND_ASSIGN(NavEntryCommittedObserver);
 };
 
 }  // namespace
@@ -314,12 +368,11 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
             "</script>"
           "</body>"
         "</html>"));
-    content::WaitForLoadStop(contents);
 
     dom_message_queue_.reset(new content::DOMMessageQueue);
 
     // Triggers the onclick handler which invokes requestAutocomplete().
-    content::SimulateMouseClick(contents, 0, WebKit::WebMouseEvent::ButtonLeft);
+    content::SimulateMouseClick(contents, 0, blink::WebMouseEvent::ButtonLeft);
     ExpectDomMessage("clicked");
 
     AutofillDialogControllerImpl* controller =
@@ -478,6 +531,64 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
         &inputs[i] == &triggering_input || users_input.empty() ?
         wrapper.GetInfo(AutofillType(inputs[i].type)) :
         users_input;
+    expectations.push_back(expectation);
+  }
+
+  view->SetTextContentsOfInput(triggering_input,
+                               value.substr(0, value.size() / 2));
+  view->ActivateInput(triggering_input);
+  ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
+  controller()->DidAcceptSuggestion(string16(), 0);
+
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    EXPECT_EQ(expectations[i], view->GetTextContentsOfInput(inputs[i]));
+  }
+}
+
+// For now, no matter what, the country must always be US. See
+// http://crbug.com/247518
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
+                       FillInputFromForeignProfile) {
+  AutofillProfile full_profile(test::GetFullProfile());
+  full_profile.SetInfo(AutofillType(ADDRESS_HOME_COUNTRY),
+                       ASCIIToUTF16("France"), "en-US");
+  controller()->GetTestingManager()->AddTestingProfile(&full_profile);
+
+  const DetailInputs& inputs =
+      controller()->RequestedFieldsForSection(SECTION_SHIPPING);
+  const DetailInput& triggering_input = inputs[0];
+  string16 value = full_profile.GetRawInfo(triggering_input.type);
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  view->SetTextContentsOfInput(triggering_input,
+                               value.substr(0, value.size() / 2));
+  view->ActivateInput(triggering_input);
+
+  ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
+  controller()->DidAcceptSuggestion(string16(), 0);
+
+  // All inputs should be filled.
+  AutofillProfileWrapper wrapper(&full_profile);
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    string16 expectation =
+        AutofillType(inputs[i].type).GetStorableType() == ADDRESS_HOME_COUNTRY ?
+        ASCIIToUTF16("United States") :
+        wrapper.GetInfo(AutofillType(inputs[i].type));
+    EXPECT_EQ(expectation, view->GetTextContentsOfInput(inputs[i]));
+  }
+
+  // Now simulate some user edits and try again.
+  std::vector<string16> expectations;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    string16 users_input = i % 2 == 0 ? string16() : ASCIIToUTF16("dummy");
+    view->SetTextContentsOfInput(inputs[i], users_input);
+    // Empty inputs should be filled, others should be left alone.
+    string16 expectation =
+        &inputs[i] == &triggering_input || users_input.empty() ?
+        wrapper.GetInfo(AutofillType(inputs[i].type)) :
+        users_input;
+    if (AutofillType(inputs[i].type).GetStorableType() == ADDRESS_HOME_COUNTRY)
+      expectation = ASCIIToUTF16("United States");
+
     expectations.push_back(expectation);
   }
 
@@ -703,7 +814,13 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, LongNotifications) {
             controller()->GetTestableView()->GetSize().width());
 }
 
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocompleteEvent) {
+// http://crbug.com/318526
+#if defined(OS_MACOSX)
+#define MAYBE_AutocompleteEvent DISABLED_AutocompleteEvent
+#else
+#define MAYBE_AutocompleteEvent AutocompleteEvent
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_AutocompleteEvent) {
   AutofillDialogControllerImpl* controller =
       SetUpHtmlAndInvoke("<input autocomplete='cc-name'>");
 
@@ -717,8 +834,16 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocompleteEvent) {
   ExpectDomMessage("success");
 }
 
+// http://crbug.com/318526
+#if defined(OS_MACOSX)
+#define MAYBE_AutocompleteErrorEventReasonInvalid \
+    DISABLED_AutocompleteErrorEventReasonInvalid
+#else
+#define MAYBE_AutocompleteErrorEventReasonInvalid \
+    AutocompleteErrorEventReasonInvalid
+#endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       AutocompleteErrorEventReasonInvalid) {
+                       MAYBE_AutocompleteErrorEventReasonInvalid) {
   AutofillDialogControllerImpl* controller =
       SetUpHtmlAndInvoke("<input autocomplete='cc-name' pattern='.*zebra.*'>");
 
@@ -736,8 +861,16 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   ExpectDomMessage("error: invalid");
 }
 
+// http://crbug.com/318526
+#if defined(OS_MACOSX)
+#define MAYBE_AutocompleteErrorEventReasonCancel \
+    DISABLED_AutocompleteErrorEventReasonCancel
+#else
+#define MAYBE_AutocompleteErrorEventReasonCancel \
+    AutocompleteErrorEventReasonCancel
+#endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       AutocompleteErrorEventReasonCancel) {
+                       MAYBE_AutocompleteErrorEventReasonCancel) {
   SetUpHtmlAndInvoke("<input autocomplete='cc-name'>")->GetTestableView()->
       CancelForTesting();
   ExpectDomMessage("error: cancel");
@@ -763,55 +896,15 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, NoCvcSegfault) {
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
   controller()->set_use_validation(true);
 
-  // Set up some Autofill state.
-  CreditCard credit_card(test::GetVerifiedCreditCard());
-  controller()->GetTestingManager()->AddTestingCreditCard(&credit_card);
-
-  AutofillProfile profile(test::GetVerifiedProfile());
-  controller()->GetTestingManager()->AddTestingProfile(&profile);
-
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_CC));
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_BILLING));
-  EXPECT_FALSE(controller()->SectionIsActive(SECTION_CC_BILLING));
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_SHIPPING));
-
-  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_CC));
-  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
-  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
-
-  // Set up some Wallet state.
-  std::vector<std::string> usernames;
-  usernames.push_back("user@example.com");
-  controller()->OnUserNameFetchSuccess(usernames);
-  controller()->OnDidFetchWalletCookieValue(std::string());
-  controller()->OnDidGetWalletItems(
-      wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
-
-  ui::MenuModel* account_chooser = controller()->MenuModelForAccountChooser();
-  ASSERT_TRUE(account_chooser->IsItemCheckedAt(0));
-
-  // Check that the view's in the state we expect before starting to simulate
-  // user input.
-  EXPECT_FALSE(controller()->SectionIsActive(SECTION_CC));
-  EXPECT_FALSE(controller()->SectionIsActive(SECTION_BILLING));
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_CC_BILLING));
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_SHIPPING));
-
-  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_CC_BILLING));
-
-  // Create some valid inputted billing data.
-  const DetailInput& cc_number =
-      controller()->RequestedFieldsForSection(SECTION_CC_BILLING)[0];
-  EXPECT_EQ(CREDIT_CARD_NUMBER, cc_number.type);
   TestableAutofillDialogView* view = controller()->GetTestableView();
-  view->SetTextContentsOfInput(cc_number, ASCIIToUTF16("4111111111111111"));
 
-  // Select "Add new shipping info..." from suggestions menu.
-  ui::MenuModel* shipping_model =
-      controller()->MenuModelForSection(SECTION_SHIPPING);
-  shipping_model->ActivatedAt(shipping_model->GetItemCount() - 2);
-
-  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  {
+    // Create some valid inputted billing data.
+    const DetailInput& cc_number =
+        controller()->RequestedFieldsForSection(SECTION_CC)[0];
+    DCHECK_EQ(cc_number.type, CREDIT_CARD_NUMBER);
+    view->SetTextContentsOfInput(cc_number, ASCIIToUTF16("4111111111111111"));
+  }
 
   // Create some invalid, manually inputted shipping data.
   const DetailInput& shipping_zip =
@@ -819,35 +912,42 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
   ASSERT_EQ(ADDRESS_HOME_ZIP, shipping_zip.type);
   view->SetTextContentsOfInput(shipping_zip, ASCIIToUTF16("shipping zip"));
 
-  // Switch to using Autofill.
-  account_chooser->ActivatedAt(1);
+  // Switch to Wallet by simulating a successful server response.
+  controller()->OnDidFetchWalletCookieValue(std::string());
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
+  ASSERT_TRUE(controller()->IsPayingWithWallet());
 
-  // Check that appropriate sections are preserved and in manually editing mode
-  // (or disabled, in the case of the combined cc + billing section).
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_CC));
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_BILLING));
-  EXPECT_FALSE(controller()->SectionIsActive(SECTION_CC_BILLING));
-  EXPECT_TRUE(controller()->SectionIsActive(SECTION_SHIPPING));
+  {
+    // The valid data should be preserved.
+    const DetailInput& cc_number =
+        controller()->RequestedFieldsForSection(SECTION_CC_BILLING)[0];
+    EXPECT_EQ(cc_number.type, CREDIT_CARD_NUMBER);
+    EXPECT_EQ(ASCIIToUTF16("4111111111111111"),
+              view->GetTextContentsOfInput(cc_number));
+  }
 
-  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_CC));
-  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
-  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  // The invalid data should be dropped.
+  EXPECT_TRUE(view->GetTextContentsOfInput(shipping_zip).empty());
 
-  const DetailInput& new_cc_number =
-      controller()->RequestedFieldsForSection(SECTION_CC).front();
-  EXPECT_EQ(cc_number.type, new_cc_number.type);
-  EXPECT_EQ(ASCIIToUTF16("4111111111111111"),
-            view->GetTextContentsOfInput(new_cc_number));
+  // Switch back to Autofill.
+  ui::MenuModel* account_chooser = controller()->MenuModelForAccountChooser();
+  account_chooser->ActivatedAt(account_chooser->GetItemCount() - 1);
+  ASSERT_FALSE(controller()->IsPayingWithWallet());
 
-  EXPECT_NE(ASCIIToUTF16("shipping name"),
-            view->GetTextContentsOfInput(shipping_zip));
+  {
+    // The valid data should still be preserved when switched back.
+    const DetailInput& cc_number =
+        controller()->RequestedFieldsForSection(SECTION_CC)[0];
+    EXPECT_EQ(cc_number.type, CREDIT_CARD_NUMBER);
+    EXPECT_EQ(ASCIIToUTF16("4111111111111111"),
+              view->GetTextContentsOfInput(cc_number));
+  }
 }
 #endif  // defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
 
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
                        GeneratedCardLastFourAfterVerifyCvv) {
-  std::vector<std::string> usernames(1, "user@example.com");
-  controller()->OnUserNameFetchSuccess(usernames);
   controller()->OnDidFetchWalletCookieValue(std::string());
 
   scoped_ptr<wallet::WalletItems> wallet_items =
@@ -898,50 +998,138 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   EXPECT_EQ(last_four, test_generated_bubble_controller()->backing_card_name());
 }
 
-// See http://crbug.com/314627
-#if defined(OS_WIN)
-#define MAYBE_SignInNoCrash DISABLED_SignInNoCrash
-#else
-#define MAYBE_SignInNoCrash SignInNoCrash
-#endif
-
-// Simulates the user successfully signing in to the dialog for the first time.
-// The controller listens for nav entry commits and should not destroy the web
-// contents before its post load code runs (which would cause a crash).
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_SignInNoCrash) {
+// Simulates the user signing in to the dialog from the inline web contents.
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, SimulateSuccessfulSignIn) {
   browser()->profile()->GetPrefs()->SetBoolean(
       ::prefs::kAutofillDialogPayWithoutWallet,
       true);
 
   InitializeController();
 
-  const AccountChooserModel& account_chooser_model =
-      controller()->AccountChooserModelForTesting();
-  EXPECT_FALSE(account_chooser_model.WalletIsSelected());
-
-  ui_test_utils::UrlLoadObserver observer(
-      controller()->SignInUrl(),
-      content::NotificationService::AllSources());
-
-  controller()->SignInLinkClicked();
-  std::vector<std::string> usernames(1, "user@example.com");
-  controller()->OnUserNameFetchSuccess(usernames);
   controller()->OnDidFetchWalletCookieValue(std::string());
   controller()->OnDidGetWalletItems(
       wallet::GetTestWalletItemsWithRequiredAction(wallet::GAIA_AUTH));
 
-  TestableAutofillDialogView* view = controller()->GetTestableView();
-  EXPECT_TRUE(view->GetSignInWebContents());
-  EXPECT_TRUE(controller()->ShouldShowSignInWebView());
-  observer.Wait();
+  NavEntryCommittedObserver sign_in_page_observer(
+      controller()->SignInUrl(),
+      content::NotificationService::AllSources());
 
-  // Wallet should now be selected and Chrome shouldn't have crashed.
-  EXPECT_TRUE(account_chooser_model.WalletIsSelected());
+  // Simulate a user clicking "Sign In" (which loads dialog's web contents).
+  controller()->SignInLinkClicked();
+  EXPECT_TRUE(controller()->ShouldShowSignInWebView());
+
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  content::WebContents* sign_in_contents = view->GetSignInWebContents();
+  ASSERT_TRUE(sign_in_contents);
+
+  sign_in_page_observer.Wait();
+
+  NavEntryCommittedObserver continue_page_observer(
+      controller()->SignInContinueUrl(),
+      content::NotificationService::AllSources());
+
+  EXPECT_EQ(sign_in_contents->GetURL(), controller()->SignInUrl());
+
+  AccountChooserModel* account_chooser_model =
+      controller()->AccountChooserModelForTesting();
+  EXPECT_FALSE(account_chooser_model->WalletIsSelected());
+
+  sign_in_contents->GetController().LoadURL(
+      controller()->SignInContinueUrl(),
+      content::Referrer(),
+      content::PAGE_TRANSITION_FORM_SUBMIT,
+      std::string());
+
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  continue_page_observer.Wait();
+  content::RunAllPendingInMessageLoop();
+
+  EXPECT_FALSE(controller()->ShouldShowSignInWebView());
+
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
+
+  // Wallet should now be selected and Chrome shouldn't have crashed (which can
+  // happen if the WebContents is deleted while proccessing a nav entry commit).
+  EXPECT_TRUE(account_chooser_model->WalletIsSelected());
 }
 
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AddAccount) {
+  InitializeController();
+
+  controller()->OnDidFetchWalletCookieValue(std::string());
+  std::vector<std::string> usernames;
+  usernames.push_back("user_0@example.com");
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItemsWithUsers(usernames, 0));
+
+  // Switch to Autofill.
+  AccountChooserModel* account_chooser_model =
+      controller()->AccountChooserModelForTesting();
+  account_chooser_model->ActivatedAt(
+      account_chooser_model->GetItemCount() - 1);
+
+  NavEntryCommittedObserver sign_in_page_observer(
+      controller()->SignInUrl(),
+      content::NotificationService::AllSources());
+
+  // Simulate a user clicking "add account".
+  account_chooser_model->ActivatedAt(
+      account_chooser_model->GetItemCount() - 2);
+  EXPECT_TRUE(controller()->ShouldShowSignInWebView());
+
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  content::WebContents* sign_in_contents = view->GetSignInWebContents();
+  ASSERT_TRUE(sign_in_contents);
+
+  sign_in_page_observer.Wait();
+
+  NavEntryCommittedObserver continue_page_observer(
+      controller()->SignInContinueUrl(),
+      content::NotificationService::AllSources());
+
+  EXPECT_EQ(sign_in_contents->GetURL(), controller()->SignInUrl());
+
+  EXPECT_FALSE(account_chooser_model->WalletIsSelected());
+
+  // User signs into new account, account 3.
+  controller()->set_sign_in_user_index(3U);
+  sign_in_contents->GetController().LoadURL(
+      controller()->SignInContinueUrl(),
+      content::Referrer(),
+      content::PAGE_TRANSITION_FORM_SUBMIT,
+      std::string());
+
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  continue_page_observer.Wait();
+  content::RunAllPendingInMessageLoop();
+
+  EXPECT_FALSE(controller()->ShouldShowSignInWebView());
+  EXPECT_EQ(3U, controller()->GetTestingWalletClient()->user_index());
+
+  usernames.push_back("user_1@example.com");
+  usernames.push_back("user_2@example.com");
+  usernames.push_back("user_3@example.com");
+  usernames.push_back("user_4@example.com");
+  // Curveball: wallet items comes back with user 4 selected.
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItemsWithUsers(usernames, 4U));
+
+  EXPECT_TRUE(account_chooser_model->WalletIsSelected());
+  EXPECT_EQ(4U, account_chooser_model->GetActiveWalletAccountIndex());
+  EXPECT_EQ(4U, controller()->GetTestingWalletClient()->user_index());
+}
+
+// http://crbug.com/318526
+#if defined(OS_MACOSX)
+#define MAYBE_FillFormIncludesCVC DISABLED_FillFormIncludesCVC
+#else
+#define MAYBE_FillFormIncludesCVC FillFormIncludesCVC
+#endif
 // Verify that filling a form works correctly, including filling the CVC when
 // that is requested separately.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillFormIncludesCVC) {
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
+                       MAYBE_FillFormIncludesCVC) {
   AutofillDialogControllerImpl* controller =
       SetUpHtmlAndInvoke("<input autocomplete='cc-csc'>");
 
@@ -954,6 +1142,87 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillFormIncludesCVC) {
   view->SubmitForTesting();
   ExpectDomMessage("success");
   EXPECT_EQ("123", GetValueForHTMLFieldOfType("cc-csc"));
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AddNewClearsComboboxes) {
+  // Ensure the input under test is a combobox.
+  ASSERT_TRUE(
+      controller()->ComboboxModelForAutofillType(CREDIT_CARD_EXP_MONTH));
+
+  // Set up an expired card.
+  CreditCard card;
+  test::SetCreditCardInfo(&card, "Roy Demeo", "4111111111111111", "8", "2013");
+  card.set_origin("Chrome settings");
+  ASSERT_TRUE(card.IsVerified());
+
+  // Add the card and check that there's a menu for that section.
+  controller()->GetTestingManager()->AddTestingCreditCard(&card);
+  ASSERT_TRUE(controller()->MenuModelForSection(SECTION_CC));
+
+  // Select the invalid, suggested card from the menu.
+  controller()->MenuModelForSection(SECTION_CC)->ActivatedAt(0);
+  EXPECT_TRUE(controller()->IsEditingExistingData(SECTION_CC));
+
+  const DetailInputs& inputs =
+      controller()->RequestedFieldsForSection(SECTION_CC);
+  const DetailInput& cc_exp_month = inputs[1];
+  ASSERT_EQ(CREDIT_CARD_EXP_MONTH, cc_exp_month.type);
+
+  // Get the contents of the combobox of the credit card's expiration month.
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  base::string16 cc_exp_month_text = view->GetTextContentsOfInput(cc_exp_month);
+
+  // Select "New X..." from the suggestion menu to clear the section's inputs.
+  controller()->MenuModelForSection(SECTION_CC)->ActivatedAt(1);
+  EXPECT_FALSE(controller()->IsEditingExistingData(SECTION_CC));
+
+  // Ensure that the credit card expiration month has changed.
+  EXPECT_NE(cc_exp_month_text, view->GetTextContentsOfInput(cc_exp_month));
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, TabOpensToJustRight) {
+  ASSERT_TRUE(browser()->is_type_tabbed());
+
+  // Tabs should currently be: / rAc() \.
+  content::WebContents* dialog_invoker = controller()->GetWebContents();
+  EXPECT_EQ(dialog_invoker, GetActiveWebContents());
+
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  ASSERT_EQ(1, tab_strip->count());
+  EXPECT_EQ(0, tab_strip->GetIndexOfWebContents(dialog_invoker));
+
+  // Open a tab to about:blank in the background at the end of the tab strip.
+  chrome::AddTabAt(browser(), GURL(), -1, false);
+  // Tabs should now be: / rAc() \/ blank \.
+  EXPECT_EQ(2, tab_strip->count());
+  EXPECT_EQ(0, tab_strip->active_index());
+  EXPECT_EQ(dialog_invoker, GetActiveWebContents());
+
+  content::WebContents* blank_tab = tab_strip->GetWebContentsAt(1);
+
+  // Simulate clicking "Manage X...".
+  controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(2);
+  // Tab should now be: / rAc() \/ manage 1 \/ blank \.
+  EXPECT_EQ(3, tab_strip->count());
+  int dialog_index = tab_strip->GetIndexOfWebContents(dialog_invoker);
+  EXPECT_EQ(0, dialog_index);
+  EXPECT_EQ(1, tab_strip->active_index());
+  EXPECT_EQ(2, tab_strip->GetIndexOfWebContents(blank_tab));
+
+  content::WebContents* first_manage_tab = tab_strip->GetWebContentsAt(1);
+
+  // Re-activate the dialog's tab (like a user would have to).
+  tab_strip->ActivateTabAt(dialog_index, true);
+  EXPECT_EQ(dialog_invoker, GetActiveWebContents());
+
+  // Simulate clicking "Manage X...".
+  controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(2);
+  // Tabs should now be: / rAc() \/ manage 2 \/ manage 1 \/ blank \.
+  EXPECT_EQ(4, tab_strip->count());
+  EXPECT_EQ(0, tab_strip->GetIndexOfWebContents(dialog_invoker));
+  EXPECT_EQ(1, tab_strip->active_index());
+  EXPECT_EQ(2, tab_strip->GetIndexOfWebContents(first_manage_tab));
+  EXPECT_EQ(3, tab_strip->GetIndexOfWebContents(blank_tab));
 }
 
 }  // namespace autofill

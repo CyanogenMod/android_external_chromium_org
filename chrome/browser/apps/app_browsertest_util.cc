@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/apps/chrome_shell_window_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -37,8 +36,8 @@ void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   ExtensionBrowserTest::SetUpCommandLine(command_line);
 
   // Make event pages get suspended quicker.
-  command_line->AppendSwitchASCII(::switches::kEventPageIdleTime, "1");
-  command_line->AppendSwitchASCII(::switches::kEventPageSuspendingTime, "1");
+  command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "1");
+  command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "1");
 }
 
 // static
@@ -66,9 +65,7 @@ const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name));
   EXPECT_TRUE(extension);
 
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extension_misc::LAUNCH_NONE,
+  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
                                   NEW_WINDOW));
 
   app_loaded_observer.Wait();
@@ -93,9 +90,7 @@ const Extension* PlatformAppBrowserTest::InstallAndLaunchPlatformApp(
 
   const Extension* extension = InstallPlatformApp(name);
 
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extension_misc::LAUNCH_NONE,
+  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
                                   NEW_WINDOW));
 
   app_loaded_observer.Wait();

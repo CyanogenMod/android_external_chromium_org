@@ -56,7 +56,8 @@ const int kMinimumOverlapForInvalidOffset = 100;
 // 800, 1024, 1280, 1440, 1600 and 1920 pixel width respectively on
 // 2560 pixel width 2x density display. Please see crbug.com/233375
 // for the full list of resolutions.
-const float kUIScalesFor2x[] = {0.5f, 0.625f, 0.8f, 1.0f, 1.125f, 1.25f, 1.5f};
+const float kUIScalesFor2x[] =
+    {0.5f, 0.625f, 0.8f, 1.0f, 1.125f, 1.25f, 1.5f, 2.0f};
 const float kUIScalesFor1280[] = {0.5f, 0.625f, 0.8f, 1.0f, 1.125f };
 const float kUIScalesFor1366[] = {0.5f, 0.6f, 0.75f, 1.0f, 1.125f };
 
@@ -187,7 +188,7 @@ std::vector<float> DisplayManager::GetScalesForDisplay(
 
 // static
 float DisplayManager::GetNextUIScale(const DisplayInfo& info, bool up) {
-  float scale = info.ui_scale();
+  float scale = info.configured_ui_scale();
   std::vector<float> scales = GetScalesForDisplay(info);
   for (size_t i = 0; i < scales.size(); ++i) {
     if (ScaleComparator(scales[i])(scale)) {
@@ -380,6 +381,12 @@ void DisplayManager::SetDisplayRotation(int64 display_id,
     display_info_list.push_back(info);
   }
   AddMirrorDisplayInfoIfAny(&display_info_list);
+  if (virtual_keyboard_root_window_enabled() &&
+      display_id == non_desktop_display_.id()) {
+    DisplayInfo info = GetDisplayInfo(display_id);
+    info.set_rotation(rotation);
+    display_info_list.push_back(info);
+  }
   UpdateDisplays(display_info_list);
 }
 
@@ -395,7 +402,7 @@ void DisplayManager::SetDisplayUIScale(int64 display_id,
        iter != displays_.end(); ++iter) {
     DisplayInfo info = GetDisplayInfo(iter->id());
     if (info.id() == display_id) {
-      if (info.ui_scale() == ui_scale)
+      if (info.configured_ui_scale() == ui_scale)
         return;
       std::vector<float> scales = GetScalesForDisplay(info);
       ScaleComparator comparator(ui_scale);
@@ -403,7 +410,7 @@ void DisplayManager::SetDisplayUIScale(int64 display_id,
           scales.end()) {
         return;
       }
-      info.set_ui_scale(ui_scale);
+      info.set_configured_ui_scale(ui_scale);
     }
     display_info_list.push_back(info);
   }
@@ -453,7 +460,7 @@ void DisplayManager::RegisterDisplayProperty(
   display_info_[display_id].set_rotation(rotation);
   // Just in case the preference file was corrupted.
   if (0.5f <= ui_scale && ui_scale <= 2.0f)
-    display_info_[display_id].set_ui_scale(ui_scale);
+    display_info_[display_id].set_configured_ui_scale(ui_scale);
   if (overscan_insets)
     display_info_[display_id].SetOverscanInsets(*overscan_insets);
   if (!resolution_in_pixels.IsEmpty())
@@ -485,6 +492,8 @@ gfx::Insets DisplayManager::GetOverscanInsets(int64 display_id) const {
 void DisplayManager::OnNativeDisplaysChanged(
     const std::vector<DisplayInfo>& updated_displays) {
   if (updated_displays.empty()) {
+    VLOG(1) << "OnNativeDisplayChanged(0): # of current displays="
+            << displays_.size();
     // If the device is booted without display, or chrome is started
     // without --ash-host-window-bounds on linux desktop, use the
     // default display.
@@ -691,8 +700,14 @@ void DisplayManager::UpdateDisplays(
       removed_displays.empty()) {
     return;
   }
+  // Clear focus if the display has been removed, but don't clear focus if
+  // the destkop has been moved from one display to another
+  // (mirror -> docked, docked -> single internal).
+  bool clear_focus =
+      !removed_displays.empty() &&
+      !(removed_displays.size() == 1 && added_display_indices.size() == 1);
   if (delegate_)
-    delegate_->PreDisplayConfigurationChange(!removed_displays.empty());
+    delegate_->PreDisplayConfigurationChange(clear_focus);
 
   size_t updated_index;
   if (UpdateSecondaryDisplayBoundsForLayout(&new_displays, &updated_index) &&
@@ -837,6 +852,7 @@ void DisplayManager::AddRemoveDisplay() {
   }
   num_connected_displays_ = new_display_info_list.size();
   mirrored_display_id_ = gfx::Display::kInvalidDisplayID;
+  non_desktop_display_ = gfx::Display();
   UpdateDisplays(new_display_info_list);
 }
 
@@ -923,12 +939,15 @@ gfx::Display DisplayManager::CreateDisplayFromDisplayInfoById(int64 id) {
 
   gfx::Display new_display(display_info.id());
   gfx::Rect bounds_in_native(display_info.size_in_pixel());
+  float device_scale_factor = display_info.device_scale_factor();
+  if (device_scale_factor == 2.0f && display_info.configured_ui_scale() == 2.0f)
+    device_scale_factor = 1.0f;
 
   // Simply set the origin to (0,0).  The primary display's origin is
   // always (0,0) and the secondary display's bounds will be updated
   // in |UpdateSecondaryDisplayBoundsForLayout| called in |UpdateDisplay|.
   new_display.SetScaleAndBounds(
-      display_info.device_scale_factor(), gfx::Rect(bounds_in_native.size()));
+      device_scale_factor, gfx::Rect(bounds_in_native.size()));
   new_display.set_rotation(display_info.rotation());
   new_display.set_touch_support(display_info.touch_support());
   return new_display;

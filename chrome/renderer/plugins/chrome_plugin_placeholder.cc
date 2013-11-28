@@ -27,14 +27,14 @@
 
 using content::RenderThread;
 using content::RenderView;
-using WebKit::WebDocument;
-using WebKit::WebElement;
-using WebKit::WebFrame;
-using WebKit::WebMouseEvent;
-using WebKit::WebNode;
-using WebKit::WebPlugin;
-using WebKit::WebPluginContainer;
-using WebKit::WebPluginParams;
+using blink::WebDocument;
+using blink::WebElement;
+using blink::WebFrame;
+using blink::WebMouseEvent;
+using blink::WebNode;
+using blink::WebPlugin;
+using blink::WebPluginContainer;
+using blink::WebPluginParams;
 using webkit_glue::CppArgumentList;
 using webkit_glue::CppVariant;
 
@@ -47,8 +47,8 @@ const char ChromePluginPlaceholder::kPluginPlaceholderDataURL[] =
 
 ChromePluginPlaceholder::ChromePluginPlaceholder(
     content::RenderView* render_view,
-    WebKit::WebFrame* frame,
-    const WebKit::WebPluginParams& params,
+    blink::WebFrame* frame,
+    const blink::WebPluginParams& params,
     const std::string& html_data,
     const string16& title)
     : plugins::PluginPlaceholder(render_view,
@@ -282,7 +282,7 @@ void ChromePluginPlaceholder::PluginListChanged() {
                                           &output));
   if (output.status.value == status_->value)
     return;
-  WebPlugin* new_plugin = chrome::ChromeContentRendererClient::CreatePlugin(
+  WebPlugin* new_plugin = ChromeContentRendererClient::CreatePlugin(
       render_view(), GetFrame(), GetPluginParams(), output);
   ReplacePlugin(new_plugin);
   if (!new_plugin) {
@@ -352,7 +352,7 @@ void ChromePluginPlaceholder::ShowContextMenu(const WebMouseEvent& event) {
   g_last_active_menu = this;
 }
 
-void ChromePluginPlaceholder::BindWebFrame(WebKit::WebFrame* frame) {
+void ChromePluginPlaceholder::BindWebFrame(blink::WebFrame* frame) {
   plugins::PluginPlaceholder::BindWebFrame(frame);
   BindCallback("openAboutPlugins",
                base::Bind(&ChromePluginPlaceholder::OpenAboutPluginsCallback,

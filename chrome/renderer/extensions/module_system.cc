@@ -132,7 +132,7 @@ ModuleSystem::ModuleSystem(ChromeV8Context* context, SourceMap* source_map)
   v8::Handle<v8::Object> global(context->v8_context()->Global());
   global->SetHiddenValue(v8::String::New(kModulesField), v8::Object::New());
   global->SetHiddenValue(v8::String::New(kModuleSystem),
-                         v8::External::New(this));
+                         v8::External::New(context->isolate(), this));
 }
 
 ModuleSystem::~ModuleSystem() {
@@ -472,7 +472,7 @@ v8::Handle<v8::Value> ModuleSystem::RunString(v8::Handle<v8::String> code,
   std::string internal_name = base::StringPrintf("extensions::%s",
                                                  *v8::String::Utf8Value(name));
 
-  WebKit::WebScopedMicrotaskSuppression suppression;
+  blink::WebScopedMicrotaskSuppression suppression;
   v8::TryCatch try_catch;
   try_catch.SetCaptureMessage(true);
   v8::Handle<v8::Script> script(v8::Script::New(

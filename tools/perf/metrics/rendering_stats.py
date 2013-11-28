@@ -4,11 +4,9 @@
 
 from operator import attrgetter
 
-RENDER_PROCESS_MARKER = 'RenderProcessMarker'
-
 
 class RenderingStats(object):
-  def __init__(self, render_process_marker, timeline_markers):
+  def __init__(self, renderer_process, timeline_markers):
     """
     Utility class for extracting rendering statistics from the timeline (or
     other loggin facilities), and providing them in a common format to classes
@@ -20,13 +18,9 @@ class RenderingStats(object):
 
     All *_time values are measured in milliseconds.
     """
-    assert(len(render_process_marker) == 1)
     assert(len(timeline_markers) > 0)
-    self.renderer_process = render_process_marker[0].start_thread.parent
-    self.start = timeline_markers[0].start
-    self.end = timeline_markers[-1].start + timeline_markers[-1].duration
+    self.renderer_process = renderer_process
 
-    self.frame_count = []
     self.frame_timestamps = []
     self.frame_times = []
     self.paint_time = []
@@ -65,7 +59,6 @@ class RenderingStats(object):
         frame_count = event.args['data']['frame_count']
       else:
         frame_count = event.args['data']['screen_frame_count']
-      self.frame_count.append(frame_count)
       if frame_count > 1:
         raise ValueError, 'trace contains multi-frame render stats'
       if frame_count == 1:
@@ -107,7 +100,6 @@ class RenderingStats(object):
         frame_count = event.args['data']['frame_count']
       else:
         frame_count = event.args['data']['screen_frame_count']
-      self.frame_count.append(frame_count)
       if frame_count > 1:
         raise ValueError, 'trace contains multi-frame render stats'
       if frame_count == 1:

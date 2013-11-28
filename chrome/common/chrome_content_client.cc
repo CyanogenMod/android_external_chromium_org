@@ -148,7 +148,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
     if (skip_pdf_file_check || base::PathExists(path)) {
       content::PepperPluginInfo pdf;
       pdf.path = path;
-      pdf.name = chrome::ChromeContentClient::kPDFPluginName;
+      pdf.name = ChromeContentClient::kPDFPluginName;
       content::WebPluginMimeType pdf_mime_type(kPDFPluginMimeType,
                                                kPDFPluginExtension,
                                                kPDFPluginDescription);
@@ -159,6 +159,10 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       pdf.mime_types.push_back(pdf_mime_type);
       pdf.mime_types.push_back(print_preview_pdf_mime_type);
       pdf.permissions = kPDFPluginPermissions;
+      if (CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kOutOfProcessPdf)) {
+        pdf.is_out_of_process = true;
+      }
       plugins->push_back(pdf);
 
       skip_pdf_file_check = true;
@@ -176,7 +180,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
     if (skip_nacl_file_check || base::PathExists(path)) {
       content::PepperPluginInfo nacl;
       nacl.path = path;
-      nacl.name = chrome::ChromeContentClient::kNaClPluginName;
+      nacl.name = ChromeContentClient::kNaClPluginName;
       content::WebPluginMimeType nacl_mime_type(kNaClPluginMimeType,
                                                 kNaClPluginExtension,
                                                 kNaClPluginDescription);
@@ -330,7 +334,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
   info.name = kRemotingViewerPluginName;
   info.description = kRemotingViewerPluginDescription;
   info.path = base::FilePath::FromUTF8Unsafe(
-      chrome::ChromeContentClient::kRemotingViewerPluginPath);
+      ChromeContentClient::kRemotingViewerPluginPath);
   content::WebPluginMimeType remoting_mime_type(
       kRemotingViewerPluginMimeType,
       kRemotingViewerPluginMimeExtension,
@@ -438,8 +442,6 @@ bool GetBundledPepperFlash(content::PepperPluginInfo* plugin) {
 
 }  // namespace
 
-namespace chrome {
-
 void ChromeContentClient::SetActiveURL(const GURL& url) {
   base::debug::SetCrashKeyValue(crash_keys::kActiveURL,
                                 url.possibly_invalid_spec());
@@ -481,12 +483,12 @@ void ChromeContentClient::AddAdditionalSchemes(
     std::vector<std::string>* savable_schemes) {
   standard_schemes->push_back(extensions::kExtensionScheme);
   savable_schemes->push_back(extensions::kExtensionScheme);
-  standard_schemes->push_back(kExtensionResourceScheme);
-  savable_schemes->push_back(kExtensionResourceScheme);
+  standard_schemes->push_back(chrome::kExtensionResourceScheme);
+  savable_schemes->push_back(chrome::kExtensionResourceScheme);
   standard_schemes->push_back(chrome::kChromeSearchScheme);
   savable_schemes->push_back(chrome::kChromeSearchScheme);
 #if defined(OS_CHROMEOS)
-  standard_schemes->push_back(kCrosScheme);
+  standard_schemes->push_back(chrome::kCrosScheme);
 #endif
 }
 
@@ -562,5 +564,3 @@ std::string ChromeContentClient::GetCarbonInterposePath() const {
   return std::string(kInterposeLibraryPath);
 }
 #endif
-
-}  // namespace chrome

@@ -29,18 +29,18 @@
     'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java',
     'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java',
     'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java',
-    'public/android/java/src/org/chromium/content/browser/GenericTouchGesture.java',
     'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java',
+    'public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java',
     'public/android/java/src/org/chromium/content/browser/TouchPoint.java',
     'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java',
-    'public/android/java/src/org/chromium/content/browser/VibrationMessageFilter.java',
+    'public/android/java/src/org/chromium/content/browser/VibrationProvider.java',
     'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java',
-    'public/android/java/src/org/chromium/content/common/CommandLine.java',
     'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java',
     'public/android/java/src/org/chromium/content/common/TraceEvent.java',
    ],
   'variables': {
-    'jni_gen_package': 'content'
+    'jni_gen_package': 'content',
+    'jni_generator_ptr_type': 'long',
   },
   'includes': [ '../build/jni_generator.gypi' ],
 }

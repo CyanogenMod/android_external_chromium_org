@@ -27,7 +27,7 @@
 
 const char kDataReductionProxyOrigin[] = "https://foo.com:443/";
 const char kDataReductionProxyOriginPAC[] = "HTTPS foo.com:443;";
-const char kDataReductionProxyFallbackPAC[] = "HTTP bar.com:80;";
+const char kDataReductionProxyFallbackPAC[] = "PROXY bar.com:80;";
 
 class DataReductionProxySettingsAndroidTest
     : public ConcreteDataReductionProxySettingsTest<
@@ -87,19 +87,15 @@ TEST_F(DataReductionProxySettingsAndroidTest, TestSetProxyPac) {
   Settings()->AddDefaultProxyBypassRules();
   std::string raw_pac = Settings()->GetProxyPacScript();
   EXPECT_NE(raw_pac.find(kDataReductionProxyOriginPAC), std::string::npos);
-  EXPECT_NE(raw_pac.find(kDataReductionProxyFallbackPAC), std::string::npos);;
+  EXPECT_NE(raw_pac.find(kDataReductionProxyFallbackPAC), std::string::npos);
   std::string pac;
   base::Base64Encode(raw_pac, &pac);
   std::string expected_pac_url =
       "data:application/x-ns-proxy-autoconfig;base64," + pac;
-  // Test setting the PAC, without generating histograms.
-  Settings()->SetHasTurnedOn();
   Settings()->SetProxyConfigs(true, false);
   CheckProxyPacPref(expected_pac_url,
                     ProxyModeToString(ProxyPrefs::MODE_PAC_SCRIPT));
 
-  // Test disabling the PAC, without generating histograms.
-  Settings()->SetHasTurnedOff();
   Settings()->SetProxyConfigs(false, false);
   CheckProxyPacPref(std::string(), ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
 }

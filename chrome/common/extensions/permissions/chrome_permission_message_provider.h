@@ -39,6 +39,10 @@ class ChromePermissionMessageProvider : public PermissionMessageProvider {
   std::set<PermissionMessage> GetAPIPermissionMessages(
       const PermissionSet* permissions) const;
 
+  // Gets the permission messages for the Manifest permissions.
+  std::set<PermissionMessage> GetManifestPermissionMessages(
+      const PermissionSet* permissions) const;
+
   // Gets the permission messages for the host permissions.
   std::set<PermissionMessage> GetHostPermissionMessages(
       const PermissionSet* permissions,
@@ -47,6 +51,12 @@ class ChromePermissionMessageProvider : public PermissionMessageProvider {
   // Returns true if |new_permissions| has an elevated API privilege level
   // compared to |old_permissions|.
   bool IsAPIPrivilegeIncrease(
+      const PermissionSet* old_permissions,
+      const PermissionSet* new_permissions) const;
+
+  // Returns true if |new_permissions| has an elevated manifest permission
+  // privilege level compared to |old_permissions|.
+  bool IsManifestPermissionPrivilegeIncrease(
       const PermissionSet* old_permissions,
       const PermissionSet* new_permissions) const;
 

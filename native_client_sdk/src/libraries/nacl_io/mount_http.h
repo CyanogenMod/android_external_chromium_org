@@ -11,11 +11,7 @@
 #include "nacl_io/pepper_interface.h"
 #include "nacl_io/typed_mount_factory.h"
 
-class MountHttpMock;
-
 namespace nacl_io {
-
-class MountNode;
 
 std::string NormalizeHeaderKey(const std::string& s);
 
@@ -29,6 +25,7 @@ class MountHttp : public Mount {
   virtual Error Mkdir(const Path& path, int permissions);
   virtual Error Rmdir(const Path& path);
   virtual Error Remove(const Path& path);
+  virtual Error Rename(const Path& path, const Path& newpath);
 
   PP_Resource MakeUrlRequestInfo(const std::string& url,
                                  const char* method,
@@ -42,6 +39,8 @@ class MountHttp : public Mount {
   Error FindOrCreateDir(const Path& path, ScopedMountNode* out_node);
   Error LoadManifest(const std::string& path, char** out_manifest);
   Error ParseManifest(const char *text);
+
+  NodeMap_t* GetNodeCacheForTesting() { return &node_cache_; }
 
  private:
   // Gets the URL to fetch for |path|.
@@ -58,7 +57,6 @@ class MountHttp : public Mount {
 
   friend class TypedMountFactory<MountHttp>;
   friend class MountNodeHttp;
-  friend class ::MountHttpMock;
 };
 
 }  // namespace nacl_io

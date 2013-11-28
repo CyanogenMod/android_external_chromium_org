@@ -7,6 +7,7 @@ import json
 import unittest
 
 from compiled_file_system import CompiledFileSystem
+from extensions_paths import JSON_TEMPLATES
 from mock_file_system import MockFileSystem
 from object_store_creator import ObjectStoreCreator
 from server_instance import ServerInstance
@@ -79,7 +80,7 @@ class SamplesDataSourceTest(unittest.TestCase):
           }]
         },
       ])
-    }, relative_to='docs/templates/json')
+    }, relative_to=JSON_TEMPLATES)
 
     expected = [
       {'href': '/base/path/H1.html', 'level': 2},
@@ -111,7 +112,7 @@ class SamplesDataSourceTest(unittest.TestCase):
           'href': '/H2.html'
         }]
       }])
-    }, relative_to='docs/templates/json'))
+    }, relative_to=JSON_TEMPLATES))
 
     expected = [{
       'level': 2,
@@ -146,18 +147,18 @@ class SamplesDataSourceTest(unittest.TestCase):
     file_system = TestFileSystem({
       'apps_sidenav.json': '[{ "title": "H1" }]' ,
       'extensions_sidenav.json': '[{ "title": "H2" }]'
-    }, relative_to='docs/templates/json')
+    }, relative_to=JSON_TEMPLATES)
 
     # Ensure Cron doesn't rely on request.
     sidenav_data_source = SidenavDataSource(
         ServerInstance.ForTest(file_system), request=None)
-    sidenav_data_source.Cron()
+    sidenav_data_source.Cron().Get()
 
     # If Cron fails, apps_sidenav.json will not be cached, and the _cache_data
     # access will fail.
     # TODO(jshumway): Make a non hack version of this check.
     sidenav_data_source._cache._file_object_store.Get(
-        'docs/templates/json/apps_sidenav.json').Get()._cache_data
+        '%s/apps_sidenav.json' % JSON_TEMPLATES).Get()._cache_data
 
 
 if __name__ == '__main__':

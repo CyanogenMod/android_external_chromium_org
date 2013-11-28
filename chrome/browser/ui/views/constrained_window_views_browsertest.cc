@@ -22,7 +22,6 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ipc/ipc_message.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -34,7 +33,7 @@
 
 #if defined(USE_AURA) && defined(USE_X11)
 #include <X11/Xlib.h>
-#include "ui/events/x/events_x_utils.h"
+#include "ui/events/test/events_test_utils_x11.h"
 #endif
 
 using web_modal::WebContentsModalDialogManager;
@@ -158,7 +157,6 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, MAYBE_FocusTest) {
   scoped_ptr<TestConstrainedDialog> test_dialog1(new TestConstrainedDialog);
   views::Widget* window1 = views::Widget::CreateWindowAsFramelessChild(
       test_dialog1.get(),
-      web_contents->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window1->GetNativeView());
 
@@ -175,7 +173,6 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, MAYBE_FocusTest) {
   scoped_ptr<TestConstrainedDialog> test_dialog2(new TestConstrainedDialog);
   views::Widget* window2 = views::Widget::CreateWindowAsFramelessChild(
       test_dialog2.get(),
-      web_contents->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window2->GetNativeView());
   // Should be the same focus_manager.
@@ -249,7 +246,6 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, MAYBE_TabCloseTest) {
   scoped_ptr<TestConstrainedDialog> test_dialog(new TestConstrainedDialog);
   views::Widget* window = views::Widget::CreateWindowAsFramelessChild(
       test_dialog.get(),
-      web_contents->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window->GetNativeView());
 
@@ -285,7 +281,6 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, MAYBE_TabSwitchTest) {
   ASSERT_TRUE(modal_delegate != NULL);
   views::Widget* window = views::Widget::CreateWindowAsFramelessChild(
       test_dialog.get(),
-      web_contents->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window->GetNativeView());
   EXPECT_TRUE(window->IsVisible());
@@ -336,7 +331,6 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, TabMoveTest) {
   ASSERT_TRUE(modal_delegate != NULL);
   views::Widget* window = views::Widget::CreateWindowAsFramelessChild(
       test_dialog.get(),
-      web_contents->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window->GetNativeView());
   EXPECT_TRUE(window->IsVisible());
@@ -371,10 +365,9 @@ void ForwardKeyEvent(content::RenderViewHost* host, ui::KeyboardCode key_code) {
 #if defined(OS_WIN)
   MSG native_key_event = { NULL, WM_KEYDOWN, key_code, 0 };
 #elif defined(USE_X11)
-  XEvent x_event;
-  ui::InitXKeyEventForTesting(
-      ui::ET_KEY_PRESSED, key_code, ui::EF_NONE, &x_event);
-  XEvent* native_key_event = &x_event;
+  ui::ScopedXI2Event x_event;
+  x_event.InitKeyEvent(ui::ET_KEY_PRESSED, key_code, ui::EF_NONE);
+  XEvent* native_key_event = x_event;
 #endif
 
 #if defined(USE_AURA)

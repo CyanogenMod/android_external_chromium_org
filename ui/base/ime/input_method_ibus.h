@@ -12,8 +12,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chromeos/ime/ibus_bridge.h"
 #include "ui/base/ime/character_composer.h"
+#include "ui/base/ime/chromeos/ibus_bridge.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/input_method_base.h"
 
@@ -41,12 +41,11 @@ class UI_EXPORT InputMethodIBus
   virtual void OnBlur() OVERRIDE;
   virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                         NativeEventResult* result) OVERRIDE;
-  virtual bool DispatchKeyEvent(
-      const base::NativeEvent& native_key_event) OVERRIDE;
-  virtual bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
+  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
   virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
   virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
+  virtual void OnInputLocaleChanged() OVERRIDE;
   virtual std::string GetInputLocale() OVERRIDE;
   virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE;
   virtual bool IsActive() OVERRIDE;
@@ -59,7 +58,7 @@ class UI_EXPORT InputMethodIBus
                               CompositionText* out_composition) const;
 
   // Process a key returned from the input method.
-  virtual void ProcessKeyEventPostIME(const base::NativeEvent& native_key_event,
+  virtual void ProcessKeyEventPostIME(const ui::KeyEvent& event,
                                       uint32 ibus_state,
                                       bool handled);
 
@@ -84,6 +83,9 @@ class UI_EXPORT InputMethodIBus
 
   // Asks the client to confirm current composition text.
   void ConfirmCompositionText();
+
+  // Dispatchs a key event which does not contain a native event.
+  bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event);
 
   // Checks the availability of focused text input client and update focus
   // state.
@@ -124,22 +126,18 @@ class UI_EXPORT InputMethodIBus
 
   // chromeos::IBusInputContextHandlerInterface overrides:
   virtual void CommitText(const std::string& text) OVERRIDE;
-  virtual void ForwardKeyEvent(uint32 keyval,
-                               uint32 keycode,
-                               uint32 state) OVERRIDE;
-  virtual void ShowPreeditText() OVERRIDE;
-  virtual void HidePreeditText() OVERRIDE;
   virtual void UpdatePreeditText(const chromeos::IBusText& text,
                                  uint32 cursor_pos,
                                  bool visible) OVERRIDE;
   virtual void DeleteSurroundingText(int32 offset, uint32 length) OVERRIDE;
 
-  void ProcessKeyEventDone(uint32 id, XEvent* xevent,
+  // Hides the composition text.
+  void HidePreeditText();
+
+  // Callback function for IBusEngineHandlerInterface::ProcessKeyEvent.
+  void ProcessKeyEventDone(uint32 id, ui::KeyEvent* key_event,
                            uint32 ibus_keyval, uint32 ibus_keycode,
                            uint32 ibus_state, bool is_handled);
-
-  // Processes a caret bounds changed event.
-  void OnCaretBoundsChangedInternal(const TextInputClient* client);
 
   // All pending key events. Note: we do not own these object, we just save
   // pointers to these object so that we can abandon them when necessary.

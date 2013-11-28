@@ -90,6 +90,7 @@ class NET_EXPORT HttpNetworkSession
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;
+    size_t quic_max_packet_length;
     bool enable_user_alternate_protocol_ports;
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
   };
@@ -140,8 +141,8 @@ class NET_EXPORT HttpNetworkSession
   HttpStreamFactory* http_stream_factory() {
     return http_stream_factory_.get();
   }
-  HttpStreamFactory* websocket_handshake_stream_factory() {
-    return websocket_handshake_stream_factory_.get();
+  HttpStreamFactory* http_stream_factory_for_websocket() {
+    return http_stream_factory_for_websocket_.get();
   }
   NetLog* net_log() {
     return net_log_;
@@ -197,7 +198,7 @@ class NET_EXPORT HttpNetworkSession
   QuicStreamFactory quic_stream_factory_;
   SpdySessionPool spdy_session_pool_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
-  scoped_ptr<HttpStreamFactory> websocket_handshake_stream_factory_;
+  scoped_ptr<HttpStreamFactory> http_stream_factory_for_websocket_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;
 
   Params params_;

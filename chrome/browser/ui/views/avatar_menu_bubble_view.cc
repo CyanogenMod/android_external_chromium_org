@@ -15,6 +15,7 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -477,7 +478,7 @@ ActionButtonView::ActionButtonView(views::ButtonListener* listener,
 
 // static
 AvatarMenuBubbleView* AvatarMenuBubbleView::avatar_bubble_ = NULL;
-bool AvatarMenuBubbleView::close_on_deactivate_ = true;
+bool AvatarMenuBubbleView::close_on_deactivate_for_testing_ = true;
 
 // static
 void AvatarMenuBubbleView::ShowBubble(
@@ -493,7 +494,7 @@ void AvatarMenuBubbleView::ShowBubble(
   avatar_bubble_ = new AvatarMenuBubbleView(
       anchor_view, arrow, anchor_rect, browser);
   views::BubbleDelegateView::CreateBubble(avatar_bubble_);
-  avatar_bubble_->set_close_on_deactivate(close_on_deactivate_);
+  avatar_bubble_->set_close_on_deactivate(close_on_deactivate_for_testing_);
   avatar_bubble_->SetBackgroundColors();
   avatar_bubble_->SetAlignment(border_alignment);
   avatar_bubble_->GetWidget()->Show();
@@ -658,7 +659,7 @@ void AvatarMenuBubbleView::ButtonPressed(views::Button* sender,
     chrome::ShowSettingsSubPage(browser_, subpage);
     return;
   } else if (sender->tag() == IDS_PROFILES_PROFILE_SIGNOUT_BUTTON) {
-    avatar_menu_->BeginSignOut();
+    profiles::LockProfile(browser_->profile());
     return;
   }
 

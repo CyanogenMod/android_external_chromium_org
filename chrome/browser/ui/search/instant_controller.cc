@@ -61,11 +61,11 @@ void EnsureSearchTermsAreSet(content::WebContents* contents,
       controller->GetTransientEntry())
     return;
 
-  const content::NavigationEntry* active_entry = controller->GetActiveEntry();
+  const content::NavigationEntry* entry = controller->GetLastCommittedEntry();
   content::NavigationEntry* transient = controller->CreateNavigationEntry(
-      active_entry->GetURL(),
-      active_entry->GetReferrer(),
-      active_entry->GetTransitionType(),
+      entry->GetURL(),
+      entry->GetReferrer(),
+      entry->GetTransitionType(),
       false,
       std::string(),
       contents->GetBrowserContext());
@@ -104,20 +104,7 @@ void InstantController::SetSuggestionToPrefetch(
   }
 }
 
-void InstantController::ToggleVoiceSearch() {
-  if (instant_tab_)
-    instant_tab_->sender()->ToggleVoiceSearch();
-}
-
 void InstantController::InstantPageLoadFailed(content::WebContents* contents) {
-  if (!chrome::ShouldPreferRemoteNTPOnStartup()) {
-    // We only need to fall back on errors if we're showing the online page
-    // at startup, as otherwise we fall back correctly when trying to show
-    // a page that hasn't yet indicated that it supports the InstantExtended
-    // API.
-    return;
-  }
-
   DCHECK(IsContentsFrom(instant_tab(), contents));
 
   // Verify we're not already on a local page and that the URL precisely

@@ -66,10 +66,19 @@ const unsigned char kPngDataChunkType[4] = { 'I', 'D', 'A', 'T' };
 
 ResourceBundle* g_shared_instance_ = NULL;
 
-void InitDefaultFont() {
+void InitDefaultFontList() {
 #if defined(OS_CHROMEOS)
+  gfx::FontList::SetDefaultFontDescription(
+      l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS));
+
+  // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
+  // the font list is done.  We will no longer need SetDefaultFontDescription()
+  // after every client gets started using a FontList instead of a Font.
   gfx::PlatformFontPango::SetDefaultFontDescription(
       l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS));
+#else
+  // Use a single default font as the default font list.
+  gfx::FontList::SetDefaultFontDescription(std::string());
 #endif
 }
 
@@ -138,7 +147,7 @@ std::string ResourceBundle::InitSharedInstanceWithLocale(
   InitSharedInstance(delegate);
   g_shared_instance_->LoadCommonResources();
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFont();
+  InitDefaultFontList();
   return result;
 }
 
@@ -147,7 +156,7 @@ std::string ResourceBundle::InitSharedInstanceLocaleOnly(
     const std::string& pref_locale, Delegate* delegate) {
   InitSharedInstance(delegate);
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFont();
+  InitDefaultFontList();
   return result;
 }
 
@@ -165,7 +174,7 @@ void ResourceBundle::InitSharedInstanceWithPakFile(
     return;
   }
   g_shared_instance_->locale_resources_data_.reset(data_pack.release());
-  InitDefaultFont();
+  InitDefaultFontList();
 }
 
 // static
@@ -173,7 +182,7 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
   InitSharedInstance(NULL);
   g_shared_instance_->LoadTestResources(path, path);
 
-  InitDefaultFont();
+  InitDefaultFontList();
 }
 
 // static
@@ -289,8 +298,7 @@ std::string ResourceBundle::LoadLocaleResources(
 void ResourceBundle::LoadTestResources(const base::FilePath& path,
                                        const base::FilePath& locale_path) {
   // Use the given resource pak for both common and localized resources.
-  scoped_ptr<DataPack> data_pack(
-      new DataPack(SCALE_FACTOR_100P));
+  scoped_ptr<DataPack> data_pack(new DataPack(SCALE_FACTOR_100P));
   if (!path.empty() && data_pack->LoadFromPath(path))
     AddDataPack(data_pack.release());
 
@@ -298,8 +306,7 @@ void ResourceBundle::LoadTestResources(const base::FilePath& path,
   if (!locale_path.empty() && data_pack->LoadFromPath(locale_path)) {
     locale_resources_data_.reset(data_pack.release());
   } else {
-    locale_resources_data_.reset(
-        new DataPack(ui::SCALE_FACTOR_NONE));
+    locale_resources_data_.reset(new DataPack(ui::SCALE_FACTOR_NONE));
   }
 }
 
@@ -543,7 +550,6 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
   // On platforms other than iOS, 100P is always a supported scale factor.
   supported_scale_factors.push_back(SCALE_FACTOR_100P);
 #endif
-
 #if defined(OS_ANDROID)
   const gfx::Display display =
       gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
@@ -625,14 +631,8 @@ void ResourceBundle::LoadFontsIfNecessary() {
       large_bold_font_list_ = GetFontListFromDelegate(LargeBoldFont);
     }
 
-    if (!base_font_list_.get()) {
-#if defined(OS_CHROMEOS)
-      base_font_list_.reset(new gfx::FontList(
-          l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS)));
-#else
+    if (!base_font_list_.get())
       base_font_list_.reset(new gfx::FontList());
-#endif
-    }
 
     if (!bold_font_list_.get()) {
       bold_font_list_.reset(new gfx::FontList());

@@ -15,10 +15,10 @@
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 
 using extensions::Extension;
@@ -50,13 +50,13 @@ bool InfobarsShowFunction::RunImpl() {
 
   Browser* browser = NULL;
   content::WebContents* web_contents = NULL;
-  if (!ExtensionTabUtil::GetTabById(tab_id,
-                                    GetProfile(),
-                                    include_incognito(),
-                                    &browser,
-                                    NULL,
-                                    &web_contents,
-                                    NULL)) {
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id,
+                                                GetProfile(),
+                                                include_incognito(),
+                                                &browser,
+                                                NULL,
+                                                &web_contents,
+                                                NULL)) {
     error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id));

@@ -109,11 +109,17 @@ class SearchProvider : public AutocompleteProvider,
     return field_trial_triggered_in_session_;
   }
 
+  // This URL may be sent with suggest requests; see comments on CanSendURL().
+  void set_current_page_url(const GURL& current_page_url) {
+    current_page_url_ = current_page_url;
+  }
+
  private:
   // TODO(hfung): Remove ZeroSuggestProvider as a friend class after
   // refactoring common code to a new base class.
   friend class SearchProviderTest;
   friend class ZeroSuggestProvider;
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, CanSendURL);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInline);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineDomainClassify);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineSchemeSubstring);
@@ -412,11 +418,23 @@ class SearchProvider : public AutocompleteProvider,
   // Converts the parsed results to a set of AutocompleteMatches, |matches_|.
   void ConvertResultsToAutocompleteMatches();
 
+  // Returns an iterator to the first match in |matches_| which might
+  // be chosen as default.  If
+  // |autocomplete_result_will_reorder_for_default_match| is false,
+  // this simply means the first match; otherwise, it means the first
+  // match for which the |allowed_to_be_default_match| member is true.
+  ACMatches::const_iterator FindTopMatch(
+    bool autocomplete_result_will_reorder_for_default_match) const;
+
   // Checks if suggested relevances violate certain expected constraints.
   // See UpdateMatches() for the use and explanation of these constraints.
-  bool IsTopMatchNavigationInKeywordMode() const;
-  bool IsTopMatchScoreTooLow() const;
-  bool IsTopMatchSearchWithURLInput() const;
+  bool IsTopMatchNavigationInKeywordMode(
+      bool autocomplete_result_will_reorder_for_default_match) const;
+  bool HasKeywordDefaultMatchInKeywordMode() const;
+  bool IsTopMatchScoreTooLow(
+      bool autocomplete_result_will_reorder_for_default_match) const;
+  bool IsTopMatchSearchWithURLInput(
+      bool autocomplete_result_will_reorder_for_default_match) const;
   bool HasValidDefaultMatch(
       bool autocomplete_result_will_reorder_for_default_match) const;
 
@@ -518,6 +536,35 @@ class SearchProvider : public AutocompleteProvider,
   // Updates the value of |done_| from the internal state.
   void UpdateDone();
 
+  // Returns whether we can send the URL of the current page in any suggest
+  // requests.  Doing this requires that all the following hold:
+  // * The user has suggest enabled in their settings and is not in incognito
+  //   mode.  (Incognito disables suggest entirely.)
+  // * The current URL is HTTP, or HTTPS with the same domain as the suggest
+  //   server.  Non-HTTP[S] URLs (e.g. FTP/file URLs) may contain sensitive
+  //   information.  HTTPS URLs may also contain sensitive information, but if
+  //   they're on the same domain as the suggest server, then the relevant
+  //   entity could have already seen/logged this data.
+  // * The suggest request is sent over HTTPS.  This avoids leaking the current
+  //   page URL in world-readable network traffic.
+  // * The user's suggest provider is Google.  We might want to allow other
+  //   providers to see this data someday, but for now this has only been
+  //   implemented for Google.  Also see next bullet.
+  // * The user is OK in principle with sending URLs of current pages to their
+  //   provider.  Today, there is no explicit setting that controls this, but if
+  //   the user has tab sync enabled and tab sync is unencrypted, then they're
+  //   already sending this data to Google for sync purposes.  Thus we use this
+  //   setting as a proxy for "it's OK to send such data".  In the future,
+  //   especially if we want to support suggest providers other than Google, we
+  //   may change this to be a standalone setting or part of some explicit
+  //   general opt-in.
+  static bool CanSendURL(
+      const GURL& current_page_url,
+      const GURL& suggest_url,
+      const TemplateURL* template_url,
+      AutocompleteInput::PageClassification page_classification,
+      Profile* profile);
+
   // The amount of time to wait before sending a new suggest request after the
   // previous one.  Non-const because some unittests modify this value.
   static int kMinimumTimeBetweenSuggestQueriesMs;
@@ -586,6 +633,8 @@ class SearchProvider : public AutocompleteProvider,
   // If true, search history query suggestions will score low enough that
   // they will not be inlined.
   bool prevent_search_history_inlining_;
+
+  GURL current_page_url_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchProvider);
 };

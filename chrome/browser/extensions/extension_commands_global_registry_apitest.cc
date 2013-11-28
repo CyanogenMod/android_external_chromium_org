@@ -9,8 +9,9 @@
 #include "chrome/test/base/interactive_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
 #include "ui/base/base_window.h"
+#include "ui/base/test/ui_controls.h"
 
-#if defined(TOOLKIT_GTK)
+#if defined(OS_LINUX)
 #include <X11/Xlib.h>
 #include <X11/extensions/XTest.h>
 #include <X11/keysym.h>
@@ -23,7 +24,7 @@ namespace extensions {
 
 typedef ExtensionApiTest GlobalCommandsApiTest;
 
-#if defined(TOOLKIT_GTK)
+#if defined(OS_LINUX)
 // Send a simulated key press and release event, where |control|, |shift| or
 // |alt| indicates whether the key is struck with corresponding modifier.
 void SendNativeKeyEventToXDisplay(ui::KeyboardCode key,
@@ -64,11 +65,11 @@ void SendNativeKeyEventToXDisplay(ui::KeyboardCode key,
 
   XFlush(display);
 }
-#endif  // TOOLKIT_GTK
+#endif  // OS_LINUX
 
-#if defined(OS_WIN) || defined(TOOLKIT_GTK)
-// The feature is only fully implemented on Windows and Linux GTK+, other
-// platforms coming.
+#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+// The feature is only fully implemented on Windows and Linux, other platforms
+// coming.
 #define MAYBE_GlobalCommand GlobalCommand
 #else
 #define MAYBE_GlobalCommand DISABLED_GlobalCommand
@@ -87,7 +88,7 @@ IN_PROC_BROWSER_TEST_F(GlobalCommandsApiTest, MAYBE_GlobalCommand) {
   ASSERT_TRUE(RunExtensionTest("keybinding/global")) << message_;
   ASSERT_TRUE(catcher.GetNextResult());
 
-#if !defined(TOOLKIT_GTK)
+#if !defined(OS_LINUX)
   // Our infrastructure for sending keys expects a browser to send them to, but
   // to properly test global shortcuts you need to send them to another target.
   // So, create an incognito browser to use as a target to send the shortcuts
@@ -109,7 +110,10 @@ IN_PROC_BROWSER_TEST_F(GlobalCommandsApiTest, MAYBE_GlobalCommand) {
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
       incognito_browser, ui::VKEY_9, true, true, false, false));
 #else
-  // On Linux GTK+, our infrastructure for sending keys just synthesize keyboard
+  // Create an incognito browser to capture the focus.
+  CreateIncognitoBrowser();
+
+  // On Linux, our infrastructure for sending keys just synthesize keyboard
   // event and send them directly to the specified window, without notifying the
   // X root window. It didn't work while testing global shortcut because the
   // stuff of global shortcut on Linux need to be notified when KeyPress event
@@ -123,6 +127,39 @@ IN_PROC_BROWSER_TEST_F(GlobalCommandsApiTest, MAYBE_GlobalCommand) {
   // but it might also be because the non-global shortcuts unexpectedly
   // worked.
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+#if defined(OS_WIN)
+// The feature is only fully implemented on Windows, other platforms coming.
+#define MAYBE_GlobalDuplicatedMediaKey GlobalDuplicatedMediaKey
+#else
+#define MAYBE_GlobalDuplicatedMediaKey DISABLED_GlobalDuplicatedMediaKey
+#endif
+
+IN_PROC_BROWSER_TEST_F(GlobalCommandsApiTest, MAYBE_GlobalDuplicatedMediaKey) {
+  FeatureSwitch::ScopedOverride enable_global_commands(
+      FeatureSwitch::global_commands(), true);
+
+  ResultCatcher catcher;
+  ASSERT_TRUE(RunExtensionTest("keybinding/global_media_keys_0")) << message_;
+  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(RunExtensionTest("keybinding/global_media_keys_1")) << message_;
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  Browser* incognito_browser = CreateIncognitoBrowser();  // Ditto.
+  WindowController* controller =
+      incognito_browser->extension_window_controller();
+
+  ui_controls::SendKeyPress(controller->window()->GetNativeWindow(),
+                            ui::VKEY_MEDIA_NEXT_TRACK,
+                            false,
+                            false,
+                            false,
+                            false);
+
+  // We should get two success result.
+  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(catcher.GetNextResult());
 }
 
 }  // namespace extensions

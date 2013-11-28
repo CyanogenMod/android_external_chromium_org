@@ -15,7 +15,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/processes/processes_api_constants.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_function_util.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -34,6 +33,7 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
 
 namespace extensions {
@@ -46,7 +46,7 @@ namespace {
 #if defined(ENABLE_TASK_MANAGER)
 
 base::DictionaryValue* CreateCacheData(
-    const WebKit::WebCache::ResourceTypeStat& stat) {
+    const blink::WebCache::ResourceTypeStat& stat) {
 
   base::DictionaryValue* cache = new base::DictionaryValue();
   cache->SetDouble(keys::kCacheSize, static_cast<double>(stat.size));
@@ -169,7 +169,7 @@ base::DictionaryValue* CreateProcessFromModel(int process_id,
     result->SetDouble(keys::kSqliteMemoryKey,
         static_cast<double>(mem));
 
-  WebKit::WebCache::ResourceTypeStats cache_stats;
+  blink::WebCache::ResourceTypeStats cache_stats;
   if (model->GetWebCoreCacheStats(index, &cache_stats)) {
     result->Set(keys::kImageCacheKey,
                 CreateCacheData(cache_stats.images));
@@ -220,7 +220,7 @@ ProcessesEventRouter::ProcessesEventRouter(Profile* profile)
   model_ = TaskManager::GetInstance()->model();
   model_->AddObserver(this);
 
-  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar_.Add(this, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
       content::NotificationService::AllSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
       content::NotificationService::AllSources());
@@ -229,7 +229,7 @@ ProcessesEventRouter::ProcessesEventRouter(Profile* profile)
 
 ProcessesEventRouter::~ProcessesEventRouter() {
 #if defined(ENABLE_TASK_MANAGER)
-  registrar_.Remove(this, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar_.Remove(this, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
       content::NotificationService::AllSources());
   registrar_.Remove(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
       content::NotificationService::AllSources());
@@ -275,7 +275,7 @@ void ProcessesEventRouter::Observe(
     const content::NotificationDetails& details) {
 
   switch (type) {
-    case content::NOTIFICATION_RENDERER_PROCESS_HANG:
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG:
       ProcessHangEvent(
           content::Source<content::RenderWidgetHost>(source).ptr());
       break;

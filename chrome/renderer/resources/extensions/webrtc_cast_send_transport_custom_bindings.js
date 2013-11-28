@@ -11,21 +11,16 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
   apiFunctions.setHandleRequest('create',
-      function(track, innerTransportId, callback) {
-        webrtc.CreateCastSendTransport(track, innerTransportId, callback);
+      function(innerTransportId, track, callback) {
+        webrtc.CreateCastSendTransport(innerTransportId, track, callback);
   });
   apiFunctions.setHandleRequest('destroy',
       function(transportId) {
         webrtc.DestroyCastSendTransport(transportId);
   });
   apiFunctions.setHandleRequest('getCaps',
-      function(transportId, callback) {
-        webrtc.GetCapsCastSendTransport(transportId, callback);
-  });
-  apiFunctions.setHandleRequest('createParams',
-      function(transportId, remoteCaps, callback) {
-        webrtc.CreateParamsCastSendTransport(transportId, remoteCaps,
-                                             callback);
+      function(transportId) {
+        return webrtc.GetCapsCastSendTransport(transportId);
   });
   apiFunctions.setHandleRequest('start',
       function(transportId, params) {

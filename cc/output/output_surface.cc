@@ -212,6 +212,7 @@ void OutputSurface::DidSwapBuffers() {
   pending_swap_buffers_++;
   TRACE_EVENT1("cc", "OutputSurface::DidSwapBuffers",
                "pending_swap_buffers_", pending_swap_buffers_);
+  client_->DidSwapBuffers();
   if (frame_rate_controller_)
     frame_rate_controller_->DidSwapBuffers();
   PostCheckForRetroactiveBeginImplFrame();
@@ -334,6 +335,16 @@ void OutputSurface::SetUpContext3d() {
 
 void OutputSurface::ResetContext3d() {
   if (context_provider_.get()) {
+    while (!pending_gpu_latency_query_ids_.empty()) {
+      unsigned query_id = pending_gpu_latency_query_ids_.front();
+      pending_gpu_latency_query_ids_.pop_front();
+      context_provider_->Context3d()->deleteQueryEXT(query_id);
+    }
+    while (!available_gpu_latency_query_ids_.empty()) {
+      unsigned query_id = available_gpu_latency_query_ids_.front();
+      available_gpu_latency_query_ids_.pop_front();
+      context_provider_->Context3d()->deleteQueryEXT(query_id);
+    }
     context_provider_->SetLostContextCallback(
         ContextProvider::LostContextCallback());
     context_provider_->SetSwapBuffersCompleteCallback(
@@ -420,6 +431,8 @@ base::TimeDelta OutputSurface::GpuLatencyEstimate() {
 }
 
 void OutputSurface::UpdateAndMeasureGpuLatency() {
+  return;  // http://crbug.com/306690  tracks re-enabling latency queries.
+
   // We only care about GPU latency for surfaces that do not have a parent
   // compositor, since surfaces that do have a parent compositor can use
   // mailboxes or delegated rendering to send frames to their parent without

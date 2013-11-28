@@ -15,16 +15,19 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/signin/chrome_signin_manager_delegate.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_unittest.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/webdata/encryptor/encryptor.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_notification_tracker.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/cookies/cookie_monster.h"
@@ -55,13 +58,14 @@ BrowserContextKeyedService* SigninManagerBuild(
   service = new SigninManager(
       scoped_ptr<SigninManagerDelegate>(
           new ChromeSigninManagerDelegate(profile)));
+  service->Initialize(profile, NULL);
   return service;
 }
 
 }  // namespace
 
 
-class SigninManagerTest : public TokenServiceTestHarness {
+class SigninManagerTest : public testing::Test {
  public:
    SigninManagerTest() : manager_(NULL) {}
    virtual ~SigninManagerTest() {}
@@ -72,7 +76,10 @@ class SigninManagerTest : public TokenServiceTestHarness {
     chrome::RegisterLocalState(prefs_->registry());
     TestingBrowserProcess::GetGlobal()->SetLocalState(
         prefs_.get());
-    TokenServiceTestHarness::SetUp();
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                              FakeProfileOAuth2TokenService::Build);
+    profile_ = builder.Build();
     google_login_success_.ListenFor(
         chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
         content::Source<Profile>(profile()));
@@ -88,9 +95,15 @@ class SigninManagerTest : public TokenServiceTestHarness {
       naked_manager_.reset(NULL);
     }
     TestingBrowserProcess::GetGlobal()->SetLocalState(NULL);
-    prefs_.reset(NULL);
-    TokenServiceTestHarness::TearDown();
+
+    // Manually destroy PrefService and Profile so that they are shutdown
+    // in the correct order.  Both need to be destroyed before the
+    // |thread_bundle_| member.
+    prefs_.reset();
+    profile_.reset();
   }
+
+  TestingProfile* profile() { return profile_.get(); }
 
   // Create a signin manager as a service if other code will try to get it as
   // a PKS.
@@ -187,9 +200,10 @@ class SigninManagerTest : public TokenServiceTestHarness {
 
     EXPECT_FALSE(manager_->GetAuthenticatedUsername().empty());
 
-    // This is flow, the oauth2 credentials should already be available in
-    // the token service.
-    EXPECT_TRUE(service()->HasOAuthLoginToken());
+    ProfileOAuth2TokenService* token_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
+    EXPECT_TRUE(token_service->RefreshTokenIsAvailable(
+        manager_->GetAuthenticatedUsername()));
 
     // Should go into token service and stop.
     EXPECT_EQ(1U, google_login_success_.size());
@@ -206,9 +220,10 @@ class SigninManagerTest : public TokenServiceTestHarness {
     if (requestSent)
       SimulateValidResponseSignInWithCredentials();
 
-    // The oauth2 credentials should not be available in the token service
-    // because the email was incorrect.
-    EXPECT_FALSE(service()->HasOAuthLoginToken());
+    ProfileOAuth2TokenService* token_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
+    EXPECT_FALSE(token_service->RefreshTokenIsAvailable(
+        manager_->GetAuthenticatedUsername()));
 
     // Should go into token service and stop.
     EXPECT_EQ(0U, google_login_success_.size());
@@ -225,9 +240,11 @@ class SigninManagerTest : public TokenServiceTestHarness {
     manager_->SignOut();
   }
 
+  content::TestBrowserThreadBundle thread_bundle_;
   net::TestURLFetcherFactory factory_;
   scoped_ptr<SigninManager> naked_manager_;
   SigninManager* manager_;
+  scoped_ptr<TestingProfile> profile_;
   content::TestNotificationTracker google_login_success_;
   content::TestNotificationTracker google_login_failure_;
   std::vector<std::string> oauth_tokens_fetched_;
@@ -237,7 +254,6 @@ class SigninManagerTest : public TokenServiceTestHarness {
 
 TEST_F(SigninManagerTest, SignInWithCredentials) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   manager_->StartSignInWithCredentials(
@@ -258,7 +274,6 @@ TEST_F(SigninManagerTest, SignInWithCredentials) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsNonCanonicalEmail) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   manager_->StartSignInWithCredentials(
@@ -272,7 +287,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsNonCanonicalEmail) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsWrongEmail) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   // If the email address used to start the sign in does not match the
@@ -288,7 +302,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsWrongEmail) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsEmptyPasswordValidCookie) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   // Set a valid LSID cookie in the test cookie store.
@@ -316,7 +329,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsEmptyPasswordValidCookie) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsEmptyPasswordNoValidCookie) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   // Since the password is empty, will verify the gaia cookies first.
@@ -335,7 +347,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsEmptyPasswordNoValidCookie) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsEmptyPasswordInValidCookie) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   // Set an invalid LSID cookie in the test cookie store.
@@ -364,7 +375,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsEmptyPasswordInValidCookie) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsCallbackComplete) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   // Since the password is empty, must verify the gaia cookies first.
@@ -384,7 +394,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsCallbackComplete) {
 
 TEST_F(SigninManagerTest, SignInWithCredentialsCallbackCancel) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   // Since the password is empty, must verify the gaia cookies first.
@@ -405,7 +414,6 @@ TEST_F(SigninManagerTest, SignInWithCredentialsCallbackCancel) {
 
 TEST_F(SigninManagerTest, SignOut) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   SigninManager::OAuthTokenFetchedCallback dummy;
   manager_->StartSignInWithCredentials("0", "user@gmail.com", "password",
                                        dummy);
@@ -423,7 +431,6 @@ TEST_F(SigninManagerTest, SignOut) {
 
 TEST_F(SigninManagerTest, SignOutMidConnect) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   SigninManager::OAuthTokenFetchedCallback dummy;
   manager_->StartSignInWithCredentials("0", "user@gmail.com", "password",
                                        dummy);
@@ -438,7 +445,6 @@ TEST_F(SigninManagerTest, SignOutMidConnect) {
 
 TEST_F(SigninManagerTest, SignOutWhileProhibited) {
   CreateSigninManagerAsService();
-  manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
 
   manager_->SetAuthenticatedUsername("user@gmail.com");
@@ -530,4 +536,11 @@ TEST_F(SigninManagerTest, ExternalSignIn) {
   EXPECT_EQ("external@example.com",
             profile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
   EXPECT_EQ("external@example.com", manager_->GetAuthenticatedUsername());
+}
+
+TEST_F(SigninManagerTest, SigninNotAllowed) {
+  std::string user("user@google.com");
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername, user);
+  profile()->GetPrefs()->SetBoolean(prefs::kSigninAllowed, false);
+  CreateSigninManagerAsService();
 }

@@ -21,7 +21,6 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -41,7 +40,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
@@ -52,6 +50,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
 #include "webkit/browser/database/database_tracker.h"
@@ -64,6 +63,10 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#endif
+
+#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #endif
 
 using content::BrowserThread;
@@ -96,6 +99,13 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(Profile* real_profile)
 }
 
 void OffTheRecordProfileImpl::Init() {
+#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
+  // Because UserCloudPolicyManager is in a component, it cannot access
+  // GetOriginalProfile. Instead, we have to inject this relation here.
+  policy::UserCloudPolicyManagerFactory::RegisterForOffTheRecordBrowserContext(
+      this->GetOriginalProfile(), this);
+#endif
+
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
 
@@ -410,10 +420,6 @@ void OffTheRecordProfileImpl::OnLogin() {
 void OffTheRecordProfileImpl::InitChromeOSPreferences() {
   // The incognito profile shouldn't have Chrome OS's preferences.
   // The preferences are associated with the regular user profile.
-}
-
-bool OffTheRecordProfileImpl::IsLoginProfile() {
-  return false;
 }
 #endif  // defined(OS_CHROMEOS)
 

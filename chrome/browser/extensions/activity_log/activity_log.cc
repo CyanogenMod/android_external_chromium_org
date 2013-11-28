@@ -29,10 +29,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "third_party/re2/re2/re2.h"
 #include "url/gurl.h"
 
@@ -177,13 +177,15 @@ bool GetUrlForTabId(int tab_id,
                     bool* is_incognito) {
   content::WebContents* contents = NULL;
   Browser* browser = NULL;
-  bool found = ExtensionTabUtil::GetTabById(tab_id,
-                                            profile,
-                                            true,  // search incognito tabs too
-                                            &browser,
-                                            NULL,
-                                            &contents,
-                                            NULL);
+  bool found = extensions::ExtensionTabUtil::GetTabById(
+      tab_id,
+      profile,
+      true,  // Search incognito tabs, too.
+      &browser,
+      NULL,
+      &contents,
+      NULL);
+
   if (found) {
     *url = contents->GetURL();
     *is_incognito = browser->profile()->IsOffTheRecord();
@@ -335,8 +337,8 @@ ActivityLogFactory::ActivityLogFactory()
 }
 
 // static
-ActivityLog* ActivityLog::GetInstance(Profile* profile) {
-  return ActivityLogFactory::GetForProfile(profile);
+ActivityLog* ActivityLog::GetInstance(content::BrowserContext* context) {
+  return ActivityLogFactory::GetForBrowserContext(context);
 }
 
 ActivityLogFactory::~ActivityLogFactory() {
@@ -383,6 +385,10 @@ ActivityLog::ActivityLog(Profile* profile)
   ExtensionSystem::Get(profile_)->ready().Post(
       FROM_HERE,
       base::Bind(&ActivityLog::InitInstallTracker, base::Unretained(this)));
+
+  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  if (event_router)
+    event_router->SetEventDispatchObserver(this);
 
 // None of this should run on Android since the AL is behind ENABLE_EXTENSION
 // checks. However, UmaPolicy can't even compile on Android because it uses
@@ -602,6 +608,15 @@ void ActivityLog::OnScriptsExecuted(
       LogAction(action);
     }
   }
+}
+
+void ActivityLog::OnWillDispatchEvent(scoped_ptr<EventDispatchInfo> details) {
+  scoped_refptr<Action> action = new Action(details->extension_id,
+                                            base::Time::Now(),
+                                            Action::ACTION_API_EVENT,
+                                            details->event_name);
+  action->set_args(details->event_args.Pass());
+  LogAction(action);
 }
 
 // LOOKUP ACTIONS. -------------------------------------------------------------

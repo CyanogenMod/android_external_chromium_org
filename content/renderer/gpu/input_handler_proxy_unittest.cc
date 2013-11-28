@@ -16,14 +16,14 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/latency_info.h"
 
-using WebKit::WebActiveWheelFlingParameters;
-using WebKit::WebFloatPoint;
-using WebKit::WebFloatSize;
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseWheelEvent;
-using WebKit::WebPoint;
-using WebKit::WebSize;
+using blink::WebActiveWheelFlingParameters;
+using blink::WebFloatPoint;
+using blink::WebFloatSize;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebMouseWheelEvent;
+using blink::WebPoint;
+using blink::WebSize;
 
 namespace content {
 namespace {
@@ -79,18 +79,18 @@ class MockInputHandler : public cc::InputHandler {
 
 // A simple WebGestureCurve implementation that flings at a constant velocity
 // indefinitely.
-class FakeWebGestureCurve : public WebKit::WebGestureCurve {
+class FakeWebGestureCurve : public blink::WebGestureCurve {
  public:
-  FakeWebGestureCurve(const WebKit::WebFloatPoint& velocity,
-                      const WebKit::WebSize& cumulative_scroll)
+  FakeWebGestureCurve(const blink::WebFloatPoint& velocity,
+                      const blink::WebSize& cumulative_scroll)
       : velocity_(velocity), cumulative_scroll_(cumulative_scroll) {}
 
   virtual ~FakeWebGestureCurve() {}
 
   // Returns false if curve has finished and can no longer be applied.
-  virtual bool apply(double time, WebKit::WebGestureCurveTarget* target) {
-    WebKit::WebSize displacement(velocity_.x * time, velocity_.y * time);
-    WebKit::WebFloatSize increment(
+  virtual bool apply(double time, blink::WebGestureCurveTarget* target) {
+    blink::WebSize displacement(velocity_.x * time, velocity_.y * time);
+    blink::WebFloatSize increment(
         displacement.width - cumulative_scroll_.width,
         displacement.height - cumulative_scroll_.height);
     cumulative_scroll_ = displacement;
@@ -101,8 +101,8 @@ class FakeWebGestureCurve : public WebKit::WebGestureCurve {
   }
 
  private:
-  WebKit::WebFloatPoint velocity_;
-  WebKit::WebSize cumulative_scroll_;
+  blink::WebFloatPoint velocity_;
+  blink::WebSize cumulative_scroll_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeWebGestureCurve);
 };
@@ -118,7 +118,7 @@ class MockInputHandlerProxyClient
   MOCK_METHOD1(TransferActiveWheelFlingAnimation,
                void(const WebActiveWheelFlingParameters&));
 
-  virtual WebKit::WebGestureCurve* CreateFlingAnimationCurve(
+  virtual blink::WebGestureCurve* CreateFlingAnimationCurve(
       int deviceSource,
       const WebFloatPoint& velocity,
       const WebSize& cumulative_scroll) OVERRIDE {
@@ -876,6 +876,63 @@ TEST_F(InputHandlerProxyTest, GestureFlingAnimatesTouchscreen) {
                        testing::Property(&gfx::Vector2dF::x, testing::Lt(0))))
       .WillOnce(testing::Return(true));
   time += base::TimeDelta::FromMilliseconds(100);
+  input_handler_->Animate(time);
+
+  testing::Mock::VerifyAndClearExpectations(&mock_input_handler_);
+
+  EXPECT_CALL(mock_input_handler_, ScrollEnd());
+  gesture_.type = WebInputEvent::GestureFlingCancel;
+  EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(gesture_));
+}
+
+TEST_F(InputHandlerProxyTest, GestureFlingWithValidTimestamp) {
+  // We shouldn't send any events to the widget for this gesture.
+  expected_disposition_ = InputHandlerProxy::DID_HANDLE;
+  VERIFY_AND_RESET_MOCKS();
+
+  EXPECT_CALL(mock_input_handler_, ScrollBegin(testing::_, testing::_))
+      .WillOnce(testing::Return(cc::InputHandler::ScrollStarted));
+
+  gesture_.type = WebInputEvent::GestureScrollBegin;
+  gesture_.sourceDevice = WebGestureEvent::Touchscreen;
+  EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(gesture_));
+
+  VERIFY_AND_RESET_MOCKS();
+
+  // On the fling start, we should schedule an animation but not actually start
+  // scrolling.
+  base::TimeDelta startTimeOffset = base::TimeDelta::FromMilliseconds(10);
+  gesture_.type = WebInputEvent::GestureFlingStart;
+  WebFloatPoint fling_delta = WebFloatPoint(1000, 0);
+  WebPoint fling_point = WebPoint(7, 13);
+  WebPoint fling_global_point = WebPoint(17, 23);
+  int modifiers = 7;
+  gesture_.timeStampSeconds = startTimeOffset.InSecondsF();
+  gesture_.data.flingStart.velocityX = fling_delta.x;
+  gesture_.data.flingStart.velocityY = fling_delta.y;
+  gesture_.sourceDevice = WebGestureEvent::Touchscreen;
+  gesture_.x = fling_point.x;
+  gesture_.y = fling_point.y;
+  gesture_.globalX = fling_global_point.x;
+  gesture_.globalY = fling_global_point.y;
+  gesture_.modifiers = modifiers;
+  EXPECT_CALL(mock_input_handler_, ScheduleAnimation());
+  EXPECT_CALL(mock_input_handler_, FlingScrollBegin())
+      .WillOnce(testing::Return(cc::InputHandler::ScrollStarted));
+  EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(gesture_));
+
+  testing::Mock::VerifyAndClearExpectations(&mock_input_handler_);
+  // With a valid time stamp, the first animate call should skip start time
+  // initialization and immediately begin scroll update production. This reduces
+  // the likelihood of a hitch between the scroll preceding the fling and
+  // the first scroll generated by the fling.
+  // Scrolling should start in the -X direction.
+  EXPECT_CALL(mock_input_handler_, ScheduleAnimation());
+  EXPECT_CALL(mock_input_handler_,
+              ScrollBy(testing::_,
+                       testing::Property(&gfx::Vector2dF::x, testing::Lt(0))))
+      .WillOnce(testing::Return(true));
+  base::TimeTicks time = base::TimeTicks() + 2 * startTimeOffset;
   input_handler_->Animate(time);
 
   testing::Mock::VerifyAndClearExpectations(&mock_input_handler_);

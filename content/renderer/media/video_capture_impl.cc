@@ -10,6 +10,7 @@
 #include "content/common/media/video_capture_messages.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/limits.h"
+#include "media/base/video_frame.h"
 
 namespace content {
 
@@ -49,9 +50,9 @@ VideoCaptureImpl::VideoCaptureImpl(
       io_message_loop_proxy_(ChildProcess::current()->io_message_loop_proxy()),
       device_id_(0),
       session_id_(session_id),
-      client_buffer_weak_this_factory_(this),
       suspended_(false),
-      state_(VIDEO_CAPTURE_STATE_STOPPED) {
+      state_(VIDEO_CAPTURE_STATE_STOPPED),
+      weak_this_factory_(this) {
   DCHECK(filter);
 }
 
@@ -159,24 +160,23 @@ void VideoCaptureImpl::DoStartCaptureOnCaptureThread(
       clients_[handler] = params;
     } else if (state_ == VIDEO_CAPTURE_STATE_STOPPING) {
       clients_pending_on_restart_[handler] = params;
-      DVLOG(1) << "StartCapture: Got new resolution ("
-               << params.requested_format.width << ", "
-               << params.requested_format.height << ") "
-               << ", during stopping.";
+      DVLOG(1) << "StartCapture: Got new resolution "
+               << params.requested_format.frame_size.ToString()
+               << " during stopping.";
     } else {
-      DCHECK_EQ(params.session_id, 0);
+      // TODO(sheu): Allowing resolution change will require that all
+      // outstanding clients of a capture session support resolution change.
+      DCHECK(!params.allow_resolution_change);
       clients_[handler] = params;
       DCHECK_EQ(1ul, clients_.size());
       params_ = params;
-      params_.session_id = session_id_;
       if (params_.requested_format.frame_rate >
           media::limits::kMaxFramesPerSecond) {
         params_.requested_format.frame_rate =
             media::limits::kMaxFramesPerSecond;
       }
-      DVLOG(1) << "StartCapture: starting with first resolution ("
-               << params_.requested_format.width << ","
-               << params_.requested_format.height << ")";
+      DVLOG(1) << "StartCapture: starting with first resolution "
+               << params_.requested_format.frame_size.ToString();
 
       StartCaptureInternal();
     }
@@ -198,7 +198,7 @@ void VideoCaptureImpl::DoStopCaptureOnCaptureThread(
     DVLOG(1) << "StopCapture: No more client, stopping ...";
     StopDevice();
     client_buffers_.clear();
-    client_buffer_weak_this_factory_.InvalidateWeakPtrs();
+    weak_this_factory_.InvalidateWeakPtrs();
   }
 }
 
@@ -252,15 +252,16 @@ void VideoCaptureImpl::DoBufferReceivedOnCaptureThread(
   }
 
   last_frame_format_ = format;
-  gfx::Size size(format.width, format.height);
 
   ClientBufferMap::iterator iter = client_buffers_.find(buffer_id);
   DCHECK(iter != client_buffers_.end());
   scoped_refptr<ClientBuffer> buffer = iter->second;
   scoped_refptr<media::VideoFrame> frame =
-      media::VideoFrame::WrapExternalSharedMemory(
+      media::VideoFrame::WrapExternalPackedMemory(
           media::VideoFrame::I420,
-          size, gfx::Rect(size), size,
+          last_frame_format_.frame_size,
+          gfx::Rect(last_frame_format_.frame_size),
+          last_frame_format_.frame_size,
           reinterpret_cast<uint8*>(buffer->buffer->memory()),
           buffer->buffer_size,
           buffer->buffer->handle(),
@@ -271,7 +272,7 @@ void VideoCaptureImpl::DoBufferReceivedOnCaptureThread(
               capture_message_loop_proxy_,
               base::Bind(
                   &VideoCaptureImpl::DoClientBufferFinishedOnCaptureThread,
-                  client_buffer_weak_this_factory_.GetWeakPtr(),
+                  weak_this_factory_.GetWeakPtr(),
                   buffer_id,
                   buffer)));
 
@@ -296,7 +297,7 @@ void VideoCaptureImpl::DoStateChangedOnCaptureThread(VideoCaptureState state) {
       state_ = VIDEO_CAPTURE_STATE_STOPPED;
       DVLOG(1) << "OnStateChanged: stopped!, device_id = " << device_id_;
       client_buffers_.clear();
-      client_buffer_weak_this_factory_.InvalidateWeakPtrs();
+      weak_this_factory_.InvalidateWeakPtrs();
       if (!clients_.empty() || !clients_pending_on_restart_.empty())
         RestartCapture();
       break;
@@ -358,7 +359,7 @@ void VideoCaptureImpl::StopDevice() {
   if (state_ == VIDEO_CAPTURE_STATE_STARTED) {
     state_ = VIDEO_CAPTURE_STATE_STOPPING;
     Send(new VideoCaptureHostMsg_Stop(device_id_));
-    params_.requested_format.width = params_.requested_format.height = 0;
+    params_.requested_format.frame_size.SetSize(0, 0);
   }
 }
 
@@ -370,20 +371,19 @@ void VideoCaptureImpl::RestartCapture() {
   int height = 0;
   for (ClientInfo::iterator it = clients_.begin();
        it != clients_.end(); ++it) {
-    width = std::max(width, it->second.requested_format.width);
-    height = std::max(height, it->second.requested_format.height);
+    width = std::max(width, it->second.requested_format.frame_size.width());
+    height = std::max(height, it->second.requested_format.frame_size.height());
   }
   for (ClientInfo::iterator it = clients_pending_on_restart_.begin();
        it != clients_pending_on_restart_.end(); ) {
-    width = std::max(width, it->second.requested_format.width);
-    height = std::max(height, it->second.requested_format.height);
+    width = std::max(width, it->second.requested_format.frame_size.width());
+    height = std::max(height, it->second.requested_format.frame_size.height());
     clients_[it->first] = it->second;
     clients_pending_on_restart_.erase(it++);
   }
-  params_.requested_format.width = width;
-  params_.requested_format.height = height;
-  DVLOG(1) << "RestartCapture, " << params_.requested_format.width << ", "
-           << params_.requested_format.height;
+  params_.requested_format.frame_size.SetSize(width, height);
+  DVLOG(1) << "RestartCapture, "
+           << params_.requested_format.frame_size.ToString();
   StartCaptureInternal();
 }
 
@@ -391,7 +391,7 @@ void VideoCaptureImpl::StartCaptureInternal() {
   DCHECK(capture_message_loop_proxy_->BelongsToCurrentThread());
   DCHECK(device_id_);
 
-  Send(new VideoCaptureHostMsg_Start(device_id_, params_));
+  Send(new VideoCaptureHostMsg_Start(device_id_, session_id_, params_));
   state_ = VIDEO_CAPTURE_STATE_STARTED;
 }
 

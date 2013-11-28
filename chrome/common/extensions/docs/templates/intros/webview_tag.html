@@ -1,20 +1,3 @@
-<h1>Webview Tag</h1>
-
-<table class="intro">
-  <tr>
-    <td><strong>Samples:</strong></td>
-    <td><a href="https://github.com/GoogleChrome/chrome-app-samples/tree/master/browser">browser</a>;<br>
-    <a href="https://github.com/GoogleChrome/chrome-app-samples/tree/master/tcpserver">tcpserver</a>;<br>
-    <a href="https://github.com/GoogleChrome/chrome-app-samples/tree/master/webview">webview</a>
-    </td>
-  </tr>
-  <tr>
-    <td><strong>Learn more:</strong></td>
-    <td><a href="app_external.html">Embed Content</a>;<br>
-    <a href="https://developers.google.com/live/shows/7320022-11001/">Chrome Apps Office Hours - the WebView Control</a></td>
-  </tr>
-</table>
-
 <h2 id="usage">Usage</h2>
 
 <p>
@@ -49,7 +32,7 @@ and css styles that control the appearance of the <code>webview</code> container
 
 <p>
 If you want to control the guest content in any way,
-you can write JavaScript that listens for <a href="#events">webview events</a>
+you can write JavaScript that listens for <a href="#dom_events">webview events</a>
 and responds to those events using the <a href="#methods">webview methods</a>.
 Here's sample code in <code>app.js</code>
 with two event listeners:
@@ -137,3 +120,14 @@ onload = function() {
     or greater than the maximum.
     </p>
   </div>
+
+<h3 id="name">name</h3>
+  <div class="summary">
+    <pre>&lt;webview src="https://www.google.com/" <strong>name="google-view"</strong>>&lt;/webview></pre>
+  </div>
+  <div class="description">
+    <p>
+    This sets the guest content's <code>window.name</code> object.
+    </p>
+  </div>
+

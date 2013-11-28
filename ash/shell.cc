@@ -23,6 +23,7 @@
 #include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/display/resolution_notification_controller.h"
 #include "ash/display/screen_position_controller.h"
+#include "ash/display/virtual_keyboard_window_controller.h"
 #include "ash/drag_drop/drag_drop_controller.h"
 #include "ash/first_run/first_run_helper_impl.h"
 #include "ash/focus_cycler.h"
@@ -32,7 +33,6 @@
 #include "ash/launcher/launcher_delegate.h"
 #include "ash/launcher/launcher_item_delegate.h"
 #include "ash/launcher/launcher_item_delegate_manager.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/media_delegate.h"
@@ -42,7 +42,7 @@
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/app_list_shelf_item_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
-#include "ash/shelf/shelf_model_util.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
@@ -130,6 +130,7 @@
 #include "ash/system/chromeos/power/power_status.h"
 #include "ash/system/chromeos/power/user_activity_notifier.h"
 #include "ash/system/chromeos/power/video_activity_notifier.h"
+#include "ash/wm/sticky_keys.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -222,7 +223,7 @@ gfx::Screen* Shell::GetScreen() {
 }
 
 // static
-Shell::RootWindowList Shell::GetAllRootWindows() {
+aura::Window::Windows Shell::GetAllRootWindows() {
   return Shell::GetInstance()->display_controller()->
       GetAllRootWindows();
 }
@@ -244,8 +245,8 @@ std::vector<aura::Window*> Shell::GetContainersFromAllRootWindows(
     int container_id,
     aura::Window* priority_root) {
   std::vector<aura::Window*> containers;
-  RootWindowList root_windows = GetAllRootWindows();
-  for (RootWindowList::const_iterator it = root_windows.begin();
+  aura::Window::Windows root_windows = GetAllRootWindows();
+  for (aura::Window::Windows::const_iterator it = root_windows.begin();
        it != root_windows.end(); ++it) {
     aura::Window* container = (*it)->GetChildById(container_id);
     if (container) {
@@ -336,14 +337,12 @@ void Shell::SetDisplayWorkAreaInsets(Window* contains,
 }
 
 void Shell::OnLoginStateChanged(user::LoginStatus status) {
-  if (status != user::LOGGED_IN_NONE) {
-    // TODO(bshe): Primary root window controller may not be the controller to
-    // attach virtual keyboard. See http://crbug.com/303429
-    InitKeyboard(GetPrimaryRootWindowController());
-    GetPrimaryRootWindowController()->ActivateKeyboard(
-        keyboard_controller_.get());
-  }
   FOR_EACH_OBSERVER(ShellObserver, observers_, OnLoginStateChanged(status));
+}
+
+void Shell::OnLoginUserProfilePrepared() {
+  CreateLauncher();
+  CreateKeyboard();
 }
 
 void Shell::UpdateAfterLoginStatusChange(user::LoginStatus status) {
@@ -378,6 +377,19 @@ void Shell::CreateLauncher() {
   for (RootWindowControllerList::iterator iter = controllers.begin();
        iter != controllers.end(); ++iter)
     (*iter)->shelf()->CreateLauncher();
+}
+
+void Shell::CreateKeyboard() {
+  // TODO(bshe): Primary root window controller may not be the controller to
+  // attach virtual keyboard. See http://crbug.com/303429
+  InitKeyboard();
+  if (keyboard::IsKeyboardUsabilityExperimentEnabled()) {
+    display_controller()->virtual_keyboard_window_controller()->
+        ActivateKeyboard(keyboard_controller_.get());
+  } else {
+    GetPrimaryRootWindowController()->
+        ActivateKeyboard(keyboard_controller_.get());
+  }
 }
 
 void Shell::ShowLauncher() {
@@ -486,22 +498,21 @@ SystemTray* Shell::GetPrimarySystemTray() {
 
 LauncherDelegate* Shell::GetLauncherDelegate() {
   if (!launcher_delegate_) {
-    launcher_model_.reset(new LauncherModel);
+    shelf_model_.reset(new ShelfModel);
     // Creates LauncherItemDelegateManager before LauncherDelegate.
     launcher_item_delegate_manager_.reset(
-        new LauncherItemDelegateManager(launcher_model_.get()));
+        new LauncherItemDelegateManager(shelf_model_.get()));
 
     launcher_delegate_.reset(
-        delegate_->CreateLauncherDelegate(launcher_model_.get()));
+        delegate_->CreateLauncherDelegate(shelf_model_.get()));
     scoped_ptr<LauncherItemDelegate> controller(
         new internal::AppListShelfItemDelegate);
 
-    // Finding the launcher model's location of the app list and setting its
+    // Finding the shelf model's location of the app list and setting its
     // LauncherItemDelegate.
-    int app_list_index =
-        GetShelfItemIndexForType(ash::TYPE_APP_LIST, *launcher_model_);
+    int app_list_index = shelf_model_->GetItemIndexForType(TYPE_APP_LIST);
     DCHECK_GE(app_list_index, 0);
-    ash::LauncherID app_list_id = launcher_model_->items()[app_list_index].id;
+    LauncherID app_list_id = shelf_model_->items()[app_list_index].id;
     DCHECK(app_list_id);
     launcher_item_delegate_manager_->SetLauncherItemDelegate(
         app_list_id,
@@ -546,7 +557,6 @@ Shell::Shell(ShellDelegate* delegate)
       native_cursor_manager_(new AshNativeCursorManager),
       cursor_manager_(scoped_ptr<views::corewm::NativeCursorManager>(
           native_cursor_manager_)),
-      browser_context_(NULL),
       simulate_modal_window_open_for_testing_(false),
       is_touch_hud_projection_enabled_(false) {
   DCHECK(delegate_.get());
@@ -563,6 +573,7 @@ Shell::Shell(ShellDelegate* delegate)
           gpu::GPU_FEATURE_TYPE_PANEL_FITTING);
 
   output_configurator_->Init(!is_panel_fitting_disabled);
+  periodic_metrics_recorder_.reset(new PeriodicMetricsRecorder);
 
   base::MessagePumpX11::Current()->AddDispatcherForRootWindow(
       output_configurator());
@@ -620,6 +631,7 @@ Shell::~Shell() {
 
   // Destroy all child windows including widgets.
   display_controller_->CloseChildWindows();
+  display_controller_->CloseNonDesktopDisplay();
 
   // Destroy SystemTrayNotifier after destroying SystemTray as TrayItems
   // needs to remove observers from it.
@@ -644,10 +656,10 @@ Shell::~Shell() {
   user_action_client_.reset();
   visibility_controller_.reset();
   launcher_delegate_.reset();
-  // |launcher_item_delegate_manager_| observes |launcher_model_|. It must be
-  // destroyed before |launcher_model_| is destroyed.
+  // |launcher_item_delegate_manager_| observes |shelf_model_|. It must be
+  // destroyed before |shelf_model_| is destroyed.
   launcher_item_delegate_manager_.reset();
-  launcher_model_.reset();
+  shelf_model_.reset();
   video_detector_.reset();
 
   power_button_controller_.reset();
@@ -694,7 +706,7 @@ void Shell::Init() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
   delegate_->PreInit();
-  if (command_line->HasSwitch(keyboard::switches::kKeyboardUsabilityTest)) {
+  if (keyboard::IsKeyboardUsabilityExperimentEnabled()) {
     display_manager_->SetSecondDisplayMode(
         internal::DisplayManager::VIRTUAL_KEYBOARD);
   }
@@ -768,6 +780,13 @@ void Shell::Init() {
   event_rewriter_filter_.reset(new internal::EventRewriterEventFilter);
   AddPreTargetHandler(event_rewriter_filter_.get());
 
+#if defined(OS_CHROMEOS)
+  // The StickyKeys event filter also rewrites events and must be added
+  // before observers, but after the EventRewriterEventFilter.
+  sticky_keys_.reset(new StickyKeys);
+  AddPreTargetHandler(sticky_keys_.get());
+#endif
+
   // UserActivityDetector passes events to observers, so let them get
   // rewritten first.
   user_activity_detector_.reset(new UserActivityDetector);
@@ -778,7 +797,7 @@ void Shell::Init() {
   AddShellObserver(overlay_filter_.get());
 
   input_method_filter_.reset(new views::corewm::InputMethodEventFilter(
-      root_window->GetDispatcher()->GetAcceleratedWidget()));
+      root_window->GetDispatcher()->host()->GetAcceleratedWidget()));
   AddPreTargetHandler(input_method_filter_.get());
 
   accelerator_filter_.reset(new internal::AcceleratorFilter);
@@ -885,12 +904,6 @@ void Shell::Init() {
     cursor_manager_.HideCursor();
   cursor_manager_.SetCursor(ui::kCursorPointer);
 
-  if (!cursor_manager_.IsCursorVisible()) {
-    // Cursor might have been hidden by something other than chrome.
-    // Let the first mouse event show the cursor.
-    env_filter_->set_cursor_hidden_by_filter(true);
-  }
-
 #if defined(OS_CHROMEOS)
   // Set accelerator controller delegates.
   accelerator_controller_->SetBrightnessControlDelegate(
@@ -916,7 +929,7 @@ void Shell::Init() {
                  weak_display_manager_factory_->GetWeakPtr()));
 }
 
-void Shell::InitKeyboard(internal::RootWindowController* root) {
+void Shell::InitKeyboard() {
   if (keyboard::IsKeyboardEnabled()) {
     if (keyboard_controller_.get()) {
       RootWindowControllerList controllers = GetAllRootWindowControllers();
@@ -932,7 +945,7 @@ void Shell::InitKeyboard(internal::RootWindowController* root) {
   }
 }
 
-void Shell::InitRootWindow(aura::RootWindow* root_window) {
+void Shell::InitRootWindow(aura::Window* root_window) {
   DCHECK(activation_client_);
   DCHECK(visibility_controller_.get());
   DCHECK(drag_drop_controller_.get());
@@ -980,7 +993,7 @@ bool Shell::CanAcceptEvent(const ui::Event& event) {
 }
 
 ui::EventTarget* Shell::GetParentTarget() {
-  return NULL;
+  return aura::Env::GetInstance();
 }
 
 void Shell::OnEvent(ui::Event* event) {

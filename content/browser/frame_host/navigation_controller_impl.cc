@@ -17,7 +17,7 @@
 #include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
-#include "content/browser/frame_host/web_contents_screenshot_manager.h"
+#include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"  // Temporary
 #include "content/browser/site_instance_impl.h"
 #include "content/common/view_messages.h"
@@ -209,7 +209,7 @@ NavigationControllerImpl::NavigationControllerImpl(
       is_initial_navigation_(true),
       pending_reload_(NO_RELOAD),
       get_timestamp_callback_(base::Bind(&base::Time::Now)),
-      screenshot_manager_(new WebContentsScreenshotManager(this)) {
+      screenshot_manager_(new NavigationEntryScreenshotManager(this)) {
   DCHECK(browser_context_);
 }
 
@@ -505,9 +505,9 @@ void NavigationControllerImpl::TakeScreenshot() {
 }
 
 void NavigationControllerImpl::SetScreenshotManager(
-    WebContentsScreenshotManager* manager) {
+    NavigationEntryScreenshotManager* manager) {
   screenshot_manager_.reset(manager ? manager :
-                            new WebContentsScreenshotManager(this));
+                            new NavigationEntryScreenshotManager(this));
 }
 
 bool NavigationControllerImpl::CanGoBack() const {
@@ -687,6 +687,8 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
           params.is_renderer_initiated,
           params.extra_headers,
           browser_context_));
+  if (params.frame_tree_node_id != -1)
+    entry->set_frame_tree_node_id(params.frame_tree_node_id);
   if (params.redirect_chain.size() > 0)
     entry->set_redirect_chain(params.redirect_chain);
   if (params.should_replace_current_entry)
@@ -966,16 +968,6 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
   return NAVIGATION_TYPE_EXISTING_PAGE;
 }
 
-bool NavigationControllerImpl::IsRedirect(
-  const ViewHostMsg_FrameNavigate_Params& params) {
-  // For main frame transition, we judge by params.transition.
-  // Otherwise, by params.redirects.
-  if (PageTransitionIsMainFrame(params.transition)) {
-    return PageTransitionIsRedirect(params.transition);
-  }
-  return params.redirects.size() > 1;
-}
-
 void NavigationControllerImpl::RendererDidNavigateToNewPage(
     const ViewHostMsg_FrameNavigate_Params& params, bool replace_entry) {
   NavigationEntryImpl* new_entry;
@@ -1239,7 +1231,7 @@ void NavigationControllerImpl::CopyStateFrom(
 void NavigationControllerImpl::CopyStateFromAndPrune(
     NavigationController* temp) {
   // It is up to callers to check the invariants before calling this.
-  CHECK(CanPruneAllButVisible());
+  CHECK(CanPruneAllButLastCommitted());
 
   NavigationControllerImpl* source =
       static_cast<NavigationControllerImpl*>(temp);
@@ -1256,7 +1248,7 @@ void NavigationControllerImpl::CopyStateFromAndPrune(
       delegate_->GetMaxPageIDForSiteInstance(site_instance.get());
 
   // Remove all the entries leaving the active entry.
-  PruneAllButVisibleInternal();
+  PruneAllButLastCommittedInternal();
 
   // We now have one entry, possibly with a new pending entry.  Ensure that
   // adding the entries from source won't put us over the limit.
@@ -1293,7 +1285,7 @@ void NavigationControllerImpl::CopyStateFromAndPrune(
   }
 }
 
-bool NavigationControllerImpl::CanPruneAllButVisible() {
+bool NavigationControllerImpl::CanPruneAllButLastCommitted() {
   // If there is no last committed entry, we cannot prune.  Even if there is a
   // pending entry, it may not commit, leaving this WebContents blank, despite
   // possibly giving it new entries via CopyStateFromAndPrune.
@@ -1314,8 +1306,8 @@ bool NavigationControllerImpl::CanPruneAllButVisible() {
   return true;
 }
 
-void NavigationControllerImpl::PruneAllButVisible() {
-  PruneAllButVisibleInternal();
+void NavigationControllerImpl::PruneAllButLastCommitted() {
+  PruneAllButLastCommittedInternal();
 
   // We should still have a last committed entry.
   DCHECK_NE(-1, last_committed_entry_index_);
@@ -1331,9 +1323,9 @@ void NavigationControllerImpl::PruneAllButVisible() {
       entry->site_instance(), 0, entry->GetPageID());
 }
 
-void NavigationControllerImpl::PruneAllButVisibleInternal() {
+void NavigationControllerImpl::PruneAllButLastCommittedInternal() {
   // It is up to callers to check the invariants before calling this.
-  CHECK(CanPruneAllButVisible());
+  CHECK(CanPruneAllButLastCommitted());
 
   // Erase all entries but the last committed entry.  There may still be a
   // new pending entry after this.

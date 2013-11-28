@@ -104,9 +104,6 @@ class SyncSessionTest : public testing::Test,
     FailControllerInvocationIfDisabled(
         "OnReceivedClientInvalidationHintBufferSize");
   }
-  virtual void OnShouldStopSyncingPermanently() OVERRIDE {
-    FailControllerInvocationIfDisabled("OnShouldStopSyncingPermanently");
-  }
   virtual void OnSyncProtocolError(
       const sessions::SyncSessionSnapshot& snapshot) OVERRIDE {
     FailControllerInvocationIfDisabled("SyncProtocolError");
@@ -149,8 +146,6 @@ class SyncSessionTest : public testing::Test,
 };
 
 TEST_F(SyncSessionTest, MoreToDownloadIfDownloadFailed) {
-  status()->set_updates_request_types(ParamsMeaningAllEnabledTypes());
-
   status()->set_last_download_updates_result(NETWORK_IO_ERROR);
 
   // When DownloadUpdatesCommand fails, these should be false.
@@ -159,8 +154,6 @@ TEST_F(SyncSessionTest, MoreToDownloadIfDownloadFailed) {
 }
 
 TEST_F(SyncSessionTest, MoreToDownloadIfGotChangesRemaining) {
-  status()->set_updates_request_types(ParamsMeaningAllEnabledTypes());
-
   // When the server returns changes_remaining, that means there's
   // more to download.
   status()->set_last_download_updates_result(SYNCER_OK);
@@ -171,8 +164,6 @@ TEST_F(SyncSessionTest, MoreToDownloadIfGotChangesRemaining) {
 }
 
 TEST_F(SyncSessionTest, MoreToDownloadIfGotNoChangesRemaining) {
-  status()->set_updates_request_types(ParamsMeaningAllEnabledTypes());
-
   status()->set_last_download_updates_result(SYNCER_OK);
   status()->mutable_updates_response()->mutable_get_updates()
       ->set_changes_remaining(0);

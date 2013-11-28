@@ -28,7 +28,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/platform_util.h"
@@ -38,11 +37,8 @@
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/api/developer_private.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -52,10 +48,14 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/management_policy.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
+#include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "extensions/common/switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -123,18 +123,6 @@ GURL ToDataURL(const base::FilePath& path, developer_private::ItemType type) {
     return GetDefaultImageURL(type);
 
   return GetImageURLFromData(contents);
-}
-
-std::vector<base::FilePath> ListFolder(const base::FilePath path) {
-  base::FileEnumerator files(path, false,
-      base::FileEnumerator::DIRECTORIES | base::FileEnumerator::FILES);
-  std::vector<base::FilePath> paths;
-
-  for (base::FilePath current_path = files.Next(); !current_path.empty();
-       current_path = files.Next()) {
-    paths.push_back(current_path);
-  }
-  return paths;
 }
 
 bool ValidateFolderName(const base::FilePath::StringType& name) {
@@ -485,7 +473,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
 
   ItemInspectViewList result;
   // Get the extension process's active views.
-  ExtensionProcessManager* process_manager =
+  extensions::ProcessManager* process_manager =
       ExtensionSystem::Get(GetProfile())->process_manager();
   GetInspectablePagesForExtensionProcess(
       extension,
@@ -716,18 +704,24 @@ bool DeveloperPrivateEnableFunction::RunImpl() {
   std::string extension_id = params->item_id;
 
   ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
-  ManagementPolicy* management_policy = system->management_policy();
+  ManagementPolicy* policy = system->management_policy();
   ExtensionService* service = GetProfile()->GetExtensionService();
 
   const Extension* extension = service->GetInstalledExtension(extension_id);
-  if (!extension ||
-      !management_policy->UserMayModifySettings(extension, NULL)) {
-    LOG(ERROR) << "Attempt to enable an extension that is non-usermanagable "
-               "was made. Extension id: " << extension_id.c_str();
+  if (!extension) {
+    LOG(ERROR) << "Did not find extension with id " << extension_id;
+    return false;
+  }
+  bool enable = params->enable;
+  if (!policy->UserMayModifySettings(extension, NULL) ||
+      (!enable && policy->MustRemainEnabled(extension, NULL)) ||
+      (enable && policy->MustRemainDisabled(extension, NULL, NULL))) {
+    LOG(ERROR) << "Attempt to change enable state denied by management policy. "
+               << "Extension id: " << extension_id.c_str();
     return false;
   }
 
-  if (params->enable) {
+  if (enable) {
     ExtensionPrefs* prefs = service->extension_prefs();
     if (prefs->DidExtensionEscalatePermissions(extension_id)) {
       ShellWindowRegistry* registry = ShellWindowRegistry::Get(GetProfile());
@@ -968,7 +962,7 @@ bool DeveloperPrivateExportSyncfsFolderToLocalfsFunction::RunImpl() {
   base::FilePath::StringType project_name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &project_name));
   if (!ValidateFolderName(project_name)) {
-    DLOG(INFO) << "Invalid project_name : [" << project_name << "]";
+    DVLOG(0) << "Invalid project_name : [" << project_name << "]";
     return false;
   }
 
@@ -1131,7 +1125,7 @@ bool DeveloperPrivateLoadProjectFunction::RunImpl() {
   base::FilePath::StringType project_name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &project_name));
   if (!ValidateFolderName(project_name)) {
-    DLOG(INFO) << "Invalid project_name : [" << project_name << "]";
+    DVLOG(0) << "Invalid project_name : [" << project_name << "]";
     return false;
   }
 

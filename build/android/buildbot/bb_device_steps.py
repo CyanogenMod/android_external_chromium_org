@@ -141,6 +141,8 @@ def RunTestSuites(options, suites):
     args.append('--release')
   if options.asan:
     args.append('--tool=asan')
+  if options.gtest_filter:
+    args.append('--gtest-filter=%s' % options.gtest_filter)
   for suite in suites:
     bb_annotations.PrintNamedStep(suite)
     cmd = ['build/android/test_runner.py', 'gtest', '-s', suite] + args
@@ -153,10 +155,11 @@ def RunChromeDriverTests(options):
   """Run all the steps for running chromedriver tests."""
   bb_annotations.PrintNamedStep('chromedriver_annotation')
   RunCmd(['chrome/test/chromedriver/run_buildbot_steps.py',
-          '--android-packages=%s,%s,%s' %
-          (constants.PACKAGE_INFO['chromium_test_shell'].package,
-           constants.PACKAGE_INFO['chrome_stable'].package,
-           constants.PACKAGE_INFO['chrome_beta'].package),
+          '--android-packages=%s,%s,%s,%s' %
+          ('chromium_test_shell',
+           'chrome_stable',
+           'chrome_beta',
+           'chromedriver_webview_shell'),
           '--revision=%s' % _GetRevision(options),
           '--update-log'])
 
@@ -312,7 +315,6 @@ def RunWebkitLayoutTests(options):
     RunCmd([os.path.join(SLAVE_SCRIPTS_DIR, 'chromium',
                          'archive_layout_test_results.py'),
             '--results-dir', '../../layout-test-results',
-            '--build-dir', CHROME_OUT_DIR,
             '--build-number', build_number,
             '--builder-name', builder_name,
             '--gs-bucket', gs_bucket],
@@ -510,11 +512,8 @@ def LogcatDump(options):
   # Print logcat, kill logcat monitor
   bb_annotations.PrintNamedStep('logcat_dump')
   logcat_file = os.path.join(CHROME_OUT_DIR, options.target, 'full_log')
-  with open(logcat_file, 'w') as f:
-    RunCmd([
-        os.path.join(CHROME_SRC_DIR, 'build', 'android',
-                     'adb_logcat_printer.py'),
-        LOGCAT_DIR], stdout=f)
+  RunCmd([SrcPath('build' , 'android', 'adb_logcat_printer.py'),
+          '--output-path', logcat_file, LOGCAT_DIR])
   RunCmd(['cat', logcat_file])
 
 
@@ -567,6 +566,8 @@ def GetDeviceStepsOptParser():
                     action='append',
                     help=('Run a test suite. Test suites: "%s"' %
                           '", "'.join(VALID_TESTS)))
+  parser.add_option('--gtest-filter',
+                    help='Filter for running a subset of tests of a gtest test')
   parser.add_option('--asan', action='store_true', help='Run tests with asan.')
   parser.add_option('--install', metavar='<apk name>',
                     help='Install an apk by name')

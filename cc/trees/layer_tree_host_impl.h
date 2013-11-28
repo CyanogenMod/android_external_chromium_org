@@ -17,6 +17,7 @@
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/base/cc_export.h"
+#include "cc/debug/micro_benchmark_controller_impl.h"
 #include "cc/input/input_handler.h"
 #include "cc/input/layer_scroll_offset_delegate.h"
 #include "cc/input/top_controls_manager_client.h"
@@ -58,6 +59,7 @@ struct RendererCapabilities;
 class LayerTreeHostImplClient {
  public:
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
+  virtual void DidSwapBuffersOnImplThread() = 0;
   virtual void OnSwapBuffersCompleteOnImplThread() = 0;
   virtual void BeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
@@ -79,6 +81,7 @@ class LayerTreeHostImplClient {
   virtual void RenewTreePriority() = 0;
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay) = 0;
   virtual void DidActivatePendingTree() = 0;
+  virtual void DidManageTiles() = 0;
 
  protected:
   virtual ~LayerTreeHostImplClient() {}
@@ -210,7 +213,6 @@ class CC_EXPORT LayerTreeHostImpl
   virtual gfx::Rect DeviceViewport() const OVERRIDE;
   virtual gfx::Rect DeviceClip() const OVERRIDE;
   virtual void SetFullRootLayerDamage() OVERRIDE;
-  virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE;
 
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE;
@@ -227,6 +229,7 @@ class CC_EXPORT LayerTreeHostImpl
       gfx::Rect clip,
       bool valid_for_tile_management) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void DidSwapBuffers() OVERRIDE;
   virtual void OnSwapBuffersComplete() OVERRIDE;
   virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE;
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
@@ -407,6 +410,10 @@ class CC_EXPORT LayerTreeHostImpl
     gfx::Size size;
     bool opaque;
   };
+
+  void ScheduleMicroBenchmark(scoped_ptr<MicroBenchmarkImpl> benchmark);
+
+  CompositorFrameMetadata MakeCompositorFrameMetadata() const;
 
  protected:
   LayerTreeHostImpl(
@@ -617,8 +624,12 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
+  MicroBenchmarkControllerImpl micro_benchmark_controller_;
 
   bool need_to_update_visible_tiles_before_draw_;
+#ifndef NDEBUG
+  bool did_lose_called_;
+#endif
 
   // Optional callback to notify of new tree activations.
   base::Closure tree_activation_callback_;

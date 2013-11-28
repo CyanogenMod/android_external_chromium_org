@@ -8,23 +8,18 @@
 #include <X11/keysymdef.h>
 #include <map>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/ibus/ibus_client.h"
-#include "chromeos/dbus/ibus/ibus_component.h"
-#include "chromeos/dbus/ibus/ibus_engine_factory_service.h"
-#include "chromeos/dbus/ibus/ibus_engine_service.h"
-#include "chromeos/dbus/ibus/ibus_text.h"
 #include "chromeos/ime/candidate_window.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/ibus_keymap.h"
+#include "chromeos/ime/ibus_text.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "dbus/object_path.h"
 
 namespace chromeos {
 const char* kErrorNotActive = "IME is not active";
@@ -38,7 +33,27 @@ const uint32 kIBusCtrlKeyMask = 1 << 2;
 const uint32 kIBusShiftKeyMask = 1 << 0;
 const uint32 kIBusCapsLockMask = 1 << 1;
 const uint32 kIBusKeyReleaseMask = 1 << 30;
+
+// Notifies InputContextHandler that the preedit is changed.
+void UpdatePreedit(const IBusText& ibus_text,
+                   uint32 cursor_pos,
+                   bool is_visible) {
+  IBusInputContextHandlerInterface* input_context =
+      IBusBridge::Get()->GetInputContextHandler();
+  if (input_context)
+    input_context->UpdatePreeditText(ibus_text, cursor_pos, is_visible);
 }
+
+// Notifies CandidateWindowHandler that the auxilary text is changed.
+// Auxilary text is usually footer text.
+void UpdateAuxiliaryText(const IBusText& ibus_text, bool is_visible) {
+  IBusPanelCandidateWindowHandlerInterface* candidate_window =
+      IBusBridge::Get()->GetCandidateWindowHandler();
+  if (candidate_window)
+    candidate_window->UpdateAuxiliaryText(ibus_text.text(), is_visible);
+}
+
+}  // namespace
 
 InputMethodEngineIBus::InputMethodEngineIBus()
     : focused_(false),
@@ -50,23 +65,17 @@ InputMethodEngineIBus::InputMethodEngineIBus()
       observer_(NULL),
       preedit_text_(new IBusText()),
       preedit_cursor_(0),
-      component_(new IBusComponent()),
       candidate_window_(new input_method::CandidateWindow()),
       window_visible_(false),
-      weak_ptr_factory_(this) {
-}
+      weak_ptr_factory_(this) {}
 
 InputMethodEngineIBus::~InputMethodEngineIBus() {
   input_method::InputMethodManager::Get()->RemoveInputMethodExtension(ibus_id_);
 
-  // Do not unset engine before removing input method extension, above function
-  // may call reset function of engine object.
-  // TODO(nona): Call Reset manually here and remove relevant code from
-  //             InputMethodManager once ibus-daemon is gone. (crbug.com/158273)
-  if (!object_path_.value().empty()) {
-    GetCurrentService()->UnsetEngine(this);
-    DBusThreadManager::Get()->RemoveIBusEngineService(object_path_);
-  }
+  // Do not unset engine before removing input method extension, above
+  // function may call reset function of engine object.
+  if (IBusBridge::Get()->GetEngineHandler() == this)
+    IBusBridge::Get()->SetEngineHandler(NULL);
 }
 
 void InputMethodEngineIBus::Initialize(
@@ -78,6 +87,7 @@ void InputMethodEngineIBus::Initialize(
     const std::vector<std::string>& languages,
     const std::vector<std::string>& layouts,
     const GURL& options_page,
+    const GURL& input_view,
     std::string* error) {
   DCHECK(observer) << "Observer must not be null.";
 
@@ -96,26 +106,9 @@ void InputMethodEngineIBus::Initialize(
     ibus_id_ = extension_ime_util::GetInputMethodID(extension_id, engine_id);
   }
 
-  component_.reset(new IBusComponent());
-  component_->set_name(std::string(kEngineBusPrefix) + std::string(engine_id));
-  component_->set_description(description);
-  component_->set_author(engine_name);
-
-  // TODO(nona): Remove IBusComponent once ibus is gone.
-  IBusComponent::EngineDescription engine_desc;
-  engine_desc.engine_id = ibus_id_;
-  engine_desc.display_name = description;
-  engine_desc.description = description;
-  engine_desc.language_code = (languages.empty()) ? "" : languages[0];
-  engine_desc.author = ibus_id_;
-
-  component_->mutable_engine_description()->push_back(engine_desc);
   manager->AddInputMethodExtension(ibus_id_, engine_name, layouts, languages,
-                                   options_page, this);
-  // If connection is avaiable, register component. If there are no connection
-  // to ibus-daemon, OnConnected callback will register component instead.
-  if (IsConnected())
-    RegisterComponent();
+                                   options_page, input_view, this);
+  RegisterComponent();
 }
 
 void InputMethodEngineIBus::StartIme() {
@@ -174,11 +167,7 @@ bool InputMethodEngineIBus::SetComposition(
   }
 
   // TODO(nona): Makes focus out mode configuable, if necessary.
-  GetCurrentService()->UpdatePreedit(
-      *preedit_text_.get(),
-      preedit_cursor_,
-      true,
-      IBusEngineService::IBUS_ENGINE_PREEEDIT_FOCUS_OUT_MODE_COMMIT);
+  UpdatePreedit(*preedit_text_, preedit_cursor_, true);
   return true;
 }
 
@@ -195,11 +184,7 @@ bool InputMethodEngineIBus::ClearComposition(int context_id,
 
   preedit_cursor_ = 0;
   preedit_text_.reset(new IBusText());
-  GetCurrentService()->UpdatePreedit(
-      *preedit_text_.get(),
-      0,
-      false,
-      IBusEngineService::IBUS_ENGINE_PREEEDIT_FOCUS_OUT_MODE_COMMIT);
+  UpdatePreedit(*preedit_text_, preedit_cursor_, false);
   return true;
 }
 
@@ -266,9 +251,7 @@ void InputMethodEngineIBus::SetCandidateWindowAuxText(const char* text) {
   aux_text_->set_text(text);
   if (active_) {
     // Should not show auxiliary text if the whole window visibility is false.
-    GetCurrentService()->UpdateAuxiliaryText(
-        *aux_text_.get(),
-        window_visible_ && aux_text_visible_);
+    UpdateAuxiliaryText(*aux_text_, window_visible_ && aux_text_visible_);
   }
 }
 
@@ -276,9 +259,7 @@ void InputMethodEngineIBus::SetCandidateWindowAuxTextVisible(bool visible) {
   aux_text_visible_ = visible;
   if (active_) {
     // Should not show auxiliary text if the whole window visibility is false.
-    GetCurrentService()->UpdateAuxiliaryText(
-        *aux_text_.get(),
-        window_visible_ && aux_text_visible_);
+    UpdateAuxiliaryText(*aux_text_, window_visible_ && aux_text_visible_);
   }
 }
 
@@ -366,10 +347,10 @@ bool InputMethodEngineIBus::UpdateMenuItems(
     property_list.push_back(property);
   }
 
-  IBusPanelPropertyHandlerInterface* handler =
-      IBusBridge::Get()->GetPropertyHandler();
-  if (handler)
-    handler->RegisterProperties(property_list);
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::Get();
+  if (manager)
+    manager->SetCurrentInputMethodProperties(property_list);
 
   return true;
 }
@@ -403,21 +384,45 @@ bool InputMethodEngineIBus::DeleteSurroundingText(int context_id,
     return false;  // Currently we can only support preceding text.
 
   // TODO(nona): Return false if there is ongoing composition.
-  GetCurrentService()->DeleteSurroundingText(offset, number_of_chars);
+
+  IBusInputContextHandlerInterface* input_context =
+      IBusBridge::Get()->GetInputContextHandler();
+  if (input_context)
+    input_context->DeleteSurroundingText(offset, number_of_chars);
+
   return true;
 }
 
-void InputMethodEngineIBus::FocusIn(ibus::TextInputType text_input_type) {
+void InputMethodEngineIBus::FocusIn(
+    const IBusEngineHandlerInterface::InputContext& input_context) {
   focused_ = true;
   if (!active_)
     return;
   context_id_ = next_context_id_;
   ++next_context_id_;
 
-  InputContext context;
+  InputMethodEngine ::InputContext context;
   context.id = context_id_;
-  // TODO: Other types
-  context.type = "text";
+  switch (input_context.type) {
+    case ui::TEXT_INPUT_TYPE_SEARCH:
+      context.type = "search";
+      break;
+    case ui::TEXT_INPUT_TYPE_TELEPHONE:
+      context.type = "tel";
+      break;
+    case ui::TEXT_INPUT_TYPE_URL:
+      context.type = "url";
+      break;
+    case ui::TEXT_INPUT_TYPE_EMAIL:
+      context.type = "email";
+      break;
+    case ui::TEXT_INPUT_TYPE_NUMBER:
+      context.type = "number";
+      break;
+    default:
+      context.type = "text";
+      break;
+  }
 
   observer_->OnFocus(context);
 }
@@ -434,11 +439,9 @@ void InputMethodEngineIBus::FocusOut() {
 void InputMethodEngineIBus::Enable() {
   active_ = true;
   observer_->OnActivate(engine_id_);
-  FocusIn(ibus::TEXT_INPUT_TYPE_TEXT);
-
-  // Calls RequireSurroundingText once here to notify ibus-daemon to send
-  // surrounding text to this engine.
-  GetCurrentService()->RequireSurroundingText();
+  IBusEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
+                                                   ui::TEXT_INPUT_MODE_DEFAULT);
+  FocusIn(context);
 }
 
 void InputMethodEngineIBus::Disable() {
@@ -448,18 +451,6 @@ void InputMethodEngineIBus::Disable() {
 
 void InputMethodEngineIBus::PropertyActivate(const std::string& property_name) {
   observer_->OnMenuItemActivated(engine_id_, property_name);
-}
-
-void InputMethodEngineIBus::PropertyShow(
-    const std::string& property_name) {
-}
-
-void InputMethodEngineIBus::PropertyHide(
-    const std::string& property_name) {
-}
-
-void InputMethodEngineIBus::SetCapability(
-    IBusCapability capability) {
 }
 
 void InputMethodEngineIBus::Reset() {
@@ -526,10 +517,6 @@ void InputMethodEngineIBus::SetSurroundingText(const std::string& text,
                                       static_cast<int>(anchor_pos));
 }
 
-IBusEngineService* InputMethodEngineIBus::GetCurrentService() {
-  return DBusThreadManager::Get()->GetIBusEngineService(object_path_);
-}
-
 void InputMethodEngineIBus::MenuItemToProperty(
     const MenuItem& item,
     input_method::InputMethodProperty* property) {
@@ -571,50 +558,15 @@ void InputMethodEngineIBus::MenuItemToProperty(
   // TODO(nona): Support item.children.
 }
 
-void InputMethodEngineIBus::OnConnected() {
-  RegisterComponent();
-}
-
-void InputMethodEngineIBus::OnDisconnected() {
-}
-
-bool InputMethodEngineIBus::IsConnected() {
-  return DBusThreadManager::Get()->GetIBusClient() != NULL;
-}
-
 void InputMethodEngineIBus::RegisterComponent() {
-  IBusClient* client = DBusThreadManager::Get()->GetIBusClient();
-  client->RegisterComponent(
-      *component_.get(),
-      base::Bind(&InputMethodEngineIBus::OnComponentRegistered,
-                 weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&InputMethodEngineIBus::OnComponentRegistrationFailed,
+  IBusBridge::Get()->SetCreateEngineHandler(
+      ibus_id_,
+      base::Bind(&InputMethodEngineIBus::CreateEngineHandler,
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
-void InputMethodEngineIBus::OnComponentRegistered() {
-  DBusThreadManager::Get()->GetIBusEngineFactoryService()->
-      SetCreateEngineHandler(ibus_id_,
-                             base::Bind(
-                                 &InputMethodEngineIBus::CreateEngineHandler,
-                                 weak_ptr_factory_.GetWeakPtr()));
-}
-
-void InputMethodEngineIBus::OnComponentRegistrationFailed() {
-  DVLOG(1) << "Failed to register input method components.";
-  // TODO(nona): Implement error handling.
-}
-
-void InputMethodEngineIBus::CreateEngineHandler(
-    const IBusEngineFactoryService::CreateEngineResponseSender& sender) {
-  GetCurrentService()->UnsetEngine(this);
-  DBusThreadManager::Get()->RemoveIBusEngineService(object_path_);
-
-  object_path_ = DBusThreadManager::Get()->GetIBusEngineFactoryService()->
-      GenerateUniqueObjectPath();
-
-  GetCurrentService()->SetEngine(this);
-  sender.Run(object_path_);
+void InputMethodEngineIBus::CreateEngineHandler() {
+  IBusBridge::Get()->SetEngineHandler(this);
 }
 
 }  // namespace chromeos

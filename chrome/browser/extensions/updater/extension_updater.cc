@@ -20,10 +20,8 @@
 #include "chrome/browser/extensions/api/module/module.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/updater/extension_downloader.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -31,7 +29,9 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "crypto/sha2.h"
+#include "extensions/browser/pending_extension_manager.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 
 using base::RandDouble;

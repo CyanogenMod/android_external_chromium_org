@@ -48,6 +48,7 @@ class MockInputMethodManager : public InputMethodManager {
       const std::vector<std::string>& layouts,
       const std::vector<std::string>& languages,
       const GURL& options_url,
+      const GURL& inputview_url,
       InputMethodEngine* instance) OVERRIDE;
   virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
   virtual void GetInputMethodExtensions(
@@ -61,6 +62,8 @@ class MockInputMethodManager : public InputMethodManager {
   virtual InputMethodDescriptor GetCurrentInputMethod() const OVERRIDE;
   virtual InputMethodPropertyList
       GetCurrentInputMethodProperties() const OVERRIDE;
+  virtual void SetCurrentInputMethodProperties(
+      const InputMethodPropertyList& property_list) OVERRIDE;
   virtual XKeyboard* GetXKeyboard() OVERRIDE;
   virtual InputMethodUtil* GetInputMethodUtil() OVERRIDE;
   virtual ComponentExtensionIMEManager*

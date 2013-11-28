@@ -13,12 +13,17 @@
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/cursor/cursor_loader_x11.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
+
+namespace gfx {
+class ImageSkia;
+class ImageSkiaRep;
+}
 
 namespace views {
 class DesktopDragDropClientAuraX11;
@@ -44,7 +49,8 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   static DesktopRootWindowHostX11* GetHostForXID(XID xid);
 
   // Get all open top-level windows. This includes windows that may not be
-  // visible.
+  // visible. This list is sorted in their stacking order, i.e. the first window
+  // is the topmost window.
   static std::vector<aura::Window*> GetAllOpenWindows();
 
   // Returns the current bounds in terms of the X11 Root Window.
@@ -122,7 +128,6 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual bool IsAnimatingClosed() const OVERRIDE;
 
   // Overridden from aura::RootWindowHost:
-  virtual void SetDelegate(aura::RootWindowHostDelegate* delegate) OVERRIDE;
   virtual aura::RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -141,7 +146,6 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual void UnConfineCursor() OVERRIDE;
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
-  virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
@@ -179,6 +183,10 @@ private:
   // Resets the window region for the current widget bounds if necessary.
   void ResetWindowRegion();
 
+  // Serializes an image to the format used by _NET_WM_ICON.
+  void SerializeImageRepresentation(const gfx::ImageSkiaRep& rep,
+                                    std::vector<unsigned long>* data);
+
   // See comment for variable open_windows_.
   static std::list<XID>& open_windows();
 
@@ -214,9 +222,6 @@ private:
   // The bounds of our window before we were maximized.
   gfx::Rect restored_bounds_;
 
-  // True if the window should be focused when the window is shown.
-  bool focus_when_shown_;
-
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
 
@@ -246,7 +251,6 @@ private:
 
   DesktopNativeWidgetAura* desktop_native_widget_aura_;
 
-  aura::RootWindowHostDelegate* root_window_host_delegate_;
   aura::Window* content_window_;
 
   // We can optionally have a parent which can order us to close, or own

@@ -587,6 +587,19 @@ static bool SubtreeShouldRenderToSeparateSurface(
     return true;
   }
 
+  // If the layer has blending.
+  // TODO(rosca): this is temporary, until blending is implemented for other
+  // types of quads than RenderPassDrawQuad. Layers having descendants that draw
+  // content will still create a separate rendering surface.
+  if (!layer->uses_default_blend_mode()) {
+    TRACE_EVENT_INSTANT0(
+        "cc",
+        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface blending",
+        TRACE_EVENT_SCOPE_THREAD);
+    DCHECK(!is_root);
+    return true;
+  }
+
   // If the layer clips its descendants but it is not axis-aligned with respect
   // to its parent.
   bool layer_clips_external_content =
@@ -628,6 +641,19 @@ static bool SubtreeShouldRenderToSeparateSurface(
   // These are allowed on the root surface, as they don't require the surface to
   // be used as a contributing surface in order to apply correctly.
   //
+
+  // If the layer has isolation.
+  // TODO(rosca): to be optimized - create separate rendering surface only when
+  // the blending descendants might have access to the content behind this layer
+  // (layer has transparent background or descendants overflow).
+  // https://code.google.com/p/chromium/issues/detail?id=301738
+  if (layer->is_root_for_isolated_group()) {
+    TRACE_EVENT_INSTANT0(
+        "cc",
+        "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface isolation",
+        TRACE_EVENT_SCOPE_THREAD);
+    return true;
+  }
 
   // If we force it.
   if (layer->force_render_surface())
@@ -1138,7 +1164,7 @@ struct DataForRecursion {
 
   bool ancestor_clips_subtree;
   typename LayerType::RenderSurfaceType*
-      nearest_ancestor_surface_that_moves_pixels;
+      nearest_occlusion_immune_ancestor_surface;
   bool in_subtree_of_page_scale_application_layer;
   bool subtree_can_use_lcd_text;
   bool subtree_is_visible_from_ancestor;
@@ -1402,8 +1428,8 @@ static void CalculateDrawPropertiesInternal(
 
   DataForRecursion<LayerType> data_for_children;
   typename LayerType::RenderSurfaceType*
-      nearest_ancestor_surface_that_moves_pixels =
-          data_from_ancestor.nearest_ancestor_surface_that_moves_pixels;
+      nearest_occlusion_immune_ancestor_surface =
+          data_from_ancestor.nearest_occlusion_immune_ancestor_surface;
   data_for_children.in_subtree_of_page_scale_application_layer =
       data_from_ancestor.in_subtree_of_page_scale_application_layer;
   data_for_children.subtree_can_use_lcd_text =
@@ -1687,14 +1713,21 @@ static void CalculateDrawPropertiesInternal(
           gfx::Rect(layer->content_bounds());
     }
 
+    // Ignore occlusion from outside the surface when surface contents need to
+    // be fully drawn. Layers with copy-request need to be complete.
+    // We could be smarter about layers with replica and exclude regions
+    // where both layer and the replica are occluded, but this seems like an
+    // overkill. The same is true for layers with filters that move pixels.
     // TODO(senorblanco): make this smarter for the SkImageFilter case (check
     // for pixel-moving filters)
-    if (layer->filters().HasReferenceFilter() ||
-        layer->filters().HasFilterThatMovesPixels())
-      nearest_ancestor_surface_that_moves_pixels = render_surface;
-
-    render_surface->SetNearestAncestorThatMovesPixels(
-        nearest_ancestor_surface_that_moves_pixels);
+    if (layer->HasCopyRequest() ||
+        layer->has_replica() ||
+        layer->filters().HasReferenceFilter() ||
+        layer->filters().HasFilterThatMovesPixels()) {
+      nearest_occlusion_immune_ancestor_surface = render_surface;
+    }
+    render_surface->SetNearestOcclusionImmuneAncestor(
+        nearest_occlusion_immune_ancestor_surface);
 
     layer_or_ancestor_clips_descendants = false;
     bool subtree_is_clipped_by_surface_bounds = false;
@@ -1895,8 +1928,8 @@ static void CalculateDrawPropertiesInternal(
         clip_rect_of_target_surface_in_target_space;
     data_for_children.ancestor_clips_subtree =
         layer_or_ancestor_clips_descendants;
-    data_for_children.nearest_ancestor_surface_that_moves_pixels =
-        nearest_ancestor_surface_that_moves_pixels;
+    data_for_children.nearest_occlusion_immune_ancestor_surface =
+        nearest_occlusion_immune_ancestor_surface;
     data_for_children.subtree_is_visible_from_ancestor = layer_is_visible;
   }
 
@@ -1970,19 +2003,16 @@ static void CalculateDrawPropertiesInternal(
     return;
   }
 
-  if (layer->DrawsContent()) {
-    gfx::Rect local_drawable_content_rect = rect_in_target_space;
-    if (layer_or_ancestor_clips_descendants)
-      local_drawable_content_rect.Intersect(clip_rect_in_target_space);
-    local_drawable_content_rect_of_subtree.Union(local_drawable_content_rect);
-  }
-
   // Compute the layer's drawable content rect (the rect is in target surface
   // space).
   layer_draw_properties.drawable_content_rect = rect_in_target_space;
   if (layer_or_ancestor_clips_descendants) {
-    layer_draw_properties.drawable_content_rect.
-        Intersect(clip_rect_in_target_space);
+    layer_draw_properties.drawable_content_rect.Intersect(
+        clip_rect_in_target_space);
+  }
+  if (layer->DrawsContent()) {
+    local_drawable_content_rect_of_subtree.Union(
+        layer_draw_properties.drawable_content_rect);
   }
 
   // Compute the layer's visible content rect (the rect is in content space).
@@ -2029,6 +2059,16 @@ static void CalculateDrawPropertiesInternal(
       RemoveSurfaceForEarlyExit(layer, render_surface_layer_list);
       return;
     }
+
+    // Layers having a non-default blend mode will blend with the content
+    // inside its parent's render target. This render target should be
+    // either root_for_isolated_group, or the root of the layer tree.
+    // Otherwise, this layer will use an incomplete backdrop, limited to its
+    // render target and the blending result will be incorrect.
+    DCHECK(layer->uses_default_blend_mode() || IsRootLayer(layer) ||
+           !layer->parent()->render_target() ||
+           IsRootLayer(layer->parent()->render_target()) ||
+           layer->parent()->render_target()->is_root_for_isolated_group());
 
     render_surface->SetContentRect(clipped_content_rect);
 
@@ -2138,7 +2178,7 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   data_for_recursion.clip_rect_of_target_surface_in_target_space =
       device_viewport_rect;
   data_for_recursion.ancestor_clips_subtree = true;
-  data_for_recursion.nearest_ancestor_surface_that_moves_pixels = NULL;
+  data_for_recursion.nearest_occlusion_immune_ancestor_surface = NULL;
   data_for_recursion.in_subtree_of_page_scale_application_layer = false;
   data_for_recursion.subtree_can_use_lcd_text = inputs->can_use_lcd_text;
   data_for_recursion.subtree_is_visible_from_ancestor = true;
@@ -2196,7 +2236,7 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   data_for_recursion.clip_rect_of_target_surface_in_target_space =
       device_viewport_rect;
   data_for_recursion.ancestor_clips_subtree = true;
-  data_for_recursion.nearest_ancestor_surface_that_moves_pixels = NULL;
+  data_for_recursion.nearest_occlusion_immune_ancestor_surface = NULL;
   data_for_recursion.in_subtree_of_page_scale_application_layer = false;
   data_for_recursion.subtree_can_use_lcd_text = inputs->can_use_lcd_text;
   data_for_recursion.subtree_is_visible_from_ancestor = true;

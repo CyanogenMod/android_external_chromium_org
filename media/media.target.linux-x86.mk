@@ -50,6 +50,7 @@ LOCAL_SRC_FILES := \
 	media/audio/clockless_audio_sink.cc \
 	media/audio/fake_audio_consumer.cc \
 	media/audio/fake_audio_input_stream.cc \
+	media/audio/fake_audio_manager.cc \
 	media/audio/fake_audio_output_stream.cc \
 	media/audio/null_audio_sink.cc \
 	media/audio/sample_rates.cc \
@@ -96,7 +97,6 @@ LOCAL_SRC_FILES := \
 	media/base/media_switches.cc \
 	media/base/multi_channel_resampler.cc \
 	media/base/pipeline.cc \
-	media/base/pipeline_status.cc \
 	media/base/ranges.cc \
 	media/base/sample_format.cc \
 	media/base/seekable_buffer.cc \
@@ -108,6 +108,9 @@ LOCAL_SRC_FILES := \
 	media/base/sinc_resampler.cc \
 	media/base/stream_parser.cc \
 	media/base/stream_parser_buffer.cc \
+	media/base/text_cue.cc \
+	media/base/text_renderer.cc \
+	media/base/text_track_config.cc \
 	media/base/user_input_monitor.cc \
 	media/base/video_decoder.cc \
 	media/base/video_decoder_config.cc \
@@ -116,6 +119,8 @@ LOCAL_SRC_FILES := \
 	media/base/video_util.cc \
 	media/base/yuv_convert.cc \
 	media/cdm/aes_decryptor.cc \
+	media/cdm/json_web_key.cc \
+	media/cdm/key_system_names.cc \
 	media/filters/audio_decoder_selector.cc \
 	media/filters/audio_renderer_algorithm.cc \
 	media/filters/audio_renderer_impl.cc \
@@ -134,7 +139,7 @@ LOCAL_SRC_FILES := \
 	media/filters/stream_parser_factory.cc \
 	media/filters/video_decoder_selector.cc \
 	media/filters/video_frame_stream.cc \
-	media/filters/video_renderer_base.cc \
+	media/filters/video_renderer_impl.cc \
 	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
 	media/midi/midi_port_info.cc \
@@ -229,6 +234,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -237,9 +243,11 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -261,6 +269,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/media \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -271,9 +280,10 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/opus/src/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -341,6 +351,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -349,9 +360,11 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -374,6 +387,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/media \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -384,9 +398,10 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/opus/src/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

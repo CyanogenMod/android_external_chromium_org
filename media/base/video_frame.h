@@ -28,8 +28,6 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   enum {
     kMaxPlanes = 4,
 
-    kRGBPlane = 0,
-
     kYPlane = 0,
     kUPlane = 1,
     kVPlane = 2,
@@ -39,18 +37,18 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Surface formats roughly based on FOURCC labels, see:
   // http://www.fourcc.org/rgb.php
   // http://www.fourcc.org/yuv.php
+  // Logged to UMA, so never reuse values.
   enum Format {
     UNKNOWN = 0,  // Unknown format value.
-    RGB32 = 4,  // 32bpp RGB packed with extra byte 8:8:8
-    YV12 = 6,  // 12bpp YVU planar 1x1 Y, 2x2 VU samples
-    YV16 = 7,  // 16bpp YVU planar 1x1 Y, 2x1 VU samples
-    EMPTY = 9,  // An empty frame.
-    I420 = 11,  // 12bpp YVU planar 1x1 Y, 2x2 UV samples.
-    NATIVE_TEXTURE = 12,  // Native texture.  Pixel-format agnostic.
+    YV12 = 1,  // 12bpp YVU planar 1x1 Y, 2x2 VU samples
+    YV16 = 2,  // 16bpp YVU planar 1x1 Y, 2x1 VU samples
+    I420 = 3,  // 12bpp YVU planar 1x1 Y, 2x2 UV samples.
+    YV12A = 4,  // 20bpp YUVA planar 1x1 Y, 2x2 VU, 1x1 A samples.
 #if defined(GOOGLE_TV)
-    HOLE = 13,  // Hole frame.
+    HOLE = 5,  // Hole frame.
 #endif
-    YV12A = 14,  // 20bpp YUVA planar 1x1 Y, 2x2 VU, 1x1 A samples.
+    NATIVE_TEXTURE = 6,  // Native texture.  Pixel-format agnostic.
+    HISTOGRAM_MAX,  // Must always be greatest.
   };
 
   // Returns the name of a Format as a string.
@@ -137,12 +135,13 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // least as large as 4*visible_rect().width()*visible_rect().height().
   void ReadPixelsFromNativeTexture(const SkBitmap& pixels);
 
-  // Wraps image data in a buffer backed by a base::SharedMemoryHandle with a
-  // VideoFrame.  The image data resides in |data| and is assumed to be packed
-  // tightly in a buffer of logical dimensions |coded_size| with the appropriate
-  // bit depth and plane count as given by |format|.  When the frame is
-  // destroyed |no_longer_needed_cb.Run()| will be called.
-  static scoped_refptr<VideoFrame> WrapExternalSharedMemory(
+  // Wraps packed image data residing in a memory buffer with a VideoFrame.
+  // The image data resides in |data| and is assumed to be packed tightly in a
+  // buffer of logical dimensions |coded_size| with the appropriate bit depth
+  // and plane count as given by |format|.  The shared memory handle of the
+  // backing allocation, if present, can be passed in with |handle|.  When the
+  // frame is destroyed, |no_longer_needed_cb.Run()| will be called.
+  static scoped_refptr<VideoFrame> WrapExternalPackedMemory(
       Format format,
       const gfx::Size& coded_size,
       const gfx::Rect& visible_rect,
@@ -172,9 +171,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       base::TimeDelta timestamp,
       const base::Closure& no_longer_needed_cb);
 
-  // Creates a frame with format equals to VideoFrame::EMPTY, width, height,
-  // and timestamp are all 0.
-  static scoped_refptr<VideoFrame> CreateEmptyFrame();
+  // Creates a frame which indicates end-of-stream.
+  static scoped_refptr<VideoFrame> CreateEOSFrame();
 
   // Allocates YV12 frame based on |size|, and sets its data to the YUV(y,u,v).
   static scoped_refptr<VideoFrame> CreateColorFrame(
@@ -196,6 +194,12 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Returns the required allocation size for a (tightly packed) frame of the
   // given coded size and format.
   static size_t AllocationSize(Format format, const gfx::Size& coded_size);
+
+  // Returns the required allocation size for a (tightly packed) plane of the
+  // given coded size and format.
+  static size_t PlaneAllocationSize(Format format,
+                                    size_t plane,
+                                    const gfx::Size& coded_size);
 
   Format format() const { return format_; }
 
@@ -228,7 +232,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   base::SharedMemoryHandle shared_memory_handle() const;
 
   // Returns true if this VideoFrame represents the end of the stream.
-  bool IsEndOfStream() const;
+  bool end_of_stream() const { return end_of_stream_; }
 
   base::TimeDelta GetTimestamp() const {
     return timestamp_;
@@ -248,11 +252,10 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
              const gfx::Size& coded_size,
              const gfx::Rect& visible_rect,
              const gfx::Size& natural_size,
-             base::TimeDelta timestamp);
+             base::TimeDelta timestamp,
+             bool end_of_stream);
   virtual ~VideoFrame();
 
-  // Used internally by CreateFrame().
-  void AllocateRGB(size_t bytes_per_pixel);
   void AllocateYUV();
 
   // Used to DCHECK() plane parameters.
@@ -290,6 +293,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   base::Closure no_longer_needed_cb_;
 
   base::TimeDelta timestamp_;
+
+  const bool end_of_stream_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoFrame);
 };

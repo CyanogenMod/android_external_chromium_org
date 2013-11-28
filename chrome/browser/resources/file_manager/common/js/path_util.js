@@ -6,23 +6,42 @@
 
 /**
  * Type of a root directory.
- * @enum
+ * @enum {string}
+ * @const
  */
-var RootType = {
+var RootType = Object.freeze({
+  // Root of local directory.
   DOWNLOADS: 'downloads',
+
+  // Root of mounted archive file.
   ARCHIVE: 'archive',
+
+  // Root of removal volume.
   REMOVABLE: 'removable',
+
+  // Root of drive directory.
   DRIVE: 'drive',
-  DRIVE_OFFLINE: 'drive_offline',  // A fake root. Not the actual filesystem.
-  DRIVE_SHARED_WITH_ME: 'drive_shared_with_me',  // A fake root.
-  DRIVE_RECENT: 'drive_recent'  // A fake root.
-};
+
+  // Root for entries that is not located under RootType.DRIVE. e.g. shared
+  // files.
+  DRIVE_OTHER: 'drive_other',
+
+  // Fake root for offline available files on the drive.
+  DRIVE_OFFLINE: 'drive_offline',
+
+  // Fake root for shared files on the drive.
+  DRIVE_SHARED_WITH_ME: 'drive_shared_with_me',
+
+  // Fake root for recent files on the drive.
+  DRIVE_RECENT: 'drive_recent'
+});
 
 /**
  * Top directory for each root type.
- * @type {Object.<RootType,string>}
+ * @enum {string}
+ * @const
  */
-var RootDirectory = {
+var RootDirectory = Object.freeze({
   DOWNLOADS: '/Downloads',
   ARCHIVE: '/archive',
   REMOVABLE: '/removable',
@@ -30,17 +49,18 @@ var RootDirectory = {
   DRIVE_OFFLINE: '/drive_offline',  // A fake root. Not the actual filesystem.
   DRIVE_SHARED_WITH_ME: '/drive_shared_with_me',  // A fake root.
   DRIVE_RECENT: '/drive_recent'  // A fake root.
-};
+});
 
 /**
  * Sub root directory for Drive. "root" and "other". This is not used now.
  * TODO(haruki): Add namespaces support. http://crbug.com/174233.
- * @enum
+ * @enum {string}
+ * @const
  */
-var DriveSubRootDirectory = {
+var DriveSubRootDirectory = Object.freeze({
   ROOT: 'root',
   OTHER: 'other',
-};
+});
 
 var PathUtil = {};
 
@@ -278,7 +298,10 @@ PathUtil.isParentPath = function(parent_path, child_path) {
 
 /**
  * Return the localized name for the root.
- * @param {string} path The full path of the root (starting with slash).
+ * TODO(hirono): Support all RootTypes and stop to use paths.
+ *
+ * @param {string|RootType} path The full path of the root (starting with slash)
+ *     or root type.
  * @return {string} The localized name.
  */
 PathUtil.getRootLabel = function(path) {
@@ -306,7 +329,8 @@ PathUtil.getRootLabel = function(path) {
   if (path === RootDirectory.DRIVE_OFFLINE)
     return str('DRIVE_OFFLINE_COLLECTION_LABEL');
 
-  if (path === RootDirectory.DRIVE_SHARED_WITH_ME)
+  if (path === RootDirectory.DRIVE_SHARED_WITH_ME ||
+      path === RootType.DRIVE_SHARED_WITH_ME)
     return str('DRIVE_SHARED_WITH_ME_COLLECTION_LABEL');
 
   if (path === RootDirectory.DRIVE_RECENT)
@@ -374,3 +398,99 @@ PathUtil.splitExtension = function(path) {
   var extension = dotPosition != -1 ? path.substr(dotPosition) : '';
   return [filename, extension];
 };
+
+/**
+ * Obtains location information from a path.
+ *
+ * @param {!VolumeInfo} volumeInfo Volume containing an entry pointed by path.
+ * @param {string} fullPath Full path.
+ * @return {EntryLocation} Location information.
+ */
+PathUtil.getLocationInfo = function(volumeInfo, fullPath) {
+  var rootPath;
+  var rootType;
+  if (volumeInfo.volumeType === util.VolumeType.DRIVE) {
+    // If the volume is drive, root path can be either mountPath + '/root' or
+    // mountPath + '/other'.
+    if ((fullPath + '/').indexOf(volumeInfo.mountPath + '/root/') === 0) {
+      rootPath = volumeInfo.mountPath + '/root';
+      rootType = RootType.DRIVE;
+    } else if ((fullPath + '/').indexOf(
+                   volumeInfo.mountPath + '/other/') === 0) {
+      rootPath = volumeInfo.mountPath + '/other';
+      rootType = RootType.DRIVE_OTHER;
+    } else {
+      throw new Exception(fullPath + ' is an invalid drive path.');
+    }
+  } else {
+    // Otherwise, root path is same with a mount path of the volume.
+    rootPath = volumeInfo.mountPath;
+    switch (volumeInfo.volumeType) {
+      case util.VolumeType.DOWNLOADS: rootType = RootType.DOWNLOADS; break;
+      case util.VolumeType.REMOVABLE: rootType = RootType.REMOVABLE; break;
+      case util.VolumeType.ARCHIVE: rootType = RootType.ARCHIVE; break;
+      default: throw new Exception(
+          'Invalid volume type: ' + volumeInfo.volumeType);
+    }
+  }
+  return new EntryLocation(volumeInfo,
+                           fullPath,
+                           rootType,
+                           rootPath,
+                           fullPath.substr(rootPath.length) || '/');
+};
+
+/**
+ * Location information which shows where the path points in FileManager's
+ * file system.
+ *
+ * @param {!VolumeInfo} volumeInfo Volume information.
+ * @param {string} path Full path.
+ * @param {RootType} rootType Root type.
+ * @param {string} rootPath Root path.
+ * @param {string} virtualPath Virtual path. See also
+ *     EntryLocation#vierutalPath.
+ * @constructor
+ */
+function EntryLocation(volumeInfo, path, rootType, rootPath, virtualPath) {
+  /**
+   * Volume information.
+   * @type {!VolumeInfo}
+   */
+  this.volumeInfo = volumeInfo;
+
+  /**
+   * Full path of the location.
+   * @type {string}
+   */
+  this.path = path;
+
+  /**
+   * Root type.
+   * @type {RootType}
+   */
+  this.rootType = rootType;
+
+  /**
+   * Root path.
+   * @type {string}
+   */
+  this.rootPath = rootPath;
+
+  /**
+   * Virtual path.
+   *
+   * Part of full path that follows root path.
+   * e.g. Virtual path of /drive/root/A/B is /A/B.
+   * @type {string}
+   */
+  this.virtualPath = virtualPath;
+
+  /**
+   * Whether the entry is root entry or not.
+   * @type {boolean}
+   */
+  this.isRootEntry = virtualPath === '/';
+
+  Object.freeze(this);
+}

@@ -7,8 +7,11 @@ package org.chromium.android_webview.test;
 import android.test.suitebuilder.annotation.MediumTest;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwSettings;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.CallbackHelper;
+import org.chromium.content.browser.test.util.Criteria;
+import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 public class AwViewportTest extends AwTestBase {
@@ -219,4 +222,92 @@ public class AwViewportTest extends AwTestBase {
         int width = Integer.parseInt(getTitleOnUiThread(awContents));
         assertEquals(pageWidth, width);
     }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testInitialScaleClobberQuirk() throws Throwable {
+        final TestAwContentsClient contentClient = new TestAwContentsClient();
+        final AwTestContainerView testContainerView =
+                createAwTestContainerViewOnMainSync(contentClient);
+        final AwContents awContents = testContainerView.getAwContents();
+        AwSettings settings = getAwSettingsOnUiThread(awContents);
+        CallbackHelper onPageFinishedHelper = contentClient.getOnPageFinishedHelper();
+
+        final String pageTemplate = "<html><head>" +
+                "<meta name='viewport' content='initial-scale=%d' />" +
+                "</head><body>" +
+                "<div style='width:10000px;height:200px'>A big div</div>" +
+                "</body></html>";
+        final String pageScale4 = String.format(pageTemplate, 4);
+        final String page = String.format(pageTemplate, 1);
+
+        // Page scale updates are asynchronous. There is an issue that we can't
+        // reliably check, whether the scale as NOT changed (i.e. remains to be 1.0).
+        // So we first change the scale to some non-default value, and then wait
+        // until it gets back to 1.0.
+        int onScaleChangedCallCount = contentClient.getOnScaleChangedHelper().getCallCount();
+        loadDataSync(awContents, onPageFinishedHelper, pageScale4, "text/html", false);
+        contentClient.getOnScaleChangedHelper().waitForCallback(onScaleChangedCallCount);
+        assertEquals(4.0f, getScaleOnUiThread(awContents));
+        // The following call to set initial scale will be ignored. However, a temporary
+        // page scale change may occur, and this makes the usual onScaleChanged-based workflow
+        // flaky. So instead, we are just polling the scale until it becomes 1.0.
+        settings.setInitialPageScale(50);
+        loadDataSync(awContents, onPageFinishedHelper, page, "text/html", false);
+        assertTrue(waitUntilScaleBecomes(1.0f, awContents));
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testNoUserScalableQuirk() throws Throwable {
+        final TestAwContentsClient contentClient = new TestAwContentsClient();
+        final AwTestContainerView testContainerView =
+                createAwTestContainerViewOnMainSync(contentClient);
+        final AwContents awContents = testContainerView.getAwContents();
+        CallbackHelper onPageFinishedHelper = contentClient.getOnPageFinishedHelper();
+
+        final String pageScale4 = "<html><head>" +
+                "<meta name='viewport' content='initial-scale=4' />" +
+                "</head><body>" +
+                "<div style='width:10000px;height:200px'>A big div</div>" +
+                "</body></html>";
+        final String page = "<html><head>" +
+                "<meta name='viewport' " +
+                "content='width=device-width,initial-scale=2,user-scalable=no' />" +
+                "</head><body>" +
+                "<div style='width:10000px;height:200px'>A big div</div>" +
+                "</body></html>";
+
+        // Page scale updates are asynchronous. There is an issue that we can't
+        // reliably check, whether the scale as NOT changed (i.e. remains to be 1.0).
+        // So we first change the scale to some non-default value, and then wait
+        // until it gets back to 1.0.
+        int onScaleChangedCallCount = contentClient.getOnScaleChangedHelper().getCallCount();
+        loadDataSync(awContents, onPageFinishedHelper, pageScale4, "text/html", false);
+        contentClient.getOnScaleChangedHelper().waitForCallback(onScaleChangedCallCount);
+        assertEquals(4.0f, getScaleOnUiThread(awContents));
+        onScaleChangedCallCount = contentClient.getOnScaleChangedHelper().getCallCount();
+        loadDataSync(awContents, onPageFinishedHelper, page, "text/html", false);
+        contentClient.getOnScaleChangedHelper().waitForCallback(onScaleChangedCallCount);
+        assertEquals(1.0f, getScaleOnUiThread(awContents));
+    }
+
+    private boolean waitUntilScaleBecomes(final float targetScale, final AwContents awContents)
+            throws Throwable {
+        return CriteriaHelper.pollForCriteria(new Criteria() {
+                @Override
+                public boolean isSatisfied() {
+                    try {
+                        return targetScale == getScaleOnUiThread(awContents);
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                        fail("Failed to getScaleOnUiThread: " + t.toString());
+                        return false;
+                    }
+                }
+            }, TEST_TIMEOUT_MS, CHECK_INTERVAL_MS);
+    }
+
+    private static final long TEST_TIMEOUT_MS = 20000L;
+    private static final int CHECK_INTERVAL_MS = 100;
 }

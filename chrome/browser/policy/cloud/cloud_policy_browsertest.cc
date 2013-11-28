@@ -20,17 +20,17 @@
 #include "chrome/browser/policy/cloud/cloud_policy_client.h"
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/cloud/mock_cloud_policy_client.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/policy_test_utils.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/policy/test/local_policy_test_server.h"
+#include "chrome/browser/policy/test/policy_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -187,7 +187,8 @@ class CloudPolicyTest : public InProcessBrowserTest,
     signin_manager->SetAuthenticatedUsername(GetTestUser());
 
     UserCloudPolicyManager* policy_manager =
-        UserCloudPolicyManagerFactory::GetForProfile(browser()->profile());
+        UserCloudPolicyManagerFactory::GetForBrowserContext(
+            browser()->profile());
     ASSERT_TRUE(policy_manager);
     policy_manager->Connect(g_browser_process->local_state(),
                             g_browser_process->system_request_context(),

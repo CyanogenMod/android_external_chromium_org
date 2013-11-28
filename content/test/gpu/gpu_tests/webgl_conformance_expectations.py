@@ -24,9 +24,29 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # self.Fail('gl-enable-vertex-attrib.html',
     #     ['mac', 'amd', ('nvidia', 0x1234)], bug=123)
 
+    # Fails everywhere.
+    self.Skip('conformance/glsl/misc/large-loop-compile.html',
+        bug=322764)
+    self.Skip('conformance/textures/texture-size-limit.html',
+        bug=322789)
+
+    # Windows failures.
+    self.Fail('conformance/ogles/GL/atan/atan_001_to_008.html',
+        ['win'], bug=322794)
+    self.Fail('conformance/ogles/GL/atan/atan_009_to_012.html',
+        ['win'], bug=322794)
+    self.Skip('conformance/ogles/GL/control_flow/control_flow_001_to_008.html',
+        ['win'], bug=322795)
+
     # Windows/Intel failures
     self.Fail('conformance/textures/texture-size.html',
         ['win', 'intel'], bug=121139)
+    self.Fail('conformance/rendering/gl-scissor-test.html',
+        ['win', 'intel'], bug=314997)
+
+    # Windows/AMD failures
+    self.Fail('conformance/rendering/more-than-65536-indices.html',
+        ['win', 'amd'], bug=314997)
 
     # Windows 7/Intel failures
     self.Fail('conformance/context/context-lost-restored.html',
@@ -81,8 +101,20 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['win7', 'intel'])
     self.Fail('conformance/textures/texture-size-cube-maps.html',
         ['win7', 'intel'])
+    self.Fail('conformance/context/context-attribute-preserve-drawing-buffer.html',
+        ['win7', 'intel'], bug=322770)
+
+    # Mac failures.
+    self.Fail('conformance/glsl/misc/shaders-with-varyings.html',
+        ['mac'], bug=322760)
+    self.Fail('conformance/context/context-attribute-preserve-drawing-buffer.html',
+        ['mac'], bug=322770)
+    self.Skip('conformance/ogles/GL/control_flow/control_flow_001_to_008.html',
+        ['mac'], bug=322795)
 
     # Mac/Intel failures
+    self.Fail('conformance/rendering/gl-scissor-test.html',
+        ['mac', 'intel'], bug=314997)
     # The following two tests hang the WindowServer.
     self.Skip('conformance/canvas/drawingbuffer-static-canvas-test.html',
         ['mac', 'intel'], bug=303915)
@@ -99,6 +131,10 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # Radar 13499623
     self.Fail('conformance/textures/texture-size.html',
         ['mac', 'intel'], bug=225642)
+    self.Skip('conformance/ogles/GL/control_flow/control_flow_009_to_010.html',
+        ['mac', 'intel'], bug=322795)
+    self.Fail('conformance/ogles/GL/operators/operators_009_to_016.html',
+        ['mac', 'intel'], bug=322795)
 
     # Mac/Intel failures on 10.7
     self.Skip('conformance/glsl/functions/glsl-function-asin.html',
@@ -120,6 +156,22 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['lion', 'intel'])
     self.Skip('conformance/rendering/line-loop-tri-fan.html',
         ['lion', 'intel'])
+    self.Skip('conformance/ogles/GL/control_flow/control_flow_009_to_010.html',
+        ['lion'], bug=322795)
+    self.Skip('conformance/ogles/GL/dot/dot_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
+    self.Skip('conformance/ogles/GL/faceforward/faceforward_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
+    self.Skip('conformance/ogles/GL/length/length_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
+    self.Skip('conformance/ogles/GL/normalize/normalize_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
+    self.Skip('conformance/ogles/GL/reflect/reflect_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
+    self.Skip('conformance/ogles/GL/refract/refract_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
+    self.Skip('conformance/ogles/GL/tan/tan_001_to_006.html',
+        ['lion', 'intel'], bug=323736)
 
     # Mac/ATI failures
     self.Skip('conformance/extensions/oes-texture-float-with-image-data.html',
@@ -136,6 +188,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['mac', 'amd'], bug=308328)
     self.Skip('conformance/textures/tex-image-and-sub-image-2d-with-image-data-rgba5551.html',
         ['mac', 'amd'], bug=308328)
+    self.Fail('conformance/canvas/drawingbuffer-test.html',
+        ['mac', 'amd'], bug=314997)
 
     # Android failures
     self.Fail('conformance/textures/texture-npot-video.html',
@@ -143,4 +197,15 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # The following test is very slow and therefore times out on Android bot.
     self.Skip('conformance/rendering/multisample-corruption.html',
         ['android'])
+    self.Fail('conformance/canvas/drawingbuffer-test.html',
+        ['android'], bug=314997)
+    self.Fail('conformance/glsl/misc/empty_main.vert.html',
+        ['android'], bug=315976)
+    self.Fail('conformance/glsl/misc/gl_position_unset.vert.html',
+        ['android'], bug=315976)
 
+    # Skip slow tests.
+    self.Skip('conformance/context/context-creation-and-destruction.html',
+        bug=322689)
+    self.Skip('conformance/rendering/multisample-corruption.html',
+        bug=322689)

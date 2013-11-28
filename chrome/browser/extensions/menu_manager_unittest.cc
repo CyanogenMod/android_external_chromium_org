@@ -14,7 +14,7 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
@@ -22,11 +22,12 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/api/context_menus.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -48,7 +49,7 @@ class MenuManagerTest : public testing::Test {
   MenuManagerTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
-        manager_(&profile_),
+        manager_(&profile_, ExtensionSystem::Get(&profile_)->state_store()),
         prefs_(message_loop_.message_loop_proxy().get()),
         next_id_(1) {}
 
@@ -455,7 +456,7 @@ class MockEventRouter : public EventRouter {
                void(const std::string& extension_id,
                     const std::string& event_name,
                     base::ListValue* event_args,
-                    Profile* source_profile,
+                    content::BrowserContext* source_context,
                     const GURL& event_url,
                     EventRouter::UserGestureState state));
 
@@ -464,7 +465,7 @@ class MockEventRouter : public EventRouter {
     DispatchEventToExtensionMock(extension_id,
                                  event->event_name,
                                  event->event_args.release(),
-                                 event->restrict_to_profile,
+                                 event->restrict_to_browser_context,
                                  event->event_url,
                                  event->user_gesture);
   }
@@ -558,7 +559,7 @@ TEST_F(MenuManagerTest, ExecuteCommand) {
       static_cast<MockEventRouter*>(mock_extension_system->event_router());
 
   content::ContextMenuParams params;
-  params.media_type = WebKit::WebContextMenuData::MediaTypeImage;
+  params.media_type = blink::WebContextMenuData::MediaTypeImage;
   params.src_url = GURL("http://foo.bar/image.png");
   params.page_url = GURL("http://foo.bar");
   params.selection_text = ASCIIToUTF16("Hello World");

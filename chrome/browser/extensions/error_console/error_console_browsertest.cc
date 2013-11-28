@@ -10,18 +10,16 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -244,9 +242,7 @@ class ErrorConsoleBrowserTest : public ExtensionBrowserTest {
         break;
       }
       case ACTION_BROWSER_ACTION: {
-        ExtensionService* service =
-            extensions::ExtensionSystem::Get(profile())->extension_service();
-        service->toolbar_model()->ExecuteBrowserAction(
+        ExtensionToolbarModel::Get(profile())->ExecuteBrowserAction(
             *extension, browser(), NULL, true);
         break;
       }
@@ -324,7 +320,7 @@ IN_PROC_BROWSER_TEST_F(ErrorConsoleBrowserTest, ReportManifestErrors) {
                          manifest_errors::kUnrecognizedManifestKey,
                          kFakeKey),
                      kFakeKey,
-                     EmptyString());
+                     std::string());
 }
 
 // Test that we do not store any errors unless the Developer Mode switch is

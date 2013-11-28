@@ -76,15 +76,6 @@ namespace extension_misc {
   // The extension id of the Chrome component application.
   extern const char kChromeAppId[];
 
-  // The extension id of the Citrix Receiver application.
-  extern const char kCitrixReceiverAppId[];
-
-  // The extension id of the beta Citrix Receiver application.
-  extern const char kCitrixReceiverAppBetaId[];
-
-  // The extension id of the dev Citrix Receiver application.
-  extern const char kCitrixReceiverAppDevId[];
-
   // The extension id of the Cloud Print component application.
   extern const char kCloudPrintAppId[];
 
@@ -145,23 +136,15 @@ namespace extension_misc {
   // The extension id of the in-app payments support application.
   extern const char kInAppPaymentsSupportAppId[];
 
+  // The extension id of the Tips & Tricks application.
+  extern const char kTipsAndTricksAppId[];
+
   // Note: this structure is an ASN.1 which encodes the algorithm used
   // with its parameters. This is defined in PKCS #1 v2.1 (RFC 3447).
   // It is encoding: { OID sha1WithRSAEncryption      PARAMETERS NULL }
   const uint8 kSignatureAlgorithm[15] = {
     0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
     0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00
-  };
-
-  // Don't remove items or change the order of this enum.  It's used in
-  // histograms and preferences.
-  enum LaunchContainer {
-    LAUNCH_WINDOW,
-    LAUNCH_PANEL,
-    LAUNCH_TAB,
-    // For platform apps, which don't actually have a container (they just get a
-    // "onLaunched" event).
-    LAUNCH_NONE
   };
 
   // The name of the app launch histogram.

@@ -14,6 +14,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_view_delegate.h"
 #include "chrome/browser/ui/ash/app_list/app_list_controller_ash.h"
 #include "chrome/browser/ui/ash/ash_keyboard_controller_proxy.h"
@@ -95,22 +96,22 @@ void ChromeShellDelegate::Exit() {
 }
 
 content::BrowserContext* ChromeShellDelegate::GetCurrentBrowserContext() {
-  return ProfileManager::GetDefaultProfile();
+  return ProfileManager::GetDefaultProfileOrOffTheRecord();
 }
 
 app_list::AppListViewDelegate*
-    ChromeShellDelegate::CreateAppListViewDelegate() {
+ChromeShellDelegate::CreateAppListViewDelegate() {
   DCHECK(ash::Shell::HasInstance());
   // Shell will own the created delegate, and the delegate will own
   // the controller.
-  Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
   return new AppListViewDelegate(
-      scoped_ptr<AppListControllerDelegate>(new AppListControllerDelegateAsh()),
-      profile);
+      Profile::FromBrowserContext(GetCurrentBrowserContext()),
+      AppListService::Get(chrome::HOST_DESKTOP_TYPE_ASH)->
+      GetControllerDelegate());
 }
 
 ash::LauncherDelegate* ChromeShellDelegate::CreateLauncherDelegate(
-    ash::LauncherModel* model) {
+    ash::ShelfModel* model) {
   DCHECK(ProfileManager::IsGetDefaultProfileAllowed());
   // TODO(oshima): This is currently broken with multiple launchers.
   // Refactor so that there is just one launcher delegate in the
@@ -137,10 +138,6 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       content::RecordAction(
           content::UserMetricsAction("Accel_KeyboardBrightnessUp_F7"));
       break;
-    case ash::UMA_ACCEL_LOCK_SCREEN_L:
-      content::RecordAction(
-          content::UserMetricsAction("Accel_LockScreen_L"));
-      break;
     case ash::UMA_ACCEL_LOCK_SCREEN_LOCK_BUTTON:
       content::RecordAction(
           content::UserMetricsAction("Accel_LockScreen_LockButton"));
@@ -149,39 +146,18 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       content::RecordAction(
           content::UserMetricsAction("Accel_LockScreen_PowerButton"));
       break;
-    case ash::UMA_ACCEL_FULLSCREEN_F4:
-      content::RecordAction(content::UserMetricsAction("Accel_Fullscreen_F4"));
-      break;
     case ash::UMA_ACCEL_MAXIMIZE_RESTORE_F4:
       content::RecordAction(
           content::UserMetricsAction("Accel_Maximize_Restore_F4"));
       break;
-    case ash::UMA_ACCEL_NEWTAB_T:
-      content::RecordAction(content::UserMetricsAction("Accel_NewTab_T"));
-      break;
-    case ash::UMA_ACCEL_NEXTWINDOW_F5:
-      content::RecordAction(content::UserMetricsAction("Accel_NextWindow_F5"));
-      break;
-    case ash::UMA_ACCEL_NEXTWINDOW_TAB:
-      content::RecordAction(content::UserMetricsAction("Accel_NextWindow_Tab"));
-      break;
-    case ash::UMA_ACCEL_OVERVIEW_F5:
-      content::RecordAction(content::UserMetricsAction("Accel_Overview_F5"));
-      break;
     case ash::UMA_ACCEL_PREVWINDOW_F5:
       content::RecordAction(content::UserMetricsAction("Accel_PrevWindow_F5"));
-      break;
-    case ash::UMA_ACCEL_PREVWINDOW_TAB:
-      content::RecordAction(content::UserMetricsAction("Accel_PrevWindow_Tab"));
       break;
     case ash::UMA_ACCEL_EXIT_FIRST_Q:
       content::RecordAction(content::UserMetricsAction("Accel_Exit_First_Q"));
       break;
     case ash::UMA_ACCEL_EXIT_SECOND_Q:
       content::RecordAction(content::UserMetricsAction("Accel_Exit_Second_Q"));
-      break;
-    case ash::UMA_ACCEL_SEARCH_LWIN:
-      content::RecordAction(content::UserMetricsAction("Accel_Search_LWin"));
       break;
     case ash::UMA_ACCEL_SHUT_DOWN_POWER_BUTTON:
       content::RecordAction(
@@ -209,6 +185,18 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       break;
     case ash::UMA_MOUSE_DOWN:
       content::RecordAction(content::UserMetricsAction("Mouse_Down"));
+      break;
+    case ash::UMA_SHELF_ALIGNMENT_SET_BOTTOM:
+      content::RecordAction(
+          content::UserMetricsAction("Shelf_AlignmentSetBottom"));
+      break;
+    case ash::UMA_SHELF_ALIGNMENT_SET_LEFT:
+      content::RecordAction(
+          content::UserMetricsAction("Shelf_AlignmentSetLeft"));
+      break;
+    case ash::UMA_SHELF_ALIGNMENT_SET_RIGHT:
+      content::RecordAction(
+          content::UserMetricsAction("Shelf_AlignmentSetRight"));
       break;
     case ash::UMA_TOGGLE_MAXIMIZE_CAPTION_CLICK:
       content::RecordAction(

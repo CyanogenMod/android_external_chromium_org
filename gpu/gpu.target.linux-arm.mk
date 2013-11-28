@@ -78,6 +78,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -98,6 +99,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -162,6 +164,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -183,6 +186,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

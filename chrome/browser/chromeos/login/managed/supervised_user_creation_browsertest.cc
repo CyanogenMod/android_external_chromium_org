@@ -126,6 +126,7 @@ class SupervisedUserTest : public chromeos::LoginManagerTest {
   void CreateSupervisedUser();
   void SigninAsSupervisedUser();
   void RemoveSupervisedUser();
+  void LogInAsManagerAndFillUserData();
 
  protected:
    cryptohome::MockAsyncMethodCaller* mock_async_method_caller_;
@@ -143,7 +144,7 @@ void SupervisedUserTest::PrepareUsers() {
   chromeos::StartupUtils::MarkOobeCompleted();
 }
 
-void SupervisedUserTest::CreateSupervisedUser() {
+void SupervisedUserTest::LogInAsManagerAndFillUserData() {
   // Create supervised user.
 
   // Navigate to supervised user creation screen.
@@ -155,13 +156,12 @@ void SupervisedUserTest::CreateSupervisedUser() {
   JSEval("$('managed-user-creation-start-button').click()");
 
   // Check that both users appear as managers, and test-manager@gmail.com is
-  // the first one. As no manager is selected, 'next' button is disabled
+  // the first one.
   JSExpect("$('managed-user-creation').currentPage_ == 'manager'");
 
   JSExpect(std::string("document.querySelectorAll(")
       .append("'#managed-user-creation-managers-pane .manager-pod.focused')")
-      .append(".length == 0"));
-  JSExpect("$('managed-user-creation-next-button').disabled");
+      .append(".length == 1"));
 
   JSExpect("$('managed-user-creation').managerList_.pods.length == 2");
   JSExpect(std::string("document.querySelectorAll(")
@@ -171,10 +171,6 @@ void SupervisedUserTest::CreateSupervisedUser() {
       .append("'#managed-user-creation-managers-pane .manager-pod')")
       .append("[0].user.emailAddress == '").append(kTestManager).append("'"));
   // Select the first user as manager, and enter password.
-  JSEval(std::string("supervisedUserManagerPod = ")
-      .append("$('managed-user-creation').managerList_.pods[0]"));
-  JSEval(std::string("$('managed-user-creation').managerList_")
-      .append(".selectPod(supervisedUserManagerPod)"));
   JSExpect("$('managed-user-creation-next-button').disabled");
   JSSetTextField(
       "#managed-user-creation .manager-pod.focused input",
@@ -215,6 +211,10 @@ void SupervisedUserTest::CreateSupervisedUser() {
 
   JSEval("$('managed-user-creation').updateNextButtonForUser_()");
   JSExpect("!$('managed-user-creation-next-button').disabled");
+}
+
+void SupervisedUserTest::CreateSupervisedUser() {
+  LogInAsManagerAndFillUserData();
 
   EXPECT_CALL(*mock_async_method_caller_, AsyncMount(_, _, _, _))
       .Times(1);
@@ -283,8 +283,17 @@ void SupervisedUserTest::RemoveSupervisedUser() {
 class SupervisedUserCreationTest : public SupervisedUserTest {
  public:
   SupervisedUserCreationTest() : SupervisedUserTest() {}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(SupervisedUserCreationTest);
+};
+
+class SupervisedUserTransactionCleanupTest : public SupervisedUserTest {
+ public:
+  SupervisedUserTransactionCleanupTest() : SupervisedUserTest () {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SupervisedUserTransactionCleanupTest);
 };
 
 class SupervisedUserOwnerCreationTest : public SupervisedUserTest {
@@ -296,6 +305,7 @@ class SupervisedUserOwnerCreationTest : public SupervisedUserTest {
     cros_settings_provider_.reset(new StubCrosSettingsProvider());
     cros_settings_provider_->Set(kDeviceOwner, base::StringValue(kTestManager));
   }
+
  private:
   scoped_ptr<StubCrosSettingsProvider> cros_settings_provider_;
   DISALLOW_COPY_AND_ASSIGN(SupervisedUserOwnerCreationTest);
@@ -339,6 +349,43 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
     CreateAndRemoveSupervisedUser) {
   RemoveSupervisedUser();
+}
+
+IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
+    PRE_PRE_CreateAndCancelSupervisedUser) {
+  PrepareUsers();
+}
+
+IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
+    PRE_CreateAndCancelSupervisedUser) {
+  LogInAsManagerAndFillUserData();
+
+  EXPECT_CALL(*mock_async_method_caller_, AsyncMount(_, _, _, _))
+      .Times(1);
+  EXPECT_CALL(*mock_async_method_caller_, AsyncGetSanitizedUsername(_, _))
+      .Times(1);
+  EXPECT_CALL(*mock_async_method_caller_, AsyncAddKey(_, _, _, _))
+      .Times(1);
+
+  JSEval("$('managed-user-creation-next-button').click()");
+
+  testing::Mock::VerifyAndClearExpectations(mock_async_method_caller_);
+
+  EXPECT_TRUE(registration_utility_stub_->register_was_called());
+  EXPECT_EQ(registration_utility_stub_->display_name(),
+            UTF8ToUTF16(kSupervisedUserDisplayName));
+
+  std::string user_id = registration_utility_stub_->managed_user_id();
+  // Make sure user is already in list.
+  ASSERT_EQ(3UL, UserManager::Get()->GetUsers().size());
+  // We wait for token now. Press cancel button at this point.
+  JSEval("$('cancel-add-user-button').click()");
+}
+
+IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
+    CreateAndCancelSupervisedUser) {
+  // Make sure there is no supervised user in list.
+  ASSERT_EQ(2UL, UserManager::Get()->GetUsers().size());
 }
 
 }  // namespace chromeos

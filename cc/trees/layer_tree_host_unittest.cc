@@ -9,6 +9,7 @@
 #include "base/auto_reset.h"
 #include "base/synchronization/lock.h"
 #include "cc/animation/timing_function.h"
+#include "cc/base/swap_promise.h"
 #include "cc/debug/frame_rate_counter.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/content_layer_client.h"
@@ -2373,7 +2374,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithGLRenderer) {
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, NULL, settings, NULL);
+      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
 }
@@ -2385,7 +2386,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithSoftwareRenderer) {
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, NULL, settings, NULL);
+      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
 }
@@ -2397,7 +2398,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithDelegatingRendererAndGLContent) {
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, NULL, settings, NULL);
+      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
 }
@@ -2410,7 +2411,7 @@ TEST(LayerTreeHostTest,
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, NULL, settings, NULL);
+      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
 }
@@ -2799,26 +2800,26 @@ class MockIOSurfaceWebGraphicsContext3D : public TestWebGraphicsContext3D {
     test_capabilities_.texture_rectangle = true;
   }
 
-  virtual WebKit::WebGLId createTexture() OVERRIDE {
+  virtual blink::WebGLId createTexture() OVERRIDE {
     return 1;
   }
 
-  MOCK_METHOD1(activeTexture, void(WebKit::WGC3Denum texture));
-  MOCK_METHOD2(bindTexture, void(WebKit::WGC3Denum target,
-                                 WebKit::WebGLId texture_id));
-  MOCK_METHOD3(texParameteri, void(WebKit::WGC3Denum target,
-                                   WebKit::WGC3Denum pname,
-                                   WebKit::WGC3Dint param));
-  MOCK_METHOD5(texImageIOSurface2DCHROMIUM, void(WebKit::WGC3Denum target,
-                                                 WebKit::WGC3Dint width,
-                                                 WebKit::WGC3Dint height,
-                                                 WebKit::WGC3Duint ioSurfaceId,
-                                                 WebKit::WGC3Duint plane));
-  MOCK_METHOD4(drawElements, void(WebKit::WGC3Denum mode,
-                                  WebKit::WGC3Dsizei count,
-                                  WebKit::WGC3Denum type,
-                                  WebKit::WGC3Dintptr offset));
-  MOCK_METHOD1(deleteTexture, void(WebKit::WGC3Denum texture));
+  MOCK_METHOD1(activeTexture, void(blink::WGC3Denum texture));
+  MOCK_METHOD2(bindTexture, void(blink::WGC3Denum target,
+                                 blink::WebGLId texture_id));
+  MOCK_METHOD3(texParameteri, void(blink::WGC3Denum target,
+                                   blink::WGC3Denum pname,
+                                   blink::WGC3Dint param));
+  MOCK_METHOD5(texImageIOSurface2DCHROMIUM, void(blink::WGC3Denum target,
+                                                 blink::WGC3Dint width,
+                                                 blink::WGC3Dint height,
+                                                 blink::WGC3Duint ioSurfaceId,
+                                                 blink::WGC3Duint plane));
+  MOCK_METHOD4(drawElements, void(blink::WGC3Denum mode,
+                                  blink::WGC3Dsizei count,
+                                  blink::WGC3Denum type,
+                                  blink::WGC3Dintptr offset));
+  MOCK_METHOD1(deleteTexture, void(blink::WGC3Denum texture));
 };
 
 
@@ -4882,6 +4883,7 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
  protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->impl_side_painting = true;
+    settings->default_tile_size = gfx::Size(128, 128);
   }
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
@@ -4913,8 +4915,11 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
 
     // Expect that the transfer buffer memory used is equal to the
     // MaxTransferBufferUsageBytes value set in CreateOutputSurface.
-    EXPECT_EQ(1024 * 1024u,
-              context->GetTransferBufferMemoryUsedBytes());
+    // NOTE: This is now 1/2 due to raster memory limit in TileManager.
+    //       Only half the limit will be reached unless the task set
+    //       thrashes to a completly new set of tiles.
+    EXPECT_EQ(512 * 1024u,
+              context->GetPeakTransferBufferMemoryUsedBytes());
     EndTest();
   }
 
@@ -5210,5 +5215,125 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
 // No output to copy for delegated renderers.
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface);
+
+struct TestSwapPromiseResult {
+  TestSwapPromiseResult() : did_swap_called(false),
+                            did_not_swap_called(false),
+                            dtor_called(false),
+                            reason(SwapPromise::DID_NOT_SWAP_UNKNOWN) {
+  }
+
+  bool did_swap_called;
+  bool did_not_swap_called;
+  bool dtor_called;
+  SwapPromise::DidNotSwapReason reason;
+  base::Lock lock;
+};
+
+class TestSwapPromise : public SwapPromise {
+ public:
+  explicit TestSwapPromise(TestSwapPromiseResult* result)
+      : result_(result) {
+  }
+
+  virtual ~TestSwapPromise() {
+    base::AutoLock lock(result_->lock);
+    result_->dtor_called = true;
+  }
+
+  virtual void DidSwap() OVERRIDE {
+    base::AutoLock lock(result_->lock);
+    EXPECT_FALSE(result_->did_swap_called);
+    EXPECT_FALSE(result_->did_not_swap_called);
+    result_->did_swap_called = true;
+  }
+
+  virtual void DidNotSwap(DidNotSwapReason reason) OVERRIDE {
+    base::AutoLock lock(result_->lock);
+    EXPECT_FALSE(result_->did_swap_called);
+    EXPECT_FALSE(result_->did_not_swap_called);
+    result_->did_not_swap_called = true;
+    result_->reason = reason;
+  }
+
+ private:
+  // Not owned.
+  TestSwapPromiseResult* result_;
+};
+
+class LayerTreeHostTestBreakSwapPromise
+    : public LayerTreeHostTest {
+ protected:
+  LayerTreeHostTestBreakSwapPromise()
+      : commit_count_(0), commit_complete_count_(0) {
+  }
+
+  virtual void WillBeginMainFrame() OVERRIDE {
+    ASSERT_LE(commit_count_, 2);
+    scoped_ptr<SwapPromise> swap_promise(new TestSwapPromise(
+        &swap_promise_result_[commit_count_]));
+    layer_tree_host()->QueueSwapPromise(swap_promise.Pass());
+  }
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual void DidCommit() OVERRIDE {
+    commit_count_++;
+    if (commit_count_ == 2) {
+      // This commit will finish.
+      layer_tree_host()->SetNeedsCommit();
+    }
+  }
+
+  virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    commit_complete_count_++;
+    if (commit_complete_count_ == 1) {
+      // This commit will be aborted because no actual update.
+      PostSetNeedsUpdateLayersToMainThread();
+    } else {
+      EndTest();
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    // 3 commits are scheduled. 2 completes. 1 is aborted.
+    EXPECT_EQ(commit_count_, 3);
+    EXPECT_EQ(commit_complete_count_, 2);
+
+    {
+      // The first commit completes and causes swap buffer which finishes
+      // the promise.
+      base::AutoLock lock(swap_promise_result_[0].lock);
+      EXPECT_TRUE(swap_promise_result_[0].did_swap_called);
+      EXPECT_FALSE(swap_promise_result_[0].did_not_swap_called);
+      EXPECT_TRUE(swap_promise_result_[0].dtor_called);
+    }
+
+    {
+      // The second commit aborts.
+      base::AutoLock lock(swap_promise_result_[1].lock);
+      EXPECT_FALSE(swap_promise_result_[1].did_swap_called);
+      EXPECT_TRUE(swap_promise_result_[1].did_not_swap_called);
+      EXPECT_EQ(SwapPromise::COMMIT_FAILS, swap_promise_result_[1].reason);
+      EXPECT_TRUE(swap_promise_result_[1].dtor_called);
+    }
+
+    {
+      // The last commit completes but it does not cause swap buffer because
+      // there is no damage in the frame data.
+      base::AutoLock lock(swap_promise_result_[2].lock);
+      EXPECT_FALSE(swap_promise_result_[2].did_swap_called);
+      EXPECT_TRUE(swap_promise_result_[2].did_not_swap_called);
+      EXPECT_EQ(SwapPromise::SWAP_FAILS, swap_promise_result_[2].reason);
+      EXPECT_TRUE(swap_promise_result_[2].dtor_called);
+    }
+  }
+
+  int commit_count_;
+  int commit_complete_count_;
+  TestSwapPromiseResult swap_promise_result_[3];
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromise);
 
 }  // namespace cc

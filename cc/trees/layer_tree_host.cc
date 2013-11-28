@@ -11,10 +11,12 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/synchronization/lock.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
@@ -29,7 +31,7 @@
 #include "cc/layers/painted_scrollbar_layer.h"
 #include "cc/layers/render_surface.h"
 #include "cc/resources/prioritized_resource_manager.h"
-#include "cc/resources/ui_resource_client.h"
+#include "cc/resources/ui_resource_request.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
@@ -41,7 +43,14 @@
 #include "ui/gfx/size_conversions.h"
 
 namespace {
-static int s_num_layer_tree_instances;
+static base::LazyInstance<base::Lock>::Leaky
+    s_next_tree_id_lock = LAZY_INSTANCE_INITIALIZER;
+
+inline int GetNextTreeId() {
+  static int s_next_tree_id = 1;
+  base::AutoLock lock(s_next_tree_id_lock.Get());
+  return s_next_tree_id++;
+}
 }
 
 namespace cc {
@@ -61,63 +70,44 @@ RendererCapabilities::RendererCapabilities()
 
 RendererCapabilities::~RendererCapabilities() {}
 
-UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
-                                     UIResourceId id)
-    : type_(type), id_(id) {}
-
-UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
-                                     UIResourceId id,
-                                     const UIResourceBitmap& bitmap)
-    : type_(type), id_(id), bitmap_(new UIResourceBitmap(bitmap)) {}
-
-UIResourceRequest::UIResourceRequest(const UIResourceRequest& request) {
-  (*this) = request;
-}
-
-UIResourceRequest& UIResourceRequest::operator=(
-    const UIResourceRequest& request) {
-  type_ = request.type_;
-  id_ = request.id_;
-  if (request.bitmap_) {
-    bitmap_ = make_scoped_ptr(new UIResourceBitmap(*request.bitmap_.get()));
-  } else {
-    bitmap_.reset();
-  }
-
-  return *this;
-}
-
-UIResourceRequest::~UIResourceRequest() {}
-
-bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
-  return s_num_layer_tree_instances > 0;
-}
-
-scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
+scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     LayerTreeHostClient* client,
     SharedBitmapManager* manager,
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+  DCHECK(impl_task_runner);
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  if (!layer_tree_host->Initialize(impl_task_runner))
+  if (!layer_tree_host->InitializeThreaded(impl_task_runner))
     return scoped_ptr<LayerTreeHost>();
   return layer_tree_host.Pass();
 }
 
-static int s_next_tree_id = 1;
+scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
+    LayerTreeHostClient* client,
+    LayerTreeHostSingleThreadClient* single_thread_client,
+    SharedBitmapManager* manager,
+    const LayerTreeSettings& settings) {
+  scoped_ptr<LayerTreeHost> layer_tree_host(
+      new LayerTreeHost(client, manager, settings));
+  if (!layer_tree_host->InitializeSingleThreaded(single_thread_client))
+    return scoped_ptr<LayerTreeHost>();
+  return layer_tree_host.Pass();
+}
 
-LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
-                             SharedBitmapManager* manager,
-                             const LayerTreeSettings& settings)
-    : next_ui_resource_id_(1),
+
+LayerTreeHost::LayerTreeHost(
+    LayerTreeHostClient* client,
+    SharedBitmapManager* manager,
+    const LayerTreeSettings& settings)
+    : micro_benchmark_controller_(this),
+      next_ui_resource_id_(1),
       animating_(false),
       needs_full_tree_sync_(true),
       needs_filter_context_(false),
       client_(client),
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
-      micro_benchmark_controller_(this),
       output_surface_can_be_initialized_(true),
       output_surface_lost_(true),
       num_failed_recreate_attempts_(0),
@@ -135,22 +125,24 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       partial_texture_update_requests_(0),
       in_paint_layer_contents_(false),
       total_frames_used_for_lcd_text_metrics_(0),
-      tree_id_(s_next_tree_id++),
+      tree_id_(GetNextTreeId()),
       next_commit_forces_redraw_(false),
       shared_bitmap_manager_(manager) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
-  s_num_layer_tree_instances++;
   rendering_stats_instrumentation_->set_record_rendering_stats(
       debug_state_.RecordRenderingStats());
 }
 
-bool LayerTreeHost::Initialize(
+bool LayerTreeHost::InitializeThreaded(
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  if (impl_task_runner.get())
-    return InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
-  else
-    return InitializeProxy(SingleThreadProxy::Create(this));
+  return InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
+}
+
+bool LayerTreeHost::InitializeSingleThreaded(
+    LayerTreeHostSingleThreadClient* single_thread_client) {
+    return InitializeProxy(
+        SingleThreadProxy::Create(this, single_thread_client));
 }
 
 bool LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
@@ -181,11 +173,6 @@ LayerTreeHost::~LayerTreeHost() {
     DCHECK(proxy_->IsMainThread());
     proxy_->Stop();
   }
-
-  s_num_layer_tree_instances--;
-  RateLimiterMap::iterator it = rate_limiters_.begin();
-  if (it != rate_limiters_.end())
-    it->second->Stop();
 
   if (root_layer_.get()) {
     // The layer tree must be destroyed before the layer tree host. We've
@@ -398,6 +385,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->SetLatencyInfo(latency_info_);
   latency_info_.Clear();
 
+  sync_tree->PassSwapPromises(&swap_promise_list_);
+
   host_impl->SetViewportSize(device_viewport_size_);
   host_impl->SetOverdrawBottomHeight(overdraw_bottom_height_);
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
@@ -437,6 +426,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     // considered active.
     sync_tree->DidBecomeActive();
   }
+
+  micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
 
   source_frame_number_++;
 }
@@ -538,7 +529,6 @@ const RendererCapabilities& LayerTreeHost::GetRendererCapabilities() const {
 }
 
 void LayerTreeHost::SetNeedsAnimate() {
-  DCHECK(proxy_->HasImplThread());
   proxy_->SetNeedsAnimate();
 }
 
@@ -565,8 +555,6 @@ void LayerTreeHost::SetNeedsRedraw() {
 
 void LayerTreeHost::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   proxy_->SetNeedsRedraw(damage_rect);
-  if (!proxy_->HasImplThread())
-    client_->ScheduleComposite();
 }
 
 bool LayerTreeHost::CommitRequested() const {
@@ -608,6 +596,10 @@ void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
         case AnimationEvent::Finished:
           (*iter).second->NotifyAnimationFinished((*events)[event_index],
                                                   wall_clock_time.ToDoubleT());
+          break;
+
+        case AnimationEvent::Aborted:
+          (*iter).second->NotifyAnimationAborted((*events)[event_index]);
           break;
 
         case AnimationEvent::PropertyUpdate:
@@ -740,10 +732,6 @@ void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
         frame_begin_time);
   else
     SetNeedsCommit();
-}
-
-void LayerTreeHost::ScheduleComposite() {
-  client_->ScheduleComposite();
 }
 
 bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
@@ -1051,8 +1039,7 @@ void LayerTreeHost::PaintLayerContents(
            LayerIteratorType::Begin(&render_surface_layer_list);
        it != end;
        ++it) {
-    bool prevent_occlusion = it.target_render_surface_layer()->HasCopyRequest();
-    occlusion_tracker.EnterLayer(it, prevent_occlusion);
+    occlusion_tracker.EnterLayer(it);
 
     if (it.represents_target_render_surface()) {
       PaintMasksForRenderSurface(
@@ -1111,28 +1098,20 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
   }
 }
 
-void LayerTreeHost::StartRateLimiter(WebKit::WebGraphicsContext3D* context3d) {
+void LayerTreeHost::StartRateLimiter() {
   if (animating_)
     return;
 
-  DCHECK(context3d);
-  RateLimiterMap::iterator it = rate_limiters_.find(context3d);
-  if (it != rate_limiters_.end()) {
-    it->second->Start();
-  } else {
-    scoped_refptr<RateLimiter> rate_limiter =
-        RateLimiter::Create(context3d, this, proxy_->MainThreadTaskRunner());
-    rate_limiters_[context3d] = rate_limiter;
-    rate_limiter->Start();
+  if (!rate_limit_timer_.IsRunning()) {
+    rate_limit_timer_.Start(FROM_HERE,
+                            base::TimeDelta(),
+                            this,
+                            &LayerTreeHost::RateLimit);
   }
 }
 
-void LayerTreeHost::StopRateLimiter(WebKit::WebGraphicsContext3D* context3d) {
-  RateLimiterMap::iterator it = rate_limiters_.find(context3d);
-  if (it != rate_limiters_.end()) {
-    it->second->Stop();
-    rate_limiters_.erase(it);
-  }
+void LayerTreeHost::StopRateLimiter() {
+  rate_limit_timer_.Stop();
 }
 
 void LayerTreeHost::RateLimit() {
@@ -1140,6 +1119,7 @@ void LayerTreeHost::RateLimit() {
   // commands will wait for the compositing context, and therefore for the
   // SwapBuffers.
   proxy_->ForceSerializeOnSwapBuffers();
+  client_->RateLimitSharedMainThreadContext();
 }
 
 bool LayerTreeHost::AlwaysUsePartialTextureUpdates() {
@@ -1288,6 +1268,22 @@ bool LayerTreeHost::ScheduleMicroBenchmark(
     const MicroBenchmark::DoneCallback& callback) {
   return micro_benchmark_controller_.ScheduleRun(
       benchmark_name, value.Pass(), callback);
+}
+
+void LayerTreeHost::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
+  if (proxy_->HasImplThread()) {
+    DCHECK(proxy_->CommitRequested() || proxy_->BeginMainFrameRequested());
+  }
+  DCHECK(swap_promise);
+  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
+    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
+  swap_promise_list_.push_back(swap_promise.Pass());
+}
+
+void LayerTreeHost::BreakSwapPromises(SwapPromise::DidNotSwapReason reason) {
+  for (size_t i = 0; i < swap_promise_list_.size(); i++)
+    swap_promise_list_[i]->DidNotSwap(reason);
+  swap_promise_list_.clear();
 }
 
 }  // namespace cc

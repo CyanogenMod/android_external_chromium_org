@@ -22,7 +22,7 @@
 #include "ui/gfx/rect.h"
 
 using testing::_;
-using WebKit::WebAutofillClient;
+using blink::WebAutofillClient;
 
 namespace autofill {
 
@@ -42,8 +42,11 @@ class MockAutofillDriver : public TestAutofillDriver {
   // Mock methods to enable testability.
   MOCK_METHOD1(SetRendererActionOnFormDataReception,
                void(RendererFormDataAction action));
+  MOCK_METHOD1(RendererShouldAcceptDataListSuggestion,
+               void(const base::string16&));
   MOCK_METHOD0(RendererShouldClearFilledForm, void());
   MOCK_METHOD0(RendererShouldClearPreviewedForm, void());
+  MOCK_METHOD1(RendererShouldSetNodeText, void(const base::string16&));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAutofillDriver);
@@ -106,7 +109,6 @@ class AutofillExternalDelegateUnitTest
                                 &manager_delegate_));
     external_delegate_.reset(
         new AutofillExternalDelegate(
-            web_contents(),
             autofill_manager_.get(), autofill_driver_.get()));
   }
 
@@ -433,6 +435,18 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
       WebAutofillClient::MenuItemIDPasswordEntry);
 }
 
+// Test that the driver is directed to accept the data list after being notified
+// that the user accepted the data list suggestion.
+TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateAcceptSuggestion) {
+  EXPECT_CALL(manager_delegate_, HideAutofillPopup());
+  base::string16 dummy_string(ASCIIToUTF16("baz qux"));
+  EXPECT_CALL(*autofill_driver_,
+              RendererShouldAcceptDataListSuggestion(dummy_string));
+  external_delegate_->DidAcceptSuggestion(
+      dummy_string,
+      WebAutofillClient::MenuItemIDDataListEntry);
+}
+
 // Test that the driver is directed to clear the form after being notified that
 // the user accepted the suggestion to clear the form.
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearForm) {
@@ -468,6 +482,16 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
                                             autofill_items,
                                             autofill_items,
                                             autofill_ids);
+}
+
+TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateSetNodeText) {
+  EXPECT_CALL(manager_delegate_, HideAutofillPopup());
+  base::string16 dummy_string(ASCIIToUTF16("baz foo"));
+  EXPECT_CALL(*autofill_driver_,
+              RendererShouldSetNodeText(dummy_string));
+  external_delegate_->DidAcceptSuggestion(
+      dummy_string,
+      WebAutofillClient::MenuItemIDAutocompleteEntry);
 }
 
 }  // namespace autofill

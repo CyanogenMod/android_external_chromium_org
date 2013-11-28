@@ -45,8 +45,9 @@ class PDFBrowserTest : public InProcessBrowserTest,
       : snapshot_different_(true),
         next_dummy_search_value_(0),
         load_stop_notification_count_(0) {
-    pdf_test_server_.ServeFilesFromDirectory(
-        base::FilePath(FILE_PATH_LITERAL("pdf/test")));
+    base::FilePath src_dir;
+    EXPECT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &src_dir));
+    pdf_test_server_.ServeFilesFromDirectory(src_dir.AppendASCII("pdf/test"));
   }
 
  protected:
@@ -247,8 +248,8 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Scroll) {
   // We use wheel mouse event since that's the only one we can easily push to
   // the renderer.  There's no way to push a cross-platform keyboard event at
   // the moment.
-  WebKit::WebMouseWheelEvent wheel_event;
-  wheel_event.type = WebKit::WebInputEvent::MouseWheel;
+  blink::WebMouseWheelEvent wheel_event;
+  wheel_event.type = blink::WebInputEvent::MouseWheel;
   wheel_event.deltaY = -200;
   wheel_event.wheelTicksY = -2;
   WebContents* web_contents =
@@ -368,7 +369,13 @@ INSTANTIATE_TEST_CASE_P(PDFTestFiles,
                         PDFBrowserTest,
                         testing::Range(0, kLoadingNumberOfParts));
 
-IN_PROC_BROWSER_TEST_F(PDFBrowserTest, Action) {
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/315160
+#define MAYBE_Action DISABLED_Action
+#else
+#define MAYBE_Action Action
+#endif
+IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Action) {
   ASSERT_NO_FATAL_FAILURE(Load());
 
   ASSERT_TRUE(content::ExecuteScript(

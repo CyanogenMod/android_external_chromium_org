@@ -5,15 +5,15 @@
 #include "ash/launcher/launcher_item_delegate_manager.h"
 
 #include "ash/launcher/launcher_item_delegate.h"
-#include "ash/launcher/launcher_model.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shell.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
 
 namespace ash {
 
-LauncherItemDelegateManager::LauncherItemDelegateManager(
-    ash::LauncherModel* model) : model_(model) {
+LauncherItemDelegateManager::LauncherItemDelegateManager(ShelfModel* model)
+    : model_(model) {
   DCHECK(model_);
   model_->AddObserver(this);
 }
@@ -44,24 +44,23 @@ LauncherItemDelegate* LauncherItemDelegateManager::GetLauncherItemDelegate(
   return NULL;
 }
 
-void LauncherItemDelegateManager::LauncherItemAdded(int index) {
+void LauncherItemDelegateManager::ShelfItemAdded(int index) {
 }
 
-void LauncherItemDelegateManager::LauncherItemRemoved(int index,
-                                                      ash::LauncherID id) {
+void LauncherItemDelegateManager::ShelfItemRemoved(int index, LauncherID id) {
   RemoveLauncherItemDelegate(id);
 }
 
-void LauncherItemDelegateManager::LauncherItemMoved(int start_index,
-                                                    int target_index) {
+void LauncherItemDelegateManager::ShelfItemMoved(int start_index,
+                                                 int target_index) {
 }
 
-void LauncherItemDelegateManager::LauncherItemChanged(
+void LauncherItemDelegateManager::ShelfItemChanged(
     int index,
     const LauncherItem& old_item) {
 }
 
-void LauncherItemDelegateManager::LauncherStatusChanged() {
+void LauncherItemDelegateManager::ShelfStatusChanged() {
 }
 
 void LauncherItemDelegateManager::RemoveLauncherItemDelegate(

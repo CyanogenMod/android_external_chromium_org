@@ -112,11 +112,11 @@ FileError InitializeMetadata(
 
   // Change permissions of cache file directory to u+rwx,og+x (711) in order to
   // allow archive files in that directory to be mounted by cros-disks.
-  file_util::SetPosixFilePermissions(
+  base::SetPosixFilePermissions(
       cache_root_directory.Append(kCacheFileDirectory),
-      file_util::FILE_PERMISSION_USER_MASK |
-      file_util::FILE_PERMISSION_EXECUTE_BY_GROUP |
-      file_util::FILE_PERMISSION_EXECUTE_BY_OTHERS);
+      base::FILE_PERMISSION_USER_MASK |
+      base::FILE_PERMISSION_EXECUTE_BY_GROUP |
+      base::FILE_PERMISSION_EXECUTE_BY_OTHERS);
 
   internal::ResourceMetadataStorage::UpgradeOldDB(
       metadata_storage->directory_path(), id_canonicalizer);
@@ -143,14 +143,15 @@ FileError InitializeMetadata(
           .InsertBeforeExtensionASCII(base::StringPrintf(" (%d)", uniquifier));
     }
 
-    std::map<std::string, FileCacheEntry> recovered_cache_entries;
-    metadata_storage->RecoverCacheEntriesFromTrashedResourceMap(
-        &recovered_cache_entries);
+    internal::ResourceMetadataStorage::RecoveredCacheInfoMap
+        recovered_cache_info;
+    metadata_storage->RecoverCacheInfoFromTrashedResourceMap(
+        &recovered_cache_info);
 
     LOG(INFO) << "DB could not be opened for some reasons. "
               << "Recovering cache files to " << dest_directory.value();
     if (!cache->RecoverFilesFromCacheDirectory(dest_directory,
-                                               recovered_cache_entries)) {
+                                               recovered_cache_info)) {
       LOG(WARNING) << "Failed to recover cache files.";
       return FILE_ERROR_FAILED;
     }

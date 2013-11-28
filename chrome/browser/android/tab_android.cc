@@ -21,6 +21,7 @@
 #include "chrome/browser/predictors/resource_prefetch_predictor_factory.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor_tab_helper.h"
 #include "chrome/browser/prerender/prerender_tab_helper.h"
+#include "chrome/browser/printing/print_view_manager_basic.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -29,6 +30,7 @@
 #include "chrome/browser/tab_contents/navigation_metrics_recorder.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/alternate_error_tab_observer.h"
+#include "chrome/browser/ui/android/content_settings/popup_blocked_infobar_delegate.h"
 #include "chrome/browser/ui/android/infobars/infobar_container_android.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
@@ -48,6 +50,10 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
 #include "jni/TabBase_jni.h"
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
+#endif
 
 namespace {
 
@@ -109,6 +115,11 @@ void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
     predictors::ResourcePrefetchPredictorTabHelper::CreateForWebContents(
         contents);
   }
+
+#if defined(ENABLE_MANAGED_USERS)
+  if (profile->IsManaged())
+    ManagedModeNavigationObserver::CreateForWebContents(contents);
+#endif
 }
 
 // TODO(dtrainor): Refactor so we do not need this method.
@@ -136,7 +147,7 @@ TabAndroid::TabAndroid(JNIEnv* env, jobject obj)
     : weak_java_tab_(env, obj),
       session_tab_id_(),
       synced_tab_delegate_(new browser_sync::SyncedTabDelegateAndroid(this)) {
-  Java_TabBase_setNativePtr(env, obj, reinterpret_cast<jint>(this));
+  Java_TabBase_setNativePtr(env, obj, reinterpret_cast<intptr_t>(this));
 }
 
 TabAndroid::~TabAndroid() {
@@ -228,13 +239,12 @@ void TabAndroid::SwapTabContents(content::WebContents* old_contents,
               weak_java_tab_.get(env).obj()));
   InfoBarService* new_infobar_service = new_contents ?
       InfoBarService::FromWebContents(new_contents) : NULL;
-  if (new_infobar_service)
-    infobar_container->ChangeInfoBarService(new_infobar_service);
+  infobar_container->ChangeInfoBarService(new_infobar_service);
 
   Java_TabBase_swapWebContents(
       env,
       weak_java_tab_.get(env).obj(),
-      reinterpret_cast<jint>(new_contents));
+      reinterpret_cast<intptr_t>(new_contents));
 }
 
 void TabAndroid::Observe(int type,
@@ -255,9 +265,12 @@ void TabAndroid::Observe(int type,
         if (popup_blocker_helper)
           num_popups = popup_blocker_helper->GetBlockedPopupsCount();
 
-        Java_TabBase_onBlockedPopupsStateChanged(env,
-                                                 weak_java_tab_.get(env).obj(),
-                                                 num_popups);
+        if (num_popups > 0) {
+          PopupBlockedInfoBarDelegate::Create(
+              InfoBarService::FromWebContents(web_contents()),
+              num_popups);
+        }
+
         settings->SetBlockageHasBeenIndicated(CONTENT_SETTINGS_TYPE_POPUPS);
       }
       break;
@@ -361,19 +374,6 @@ base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetProfileAndroid(
   return profile_android->GetJavaObject();
 }
 
-void TabAndroid::LaunchBlockedPopups(JNIEnv* env, jobject obj) {
-  PopupBlockerTabHelper* popup_blocker_helper =
-      PopupBlockerTabHelper::FromWebContents(web_contents());
-  DCHECK(popup_blocker_helper);
-  std::map<int32, GURL> blocked_popups =
-      popup_blocker_helper->GetBlockedPopupRequests();
-  for (std::map<int32, GURL>::iterator it = blocked_popups.begin();
-      it != blocked_popups.end();
-      it++) {
-    popup_blocker_helper->ShowBlockedPopup(it->first);
-  }
-}
-
 ToolbarModel::SecurityLevel TabAndroid::GetSecurityLevel(JNIEnv* env,
                                                          jobject obj) {
   return ToolbarModelImpl::GetSecurityLevelForWebContents(web_contents());
@@ -397,6 +397,20 @@ void TabAndroid::SetActiveNavigationEntryTitleForUrl(JNIEnv* env,
       web_contents()->GetController().GetVisibleEntry();
   if (entry && url == entry->GetVirtualURL().spec())
     entry->SetTitle(title);
+}
+
+bool TabAndroid::Print(JNIEnv* env, jobject obj) {
+  if (!web_contents())
+    return false;
+
+  printing::PrintViewManagerBasic::CreateForWebContents(web_contents());
+  printing::PrintViewManagerBasic* print_view_manager =
+      printing::PrintViewManagerBasic::FromWebContents(web_contents());
+  if (print_view_manager == NULL)
+    return false;
+
+  print_view_manager->PrintNow();
+  return true;
 }
 
 bool TabAndroid::RegisterTabAndroid(JNIEnv* env) {

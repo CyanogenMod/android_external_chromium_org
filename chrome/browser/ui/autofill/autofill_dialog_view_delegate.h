@@ -16,6 +16,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/range/range.h"
 
+class FieldValueMap;
 class GURL;
 class Profile;
 
@@ -35,7 +36,6 @@ class MenuModel;
 
 namespace autofill {
 
-typedef std::map<ServerFieldType, string16> FieldValueMap;
 typedef std::map<ServerFieldType, gfx::Image> FieldIconMap;
 
 // This class defines the interface to the controller that the dialog view sees.
@@ -55,9 +55,6 @@ class AutofillDialogViewDelegate {
   virtual string16 LegalDocumentsText() = 0;
 
   // State ---------------------------------------------------------------------
-
-  // Whether the sign-in link should be disabled.
-  virtual bool ShouldDisableSignInLink() const = 0;
 
   // Whether a loading animation should be shown (e.g. while signing in,
   // retreiving Wallet data, etc.).
@@ -153,13 +150,13 @@ class AutofillDialogViewDelegate {
   // Decides whether the combination of all |inputs| is valid, returns a
   // map of field types to validity messages.
   virtual ValidityMessages InputsAreValid(DialogSection section,
-                                          const DetailOutputMap& inputs) = 0;
+                                          const FieldValueMap& inputs) = 0;
 
   // Called when the user changes the contents of a text field or activates it
   // (by focusing and then clicking it). |was_edit| is true when the function
   // was called in response to the user editing the text field.
   virtual void UserEditedOrActivatedInput(DialogSection section,
-                                          const DetailInput* input,
+                                          ServerFieldType type,
                                           gfx::NativeView parent_view,
                                           const gfx::Rect& content_bounds,
                                           const string16& field_contents,

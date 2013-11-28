@@ -4,7 +4,8 @@
 
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 
-#include "base/atomicops.h"
+#include "base/command_line.h"
+#include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/id_allocator.h"
@@ -15,6 +16,7 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_surface_mock.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_base.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/mocks.h"
@@ -63,15 +65,21 @@ class GLES2DecoderTest : public GLES2DecoderTestBase {
       bool init);
 };
 
-class GLES2DecoderANGLETest : public GLES2DecoderTestBase {
+class GLES2DecoderTestWithExtensions
+    : public GLES2DecoderTest,
+      public ::testing::WithParamInterface<const char*> {
  public:
-  GLES2DecoderANGLETest()
-      : GLES2DecoderTestBase() {
-    GLES2Decoder::set_testing_force_is_angle(true);
-  }
+  GLES2DecoderTestWithExtensions() {}
 
-  virtual ~GLES2DecoderANGLETest() {
-    GLES2Decoder::set_testing_force_is_angle(false);
+  virtual void SetUp() {
+    InitDecoder(GetParam(),  // extensions
+                true,        // has alpha
+                true,        // has depth
+                false,       // has stencil
+                true,        // request alpha
+                true,        // request depth
+                false,       // request stencil
+                false);      // bind generates resource
   }
 };
 
@@ -127,13 +135,6 @@ class GLES2DecoderManualInitTest : public GLES2DecoderWithShaderTest {
  public:
   GLES2DecoderManualInitTest() { }
 
-  // Override default setup so nothing gets setup.
-  virtual void SetUp() {
-  }
-};
-
-class GLES2DecoderANGLEManualInitTest : public GLES2DecoderANGLETest {
- public:
   // Override default setup so nothing gets setup.
   virtual void SetUp() {
   }
@@ -4721,7 +4722,8 @@ TEST_F(GLES2DecoderTest, RenderbufferStorageBadArgs) {
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
 }
 
-TEST_F(GLES2DecoderManualInitTest, RenderbufferStorageMultisampleGLError) {
+TEST_F(GLES2DecoderManualInitTest,
+       RenderbufferStorageMultisampleCHROMIUMGLError) {
   InitDecoder(
       "GL_EXT_framebuffer_multisample",  // extensions
       false,   // has alpha
@@ -4741,13 +4743,14 @@ TEST_F(GLES2DecoderManualInitTest, RenderbufferStorageMultisampleGLError) {
       GL_RENDERBUFFER, 1, GL_RGBA, 100, 50))
       .Times(1)
       .RetiresOnSaturation();
-  RenderbufferStorageMultisampleEXT cmd;
+  RenderbufferStorageMultisampleCHROMIUM cmd;
   cmd.Init(GL_RENDERBUFFER, 1, GL_RGBA4, 100, 50);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
 }
 
-TEST_F(GLES2DecoderManualInitTest, RenderbufferStorageMultisampleBadArgs) {
+TEST_F(GLES2DecoderManualInitTest,
+       RenderbufferStorageMultisampleCHROMIUMBadArgs) {
   InitDecoder(
       "GL_EXT_framebuffer_multisample",  // extensions
       false,   // has alpha
@@ -4762,7 +4765,7 @@ TEST_F(GLES2DecoderManualInitTest, RenderbufferStorageMultisampleBadArgs) {
   EXPECT_CALL(*gl_, RenderbufferStorageMultisampleEXT(_, _, _, _, _))
       .Times(0)
       .RetiresOnSaturation();
-  RenderbufferStorageMultisampleEXT cmd;
+  RenderbufferStorageMultisampleCHROMIUM cmd;
   cmd.Init(GL_RENDERBUFFER, TestHelper::kMaxSamples + 1,
            GL_RGBA4, TestHelper::kMaxRenderbufferSize, 1);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
@@ -4776,6 +4779,122 @@ TEST_F(GLES2DecoderManualInitTest, RenderbufferStorageMultisampleBadArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
 }
+
+TEST_F(GLES2DecoderManualInitTest, RenderbufferStorageMultisampleCHROMIUM) {
+  InitDecoder(
+      "GL_EXT_framebuffer_multisample",  // extensions
+      false,   // has alpha
+      false,   // has depth
+      false,   // has stencil
+      false,   // request alpha
+      false,   // request depth
+      false,   // request stencil
+      false);  // bind generates resource
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                    kServiceRenderbufferId);
+  InSequence sequence;
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  EXPECT_CALL(
+      *gl_,
+      RenderbufferStorageMultisampleEXT(GL_RENDERBUFFER,
+                                        TestHelper::kMaxSamples,
+                                        GL_RGBA,
+                                        TestHelper::kMaxRenderbufferSize,
+                                        1))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  RenderbufferStorageMultisampleCHROMIUM cmd;
+  cmd.Init(GL_RENDERBUFFER, TestHelper::kMaxSamples,
+           GL_RGBA4, TestHelper::kMaxRenderbufferSize, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_F(GLES2DecoderManualInitTest,
+       RenderbufferStorageMultisampleEXTNotSupported) {
+  InitDecoder(
+      "GL_EXT_framebuffer_multisample",  // extensions
+      false,   // has alpha
+      false,   // has depth
+      false,   // has stencil
+      false,   // request alpha
+      false,   // request depth
+      false,   // request stencil
+      false);  // bind generates resource
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                    kServiceRenderbufferId);
+  InSequence sequence;
+  // GL_EXT_framebuffer_multisample uses RenderbufferStorageMultisampleCHROMIUM.
+  RenderbufferStorageMultisampleEXT cmd;
+  cmd.Init(GL_RENDERBUFFER, TestHelper::kMaxSamples,
+           GL_RGBA4, TestHelper::kMaxRenderbufferSize, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+}
+
+class GLES2DecoderMultisampledRenderToTextureTest
+    : public GLES2DecoderTestWithExtensions {};
+
+TEST_P(GLES2DecoderMultisampledRenderToTextureTest,
+       NotCompatibleWithRenderbufferStorageMultisampleCHROMIUM) {
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                    kServiceRenderbufferId);
+  RenderbufferStorageMultisampleCHROMIUM cmd;
+  cmd.Init(GL_RENDERBUFFER, TestHelper::kMaxSamples,
+           GL_RGBA4, TestHelper::kMaxRenderbufferSize, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+}
+
+TEST_P(GLES2DecoderMultisampledRenderToTextureTest,
+       RenderbufferStorageMultisampleEXT) {
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                    kServiceRenderbufferId);
+  InSequence sequence;
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  if (strstr(GetParam(), "GL_IMG_multisampled_render_to_texture")) {
+    EXPECT_CALL(
+        *gl_,
+        RenderbufferStorageMultisampleIMG(GL_RENDERBUFFER,
+                                          TestHelper::kMaxSamples,
+                                          GL_RGBA,
+                                          TestHelper::kMaxRenderbufferSize,
+                                          1))
+        .Times(1)
+        .RetiresOnSaturation();
+  } else {
+    EXPECT_CALL(
+        *gl_,
+        RenderbufferStorageMultisampleEXT(GL_RENDERBUFFER,
+                                          TestHelper::kMaxSamples,
+                                          GL_RGBA,
+                                          TestHelper::kMaxRenderbufferSize,
+                                          1))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  RenderbufferStorageMultisampleEXT cmd;
+  cmd.Init(GL_RENDERBUFFER, TestHelper::kMaxSamples,
+           GL_RGBA4, TestHelper::kMaxRenderbufferSize, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+INSTANTIATE_TEST_CASE_P(
+    GLES2DecoderMultisampledRenderToTextureTests,
+    GLES2DecoderMultisampledRenderToTextureTest,
+    ::testing::Values("GL_EXT_multisampled_render_to_texture",
+                      "GL_IMG_multisampled_render_to_texture"));
 
 TEST_F(GLES2DecoderTest, ReadPixelsGLError) {
   GLenum kFormat = GL_RGBA;
@@ -6107,7 +6226,7 @@ TEST_F(GLES2DecoderTest, TexSubImage2DDoesNotClearAfterTexImage2DNULLThenData) {
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                0, 0);
-  DoTexImage2DSameSize(
+  DoTexImage2D(
       GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
       kSharedMemoryId, kSharedMemoryOffset);
   EXPECT_CALL(*gl_, TexSubImage2D(
@@ -6129,14 +6248,49 @@ TEST_F(GLES2DecoderTest, TexSubImage2DDoesNotClearAfterTexImage2DNULLThenData) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
 
-TEST_F(GLES2DecoderANGLETest,
-       TexSubImage2DDoesNotClearAfterTexImage2DNULLThenData) {
+TEST_F(
+    GLES2DecoderManualInitTest,
+    TexSubImage2DDoesNotClearAfterTexImage2DNULLThenDataWithTexImage2DIsFaster) {
+  CommandLine command_line(0, NULL);
+  command_line.AppendSwitchASCII(
+      switches::kGpuDriverBugWorkarounds,
+      base::IntToString(gpu::TEXSUBIMAGE2D_FASTER_THAN_TEXIMAGE2D));
+  InitDecoderWithCommandLine(
+      "",     // extensions
+      false,  // has alpha
+      false,  // has depth
+      false,  // has stencil
+      false,  // request alpha
+      false,  // request depth
+      false,  // request stencil
+      true,   // bind generates resource
+      &command_line);
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                0, 0);
-  DoTexImage2DSameSize(
-      GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-      kSharedMemoryId, kSharedMemoryOffset);
+
+  {
+    // Uses texSubimage internally because the above workaround is active and
+    // the update is for the full size of the texture.
+    EXPECT_CALL(*gl_,
+                TexSubImage2D(
+                    GL_TEXTURE_2D, 0, 0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, _))
+        .Times(1)
+        .RetiresOnSaturation();
+    cmds::TexImage2D cmd;
+    cmd.Init(GL_TEXTURE_2D,
+             0,
+             GL_RGBA,
+             2,
+             2,
+             0,
+             GL_RGBA,
+             GL_UNSIGNED_BYTE,
+             kSharedMemoryId,
+             kSharedMemoryOffset);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+
   EXPECT_CALL(*gl_, TexSubImage2D(
       GL_TEXTURE_2D, 0, 1, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
       shared_memory_address_))
@@ -7389,7 +7543,7 @@ TEST_F(GLES2DecoderManualInitTest, GenerateMipmapDepthTexture) {
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
 }
 
-TEST_F(GLES2DecoderANGLEManualInitTest, DrawClearsDepthTexture) {
+TEST_F(GLES2DecoderManualInitTest, DrawClearsDepthTexture) {
   InitDecoder(
       "GL_ANGLE_depth_texture",      // extensions
       true,    // has alpha
@@ -7893,8 +8047,8 @@ class MockGLImage : public gfx::GLImage {
   // Overridden from gfx::GLImage:
   MOCK_METHOD0(Destroy, void());
   MOCK_METHOD0(GetSize, gfx::Size());
-  MOCK_METHOD0(BindTexImage, bool());
-  MOCK_METHOD0(ReleaseTexImage, void());
+  MOCK_METHOD1(BindTexImage, bool(unsigned));
+  MOCK_METHOD1(ReleaseTexImage, void(unsigned));
   MOCK_METHOD0(WillUseTexImage, void());
   MOCK_METHOD0(DidUseTexImage, void());
 
@@ -7918,7 +8072,7 @@ TEST_F(GLES2DecoderWithShaderTest, UseTexImage) {
   group().image_manager()->AddImage(image.get(), kImageId);
 
   // Bind image to texture.
-  EXPECT_CALL(*image, BindTexImage())
+  EXPECT_CALL(*image, BindTexImage(GL_TEXTURE_2D))
       .Times(1)
       .WillOnce(Return(true))
       .RetiresOnSaturation();

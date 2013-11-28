@@ -6,7 +6,7 @@
 
 #include "apps/shell_window.h"
 #include "apps/ui/native_app_window.h"
-#include "ash/launcher/launcher_model.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
@@ -109,14 +109,6 @@ void ShellWindowLauncherItemController::SetActiveWindow(aura::Window* window) {
     last_active_shell_window_ = *iter;
 }
 
-bool ShellWindowLauncherItemController::IsCurrentlyShownInWindow(
-    aura::Window* window) const {
-  ShellWindowList::const_iterator iter =
-      std::find_if(shell_windows_.begin(), shell_windows_.end(),
-                   ShellWindowHasWindow(window));
-  return iter != shell_windows_.end();
-}
-
 bool ShellWindowLauncherItemController::IsOpen() const {
   return !shell_windows_.empty();
 }
@@ -138,11 +130,12 @@ void ShellWindowLauncherItemController::Launch(ash::LaunchSource source,
                                    ui::EF_NONE);
 }
 
-void ShellWindowLauncherItemController::Activate(ash::LaunchSource source) {
+bool ShellWindowLauncherItemController::Activate(ash::LaunchSource source) {
   DCHECK(!shell_windows_.empty());
   ShellWindow* window_to_activate = last_active_shell_window_ ?
       last_active_shell_window_ : shell_windows_.back();
   window_to_activate->GetBaseWindow()->Activate();
+  return false;
 }
 
 void ShellWindowLauncherItemController::Close() {
@@ -183,9 +176,9 @@ ShellWindowLauncherItemController::GetApplicationList(int event_flags) {
   return items.Pass();
 }
 
-void ShellWindowLauncherItemController::ItemSelected(const ui::Event& event) {
+bool ShellWindowLauncherItemController::ItemSelected(const ui::Event& event) {
   if (shell_windows_.empty())
-    return;
+    return false;
   if (type() == TYPE_APP_PANEL) {
     DCHECK(shell_windows_.size() == 1);
     ShellWindow* panel = shell_windows_.front();
@@ -212,6 +205,7 @@ void ShellWindowLauncherItemController::ItemSelected(const ui::Event& event) {
       ShowAndActivateOrMinimize(window_to_show);
     }
   }
+  return false;
 }
 
 base::string16 ShellWindowLauncherItemController::GetTitle() {

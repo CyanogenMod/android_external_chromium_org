@@ -138,7 +138,7 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   IPC_STRUCT_MEMBER(GURL, referrer)
 
   // The referrer policy to use.
-  IPC_STRUCT_MEMBER(WebKit::WebReferrerPolicy, referrer_policy)
+  IPC_STRUCT_MEMBER(blink::WebReferrerPolicy, referrer_policy)
 
   // Additional HTTP request headers.
   IPC_STRUCT_MEMBER(std::string, headers)
@@ -191,6 +191,10 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   IPC_STRUCT_MEMBER(int64, parent_frame_id)
 
   IPC_STRUCT_MEMBER(content::PageTransition, transition_type)
+
+  // For navigations, whether this navigation should replace the current session
+  // history entry on commit.
+  IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
 
   // The following two members identify a previous request that has been
   // created before this navigation has been transferred to a new render view.

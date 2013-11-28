@@ -46,6 +46,8 @@ import logging
 import os
 import pickle
 import sys
+import threading
+import time
 
 from pylib import constants
 from pylib import forwarder
@@ -77,6 +79,37 @@ def PrintTestOutput(test_name):
   print persisted_result['output']
 
   return persisted_result['exit_code']
+
+
+class _HeartBeatLogger(object):
+  # How often to print the heartbeat on flush().
+  _PRINT_INTERVAL = 30.0
+
+  def __init__(self):
+    """A file-like class for keeping the buildbot alive."""
+    self._len = 0
+    self._tick = time.time()
+    self._stopped = threading.Event()
+    self._timer = threading.Thread(target=self._runner)
+    self._timer.start()
+
+  def _runner(self):
+    while not self._stopped.is_set():
+      self.flush()
+      self._stopped.wait(_HeartBeatLogger._PRINT_INTERVAL)
+
+  def write(self, data):
+    self._len += len(data)
+
+  def flush(self):
+    now = time.time()
+    if now - self._tick >= _HeartBeatLogger._PRINT_INTERVAL:
+      self._tick = now
+      print '--single-step output length %d' % self._len
+      sys.stdout.flush()
+
+  def stop(self):
+    self._stopped.set()
 
 
 class TestRunner(base_test_runner.BaseTestRunner):
@@ -134,17 +167,28 @@ class TestRunner(base_test_runner.BaseTestRunner):
     logging.info('%s : %s', test_name, cmd)
     start_time = datetime.datetime.now()
 
-    timeout = 1800
+    timeout = 5400
     if self._options.no_timeout:
       timeout = None
     full_cmd = cmd
     if self._options.dry_run:
       full_cmd = 'echo %s' % cmd
 
+    logfile = sys.stdout
+    if self._options.single_step:
+      # Just print a heart-beat so that the outer buildbot scripts won't timeout
+      # without response.
+      logfile = _HeartBeatLogger()
+    cwd = os.path.abspath(constants.DIR_SOURCE_ROOT)
+    if full_cmd.startswith('src/'):
+      cwd = os.path.abspath(os.path.join(constants.DIR_SOURCE_ROOT, os.pardir))
     output, exit_code = pexpect.run(
-        full_cmd, cwd=os.path.abspath(constants.DIR_SOURCE_ROOT),
-        withexitstatus=True, logfile=sys.stdout, timeout=timeout,
+        full_cmd, cwd=cwd,
+        withexitstatus=True, logfile=logfile, timeout=timeout,
         env=os.environ)
+    if self._options.single_step:
+      # Stop the logger.
+      logfile.stop()
     end_time = datetime.datetime.now()
     if exit_code is None:
       exit_code = -1

@@ -6,13 +6,14 @@
 #define CONTENT_WORKER_WEBSHAREDWORKER_STUB_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "content/child/scoped_child_process_reference.h"
 #include "content/worker/websharedworkerclient_proxy.h"
 #include "content/worker/worker_webapplicationcachehost_impl.h"
 #include "ipc/ipc_listener.h"
 #include "third_party/WebKit/public/web/WebSharedWorker.h"
 #include "url/gurl.h"
 
-namespace WebKit {
+namespace blink {
 class WebSharedWorker;
 }
 
@@ -55,9 +56,11 @@ class WebSharedWorkerStub : public IPC::Listener {
   void OnStartWorkerContext(
       const GURL& url, const string16& user_agent, const string16& source_code,
       const string16& content_security_policy,
-      WebKit::WebContentSecurityPolicyType policy_type);
+      blink::WebContentSecurityPolicyType policy_type);
 
   void OnTerminateWorkerContext();
+
+  ScopedChildProcessReference process_ref_;
 
   int route_id_;
   WorkerAppCacheInitInfo appcache_init_info_;
@@ -66,7 +69,7 @@ class WebSharedWorkerStub : public IPC::Listener {
   // from the worker object.
   WebSharedWorkerClientProxy client_;
 
-  WebKit::WebSharedWorker* impl_;
+  blink::WebSharedWorker* impl_;
   string16 name_;
   bool started_;
   GURL url_;

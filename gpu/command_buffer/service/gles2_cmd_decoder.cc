@@ -14,13 +14,9 @@
 #include <vector>
 
 #include "base/at_exit.h"
-#include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_cftyperef.h"
-#endif
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
@@ -411,7 +407,10 @@ class BackRenderbuffer {
   void Create();
 
   // Set the initial size and format of a render buffer or resize it.
-  bool AllocateStorage(const gfx::Size& size, GLenum format, GLsizei samples);
+  bool AllocateStorage(const FeatureInfo* feature_info,
+                       const gfx::Size& size,
+                       GLenum format,
+                       GLsizei samples);
 
   // Destroy the render buffer. This must be explicitly called before destroying
   // this object.
@@ -502,21 +501,6 @@ GLES2Decoder::GLES2Decoder()
 }
 
 GLES2Decoder::~GLES2Decoder() {
-}
-
-bool GLES2Decoder::testing_force_is_angle_;
-
-void GLES2Decoder::set_testing_force_is_angle(bool force) {
-  testing_force_is_angle_ = force;
-}
-
-bool GLES2Decoder::IsAngle() {
-#if defined(OS_WIN)
-  return testing_force_is_angle_ ||
-         gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2;
-#else
-  return testing_force_is_angle_;
-#endif
 }
 
 // This class implements GLES2Decoder so we don't have to expose all the GLES2
@@ -645,6 +629,26 @@ class GLES2DecoderImpl : public GLES2Decoder,
   // Overridden from FramebufferManager::TextureDetachObserver:
   virtual void OnTextureRefDetachedFromFramebuffer(
       TextureRef* texture) OVERRIDE;
+
+  // Helpers to facilitate calling into compatible extensions.
+  static void RenderbufferStorageMultisampleHelper(
+      const FeatureInfo* feature_info,
+      GLenum target,
+      GLsizei samples,
+      GLenum internal_format,
+      GLsizei width,
+      GLsizei height);
+
+  void BlitFramebufferHelper(GLint srcX0,
+                             GLint srcY0,
+                             GLint srcX1,
+                             GLint srcY1,
+                             GLint dstX0,
+                             GLint dstY0,
+                             GLint dstX1,
+                             GLint dstY1,
+                             GLbitfield mask,
+                             GLenum filter);
 
  private:
   friend class ScopedFrameBufferBinder;
@@ -905,9 +909,9 @@ class GLES2DecoderImpl : public GLES2Decoder,
   void LogClientServiceMapping(
       const char* function_name, GLuint client_id, GLuint service_id) {
     if (service_logging_) {
-      DLOG(INFO) << "[" << logger_.GetLogPrefix() << "] " << function_name
-                 << ": client_id = " << client_id
-                 << ", service_id = " << service_id;
+      VLOG(1) << "[" << logger_.GetLogPrefix() << "] " << function_name
+              << ": client_id = " << client_id
+              << ", service_id = " << service_id;
     }
   }
   template<typename T>
@@ -1147,8 +1151,8 @@ class GLES2DecoderImpl : public GLES2Decoder,
   void DoBindVertexArrayOES(GLuint array);
   void EmulateVertexArrayState();
 
-  // Wrapper for glBlitFramebufferEXT.
-  void DoBlitFramebufferEXT(
+  // Wrapper for glBlitFramebufferCHROMIUM.
+  void DoBlitFramebufferCHROMIUM(
       GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
       GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
       GLbitfield mask, GLenum filter);
@@ -1290,10 +1294,22 @@ class GLES2DecoderImpl : public GLES2Decoder,
   void DoRenderbufferStorage(
       GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
 
-  // Wrapper for glRenderbufferStorageMultisampleEXT.
-  void DoRenderbufferStorageMultisample(
+  // Handler for glRenderbufferStorageMultisampleCHROMIUM.
+  void DoRenderbufferStorageMultisampleCHROMIUM(
       GLenum target, GLsizei samples, GLenum internalformat,
       GLsizei width, GLsizei height);
+
+  // Handler for glRenderbufferStorageMultisampleEXT
+  // (multisampled_render_to_texture).
+  void DoRenderbufferStorageMultisampleEXT(
+      GLenum target, GLsizei samples, GLenum internalformat,
+      GLsizei width, GLsizei height);
+
+  // Common validation for multisample extensions.
+  bool ValidateRenderbufferStorageMultisample(GLsizei samples,
+                                              GLenum internalformat,
+                                              GLsizei width,
+                                              GLsizei height);
 
   // Verifies that the currently bound multisample renderbuffer is valid
   // Very slow! Only done on platforms with driver bugs that return invalid
@@ -1809,13 +1825,16 @@ ScopedResolvedFrameBufferBinder::ScopedResolvedFrameBufferBinder(
   const int width = decoder_->offscreen_size_.width();
   const int height = decoder_->offscreen_size_.height();
   glDisable(GL_SCISSOR_TEST);
-  if (GLES2Decoder::IsAngle()) {
-    glBlitFramebufferANGLE(0, 0, width, height, 0, 0, width, height,
-                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
-  } else {
-    glBlitFramebufferEXT(0, 0, width, height, 0, 0, width, height,
-                         GL_COLOR_BUFFER_BIT, GL_NEAREST);
-  }
+  decoder->BlitFramebufferHelper(0,
+                                 0,
+                                 width,
+                                 height,
+                                 0,
+                                 0,
+                                 width,
+                                 height,
+                                 GL_COLOR_BUFFER_BIT,
+                                 GL_NEAREST);
   glBindFramebufferEXT(GL_FRAMEBUFFER, targetid);
 }
 
@@ -1967,7 +1986,9 @@ void BackRenderbuffer::Create() {
   glGenRenderbuffersEXT(1, &id_);
 }
 
-bool BackRenderbuffer::AllocateStorage(const gfx::Size& size, GLenum format,
+bool BackRenderbuffer::AllocateStorage(const FeatureInfo* feature_info,
+                                       const gfx::Size& size,
+                                       GLenum format,
                                        GLsizei samples) {
   ScopedGLErrorSuppressor suppressor(
       "BackRenderbuffer::AllocateStorage", state_->GetErrorState());
@@ -1989,19 +2010,12 @@ bool BackRenderbuffer::AllocateStorage(const gfx::Size& size, GLenum format,
                              size.width(),
                              size.height());
   } else {
-    if (GLES2Decoder::IsAngle()) {
-      glRenderbufferStorageMultisampleANGLE(GL_RENDERBUFFER,
-                                            samples,
-                                            format,
-                                            size.width(),
-                                            size.height());
-    } else {
-      glRenderbufferStorageMultisampleEXT(GL_RENDERBUFFER,
-                                          samples,
-                                          format,
-                                          size.width(),
-                                          size.height());
-    }
+    GLES2DecoderImpl::RenderbufferStorageMultisampleHelper(feature_info,
+                                                           GL_RENDERBUFFER,
+                                                           samples,
+                                                           format,
+                                                           size.width(),
+                                                           size.height());
   }
   bool success = glGetError() == GL_NO_ERROR;
   if (success) {
@@ -2139,6 +2153,9 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
           switches::kEnableGPUServiceLoggingGPU)),
       viewport_max_width_(0),
       viewport_max_height_(0),
+      texture_state_(group_->feature_info()
+                         ->workarounds()
+                         .texsubimage2d_faster_than_teximage2d),
       validation_texture_(0),
       validation_fbo_multisample_(0),
       validation_fbo_(0) {
@@ -2158,11 +2175,6 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGLSLTranslator)) {
     use_shader_translator_ = false;
-  }
-
-  // TODO(gman): Consider setting this based on GPU and/or driver.
-  if (IsAngle()) {
-    texture_state_.teximage2d_faster_than_texsubimage2d = false;
   }
 }
 
@@ -2202,6 +2214,19 @@ bool GLES2DecoderImpl::Initialize(
   // SetSurface.
   context_ = context;
   surface_ = surface;
+
+  ContextCreationAttribHelper attrib_parser;
+  if (!attrib_parser.Parse(attribs))
+    return false;
+
+  // If the failIfMajorPerformanceCaveat context creation attribute was true
+  // and we are using a software renderer, fail.
+  if (attrib_parser.fail_if_major_perf_caveat_ &&
+      feature_info_->feature_flags().is_swiftshader) {
+    group_ = NULL;  // Must not destroy ContextGroup if it is not initialized.
+    Destroy(true);
+    return false;
+  }
 
   if (!group_->Initialize(this, disallowed_features)) {
     LOG(ERROR) << "GpuScheduler::InitializeCommon failed because group "
@@ -2265,10 +2290,6 @@ bool GLES2DecoderImpl::Initialize(
   glActiveTexture(GL_TEXTURE0);
   CHECK_GL_ERROR();
 
-  ContextCreationAttribHelper attrib_parser;
-  if (!attrib_parser.Parse(attribs))
-    return false;
-
   if (offscreen) {
     if (attrib_parser.samples_ > 0 && attrib_parser.sample_buffers_ > 0 &&
         features().chromium_framebuffer_multisample) {
@@ -2302,7 +2323,7 @@ bool GLES2DecoderImpl::Initialize(
       // ANGLE only supports packed depth/stencil formats, so use it if it is
       // available.
       const bool depth24_stencil8_supported =
-          context_->HasExtension("GL_OES_packed_depth_stencil");
+          feature_info_->feature_flags().packed_depth24_stencil8;
       VLOG(1) << "GL_OES_packed_depth_stencil "
               << (depth24_stencil8_supported ? "" : "not ") << "supported.";
       if ((attrib_parser.depth_size_ > 0 || attrib_parser.stencil_size_ > 0) &&
@@ -2325,7 +2346,7 @@ bool GLES2DecoderImpl::Initialize(
       // it's available, as some desktop GL drivers don't support any non-packed
       // formats for depth attachments.
       const bool depth24_stencil8_supported =
-          context_->HasExtension("GL_EXT_packed_depth_stencil");
+          feature_info_->feature_flags().packed_depth24_stencil8;
       VLOG(1) << "GL_EXT_packed_depth_stencil "
               << (depth24_stencil8_supported ? "" : "not ") << "supported.";
 
@@ -2484,6 +2505,10 @@ bool GLES2DecoderImpl::Initialize(
 
   if (feature_info_->workarounds().unbind_fbo_on_context_switch) {
     context_->SetUnbindFboOnMakeCurrent();
+  }
+
+  if (feature_info_->workarounds().release_image_after_use) {
+    image_manager()->SetReleaseAfterUse();
   }
 
   // Only compositor contexts are known to use only the subset of GL
@@ -3316,7 +3341,7 @@ bool GLES2DecoderImpl::ResizeOffscreenFrameBuffer(const gfx::Size& size) {
   DCHECK(offscreen_target_color_format_);
   if (IsOffscreenBufferMultisampled()) {
     if (!offscreen_target_color_render_buffer_->AllocateStorage(
-        offscreen_size_, offscreen_target_color_format_,
+        feature_info_, offscreen_size_, offscreen_target_color_format_,
         offscreen_target_samples_)) {
       LOG(ERROR) << "GLES2DecoderImpl::ResizeOffscreenFrameBuffer failed "
                  << "to allocate storage for offscreen target color buffer.";
@@ -3332,7 +3357,7 @@ bool GLES2DecoderImpl::ResizeOffscreenFrameBuffer(const gfx::Size& size) {
   }
   if (offscreen_target_depth_format_ &&
       !offscreen_target_depth_render_buffer_->AllocateStorage(
-      offscreen_size_, offscreen_target_depth_format_,
+      feature_info_, offscreen_size_, offscreen_target_depth_format_,
       offscreen_target_samples_)) {
     LOG(ERROR) << "GLES2DecoderImpl::ResizeOffscreenFrameBuffer failed "
                << "to allocate storage for offscreen target depth buffer.";
@@ -3340,7 +3365,7 @@ bool GLES2DecoderImpl::ResizeOffscreenFrameBuffer(const gfx::Size& size) {
   }
   if (offscreen_target_stencil_format_ &&
       !offscreen_target_stencil_render_buffer_->AllocateStorage(
-      offscreen_size_, offscreen_target_stencil_format_,
+      feature_info_, offscreen_size_, offscreen_target_stencil_format_,
       offscreen_target_samples_)) {
     LOG(ERROR) << "GLES2DecoderImpl::ResizeOffscreenFrameBuffer failed "
                << "to allocate storage for offscreen target stencil buffer.";
@@ -3465,7 +3490,7 @@ error::Error GLES2DecoderImpl::DoCommand(
   error::Error result = error::kNoError;
   if (log_commands()) {
     // TODO(notme): Change this to a LOG/VLOG that works in release. Tried
-    // LOG(INFO), tried VLOG(1), no luck.
+    // VLOG(1), no luck.
     LOG(ERROR) << "[" << logger_.GetLogPrefix() << "]" << "cmd: "
                << GetCommandName(command);
   }
@@ -4975,7 +5000,7 @@ void GLES2DecoderImpl::DoGetRenderbufferParameteriv(
   }
 }
 
-void GLES2DecoderImpl::DoBlitFramebufferEXT(
+void GLES2DecoderImpl::DoBlitFramebufferCHROMIUM(
     GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
     GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
     GLbitfield mask, GLenum filter) {
@@ -4983,50 +5008,75 @@ void GLES2DecoderImpl::DoBlitFramebufferEXT(
   if (!features().chromium_framebuffer_multisample) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
-        "glBlitFramebufferEXT", "function not available");
+        "glBlitFramebufferCHROMIUM", "function not available");
     return;
   }
 
-  if (!CheckBoundFramebuffersValid("glBlitFramebufferEXT")) {
+  if (!CheckBoundFramebuffersValid("glBlitFramebufferCHROMIUM")) {
     return;
   }
 
   glDisable(GL_SCISSOR_TEST);
-  if (IsAngle()) {
+  BlitFramebufferHelper(
+      srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+  EnableDisable(GL_SCISSOR_TEST, state_.enable_flags.scissor_test);
+}
+
+void GLES2DecoderImpl::RenderbufferStorageMultisampleHelper(
+    const FeatureInfo* feature_info,
+    GLenum target,
+    GLsizei samples,
+    GLenum internal_format,
+    GLsizei width,
+    GLsizei height) {
+  // TODO(sievers): This could be resolved at the GL binding level, but the
+  // binding process is currently a bit too 'brute force'.
+  if (feature_info->feature_flags().is_angle) {
+    glRenderbufferStorageMultisampleANGLE(
+        target, samples, internal_format, width, height);
+  } else if (feature_info->feature_flags().use_core_framebuffer_multisample) {
+    glRenderbufferStorageMultisample(
+        target, samples, internal_format, width, height);
+  } else {
+    glRenderbufferStorageMultisampleEXT(
+        target, samples, internal_format, width, height);
+  }
+}
+
+void GLES2DecoderImpl::BlitFramebufferHelper(GLint srcX0,
+                                             GLint srcY0,
+                                             GLint srcX1,
+                                             GLint srcY1,
+                                             GLint dstX0,
+                                             GLint dstY0,
+                                             GLint dstX1,
+                                             GLint dstY1,
+                                             GLbitfield mask,
+                                             GLenum filter) {
+  // TODO(sievers): This could be resolved at the GL binding level, but the
+  // binding process is currently a bit too 'brute force'.
+  if (feature_info_->feature_flags().is_angle) {
     glBlitFramebufferANGLE(
+        srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+  } else if (feature_info_->feature_flags().use_core_framebuffer_multisample) {
+    glBlitFramebuffer(
         srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
   } else {
     glBlitFramebufferEXT(
         srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
   }
-  EnableDisable(GL_SCISSOR_TEST, state_.enable_flags.scissor_test);
 }
 
-void GLES2DecoderImpl::DoRenderbufferStorageMultisample(
-    GLenum target, GLsizei samples, GLenum internalformat,
-    GLsizei width, GLsizei height) {
-  if (!features().chromium_framebuffer_multisample &&
-      !features().multisampled_render_to_texture) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glRenderbufferStorageMultisample", "function not available");
-    return;
-  }
-
-  Renderbuffer* renderbuffer =
-      GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
-  if (!renderbuffer) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glRenderbufferStorageMultisample", "no renderbuffer bound");
-    return;
-  }
-
+bool GLES2DecoderImpl::ValidateRenderbufferStorageMultisample(
+    GLsizei samples,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height) {
   if (samples > renderbuffer_manager()->max_samples()) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_VALUE,
         "glRenderbufferStorageMultisample", "samples too large");
-    return;
+    return false;
   }
 
   if (width > renderbuffer_manager()->max_renderbuffer_size() ||
@@ -5034,7 +5084,7 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisample(
     LOCAL_SET_GL_ERROR(
         GL_INVALID_VALUE,
         "glRenderbufferStorageMultisample", "dimensions too large");
-    return;
+    return false;
   }
 
   uint32 estimated_size = 0;
@@ -5043,31 +5093,51 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisample(
     LOCAL_SET_GL_ERROR(
         GL_OUT_OF_MEMORY,
         "glRenderbufferStorageMultsample", "dimensions too large");
-    return;
+    return false;
   }
 
   if (!EnsureGPUMemoryAvailable(estimated_size)) {
     LOCAL_SET_GL_ERROR(
         GL_OUT_OF_MEMORY,
         "glRenderbufferStorageMultsample", "out of memory");
+    return false;
+  }
+
+  return true;
+}
+
+void GLES2DecoderImpl::DoRenderbufferStorageMultisampleCHROMIUM(
+    GLenum target, GLsizei samples, GLenum internalformat,
+    GLsizei width, GLsizei height) {
+  if (!features().chromium_framebuffer_multisample) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                       "glRenderbufferStorageMultisampleCHROMIUM",
+                       "function not available");
+    return;
+  }
+
+  Renderbuffer* renderbuffer = GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
+  if (!renderbuffer) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                       "glRenderbufferStorageMultisampleCHROMIUM",
+                       "no renderbuffer bound");
+    return;
+  }
+
+  if (!ValidateRenderbufferStorageMultisample(
+      samples, internalformat, width, height)) {
     return;
   }
 
   GLenum impl_format =
       renderbuffer_manager()->InternalRenderbufferFormatToImplFormat(
           internalformat);
-  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glRenderbufferStorageMultisample");
-  if (IsAngle()) {
-    glRenderbufferStorageMultisampleANGLE(
-        target, samples, impl_format, width, height);
-  } else if (features().use_img_for_multisampled_render_to_texture) {
-    glRenderbufferStorageMultisampleIMG(
-        target, samples, impl_format, width, height);
-  } else {
-    glRenderbufferStorageMultisampleEXT(
-        target, samples, impl_format, width, height);
-  }
-  GLenum error = LOCAL_PEEK_GL_ERROR("glRenderbufferStorageMultisample");
+  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER(
+      "glRenderbufferStorageMultisampleCHROMIUM");
+  RenderbufferStorageMultisampleHelper(
+      feature_info_, target, samples, impl_format, width, height);
+  GLenum error =
+      LOCAL_PEEK_GL_ERROR("glRenderbufferStorageMultisampleCHROMIUM");
   if (error == GL_NO_ERROR) {
 
     if (workarounds().validate_multisample_buffer_allocation) {
@@ -5075,11 +5145,56 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisample(
           renderbuffer->service_id(), impl_format)) {
         LOCAL_SET_GL_ERROR(
             GL_OUT_OF_MEMORY,
-            "glRenderbufferStorageMultisample", "out of memory");
+            "glRenderbufferStorageMultisampleCHROMIUM", "out of memory");
         return;
       }
     }
 
+    // TODO(gman): If renderbuffers tracked which framebuffers they were
+    // attached to we could just mark those framebuffers as not complete.
+    framebuffer_manager()->IncFramebufferStateChangeCount();
+    renderbuffer_manager()->SetInfo(
+        renderbuffer, samples, internalformat, width, height);
+  }
+}
+
+// This is the handler for multisampled_render_to_texture extensions.
+void GLES2DecoderImpl::DoRenderbufferStorageMultisampleEXT(
+    GLenum target, GLsizei samples, GLenum internalformat,
+    GLsizei width, GLsizei height) {
+  if (!features().multisampled_render_to_texture) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_OPERATION,
+        "glRenderbufferStorageMultisampleEXT", "function not available");
+    return;
+  }
+
+  Renderbuffer* renderbuffer = GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
+  if (!renderbuffer) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                       "glRenderbufferStorageMultisampleEXT",
+                       "no renderbuffer bound");
+    return;
+  }
+
+  if (!ValidateRenderbufferStorageMultisample(
+      samples, internalformat, width, height)) {
+    return;
+  }
+
+  GLenum impl_format =
+      renderbuffer_manager()->InternalRenderbufferFormatToImplFormat(
+          internalformat);
+  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glRenderbufferStorageMultisampleEXT");
+  if (features().use_img_for_multisampled_render_to_texture) {
+    glRenderbufferStorageMultisampleIMG(
+        target, samples, impl_format, width, height);
+  } else {
+    glRenderbufferStorageMultisampleEXT(
+        target, samples, impl_format, width, height);
+  }
+  GLenum error = LOCAL_PEEK_GL_ERROR("glRenderbufferStorageMultisampleEXT");
+  if (error == GL_NO_ERROR) {
     // TODO(gman): If renderbuffers tracked which framebuffers they were
     // attached to we could just mark those framebuffers as not complete.
     framebuffer_manager()->IncFramebufferStateChangeCount();
@@ -5160,7 +5275,8 @@ bool GLES2DecoderImpl::VerifyMultisampleRenderbufferIntegrity(
   glBindFramebufferEXT(GL_READ_FRAMEBUFFER, validation_fbo_multisample_);
   glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER, validation_fbo_);
 
-  glBlitFramebufferEXT(0, 0, 1, 1, 0, 0, 1, 1, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  BlitFramebufferHelper(
+      0, 0, 1, 1, 0, 0, 1, 1, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
   // Read a pixel from the buffer.
   glBindFramebufferEXT(GL_FRAMEBUFFER, validation_fbo_);
@@ -7458,7 +7574,8 @@ bool GLES2DecoderImpl::ClearLevel(
     int height,
     bool is_texture_immutable) {
   uint32 channels = GLES2Util::GetChannelsForFormat(format);
-  if (IsAngle() && (channels & GLES2Util::kDepth) != 0) {
+  if (feature_info_->feature_flags().angle_depth_texture &&
+      (channels & GLES2Util::kDepth) != 0) {
     // It's a depth format and ANGLE doesn't allow texImage2D or texSubImage2D
     // on depth formats.
     GLuint fb = 0;
@@ -8325,7 +8442,7 @@ error::Error GLES2DecoderImpl::DoTexSubImage2D(
     return error::kNoError;
   }
 
-  if (texture_state_.teximage2d_faster_than_texsubimage2d &&
+  if (!texture_state_.texsubimage2d_faster_than_teximage2d &&
       !texture->IsImmutable()) {
     ScopedTextureUploadTimer timer(&texture_state_);
     // NOTE: In OpenGL ES 2.0 border is always zero and format is always the
@@ -8790,7 +8907,7 @@ void GLES2DecoderImpl::DoSwapBuffers() {
       // Ensure the side effects of the copy are visible to the parent
       // context. There is no need to do this for ANGLE because it uses a
       // single D3D device for all contexts.
-      if (!IsAngle())
+      if (!feature_info_->feature_flags().is_angle)
         glFlush();
     }
   } else {
@@ -9982,13 +10099,6 @@ void GLES2DecoderImpl::DoPopGroupMarkerEXT(void) {
 void GLES2DecoderImpl::DoBindTexImage2DCHROMIUM(
     GLenum target, GLint image_id) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::DoBindTexImage2DCHROMIUM");
-  if (target != GL_TEXTURE_2D) {
-    // This might be supported in the future.
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glBindTexImage2DCHROMIUM", "requires TEXTURE_2D target");
-    return;
-  }
 
   // Default target might be conceptually valid, but disallow it to avoid
   // accidents.
@@ -10012,7 +10122,7 @@ void GLES2DecoderImpl::DoBindTexImage2DCHROMIUM(
   {
     ScopedGLErrorSuppressor suppressor(
         "GLES2DecoderImpl::DoBindTexImage2DCHROMIUM", GetErrorState());
-    if (!gl_image->BindTexImage()) {
+    if (!gl_image->BindTexImage(target)) {
       LOCAL_SET_GL_ERROR(
           GL_INVALID_OPERATION,
           "glBindTexImage2DCHROMIUM", "fail to bind image with the given ID");
@@ -10030,13 +10140,6 @@ void GLES2DecoderImpl::DoBindTexImage2DCHROMIUM(
 void GLES2DecoderImpl::DoReleaseTexImage2DCHROMIUM(
     GLenum target, GLint image_id) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::DoReleaseTexImage2DCHROMIUM");
-  if (target != GL_TEXTURE_2D) {
-    // This might be supported in the future.
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glReleaseTexImage2DCHROMIUM", "requires TEXTURE_2D target");
-    return;
-  }
 
   // Default target might be conceptually valid, but disallow it to avoid
   // accidents.
@@ -10064,7 +10167,7 @@ void GLES2DecoderImpl::DoReleaseTexImage2DCHROMIUM(
   {
     ScopedGLErrorSuppressor suppressor(
         "GLES2DecoderImpl::DoReleaseTexImage2DCHROMIUM", GetErrorState());
-    gl_image->ReleaseTexImage();
+    gl_image->ReleaseTexImage(target);
   }
 
   texture_manager()->SetLevelInfo(

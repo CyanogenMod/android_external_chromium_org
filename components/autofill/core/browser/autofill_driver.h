@@ -17,6 +17,10 @@ namespace content {
 class WebContents;
 }
 
+namespace net {
+class URLRequestContextGetter;
+}
+
 namespace autofill {
 
 class FormStructure;
@@ -35,6 +39,13 @@ class AutofillDriver {
   };
 
   virtual ~AutofillDriver() {}
+
+  // Returns whether the user is currently operating in an off-the-record
+  // (i.e., incognito) context.
+  virtual bool IsOffTheRecord() const = 0;
+
+  // Returns the URL request context information associated with this driver.
+  virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
 
   // TODO(blundell): Remove this method once shared code no longer needs to
   // know about WebContents.
@@ -63,11 +74,23 @@ class AutofillDriver {
   virtual void SendAutofillTypePredictionsToRenderer(
       const std::vector<FormStructure*>& forms) = 0;
 
+  // Tells the renderer to accept data list suggestions for |value|.
+  virtual void RendererShouldAcceptDataListSuggestion(
+      const base::string16& value) = 0;
+
+  // Tells the renderer to accept the password autofill suggestion for
+  // |username|.
+  virtual void RendererShouldAcceptPasswordAutofillSuggestion(
+      const base::string16& username) = 0;
+
   // Tells the renderer to clear the currently filled Autofill results.
   virtual void RendererShouldClearFilledForm() = 0;
 
   // Tells the renderer to clear the currently previewed Autofill results.
   virtual void RendererShouldClearPreviewedForm() = 0;
+
+  // Tells the renderer to set the node text.
+  virtual void RendererShouldSetNodeText(const base::string16& value) = 0;
 };
 
 }  // namespace autofill

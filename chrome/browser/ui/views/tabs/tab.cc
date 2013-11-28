@@ -43,6 +43,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
@@ -281,21 +282,6 @@ void DrawIconCenter(gfx::Canvas* canvas,
                      icon_height, filter, paint);
 }
 
-// Draws the icon image at the bottom right corner of |bounds|.
-void DrawIconBottomRight(gfx::Canvas* canvas,
-                         const gfx::ImageSkia& image,
-                         int image_offset,
-                         int icon_width,
-                         int icon_height,
-                         const gfx::Rect& bounds,
-                         bool filter,
-                         const SkPaint& paint) {
-  int dst_x = bounds.x() + bounds.width() - icon_width;
-  int dst_y = bounds.y() + bounds.height() - icon_height;
-  DrawIconAtLocation(canvas, image, image_offset, dst_x, dst_y, icon_width,
-                     icon_height, filter, paint);
-}
-
 chrome::HostDesktopType GetHostDesktopType(views::View* view) {
   // Widget is NULL when tabs are detached.
   views::Widget* widget = view->GetWidget();
@@ -355,21 +341,26 @@ class Tab::TabCloseButton : public views::ImageButton {
   virtual ~TabCloseButton() {}
 
   // Overridden from views::View.
-  virtual View* GetEventHandlerForPoint(const gfx::Point& point) OVERRIDE {
-    // Ignore the padding set on the button.
-    gfx::Rect rect = GetContentsBounds();
-    rect.set_x(GetMirroredXForRect(rect));
+  virtual View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE {
+    if (!views::UsePointBasedTargeting(rect))
+      return View::GetEventHandlerForRect(rect);
 
+    // Ignore the padding set on the button.
+    gfx::Rect contents_bounds = GetContentsBounds();
+    contents_bounds.set_x(GetMirroredXForRect(contents_bounds));
+
+    // TODO(tdanderson): Remove this ifdef if rect-based targeting
+    // is turned on by default.
 #if defined(USE_ASH)
     // Include the padding in hit-test for touch events.
     if (aura::Env::GetInstance()->is_touch_down())
-      rect = GetLocalBounds();
+      contents_bounds = GetLocalBounds();
 #elif defined(OS_WIN)
     // TODO(sky): Use local-bounds if a touch-point is active.
     // http://crbug.com/145258
 #endif
 
-    return rect.Contains(point) ? this : parent();
+    return contents_bounds.Intersects(rect) ? this : parent();
   }
 
   // Overridden from views::View.
@@ -425,6 +416,7 @@ class Tab::TabCloseButton : public views::ImageButton {
     tab_->GetHitTestMask(source, &tab_mask);
 
     gfx::Rect button_bounds(GetContentsBounds());
+    button_bounds.set_x(GetMirroredXForRect(button_bounds));
     gfx::RectF tab_bounds_f(gfx::SkRectToRectF(tab_mask.getBounds()));
     views::View::ConvertRectToTarget(tab_, this, &tab_bounds_f);
     gfx::Rect tab_bounds = gfx::ToEnclosingRect(tab_bounds_f);

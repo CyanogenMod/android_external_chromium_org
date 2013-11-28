@@ -26,6 +26,9 @@ enum MediaStreamType {
   MEDIA_DEVICE_VIDEO_CAPTURE,
 
   // Mirroring of a browser tab.
+  //
+  // TODO(serygeu): Remove these values and use MEDIA_DESKTOP_VIDEO_CAPTURE and
+  // MEDIA_DESKTOP_AUDIO_CAPTURE.
   MEDIA_TAB_AUDIO_CAPTURE,
   MEDIA_TAB_VIDEO_CAPTURE,
 
@@ -83,6 +86,8 @@ struct CONTENT_EXPORT MediaStreamDevice {
       int frames_per_buffer);
 
   ~MediaStreamDevice();
+
+  bool IsEqual(const MediaStreamDevice& second) const;
 
   // The device's type.
   MediaStreamType type;
@@ -161,6 +166,7 @@ struct CONTENT_EXPORT MediaStreamRequest {
       int render_process_id,
       int render_view_id,
       int page_request_id,
+      const std::string& tab_capture_device_id,
       const GURL& security_origin,
       MediaStreamRequestType request_type,
       const std::string& requested_audio_device_id,

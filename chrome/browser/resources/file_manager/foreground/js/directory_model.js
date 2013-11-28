@@ -19,13 +19,10 @@ var SHORT_RESCAN_INTERVAL = 100;
  * @param {FileWatcher} fileWatcher Instance of FileWatcher.
  * @param {MetadataCache} metadataCache The metadata cache service.
  * @param {VolumeManagerWrapper} volumeManager The volume manager.
- * @param {boolean} showSpecialSearchRoots True if special-search roots are
- *     available. They should be hidden for the dialogs to save files.
  * @constructor
  */
 function DirectoryModel(singleSelection, fileFilter, fileWatcher,
-                        metadataCache, volumeManager,
-                        showSpecialSearchRoots) {
+                        metadataCache, volumeManager) {
   this.fileListSelection_ = singleSelection ?
       new cr.ui.ListSingleSelectionModel() : new cr.ui.ListSelectionModel();
 
@@ -33,7 +30,6 @@ function DirectoryModel(singleSelection, fileFilter, fileWatcher,
   this.pendingScan_ = null;
   this.rescanTime_ = null;
   this.scanFailures_ = 0;
-  this.showSpecialSearchRoots_ = showSpecialSearchRoots;
 
   this.fileFilter_ = fileFilter;
   this.fileFilter_.addEventListener('changed',
@@ -224,8 +220,7 @@ DirectoryModel.prototype.isPathReadOnly = function(path) {
   // TODO(hidehiko): Migrate this into VolumeInfo.
   switch (PathUtil.getRootType(path)) {
     case RootType.REMOVABLE:
-      var volumeInfo = this.volumeManager_.getVolumeInfo(
-          PathUtil.getRootPath(path));
+      var volumeInfo = this.volumeManager_.getVolumeInfo(path);
       // Returns true if the volume is actually read only, or if an error
       // is found during the mounting.
       // TODO(hidehiko): Remove "error" check here, by removing error'ed volume
@@ -545,32 +540,43 @@ DirectoryModel.prototype.scan_ = function(
    * @return {boolean} Did pending scan exist.
    */
   var maybeRunPendingRescan = function() {
-    if (self.pendingRescan_) {
-      self.rescanSoon();
-      self.pendingRescan_ = false;
+    if (this.pendingRescan_) {
+      this.rescanSoon();
+      this.pendingRescan_ = false;
       return true;
     }
     return false;
-  };
+  }.bind(this);
 
   var onSuccess = function() {
-    self.runningScan_ = null;
+    // Record metric for Downloads directory.
+    if (!dirContents.isSearch()) {
+      var locationInfo =
+          this.volumeManager_.getLocationInfo(dirContents.getDirectoryEntry());
+      if (locationInfo.volumeInfo.volumeType === util.VolumeType.DOWNLOADS &&
+          locationInfo.isRootEntry) {
+        metrics.recordMediumCount('DownloadsCount',
+                                  dirContents.fileList_.length);
+      }
+    }
+
+    this.runningScan_ = null;
     successCallback();
-    self.scanFailures_ = 0;
+    this.scanFailures_ = 0;
     maybeRunPendingRescan();
-  };
+  }.bind(this);
 
   var onFailure = function() {
-    self.runningScan_ = null;
-    self.scanFailures_++;
+    this.runningScan_ = null;
+    this.scanFailures_++;
     failureCallback();
 
     if (maybeRunPendingRescan())
       return;
 
-    if (self.scanFailures_ <= 1)
-      self.rescanLater();
-  };
+    if (this.scanFailures_ <= 1)
+      this.rescanLater();
+  }.bind(this);
 
   this.runningScan_ = dirContents;
 
@@ -1069,17 +1075,11 @@ DirectoryModel.prototype.onVolumeInfoListUpdated_ = function(event) {
     }
   }
 
-  var rootPath = this.getCurrentRootPath();
-  var rootType = PathUtil.getRootType(rootPath);
-
-  // If the path is on drive, reduce to the Drive's mount point.
-  if (rootType === RootType.DRIVE)
-    rootPath = RootDirectory.DRIVE;
-
   // When the volume where we are is unmounted, fallback to
-  // DEFAULT_DIRECTORY.
-  // Note: during the initialization, rootType can be undefined.
-  if (rootType && !this.volumeManager_.getVolumeInfo(rootPath))
+  // DEFAULT_DIRECTORY. If current directory path is empty, stop the fallback
+  // since the current directory is initializing now.
+  if (this.getCurrentDirPath() &&
+      !this.volumeManager_.getVolumeInfo(this.getCurrentDirPath()))
     this.changeDirectory(PathUtil.DEFAULT_DIRECTORY);
 };
 

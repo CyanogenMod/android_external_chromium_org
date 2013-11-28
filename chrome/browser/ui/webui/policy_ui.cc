@@ -26,14 +26,20 @@
 #include "chrome/browser/policy/cloud/message_util.h"
 #include "chrome/browser/policy/configuration_policy_handler_list.h"
 #include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_types.h"
+#include "components/policy/core/common/schema.h"
+#include "components/policy/core/common/schema_map.h"
+#include "components/policy/core/common/schema_registry.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -42,7 +48,7 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
@@ -56,15 +62,14 @@
 #else
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#include "content/public/browser/web_contents.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/policy/policy_domain_descriptor.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "components/policy/core/common/schema.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #endif
@@ -488,8 +493,8 @@ void PolicyUIHandler::RegisterMessages() {
   }
 #else
   policy::UserCloudPolicyManager* user_cloud_policy_manager =
-      policy::UserCloudPolicyManagerFactory::GetForProfile(
-          Profile::FromWebUI(web_ui()));
+      policy::UserCloudPolicyManagerFactory::GetForBrowserContext(
+          web_ui()->GetWebContents()->GetBrowserContext());
   if (user_cloud_policy_manager) {
     user_status_provider_.reset(
         new UserPolicyStatusProvider(user_cloud_policy_manager->core()));
@@ -542,28 +547,30 @@ void PolicyUIHandler::OnPolicyUpdated(const policy::PolicyNamespace& ns,
 void PolicyUIHandler::SendPolicyNames() const {
   base::DictionaryValue names;
 
+  Profile* profile = Profile::FromWebUI(web_ui());
+  policy::SchemaRegistry* registry =
+      policy::SchemaRegistryServiceFactory::GetForContext(
+          profile->GetOriginalProfile());
+  scoped_refptr<policy::SchemaMap> schema_map = registry->schema_map();
+
   // Add Chrome policy names.
   base::DictionaryValue* chrome_policy_names = new base::DictionaryValue;
-  const policy::PolicyDefinitionList* list =
-      policy::GetChromePolicyDefinitionList();
-  for (const policy::PolicyDefinitionList::Entry* entry = list->begin;
-       entry != list->end; ++entry) {
-    chrome_policy_names->SetBoolean(entry->name, true);
+  policy::PolicyNamespace chrome_ns(policy::POLICY_DOMAIN_CHROME, "");
+  const policy::Schema* chrome_schema = schema_map->GetSchema(chrome_ns);
+  for (policy::Schema::Iterator it = chrome_schema->GetPropertiesIterator();
+       !it.IsAtEnd(); it.Advance()) {
+    chrome_policy_names->SetBoolean(it.key(), true);
   }
   names.Set("chromePolicyNames", chrome_policy_names);
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   // Add extension policy names.
   base::DictionaryValue* extension_policy_names = new base::DictionaryValue;
+
   extensions::ExtensionSystem* extension_system =
-      extensions::ExtensionSystem::Get(Profile::FromWebUI(web_ui()));
+      extensions::ExtensionSystem::Get(profile);
   const ExtensionSet* extensions =
       extension_system->extension_service()->extensions();
-  scoped_refptr<const policy::PolicyDomainDescriptor> policy_domain_descriptor;
-  policy_domain_descriptor = GetPolicyService()->
-      GetPolicyDomainDescriptor(policy::POLICY_DOMAIN_EXTENSIONS);
-  const policy::PolicyDomainDescriptor::SchemaMap& schema_map =
-      policy_domain_descriptor->components();
 
   for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
@@ -574,17 +581,16 @@ void PolicyUIHandler::SendPolicyNames() const {
       continue;
     base::DictionaryValue* extension_value = new base::DictionaryValue;
     extension_value->SetString("name", extension->name());
-    policy::PolicyDomainDescriptor::SchemaMap::const_iterator schema =
-        schema_map.find(extension->id());
+    const policy::Schema* schema =
+        schema_map->GetSchema(policy::PolicyNamespace(
+            policy::POLICY_DOMAIN_EXTENSIONS, extension->id()));
     base::DictionaryValue* policy_names = new base::DictionaryValue;
-    if (schema != schema_map.end()) {
+    if (schema && schema->valid()) {
       // Get policy names from the extension's policy schema.
       // Store in a map, not an array, for faster lookup on JS side.
-      policy::Schema policy_schema = schema->second;
-      for (policy::Schema::Iterator it_policies =
-               policy_schema.GetPropertiesIterator();
-           !it_policies.IsAtEnd(); it_policies.Advance()) {
-        policy_names->SetBoolean(it_policies.key(), true);
+      for (policy::Schema::Iterator prop = schema->GetPropertiesIterator();
+           !prop.IsAtEnd(); prop.Advance()) {
+        policy_names->SetBoolean(prop.key(), true);
       }
     }
     extension_value->Set("policyNames", policy_names);

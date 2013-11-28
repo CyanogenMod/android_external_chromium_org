@@ -30,7 +30,6 @@
         "android/testshell/testshell_google_location_settings_helper.h",
         'android/testshell/testshell_tab.cc',
         'android/testshell/testshell_tab.h',
-        'android/testshell/testshell_stubs.cc',
       ],
       'include_dirs': [
         '<(SHARED_INTERMEDIATE_DIR)/chromium_testshell',
@@ -64,7 +63,7 @@
         'manifest_package_name': 'org.chromium.chrome.testshell',
         'java_in_dir': 'android/testshell/java',
         'resource_dir': 'android/testshell/res',
-        'asset_location': '<(ant_build_out)/../assets/<(package_name)',
+        'asset_location': '<(PRODUCT_DIR)/../assets/<(package_name)',
         'native_lib_target': 'libchromiumtestshell',
         'additional_input_paths': [
           '<@(chrome_android_pak_output_resources)',
@@ -80,6 +79,7 @@
       ],
       'variables': {
         'jni_gen_package': 'chromium_testshell',
+        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../build/jni_generator.gypi' ],
     },

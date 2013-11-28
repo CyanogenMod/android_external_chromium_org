@@ -4,8 +4,6 @@
 
 #include "chrome/browser/policy/cloud/component_cloud_policy_updater.h"
 
-#include <string>
-
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/files/scoped_temp_dir.h"
@@ -18,12 +16,12 @@
 #include "chrome/browser/policy/cloud/external_policy_data_fetcher.h"
 #include "chrome/browser/policy/cloud/policy_builder.h"
 #include "chrome/browser/policy/cloud/resource_cache.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_bundle.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/policy/proto/cloud/chrome_extension_policy.pb.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_bundle.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -329,6 +327,23 @@ TEST_F(ComponentCloudPolicyUpdaterTest, NoPolicy) {
   task_runner_->RunUntilIdle();
 
   // Verify that the download is no longer running.
+  EXPECT_FALSE(fetcher_factory_.GetFetcherByID(0));
+}
+
+TEST_F(ComponentCloudPolicyUpdaterTest, CancelUpdate) {
+  // Submit a policy fetch response with a valid download URL.
+  updater_->UpdateExternalPolicy(CreateResponse());
+  task_runner_->RunUntilIdle();
+
+  // Verify that the download has been started.
+  EXPECT_TRUE(fetcher_factory_.GetFetcherByID(0));
+
+  // Now cancel that update before the download completes.
+  EXPECT_CALL(store_delegate_, OnComponentCloudPolicyStoreUpdated()).Times(0);
+  updater_->CancelUpdate(
+      PolicyNamespace(POLICY_DOMAIN_EXTENSIONS, kTestExtension));
+  task_runner_->RunUntilIdle();
+  Mock::VerifyAndClearExpectations(&store_delegate_);
   EXPECT_FALSE(fetcher_factory_.GetFetcherByID(0));
 }
 

@@ -287,32 +287,6 @@ void DispatchGesture(ui::EventType gesture_type, gfx::Point location) {
       &gesture_event);
 }
 
-bool IsGestureEventType(ui::EventType type) {
-  switch (type) {
-    case ui::ET_GESTURE_SCROLL_BEGIN:
-    case ui::ET_GESTURE_SCROLL_END:
-    case ui::ET_GESTURE_SCROLL_UPDATE:
-    case ui::ET_GESTURE_TAP:
-    case ui::ET_GESTURE_TAP_CANCEL:
-    case ui::ET_GESTURE_TAP_DOWN:
-    case ui::ET_GESTURE_BEGIN:
-    case ui::ET_GESTURE_END:
-    case ui::ET_GESTURE_TWO_FINGER_TAP:
-    case ui::ET_GESTURE_PINCH_BEGIN:
-    case ui::ET_GESTURE_PINCH_END:
-    case ui::ET_GESTURE_PINCH_UPDATE:
-    case ui::ET_GESTURE_LONG_PRESS:
-    case ui::ET_GESTURE_LONG_TAP:
-    case ui::ET_GESTURE_MULTIFINGER_SWIPE:
-    case ui::ET_SCROLL_FLING_CANCEL:
-    case ui::ET_SCROLL_FLING_START:
-      return true;
-    default:
-      break;
-  }
-  return false;
-}
-
 }  // namespace
 
 class DragDropControllerTest : public AshTestBase {
@@ -1020,9 +994,9 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
     return;
 
   UpdateDisplay("400x400,400x400");
-  Shell::RootWindowList root_windows =
+  aura::Window::Windows root_windows =
       Shell::GetInstance()->GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     aura::client::SetDragDropClient(*iter, drag_drop_controller_.get());
   }
@@ -1099,7 +1073,7 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
 
     EXPECT_EQ("405,405", observer.window_location_on_destroying().ToString());
   }
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     aura::client::SetDragDropClient(*iter, NULL);
   }

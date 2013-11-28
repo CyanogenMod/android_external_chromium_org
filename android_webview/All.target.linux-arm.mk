@@ -23,7 +23,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,net_cert_verify_result_android_java_gyp)/cert_verify_result_android_java.stamp \
 	$(call intermediates-dir-for,GYP,net_net_errors_java_gyp)/net_errors_java.stamp \
 	$(call intermediates-dir-for,GYP,net_private_key_types_java_gyp)/private_key_types_java.stamp \
-	$(call intermediates-dir-for,GYP,ui_window_open_disposition_java_gyp)/window_open_disposition_java.stamp
+	$(call intermediates-dir-for,GYP,ui_android_window_open_disposition_java_gyp)/window_open_disposition_java.stamp
 
 GYP_GENERATED_OUTPUTS :=
 

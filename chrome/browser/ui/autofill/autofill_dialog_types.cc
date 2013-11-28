@@ -33,7 +33,9 @@ DialogNotification::DialogNotification(Type type, const string16& display_text)
   std::vector<base::string16> pieces;
   base::SplitStringDontTrim(display_text, kRangeSeparator, &pieces);
   if (pieces.size() > 1) {
-    link_range_ = gfx::Range(pieces[0].size(), pieces[1].size());
+    size_t start = pieces[0].size();
+    size_t end = start + pieces[1].size();
+    link_range_ = gfx::Range(start, end);
     display_text_ = JoinString(pieces, string16());
   }
 }
@@ -42,7 +44,6 @@ DialogNotification::~DialogNotification() {}
 
 SkColor DialogNotification::GetBackgroundColor() const {
   switch (type_) {
-    case DialogNotification::EXPLANATORY_MESSAGE:
     case DialogNotification::WALLET_USAGE_CONFIRMATION:
       return SkColorSetRGB(0xf5, 0xf5, 0xf5);
     case DialogNotification::REQUIRED_ACTION:
@@ -50,7 +51,6 @@ SkColor DialogNotification::GetBackgroundColor() const {
       return SkColorSetRGB(0xfc, 0xf3, 0xbf);
     case DialogNotification::DEVELOPER_WARNING:
     case DialogNotification::SECURITY_WARNING:
-    case DialogNotification::VALIDATION_ERROR:
       return kWarningColor;
     case DialogNotification::NONE:
       return SK_ColorTRANSPARENT;
@@ -62,14 +62,12 @@ SkColor DialogNotification::GetBackgroundColor() const {
 
 SkColor DialogNotification::GetBorderColor() const {
   switch (type_) {
-    case DialogNotification::EXPLANATORY_MESSAGE:
     case DialogNotification::WALLET_USAGE_CONFIRMATION:
       return SkColorSetRGB(0xe5, 0xe5, 0xe5);
     case DialogNotification::REQUIRED_ACTION:
     case DialogNotification::WALLET_ERROR:
     case DialogNotification::DEVELOPER_WARNING:
     case DialogNotification::SECURITY_WARNING:
-    case DialogNotification::VALIDATION_ERROR:
     case DialogNotification::NONE:
       return GetBackgroundColor();
   }
@@ -82,12 +80,10 @@ SkColor DialogNotification::GetTextColor() const {
   switch (type_) {
     case DialogNotification::REQUIRED_ACTION:
     case DialogNotification::WALLET_ERROR:
-    case DialogNotification::EXPLANATORY_MESSAGE:
     case DialogNotification::WALLET_USAGE_CONFIRMATION:
       return SkColorSetRGB(102, 102, 102);
     case DialogNotification::DEVELOPER_WARNING:
     case DialogNotification::SECURITY_WARNING:
-    case DialogNotification::VALIDATION_ERROR:
       return SK_ColorWHITE;
     case DialogNotification::NONE:
       return SK_ColorTRANSPARENT;
@@ -98,8 +94,7 @@ SkColor DialogNotification::GetTextColor() const {
 }
 
 bool DialogNotification::HasArrow() const {
-  return type_ == DialogNotification::EXPLANATORY_MESSAGE ||
-         type_ == DialogNotification::WALLET_ERROR ||
+  return type_ == DialogNotification::WALLET_ERROR ||
          type_ == DialogNotification::WALLET_USAGE_CONFIRMATION;
 }
 

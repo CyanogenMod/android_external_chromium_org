@@ -6,9 +6,11 @@ from itertools import ifilter
 from operator import itemgetter
 
 from data_source import DataSource
+from extensions_paths import PRIVATE_TEMPLATES
 import features_utility as features
-from svn_constants import PRIVATE_TEMPLATE_PATH
+from future import Gettable, Future
 from third_party.json_schema_compiler.json_parse import Parse
+
 
 def _ListifyPermissions(permissions):
   '''Filter out any permissions that do not have a description or with a name
@@ -20,6 +22,7 @@ def _ListifyPermissions(permissions):
   return sorted(
       ifilter(filter_permissions, permissions.values()),
       key=itemgetter('name'))
+
 
 def _AddDependencyDescriptions(permissions, api_features):
   '''Use |api_features| to determine the dependencies APIs have on permissions.
@@ -50,38 +53,39 @@ class PermissionsDataSource(DataSource):
         server_instance.host_file_system_provider.GetTrunk())
 
   def _CreatePermissionsData(self):
-    api_features = self._features_bundle.GetAPIFeatures()
-    permission_features = self._features_bundle.GetPermissionFeatures()
+    api_features_future = self._features_bundle.GetAPIFeatures()
+    permission_features_future = self._features_bundle.GetPermissionFeatures()
+    def resolve():
+      permission_features = permission_features_future.Get()
+      _AddDependencyDescriptions(permission_features, api_features_future.Get())
 
-    def filter_for_platform(permissions, platform):
-      return _ListifyPermissions(features.Filtered(permissions, platform))
+      # Turn partial templates into descriptions, ensure anchors are set.
+      for permission in permission_features.values():
+        if not 'anchor' in permission:
+          permission['anchor'] = permission['name']
+        if 'partial' in permission:
+          permission['description'] = self._template_cache.GetFromFile('%s/%s' %
+              (PRIVATE_TEMPLATES, permission['partial'])).Get()
+          del permission['partial']
 
-    _AddDependencyDescriptions(permission_features, api_features)
-    # Turn partial templates into descriptions, ensure anchors are set.
-    for permission in permission_features.values():
-      if not 'anchor' in permission:
-        permission['anchor'] = permission['name']
-      if 'partial' in permission:
-        permission['description'] = self._template_cache.GetFromFile('%s/%s' %
-            (PRIVATE_TEMPLATE_PATH, permission['partial'])).Get()
-        del permission['partial']
-
-    return {
-      'declare_apps': filter_for_platform(permission_features, 'apps'),
-      'declare_extensions': filter_for_platform(
-          permission_features, 'extensions')
-    }
+      def filter_for_platform(permissions, platform):
+        return _ListifyPermissions(features.Filtered(permissions, platform))
+      return {
+        'declare_apps': filter_for_platform(permission_features, 'apps'),
+        'declare_extensions': filter_for_platform(
+            permission_features, 'extensions')
+      }
+    return Future(delegate=Gettable(resolve))
 
   def _GetCachedPermissionsData(self):
     data = self._object_store.Get('permissions_data').Get()
     if data is None:
-      data = self._CreatePermissionsData()
+      data = self._CreatePermissionsData().Get()
       self._object_store.Set('permissions_data', data)
     return data
 
   def Cron(self):
-    # TODO(kalman): Implement this.
-    pass
+    return self._CreatePermissionsData()
 
   def get(self, key):
     return self._GetCachedPermissionsData().get(key)

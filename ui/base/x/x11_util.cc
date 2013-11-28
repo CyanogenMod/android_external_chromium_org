@@ -22,6 +22,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -259,10 +260,24 @@ bool IsShapeAvailable() {
 
 }
 
+// A list of bogus sizes in mm that X detects that should be ignored.
+// See crbug.com/136533. The first element maintains the minimum
+// size required to be valid size.
+const unsigned long kInvalidDisplaySizeList[][2] = {
+  {40, 30},
+  {50, 40},
+  {160, 90},
+  {160, 100},
+};
+
 }  // namespace
 
 bool XDisplayExists() {
   return (gfx::GetXDisplay() != NULL);
+}
+
+bool IsXInput2Available() {
+  return DeviceDataManager::GetInstance()->IsXInput2Available();
 }
 
 static SharedMemorySupport DoQuerySharedMemorySupport(XDisplay* dpy) {
@@ -476,11 +491,10 @@ int CoalescePendingMotionEvents(const XEvent* xev,
         XGetEventData(display, &last_event->xcookie);
         ++num_coalesced;
         continue;
-      } else {
-        // This isn't an event we want so free its cookie data.
-        XFreeEventData(display, &next_event.xcookie);
       }
     }
+    // This isn't an event we want so free its cookie data.
+    XFreeEventData(display, &next_event.xcookie);
     break;
   }
 
@@ -586,6 +600,8 @@ void ClearX11DefaultRootWindow() {
 }
 
 bool IsWindowVisible(XID window) {
+  TRACE_EVENT0("ui", "IsWindowVisible");
+
   XWindowAttributes win_attributes;
   if (!XGetWindowAttributes(gfx::GetXDisplay(), window, &win_attributes))
     return false;
@@ -620,6 +636,8 @@ bool GetWindowRect(XID window, gfx::Rect* rect) {
 
 
 bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
+  TRACE_EVENT0("ui", "WindowContainsPoint");
+
   gfx::Rect window_rect;
   if (!GetWindowRect(window, &window_rect))
     return false;
@@ -921,8 +939,8 @@ Atom GetAtom(const char* name) {
 
 void SetWindowClassHint(XDisplay* display,
                         XID window,
-                        std::string res_name,
-                        std::string res_class) {
+                        const std::string& res_name,
+                        const std::string& res_class) {
   XClassHint class_hints;
   // const_cast is safe because XSetClassHint does not modify the strings.
   // Just to be safe, the res_name and res_class parameters are local copies,
@@ -930,6 +948,18 @@ void SetWindowClassHint(XDisplay* display,
   class_hints.res_name = const_cast<char*>(res_name.c_str());
   class_hints.res_class = const_cast<char*>(res_class.c_str());
   XSetClassHint(display, window, &class_hints);
+}
+
+void SetWindowRole(XDisplay* display, XID window, const std::string& role) {
+  if (role.empty()) {
+    XDeleteProperty(display, window, GetAtom("WM_WINDOW_ROLE"));
+  } else {
+    char* role_c = const_cast<char*>(role.c_str());
+    XChangeProperty(display, window, GetAtom("WM_WINDOW_ROLE"), XA_STRING, 8,
+                    PropModeReplace,
+                    reinterpret_cast<unsigned char*>(role_c),
+                    role.size());
+  }
 }
 
 XID GetParentWindow(XID window) {
@@ -1311,6 +1341,25 @@ bool IsX11WindowFullScreen(XID window) {
   int height = HeightOfScreen(screen);
   return window_rect.size() == gfx::Size(width, height);
 #endif
+}
+
+bool IsXDisplaySizeBlackListed(unsigned long mm_width,
+                               unsigned long mm_height) {
+  // Ignore if the reported display is smaller than minimum size.
+  if (mm_width <= kInvalidDisplaySizeList[0][0] ||
+      mm_height <= kInvalidDisplaySizeList[0][1]) {
+    LOG(WARNING) << "Smaller than minimum display size";
+    return true;
+  }
+  for (unsigned long i = 1 ; i < arraysize(kInvalidDisplaySizeList); ++i) {
+    const unsigned long* size = kInvalidDisplaySizeList[i];
+    if (mm_width == size[0] && mm_height == size[1]) {
+      LOG(WARNING) << "Black listed display size detected:"
+                   << size[0] << "x" << size[1];
+      return true;
+    }
+  }
+  return false;
 }
 
 const unsigned char* XRefcountedMemory::front() const {

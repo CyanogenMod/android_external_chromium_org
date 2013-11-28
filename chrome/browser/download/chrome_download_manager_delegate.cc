@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
@@ -15,6 +16,8 @@
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task_runner.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -22,10 +25,12 @@
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/download/download_file_picker.h"
 #include "chrome/browser/download/download_history.h"
+#include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_path_reservation_tracker.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/download/download_target_determiner.h"
 #include "chrome/browser/download/save_package_file_picker.h"
 #include "chrome/browser/extensions/api/downloads/downloads_api.h"
@@ -33,13 +38,19 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/page_navigator.h"
 #include "extensions/common/constants.h"
+#include "net/base/mime_util.h"
+#include "net/base/net_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/download_handler.h"
@@ -161,12 +172,41 @@ void CheckDownloadUrlDone(
 
 #endif  // FULL_SAFE_BROWSING
 
+// Called on the blocking pool to determine the MIME type for |path|.
+void GetMimeTypeAndReplyOnUIThread(
+    const base::FilePath& path,
+    const base::Callback<void(const std::string&)>& callback) {
+  std::string mime_type;
+  net::GetMimeTypeFromFile(path, &mime_type);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE, base::Bind(callback, mime_type));
+}
+
+bool IsOpenInBrowserPreferreredForFile(const base::FilePath& path) {
+  // On Android, always prefer opening with an external app. On ChromeOS, there
+  // are no external apps so just allow all opens to be handled by the "System."
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && defined(ENABLE_PLUGINS)
+  // TODO(asanka): Consider other file types and MIME types.
+  // http://crbug.com/323561
+  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".htm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".html")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xht")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xhtm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xhtml"))) {
+    return true;
+  }
+#endif
+  return false;
+}
+
 }  // namespace
 
 ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
     : profile_(profile),
       next_download_id_(content::DownloadItem::kInvalidId),
-      download_prefs_(new DownloadPrefs(profile)) {
+      download_prefs_(new DownloadPrefs(profile)),
+      weak_ptr_factory_(this) {
 }
 
 ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
@@ -178,6 +218,7 @@ void ChromeDownloadManagerDelegate::SetDownloadManager(DownloadManager* dm) {
 
 void ChromeDownloadManagerDelegate::Shutdown() {
   download_prefs_.reset();
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
 void ChromeDownloadManagerDelegate::SetNextId(uint32 next_id) {
@@ -220,13 +261,17 @@ void ChromeDownloadManagerDelegate::ReturnNextId(
 bool ChromeDownloadManagerDelegate::DetermineDownloadTarget(
     DownloadItem* download,
     const content::DownloadTargetCallback& callback) {
+  DownloadTargetDeterminer::CompletionCallback target_determined_callback =
+      base::Bind(&ChromeDownloadManagerDelegate::OnDownloadTargetDetermined,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 download->GetId(),
+                 callback);
   DownloadTargetDeterminer::Start(
       download,
-      GetPlatformDownloadPath(
-          profile_, download, PLATFORM_TARGET_PATH),
+      GetPlatformDownloadPath(profile_, download, PLATFORM_TARGET_PATH),
       download_prefs_.get(),
       this,
-      callback);
+      target_determined_callback);
   return true;
 }
 
@@ -277,7 +322,7 @@ bool ChromeDownloadManagerDelegate::IsDownloadReadyForCompletion(
           item,
           base::Bind(
               &ChromeDownloadManagerDelegate::CheckClientDownloadDone,
-              this,
+              weak_ptr_factory_.GetWeakPtr(),
               item->GetId()));
       return false;
     }
@@ -305,7 +350,7 @@ bool ChromeDownloadManagerDelegate::ShouldCompleteDownload(
     const base::Closure& user_complete_callback) {
   return IsDownloadReadyForCompletion(item, base::Bind(
       &ChromeDownloadManagerDelegate::ShouldCompleteDownloadInternal,
-      this, item->GetId(), user_complete_callback));
+      weak_ptr_factory_.GetWeakPtr(), item->GetId(), user_complete_callback));
 }
 
 bool ChromeDownloadManagerDelegate::ShouldOpenDownload(
@@ -371,14 +416,49 @@ void ChromeDownloadManagerDelegate::ChooseSavePath(
       callback);
 }
 
-void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
-  DCHECK_EQ(DownloadItem::COMPLETE, download->GetState());
-  if (!download->CanOpenDownload())
-    return;
+void ChromeDownloadManagerDelegate::OpenDownloadUsingPlatformHandler(
+    DownloadItem* download) {
   base::FilePath platform_path(
       GetPlatformDownloadPath(profile_, download, PLATFORM_TARGET_PATH));
   DCHECK(!platform_path.empty());
   platform_util::OpenItem(platform_path);
+}
+
+void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
+  DCHECK_EQ(DownloadItem::COMPLETE, download->GetState());
+  DCHECK(!download->GetTargetFilePath().empty());
+  if (!download->CanOpenDownload())
+    return;
+
+  if (!DownloadItemModel(download).ShouldPreferOpeningInBrowser()) {
+    RecordDownloadOpenMethod(DOWNLOAD_OPEN_METHOD_DEFAULT_PLATFORM);
+    OpenDownloadUsingPlatformHandler(download);
+    return;
+  }
+
+#if !defined(OS_ANDROID)
+  content::WebContents* web_contents = download->GetWebContents();
+  Browser* browser =
+      web_contents ? chrome::FindBrowserWithWebContents(web_contents) : NULL;
+  scoped_ptr<chrome::ScopedTabbedBrowserDisplayer> browser_displayer;
+  if (!browser ||
+      !browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP)) {
+    browser_displayer.reset(new chrome::ScopedTabbedBrowserDisplayer(
+        profile_, chrome::GetActiveDesktop()));
+    browser = browser_displayer->browser();
+  }
+  content::OpenURLParams params(
+      net::FilePathToFileURL(download->GetTargetFilePath()),
+      content::Referrer(),
+      NEW_FOREGROUND_TAB,
+      content::PAGE_TRANSITION_LINK,
+      false);
+  browser->OpenURL(params);
+  RecordDownloadOpenMethod(DOWNLOAD_OPEN_METHOD_DEFAULT_BROWSER);
+#else
+  // ShouldPreferOpeningInBrowser() should never be true on Android.
+  NOTREACHED();
+#endif
 }
 
 void ChromeDownloadManagerDelegate::ShowDownloadInShell(
@@ -403,8 +483,15 @@ void ChromeDownloadManagerDelegate::CheckForFileExistence(
     return;
   }
 #endif
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::FILE, FROM_HERE,
+  static const char kSequenceToken[] = "ChromeDMD-FileExistenceChecker";
+  base::SequencedWorkerPool* worker_pool = BrowserThread::GetBlockingPool();
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
+          worker_pool->GetNamedSequenceToken(kSequenceToken),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+  base::PostTaskAndReplyWithResult(
+      task_runner.get(),
+      FROM_HERE,
       base::Bind(&base::PathExists, download->GetTargetFilePath()),
       callback);
 }
@@ -523,6 +610,14 @@ void ChromeDownloadManagerDelegate::CheckDownloadUrl(
   callback.Run(content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS);
 }
 
+void ChromeDownloadManagerDelegate::GetFileMimeType(
+    const base::FilePath& path,
+    const GetFileMimeTypeCallback& callback) {
+  BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
+      base::Bind(&GetMimeTypeAndReplyOnUIThread, path, callback));
+}
+
 #if defined(FULL_SAFE_BROWSING)
 void ChromeDownloadManagerDelegate::CheckClientDownloadDone(
     uint32 download_id,
@@ -585,4 +680,20 @@ void ChromeDownloadManagerDelegate::Observe(
       crx_installers_[installer.get()];
   crx_installers_.erase(installer.get());
   callback.Run(installer->did_handle_successfully());
+}
+
+void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
+    int32 download_id,
+    const content::DownloadTargetCallback& callback,
+    scoped_ptr<DownloadTargetInfo> target_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DownloadItem* item = download_manager_->GetDownload(download_id);
+  if (!target_info->target_path.empty() && item &&
+      IsOpenInBrowserPreferreredForFile(target_info->target_path) &&
+      target_info->is_filetype_handled_securely)
+    DownloadItemModel(item).SetShouldPreferOpeningInBrowser(true);
+  callback.Run(target_info->target_path,
+               target_info->target_disposition,
+               target_info->danger_type,
+               target_info->intermediate_path);
 }

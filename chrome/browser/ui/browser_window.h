@@ -112,6 +112,9 @@ class BrowserWindow : public ui::BaseWindow {
   // Sets the starred state for the current tab.
   virtual void SetStarredState(bool is_starred) = 0;
 
+  // Sets whether the translate icon is lit for the current tab.
+  virtual void SetTranslateIconToggled(bool is_lit) = 0;
+
   // Called when the active tab changes.  Subclasses which implement
   // TabStripModelObserver should implement this instead of ActiveTabChanged();
   // the Browser will call this method while processing that one.
@@ -347,6 +350,12 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Construct a BrowserWindow implementation for the specified |browser|.
   static BrowserWindow* CreateBrowserWindow(Browser* browser);
+
+  // Returns a HostDesktopType that is compatible with the current Chrome window
+  // configuration. On Windows with Ash, this is always HOST_DESKTOP_TYPE_ASH
+  // while Chrome is running in Metro mode. Otherwise returns |desktop_type|.
+  static chrome::HostDesktopType AdjustHostDesktopType(
+      chrome::HostDesktopType desktop_type);
 
   // Shows the avatar bubble inside |web_contents|. The bubble is positioned
   // relative to |rect|. |rect| should be in the |web_contents| coordinate

@@ -104,6 +104,8 @@ def GetBrowserTesterCommand(desc, toolchain, config):
     # Prevent the infobar that shows up when requesting filesystem quota.
     '--browser_flag', '--unlimited-storage',
     '--enable_sockets',
+    # Prevent installing a new copy of PNaCl.
+    '--browser_flag', '--disable-component-update',
   ]
 
   args.extend(['--serving_dir', GetServingDirForProject(desc)])

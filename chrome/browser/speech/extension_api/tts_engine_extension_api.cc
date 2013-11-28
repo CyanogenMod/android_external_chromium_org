@@ -8,9 +8,7 @@
 
 #include "base/json/json_writer.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -18,11 +16,14 @@
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/console_message_level.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
+#include "net/base/network_change_notifier.h"
 
 using extensions::EventRouter;
 using extensions::Extension;
@@ -47,7 +48,7 @@ void WarnIfMissingPauseOrResumeListener(
   if (has_onpause == has_onresume)
     return;
 
-  ExtensionProcessManager* process_manager =
+  extensions::ProcessManager* process_manager =
       ExtensionSystem::Get(profile)->process_manager();
   extensions::ExtensionHost* host =
       process_manager->GetBackgroundHostForExtension(extension_id);
@@ -64,6 +65,9 @@ void GetExtensionVoices(Profile* profile, std::vector<VoiceData>* out_voices) {
   EventRouter* event_router =
       ExtensionSystem::Get(profile)->event_router();
   DCHECK(event_router);
+
+  bool is_offline = (net::NetworkChangeNotifier::GetConnectionType() ==
+                     net::NetworkChangeNotifier::CONNECTION_NONE);
 
   const ExtensionSet* extensions = service->extensions();
   ExtensionSet::const_iterator iter;
@@ -84,6 +88,10 @@ void GetExtensionVoices(Profile* profile, std::vector<VoiceData>* out_voices) {
 
     for (size_t i = 0; i < tts_voices->size(); ++i) {
       const extensions::TtsVoice& voice = tts_voices->at(i);
+
+      // Don't return remote voices when the system is offline.
+      if (voice.remote && is_offline)
+        continue;
 
       out_voices->push_back(VoiceData());
       VoiceData& result_voice = out_voices->back();
@@ -149,7 +157,7 @@ void ExtensionTtsEngineSpeak(Utterance* utterance, const VoiceData& voice) {
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnSpeak, args.Pass()));
-  event->restrict_to_profile = utterance->profile();
+  event->restrict_to_browser_context = utterance->profile();
   ExtensionSystem::Get(utterance->profile())->event_router()->
       DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
@@ -158,7 +166,7 @@ void ExtensionTtsEngineStop(Utterance* utterance) {
   scoped_ptr<ListValue> args(new ListValue());
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnStop, args.Pass()));
-  event->restrict_to_profile = utterance->profile();
+  event->restrict_to_browser_context = utterance->profile();
   ExtensionSystem::Get(utterance->profile())->event_router()->
       DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
@@ -168,7 +176,7 @@ void ExtensionTtsEnginePause(Utterance* utterance) {
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnPause, args.Pass()));
   Profile* profile = utterance->profile();
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   EventRouter* event_router = ExtensionSystem::Get(profile)->event_router();
   std::string id = utterance->extension_id();
   event_router->DispatchEventToExtension(id, event.Pass());
@@ -180,7 +188,7 @@ void ExtensionTtsEngineResume(Utterance* utterance) {
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnResume, args.Pass()));
   Profile* profile = utterance->profile();
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   EventRouter* event_router = ExtensionSystem::Get(profile)->event_router();
   std::string id = utterance->extension_id();
   event_router->DispatchEventToExtension(id, event.Pass());

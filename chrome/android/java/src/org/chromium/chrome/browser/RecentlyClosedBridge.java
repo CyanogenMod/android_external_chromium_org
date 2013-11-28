@@ -14,7 +14,7 @@ import java.util.List;
  * This class allows Java code to get and clear the list of recently closed tabs.
  */
 public class RecentlyClosedBridge {
-    private int mNativeRecentlyClosedTabsBridge;
+    private long mNativeRecentlyClosedTabsBridge;
 
     /**
      * Callback interface for getting notified when the list of recently closed tabs is updated.
@@ -72,6 +72,7 @@ public class RecentlyClosedBridge {
     public void destroy() {
         assert mNativeRecentlyClosedTabsBridge != 0;
         nativeDestroy(mNativeRecentlyClosedTabsBridge);
+        mNativeRecentlyClosedTabsBridge = 0;
     }
 
     /**
@@ -83,17 +84,18 @@ public class RecentlyClosedBridge {
     }
 
     /**
-     * @return The list of recently closed tabs.
+     * @param maxTabCount The maximum number of recently closed tabs to return.
+     * @return The list of recently closed tabs, with up to maxTabCount elements.
      */
-    public List<RecentlyClosedTab> getRecentlyClosedTabs() {
+    public List<RecentlyClosedTab> getRecentlyClosedTabs(int maxTabCount) {
         List<RecentlyClosedTab> tabs = new ArrayList<RecentlyClosedTab>();
-        boolean received = nativeGetRecentlyClosedTabs(mNativeRecentlyClosedTabsBridge, tabs);
+        boolean received = nativeGetRecentlyClosedTabs(mNativeRecentlyClosedTabsBridge, tabs,
+                maxTabCount);
         return received ? tabs : null;
     }
 
     /**
-     * Opens a recently closed tab in a new tab.
-     * Note: this will change to open in the current tab once http://crbug.com/257102 is fixed.
+     * Opens a recently closed tab in the current tab.
      *
      * @param tab The current TabBase.
      * @param recentTab The RecentlyClosedTab to open.
@@ -110,13 +112,13 @@ public class RecentlyClosedBridge {
         nativeClearRecentlyClosedTabs(mNativeRecentlyClosedTabsBridge);
     }
 
-    private native int nativeInit(Profile profile);
-    private native void nativeDestroy(int nativeRecentlyClosedTabsBridge);
+    private native long nativeInit(Profile profile);
+    private native void nativeDestroy(long nativeRecentlyClosedTabsBridge);
     private native void nativeSetRecentlyClosedCallback(
-            int nativeRecentlyClosedTabsBridge, RecentlyClosedCallback callback);
+            long nativeRecentlyClosedTabsBridge, RecentlyClosedCallback callback);
     private native boolean nativeGetRecentlyClosedTabs(
-            int nativeRecentlyClosedTabsBridge, List<RecentlyClosedTab> tabs);
+            long nativeRecentlyClosedTabsBridge, List<RecentlyClosedTab> tabs, int maxTabCount);
     private native boolean nativeOpenRecentlyClosedTab(
-            int nativeRecentlyClosedTabsBridge, TabBase tab, int recentTabId);
-    private native void nativeClearRecentlyClosedTabs(int nativeRecentlyClosedTabsBridge);
+            long nativeRecentlyClosedTabsBridge, TabBase tab, int recentTabId);
+    private native void nativeClearRecentlyClosedTabs(long nativeRecentlyClosedTabsBridge);
 }

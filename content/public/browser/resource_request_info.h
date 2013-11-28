@@ -80,7 +80,7 @@ class ResourceRequestInfo {
   virtual ResourceType::Type GetResourceType() const = 0;
 
   // Returns the associated referrer policy.
-  virtual WebKit::WebReferrerPolicy GetReferrerPolicy() const = 0;
+  virtual blink::WebReferrerPolicy GetReferrerPolicy() const = 0;
 
   // Returns the associated page transition type.
   virtual PageTransition GetPageTransition() const = 0;
@@ -99,6 +99,9 @@ class ResourceRequestInfo {
 
   // Returns true if this is associated with an asynchronous request.
   virtual bool IsAsync() const = 0;
+
+  // Whether this is a download.
+  virtual bool IsDownload() const = 0;
 
  protected:
   virtual ~ResourceRequestInfo() {}

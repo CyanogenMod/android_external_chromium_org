@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "ui/events/event_constants.h"
-#include "ui/events/event_utils.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/x/x11_types.h"
@@ -112,8 +111,10 @@ DeviceDataManager* DeviceDataManager::GetInstance() {
 
 DeviceDataManager::DeviceDataManager()
     : natural_scroll_enabled_(false),
+      xi_opcode_(-1),
       atom_cache_(gfx::GetXDisplay(), kCachedAtoms),
       button_map_count_(0) {
+  CHECK(gfx::GetXDisplay());
   InitializeXInputInternal();
 
   // Make sure the sizes of enum and kCachedAtoms are aligned.
@@ -134,7 +135,6 @@ bool DeviceDataManager::InitializeXInputInternal() {
     VLOG(1) << "X Input extension not available: error=" << error;
     return false;
   }
-  xi_opcode_ = opcode;
 
   // Check the XInput version.
 #if defined(USE_XI2_MT)
@@ -146,6 +146,16 @@ bool DeviceDataManager::InitializeXInputInternal() {
     VLOG(1) << "XInput2 not supported in the server.";
     return false;
   }
+#if defined(USE_XI2_MT)
+  if (major < 2 || (major == 2 && minor < USE_XI2_MT)) {
+    DVLOG(1) << "XI version on server is " << major << "." << minor << ". "
+            << "But 2." << USE_XI2_MT << " is required.";
+    return false;
+  }
+#endif
+
+  xi_opcode_ = opcode;
+  CHECK_NE(-1, xi_opcode_);
 
   // Possible XI event types for XIDeviceEvent. See the XI2 protocol
   // specification.
@@ -161,6 +171,10 @@ bool DeviceDataManager::InitializeXInputInternal() {
     xi_device_event_types_[XI_TouchEnd] = true;
   }
   return true;
+}
+
+bool DeviceDataManager::IsXInput2Available() const {
+  return xi_opcode_ != -1;
 }
 
 float DeviceDataManager::GetNaturalScrollFactor(int sourceid) const {
@@ -191,6 +205,9 @@ void DeviceDataManager::UpdateDeviceList(Display* display) {
   for (int i = 0; i < dev_list.count; ++i)
     if (dev_list[i].type == xi_touchpad)
       touchpads_[dev_list[i].id] = true;
+
+  if (!IsXInput2Available())
+    return;
 
   // Update the structs with new valuator information
   XIDeviceList info_list =
@@ -565,7 +582,9 @@ bool DeviceDataManager::GetDataRange(unsigned int deviceid,
 }
 
 void DeviceDataManager::SetDeviceListForTest(
-    const std::vector<unsigned int>& devices) {
+    const std::vector<unsigned int>& devices,
+    const std::vector<unsigned int>& cmt_devices,
+    const std::vector<unsigned int>& touchpads) {
   for (int i = 0; i < kMaxDeviceNum; ++i) {
     valuator_count_[i] = 0;
     valuator_lookup_[i].clear();
@@ -585,6 +604,18 @@ void DeviceDataManager::SetDeviceListForTest(
     for (int j = 0; j < kMaxSlotNum; j++)
       last_seen_valuator_[deviceid][j].resize(DT_LAST_ENTRY, 0);
   }
+
+  cmt_devices_.reset();
+  for (size_t i = 0; i < cmt_devices.size(); ++i) {
+    unsigned int deviceid = devices[i];
+    cmt_devices_[deviceid] = true;
+  }
+
+  touchpads_.reset();
+  for (size_t i = 0; i < touchpads.size(); ++i) {
+    unsigned int deviceid = devices[i];
+    touchpads_[deviceid] = true;
+  }
 }
 
 void DeviceDataManager::SetDeviceValuatorForTest(int deviceid,
@@ -596,5 +627,12 @@ void DeviceDataManager::SetDeviceValuatorForTest(int deviceid,
   data_type_lookup_[deviceid][val_index] = data_type;
   valuator_min_[deviceid][data_type] = min;
   valuator_max_[deviceid][data_type] = max;
+
+  // Recalulate the number of valuators for the device.
+  valuator_count_[deviceid] = 0;
+  for (size_t i = 0; i < DT_LAST_ENTRY; ++i) {
+    if (valuator_lookup_[deviceid][i] != -1)
+      valuator_count_[deviceid]++;
+  }
 }
 }  // namespace ui

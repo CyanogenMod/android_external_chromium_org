@@ -27,16 +27,19 @@ const char kDefaultStubNetworkStateIdle[] = "default-stub-network-state-idle";
 // Disables wallpaper boot animation (except of OOBE case).
 const char kDisableBootAnimation[]          = "disable-boot-animation";
 
-// Disables Chrome Captive Portal detector, which initiates Captive
-// Portal detection for new active networks.
-const char kDisableChromeCaptivePortalDetector[] =
-    "disable-chrome-captive-portal-detector";
-
 // Disables Google Drive integration.
 const char kDisableDrive[]                  = "disable-drive";
 
+// Disables reporting recently logged in users for enterprise-managed devices.
+const char kDisableEnterpriseUserReporting[] =
+    "disable-enterprise-user-reporting";
+
 // Disable Genius App and use the original Help App instead.
 const char kDisableGeniusApp[]              = "disable-genius-app";
+
+// Disable to show the indicator about the IME (input method editor) mode
+// on Chrome OS.
+const char kDisableIMEModeIndicator[] = "disable-ime-mode-indicator";
 
 // Disable policy-configured local accounts.
 const char kDisableLocalAccounts[]          = "disable-local-accounts";
@@ -77,14 +80,8 @@ const char kEnableBackgroundLoader[]        = "enable-background-loader";
 // Enables switching between different cellular carriers from the UI.
 const char kEnableCarrierSwitching[]        = "enable-carrier-switching";
 
-// Enables Chrome Captive Portal detector, which initiates Captive
-// Portal detection for new active networks.
-const char kEnableChromeCaptivePortalDetector[] =
-    "enable-chrome-captive-portal-detector";
-
-// Enable to show the indicator about the IME (input method editor) mode
-// on Chrome OS.
-const char kEnableIMEModeIndicator[] = "enable-ime-mode-indicator";
+// Enables automatically initializing Google Drive offline mode on first run.
+const char kEnableDriveOfflineFirstRun[] = "enable-drive-offline-first-run";
 
 // Enable "interactive" mode for stub implemenations (e.g. NetworkStateHandler)
 const char kEnableStubInteractive[] = "enable-stub-interactive";
@@ -112,6 +109,11 @@ const char kEnterpriseEnrollmentInitialModulus[] =
 // auto-enrollment client.
 const char kEnterpriseEnrollmentModulusLimit[] =
     "enterprise-enrollment-modulus-limit";
+
+// Don't create robot account on enrollment. Used when testing device
+// enrollment against YAPS or the Python test server.
+const char kEnterpriseEnrollmentSkipRobotAuth[] =
+    "enterprise-enrollment-skip-robot-auth";
 
 // Shows the selecting checkboxes in the Files.app.
 const char kFileManagerShowCheckboxes[]     = "file-manager-show-checkboxes";
@@ -184,8 +186,11 @@ const char kDisableUserImageSync[]          = "disable-user-image-sync";
 // Enables SAML sigin support.
 const char kEnableSamlSignin[]              = "enable-saml-signin";
 
-// Enables new first-run overlay UI.
-const char kEnableFirstRunUI[] = "enable-first-run-ui";
+// Disables new first-run overlay UI.
+const char kDisableFirstRunUI[] = "disable-first-run-ui";
+
+// Forces first-run UI to be shown for every login.
+const char kForceFirstRunUI[] = "force-first-run-ui";
 
 // Enables testing for auto update UI.
 const char kTestAutoUpdateUI[] = "test-auto-update-ui";

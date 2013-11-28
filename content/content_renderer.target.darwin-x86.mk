@@ -21,8 +21,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp)/webkit_child_webkit_child_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_gyp)/webkit_glue_glue_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_child_gyp)/webkit_glue_glue_child_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
@@ -54,8 +54,16 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/email_detector.cc \
 	content/renderer/android/phone_number_detector.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
+	content/renderer/browser_plugin/browser_plugin.cc \
+	content/renderer/browser_plugin/browser_plugin_backing_store.cc \
+	content/renderer/browser_plugin/browser_plugin_bindings.cc \
+	content/renderer/browser_plugin/browser_plugin_compositing_helper.cc \
+	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
+	content/renderer/browser_plugin/browser_plugin_manager.cc \
 	content/renderer/clipboard_utils.cc \
+	content/renderer/context_menu_params_builder.cc \
 	content/renderer/cursor_utils.cc \
+	content/renderer/date_time_formatter.cc \
 	content/renderer/device_orientation/device_motion_event_pump.cc \
 	content/renderer/device_orientation/device_orientation_event_pump.cc \
 	content/renderer/device_orientation/device_sensor_event_pump.cc \
@@ -70,21 +78,26 @@ LOCAL_SRC_FILES := \
 	content/renderer/dom_storage/webstoragenamespace_impl.cc \
 	content/renderer/drop_data_builder.cc \
 	content/renderer/external_popup_menu.cc \
+	content/renderer/fetchers/alt_error_page_resource_fetcher.cc \
+	content/renderer/fetchers/image_resource_fetcher.cc \
+	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
+	content/renderer/fetchers/resource_fetcher_impl.cc \
 	content/renderer/gamepad_shared_memory_reader.cc \
 	content/renderer/geolocation_dispatcher.cc \
 	content/renderer/gpu/compositor_output_surface.cc \
 	content/renderer/gpu/compositor_software_output_device.cc \
 	content/renderer/gpu/delegated_compositor_output_surface.cc \
-	content/renderer/gpu/input_event_filter.cc \
-	content/renderer/gpu/input_handler_proxy.cc \
-	content/renderer/gpu/input_handler_manager.cc \
-	content/renderer/gpu/input_handler_wrapper.cc \
 	content/renderer/gpu/gpu_benchmarking_extension.cc \
+	content/renderer/gpu/input_event_filter.cc \
+	content/renderer/gpu/input_handler_manager.cc \
+	content/renderer/gpu/input_handler_proxy.cc \
+	content/renderer/gpu/input_handler_wrapper.cc \
 	content/renderer/gpu/mailbox_output_surface.cc \
-	content/renderer/gpu/stream_texture_host_android.cc \
 	content/renderer/gpu/render_widget_compositor.cc \
+	content/renderer/gpu/stream_texture_host_android.cc \
 	content/renderer/idle_user_detector.cc \
 	content/renderer/image_loading_helper.cc \
+	content/renderer/ime_event_guard.cc \
 	content/renderer/in_process_renderer_thread.cc \
 	content/renderer/internal_document_state_data.cc \
 	content/renderer/java/java_bridge_channel.cc \
@@ -137,19 +150,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
 	content/renderer/paint_aggregator.cc \
-	content/renderer/browser_plugin/browser_plugin.cc \
-	content/renderer/browser_plugin/browser_plugin_backing_store.cc \
-	content/renderer/browser_plugin/browser_plugin_bindings.cc \
-	content/renderer/browser_plugin/browser_plugin_manager.cc \
-	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
-	content/renderer/browser_plugin/browser_plugin_compositing_helper.cc \
-	content/renderer/context_menu_params_builder.cc \
-	content/renderer/date_time_formatter.cc \
-	content/renderer/fetchers/alt_error_page_resource_fetcher.cc \
-	content/renderer/fetchers/image_resource_fetcher.cc \
-	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
-	content/renderer/fetchers/resource_fetcher.cc \
-	content/renderer/ime_event_guard.cc \
 	content/renderer/render_frame_impl.cc \
 	content/renderer/render_process_impl.cc \
 	content/renderer/render_thread_impl.cc \
@@ -165,8 +165,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_main.cc \
 	content/renderer/renderer_main_platform_delegate_android.cc \
 	content/renderer/renderer_webapplicationcachehost_impl.cc \
-	content/renderer/renderer_webcookiejar_impl.cc \
 	content/renderer/renderer_webcolorchooser_impl.cc \
+	content/renderer/renderer_webcookiejar_impl.cc \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
 	content/renderer/resizing_mode_selector.cc \
 	content/renderer/sad_plugin.cc \
@@ -180,12 +180,13 @@ LOCAL_SRC_FILES := \
 	content/renderer/stats_collection_observer.cc \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
-	content/renderer/webclipboard_impl.cc \
 	content/renderer/web_preferences.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
+	content/renderer/webclipboard_impl.cc \
 	content/renderer/webcrypto/webcrypto_impl.cc \
 	content/renderer/webcrypto/webcrypto_impl_openssl.cc \
+	content/renderer/webpublicsuffixlist_impl.cc \
 	content/renderer/websharedworker_proxy.cc
 
 
@@ -239,6 +240,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -246,6 +248,7 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -281,6 +284,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -294,7 +298,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
@@ -384,6 +387,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -391,6 +395,7 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -427,6 +432,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -440,7 +446,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
@@ -522,8 +527,8 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	skia_skia_library_gyp \
+	webkit_child_webkit_child_gyp \
 	webkit_glue_glue_gyp \
-	webkit_glue_glue_child_gyp \
 	third_party_libphonenumber_libphonenumber_without_metadata_gyp
 
 # Enable grouping to fix circular references

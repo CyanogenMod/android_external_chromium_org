@@ -10,11 +10,11 @@
 #include "base/values.h"
 #include "chrome/browser/policy/configuration_policy_handler.h"
 #include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 #include "chrome/common/pref_names.h"
-#include "grit/generated_resources.h"
+#include "components/policy/core/common/policy_map.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
 
 namespace {

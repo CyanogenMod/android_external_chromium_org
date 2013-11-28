@@ -42,6 +42,8 @@ class AutofillDriverImpl : public AutofillDriver,
   static AutofillDriverImpl* FromWebContents(content::WebContents* contents);
 
   // AutofillDriver:
+  virtual bool IsOffTheRecord() const OVERRIDE;
+  virtual net::URLRequestContextGetter* GetURLRequestContext() OVERRIDE;
   virtual content::WebContents* GetWebContents() OVERRIDE;
   virtual base::SequencedWorkerPool* GetBlockingPool() OVERRIDE;
   virtual bool RendererIsAvailable() OVERRIDE;
@@ -51,8 +53,13 @@ class AutofillDriverImpl : public AutofillDriver,
                                       const FormData& data) OVERRIDE;
   virtual void SendAutofillTypePredictionsToRenderer(
       const std::vector<FormStructure*>& forms) OVERRIDE;
+  virtual void RendererShouldAcceptDataListSuggestion(
+      const base::string16& value) OVERRIDE;
+  virtual void RendererShouldAcceptPasswordAutofillSuggestion(
+      const base::string16& username) OVERRIDE;
   virtual void RendererShouldClearFilledForm() OVERRIDE;
   virtual void RendererShouldClearPreviewedForm() OVERRIDE;
+  virtual void RendererShouldSetNodeText(const base::string16& value) OVERRIDE;
 
   AutofillExternalDelegate* autofill_external_delegate() {
     return &autofill_external_delegate_;

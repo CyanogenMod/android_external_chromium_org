@@ -350,11 +350,13 @@ TEST_F(QuicSessionTest, OutOfOrderHeaders) {
 
   // Create frame with headers for stream2.
   string compressed_headers1 = compressor.CompressHeaders(headers_);
-  QuicStreamFrame frame1(stream2->id(), false, 0, compressed_headers1);
+  QuicStreamFrame frame1(
+      stream2->id(), false, 0, MakeIOVector(compressed_headers1));
 
   // Create frame with headers for stream4.
   string compressed_headers2 = compressor.CompressHeaders(headers_);
-  QuicStreamFrame frame2(stream4->id(), true, 0, compressed_headers2);
+  QuicStreamFrame frame2(
+      stream4->id(), true, 0, MakeIOVector(compressed_headers2));
 
   // Process the second frame first.  This will cause the headers to
   // be queued up and processed after the first frame is processed.
@@ -416,7 +418,8 @@ TEST_F(QuicSessionTest, ZombieStream) {
   // Create frame with headers for stream2.
   QuicSpdyCompressor compressor;
   string compressed_headers1 = compressor.CompressHeaders(headers_);
-  QuicStreamFrame frame1(stream3->id(), false, 0, compressed_headers1);
+  QuicStreamFrame frame1(
+      stream3->id(), false, 0, MakeIOVector(compressed_headers1));
 
   // Process the second frame first.  This will cause the headers to
   // be queued up and processed after the first frame is processed.
@@ -452,6 +455,24 @@ TEST_F(QuicSessionTest, ZombieStreamConnectionClose) {
   connection->CloseConnection(QUIC_CONNECTION_TIMED_OUT, false);
 
   EXPECT_EQ(0u, session.GetNumOpenStreams());
+}
+
+TEST_F(QuicSessionTest, RstStreamBeforeHeadersDecompressed) {
+  // Send two bytes of payload.
+  QuicStreamFrame data1(3, false, 0, MakeIOVector("HT"));
+  vector<QuicStreamFrame> frames;
+  frames.push_back(data1);
+  EXPECT_TRUE(session_.OnStreamFrames(frames));
+  EXPECT_EQ(1u, session_.GetNumOpenStreams());
+
+  // Send a reset before the headers have been decompressed.  This causes
+  // an unrecoverable compression context state.
+  EXPECT_CALL(*connection_, SendConnectionClose(
+      QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED));
+
+  QuicRstStreamFrame rst1(3, QUIC_STREAM_NO_ERROR);
+  session_.OnRstStream(rst1);
+  EXPECT_EQ(0u, session_.GetNumOpenStreams());
 }
 
 }  // namespace

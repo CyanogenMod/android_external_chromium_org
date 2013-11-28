@@ -23,7 +23,8 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	sandbox/linux/services/broker_process.cc
+	sandbox/linux/services/broker_process.cc \
+	sandbox/linux/services/init_process_reaper.cc
 
 
 # Flags passed to both C and C++ files.
@@ -72,6 +73,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -152,6 +154,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

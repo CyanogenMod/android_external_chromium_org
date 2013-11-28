@@ -18,6 +18,8 @@ namespace message_center {
 
 class BoundedLabel;
 class MessageCenter;
+class NotificationView;
+class PaddedButton;
 
 // View that displays all current types of notification (web, basic, image, and
 // list). Future notification types may be handled by other classes, in which
@@ -26,16 +28,16 @@ class MessageCenter;
 class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
  public:
   // Creates appropriate MessageViews for notifications. Those currently are
-  // always NotificationView or MessageSimpleView instances but in the future
+  // always NotificationView instances but in the future
   // may be instances of other classes, with the class depending on the
   // notification type. A notification is top level if it needs to be rendered
   // outside the browser window. No custom shadows are created for top level
   // notifications on Linux with Aura.
-  static MessageView* Create(const Notification& notification,
-                             MessageCenter* message_center,
-                             MessageCenterTray* tray,
-                             bool expanded,
-                             bool top_level);
+  static NotificationView* Create(const Notification& notification,
+                                  MessageCenter* message_center,
+                                  MessageCenterTray* tray,
+                                  bool expanded,
+                                  bool top_level);
 
   virtual ~NotificationView();
 
@@ -45,19 +47,26 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
   virtual void Layout() OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void ScrollRectToVisible(const gfx::Rect& rect) OVERRIDE;
-  virtual views::View* GetEventHandlerForPoint(
-      const gfx::Point& point) OVERRIDE;
+  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
 
   // Overridden from MessageView:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
+  std::string notification_id() { return notification_id_; }
+
  protected:
   NotificationView(const Notification& notification,
                    MessageCenter* message_center,
                    MessageCenterTray* tray,
                    bool expanded);
+
+  // Overrides from base class MessageView:
+  virtual void ClickOnNotification() OVERRIDE;
+  virtual void RemoveNotification(bool by_user) OVERRIDE;
+  virtual void DisableNotificationsFromThisSource() OVERRIDE;
+  virtual void ShowNotifierSettingsBubble() OVERRIDE;
 
  private:
   bool IsExpansionNeeded(int width);
@@ -66,8 +75,14 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
   int GetMessageLines(int width, int limit);
   int GetMessageHeight(int width, int limit);
 
+  MessageCenter* message_center_;  // Weak.
+  MessageCenterTray* tray_;  // Weak.
+  std::string notification_id_;
+  message_center::NotifierId notifier_id_;
+
   // Describes whether the view should display a hand pointer or not.
   bool clickable_;
+  bool is_expanded_;
 
   // Weak references to NotificationView descendants owned by their parents.
   views::View* background_view_;
@@ -81,6 +96,7 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
   views::View* image_view_;
   views::ProgressBar* progress_bar_view_;
   std::vector<views::View*> action_buttons_;
+  PaddedButton* expand_button_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationView);
 };

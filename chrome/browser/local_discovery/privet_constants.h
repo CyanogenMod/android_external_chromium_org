@@ -18,7 +18,16 @@ extern const char kPrivetKeyTimeout[];
 
 extern const char kPrivetActionNameInfo[];
 
+extern const char kPrivetInfoPath[];
+extern const char kPrivetRegisterPath[];
+extern const char kPrivetCapabilitiesPath[];
+extern const char kPrivetSubmitdocPath[];
+extern const char kPrivetCreatejobPath[];
+
 extern const char kPrivetErrorDeviceBusy[];
+extern const char kPrivetErrorPrinterBusy[];
+extern const char kPrivetErrorInvalidPrintJob[];
+extern const char kPrivetErrorInvalidDocumentType[];
 extern const char kPrivetErrorPendingUserAction[];
 extern const char kPrivetErrorInvalidXPrivetToken[];
 extern const char kPrivetErrorTimeout[];
@@ -31,6 +40,7 @@ extern const char kPrivetActionCancel[];
 
 extern const char kPrivetDefaultDeviceType[];
 extern const char kPrivetSubtypeTemplate[];
+extern const char kPrivetSubtypePrinter[];
 
 const double kPrivetMaximumTimeScaling = 1.2;
 
@@ -49,6 +59,8 @@ extern const char kPrivetConnectionStatusNotConfigured[];
 const int kPrivetDefaultTimeout = 15;
 
 const double kPrivetMaximumTimeRandomAddition = 0.2;
+
+const int kPrivetMinimumTimeout = 2;
 
 const int kAccountIndexUseOAuth2 = -1;
 

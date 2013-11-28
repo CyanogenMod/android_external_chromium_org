@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/metrics/metrics_log.h"
+
 #include <string>
 
 #include "base/basictypes.h"
@@ -10,15 +12,16 @@
 #include "base/metrics/field_trial.h"
 #include "base/port.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "base/tracked_objects.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/metrics/proto/profiler_event.pb.h"
@@ -27,6 +30,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "components/variations/entropy_provider.h"
+#include "components/variations/metrics_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/webplugininfo.h"
@@ -38,6 +42,9 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/fake_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chromeos/dbus/fake_bluetooth_adapter_client.h"
+#include "chromeos/dbus/fake_bluetooth_device_client.h"
+#include "chromeos/dbus/fake_bluetooth_input_client.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #endif  // OS_CHROMEOS
 
@@ -62,6 +69,28 @@ const chrome_variations::ActiveGroupId kFieldTrialIds[] = {
   {13, 47},
   {23, 17}
 };
+const chrome_variations::ActiveGroupId kSyntheticTrials[] = {
+  {55, 15},
+  {66, 16}
+};
+
+#if defined(ENABLE_PLUGINS)
+content::WebPluginInfo CreateFakePluginInfo(
+    const std::string& name,
+    const base::FilePath::CharType* path,
+    const std::string& version,
+    bool is_pepper) {
+  content::WebPluginInfo plugin(UTF8ToUTF16(name),
+                                base::FilePath(path),
+                                UTF8ToUTF16(version),
+                                base::string16());
+  if (is_pepper)
+    plugin.type = content::WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
+  else
+    plugin.type = content::WebPluginInfo::PLUGIN_TYPE_NPAPI;
+  return plugin;
+}
+#endif  // defined(ENABLE_PLUGINS)
 
 class TestMetricsLog : public MetricsLog {
  public:
@@ -131,54 +160,20 @@ class MetricsLogTest : public testing::Test {
   MetricsLogTest() : message_loop_(base::MessageLoop::TYPE_IO) {}
 
  protected:
-  void TestRecordEnvironment(bool proto_only) {
-    TestMetricsLog log(kClientId, kSessionId);
-
-    std::vector<content::WebPluginInfo> plugins;
-    GoogleUpdateMetrics google_update_metrics;
-    if (proto_only)
-      log.RecordEnvironmentProto(plugins, google_update_metrics);
-    else
-      log.RecordEnvironment(plugins, google_update_metrics, base::TimeDelta());
-
-    // Computed from original time of 1373051956.
-    EXPECT_EQ(1373050800, log.system_profile().install_date());
-
-    // Computed from original time of 1373001211.
-    EXPECT_EQ(1373000400, log.system_profile().uma_enabled_date());
-
-    const metrics::SystemProfileProto& system_profile = log.system_profile();
-    ASSERT_EQ(arraysize(kFieldTrialIds),
-              static_cast<size_t>(system_profile.field_trial_size()));
-    for (size_t i = 0; i < arraysize(kFieldTrialIds); ++i) {
-      const metrics::SystemProfileProto::FieldTrial& field_trial =
-          system_profile.field_trial(i);
-      EXPECT_EQ(kFieldTrialIds[i].name, field_trial.name_id());
-      EXPECT_EQ(kFieldTrialIds[i].group, field_trial.group_id());
-    }
-
-    EXPECT_EQ(kBrandForTesting, system_profile.brand_code());
-
-    const metrics::SystemProfileProto::Hardware& hardware =
-        system_profile.hardware();
-    EXPECT_EQ(kScreenWidth, hardware.primary_screen_width());
-    EXPECT_EQ(kScreenHeight, hardware.primary_screen_height());
-    EXPECT_EQ(kScreenScaleFactor, hardware.primary_screen_scale_factor());
-    EXPECT_EQ(kScreenCount, hardware.screen_count());
-
-    EXPECT_TRUE(hardware.has_cpu());
-    EXPECT_TRUE(hardware.cpu().has_vendor_name());
-    EXPECT_TRUE(hardware.cpu().has_signature());
-
-    // TODO(isherman): Verify other data written into the protobuf as a result
-    // of this call.
-  }
-
   virtual void SetUp() OVERRIDE {
 #if defined(OS_CHROMEOS)
-    fake_dbus_thread_manager_ = new chromeos::FakeDBusThreadManager();
-    chromeos::DBusThreadManager::InitializeForTesting(
-        fake_dbus_thread_manager_);
+    chromeos::FakeDBusThreadManager* fake_dbus_thread_manager =
+        new chromeos::FakeDBusThreadManager;
+    fake_dbus_thread_manager->SetBluetoothAdapterClient(
+        scoped_ptr<chromeos::BluetoothAdapterClient>(
+            new chromeos::FakeBluetoothAdapterClient));
+    fake_dbus_thread_manager->SetBluetoothDeviceClient(
+        scoped_ptr<chromeos::BluetoothDeviceClient>(
+            new chromeos::FakeBluetoothDeviceClient));
+    fake_dbus_thread_manager->SetBluetoothInputClient(
+        scoped_ptr<chromeos::BluetoothInputClient>(
+            new chromeos::FakeBluetoothInputClient));
+    chromeos::DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager);
 
     // Enable multi-profiles.
     CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
@@ -207,17 +202,149 @@ class MetricsLogTest : public testing::Test {
   base::MessageLoop message_loop_;
 
 #if defined(OS_CHROMEOS)
-  chromeos::FakeDBusThreadManager* fake_dbus_thread_manager_;
   scoped_ptr<base::FieldTrialList> field_trial_list_;
 #endif  // OS_CHROMEOS
 };
 
 TEST_F(MetricsLogTest, RecordEnvironment) {
-  // Test that recording the environment works via both of the public methods
-  // RecordEnvironment() and RecordEnvironmentProto().
-  TestRecordEnvironment(false);
-  TestRecordEnvironment(true);
+  TestMetricsLog log(kClientId, kSessionId);
+
+  std::vector<content::WebPluginInfo> plugins;
+  GoogleUpdateMetrics google_update_metrics;
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  // Add two synthetic trials.
+  synthetic_trials.push_back(kSyntheticTrials[0]);
+  synthetic_trials.push_back(kSyntheticTrials[1]);
+
+  log.RecordEnvironment(plugins, google_update_metrics, synthetic_trials);
+
+  // Computed from original time of 1373051956.
+  EXPECT_EQ(1373050800, log.system_profile().install_date());
+
+  // Computed from original time of 1373001211.
+  EXPECT_EQ(1373000400, log.system_profile().uma_enabled_date());
+
+  const metrics::SystemProfileProto& system_profile = log.system_profile();
+  ASSERT_EQ(arraysize(kFieldTrialIds) + arraysize(kSyntheticTrials),
+            static_cast<size_t>(system_profile.field_trial_size()));
+  for (size_t i = 0; i < arraysize(kFieldTrialIds); ++i) {
+    const metrics::SystemProfileProto::FieldTrial& field_trial =
+        system_profile.field_trial(i);
+    EXPECT_EQ(kFieldTrialIds[i].name, field_trial.name_id());
+    EXPECT_EQ(kFieldTrialIds[i].group, field_trial.group_id());
+  }
+  // Verify the right data is present for the synthetic trials.
+  for (size_t i = 0; i < arraysize(kSyntheticTrials); ++i) {
+    const metrics::SystemProfileProto::FieldTrial& field_trial =
+        system_profile.field_trial(i + arraysize(kFieldTrialIds));
+    EXPECT_EQ(kSyntheticTrials[i].name, field_trial.name_id());
+    EXPECT_EQ(kSyntheticTrials[i].group, field_trial.group_id());
+  }
+
+  EXPECT_EQ(kBrandForTesting, system_profile.brand_code());
+
+  const metrics::SystemProfileProto::Hardware& hardware =
+      system_profile.hardware();
+  EXPECT_EQ(kScreenWidth, hardware.primary_screen_width());
+  EXPECT_EQ(kScreenHeight, hardware.primary_screen_height());
+  EXPECT_EQ(kScreenScaleFactor, hardware.primary_screen_scale_factor());
+  EXPECT_EQ(kScreenCount, hardware.screen_count());
+
+  EXPECT_TRUE(hardware.has_cpu());
+  EXPECT_TRUE(hardware.cpu().has_vendor_name());
+  EXPECT_TRUE(hardware.cpu().has_signature());
+
+  // TODO(isherman): Verify other data written into the protobuf as a result
+  // of this call.
 }
+
+TEST_F(MetricsLogTest, InitialLogStabilityMetrics) {
+  TestMetricsLog log(kClientId, kSessionId);
+  log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
+                        GoogleUpdateMetrics(),
+                        std::vector<chrome_variations::ActiveGroupId>());
+  log.RecordStabilityMetrics(base::TimeDelta(), MetricsLog::INITIAL_LOG);
+  const metrics::SystemProfileProto_Stability& stability =
+      log.system_profile().stability();
+  // Required metrics:
+  EXPECT_TRUE(stability.has_launch_count());
+  EXPECT_TRUE(stability.has_crash_count());
+  // Initial log metrics:
+  EXPECT_TRUE(stability.has_incomplete_shutdown_count());
+  EXPECT_TRUE(stability.has_breakpad_registration_success_count());
+  EXPECT_TRUE(stability.has_breakpad_registration_failure_count());
+  EXPECT_TRUE(stability.has_debugger_present_count());
+  EXPECT_TRUE(stability.has_debugger_not_present_count());
+}
+
+TEST_F(MetricsLogTest, OngoingLogStabilityMetrics) {
+  TestMetricsLog log(kClientId, kSessionId);
+  log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
+                        GoogleUpdateMetrics(),
+                        std::vector<chrome_variations::ActiveGroupId>());
+  log.RecordStabilityMetrics(base::TimeDelta(), MetricsLog::ONGOING_LOG);
+  const metrics::SystemProfileProto_Stability& stability =
+      log.system_profile().stability();
+  // Required metrics:
+  EXPECT_TRUE(stability.has_launch_count());
+  EXPECT_TRUE(stability.has_crash_count());
+  // Initial log metrics:
+  EXPECT_FALSE(stability.has_incomplete_shutdown_count());
+  EXPECT_FALSE(stability.has_breakpad_registration_success_count());
+  EXPECT_FALSE(stability.has_breakpad_registration_failure_count());
+  EXPECT_FALSE(stability.has_debugger_present_count());
+  EXPECT_FALSE(stability.has_debugger_not_present_count());
+}
+
+#if defined(ENABLE_PLUGINS)
+TEST_F(MetricsLogTest, Plugins) {
+  TestMetricsLog log(kClientId, kSessionId);
+
+  std::vector<content::WebPluginInfo> plugins;
+  plugins.push_back(CreateFakePluginInfo("p1", FILE_PATH_LITERAL("p1.plugin"),
+                                         "1.5", true));
+  plugins.push_back(CreateFakePluginInfo("p2", FILE_PATH_LITERAL("p2.plugin"),
+                                         "2.0", false));
+  log.RecordEnvironment(plugins, GoogleUpdateMetrics(),
+                        std::vector<chrome_variations::ActiveGroupId>());
+
+  const metrics::SystemProfileProto& system_profile = log.system_profile();
+  ASSERT_EQ(2, system_profile.plugin_size());
+  EXPECT_EQ("p1", system_profile.plugin(0).name());
+  EXPECT_EQ("p1.plugin", system_profile.plugin(0).filename());
+  EXPECT_EQ("1.5", system_profile.plugin(0).version());
+  EXPECT_TRUE(system_profile.plugin(0).is_pepper());
+  EXPECT_EQ("p2", system_profile.plugin(1).name());
+  EXPECT_EQ("p2.plugin", system_profile.plugin(1).filename());
+  EXPECT_EQ("2.0", system_profile.plugin(1).version());
+  EXPECT_FALSE(system_profile.plugin(1).is_pepper());
+
+  // Now set some plugin stability stats for p2 and verify they're recorded.
+  scoped_ptr<base::DictionaryValue> plugin_dict(new DictionaryValue);
+  plugin_dict->SetString(prefs::kStabilityPluginName, "p2");
+  plugin_dict->SetInteger(prefs::kStabilityPluginLaunches, 1);
+  plugin_dict->SetInteger(prefs::kStabilityPluginCrashes, 2);
+  plugin_dict->SetInteger(prefs::kStabilityPluginInstances, 3);
+  plugin_dict->SetInteger(prefs::kStabilityPluginLoadingErrors, 4);
+  {
+    ListPrefUpdate update(log.GetPrefService(), prefs::kStabilityPluginStats);
+    update.Get()->Append(plugin_dict.release());
+  }
+
+  log.RecordStabilityMetrics(base::TimeDelta(), MetricsLog::ONGOING_LOG);
+  const metrics::SystemProfileProto_Stability& stability =
+      log.system_profile().stability();
+  ASSERT_EQ(1, stability.plugin_stability_size());
+  EXPECT_EQ("p2", stability.plugin_stability(0).plugin().name());
+  EXPECT_EQ("p2.plugin", stability.plugin_stability(0).plugin().filename());
+  EXPECT_EQ("2.0", stability.plugin_stability(0).plugin().version());
+  EXPECT_FALSE(stability.plugin_stability(0).plugin().is_pepper());
+  EXPECT_EQ(1, stability.plugin_stability(0).launch_count());
+  EXPECT_EQ(2, stability.plugin_stability(0).crash_count());
+  EXPECT_EQ(3, stability.plugin_stability(0).instance_count());
+  EXPECT_EQ(4, stability.plugin_stability(0).loading_error_count());
+}
+#endif  // defined(ENABLE_PLUGINS)
 
 // Test that we properly write profiler data to the log.
 TEST_F(MetricsLogTest, RecordProfilerData) {
@@ -369,7 +496,8 @@ TEST_F(MetricsLogTest, MultiProfileUserCount) {
   TestMetricsLog log(kClientId, kSessionId);
   std::vector<content::WebPluginInfo> plugins;
   GoogleUpdateMetrics google_update_metrics;
-  log.RecordEnvironmentProto(plugins, google_update_metrics);
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  log.RecordEnvironment(plugins, google_update_metrics, synthetic_trials);
   EXPECT_EQ(2u, log.system_profile().multi_profile_user_count());
 }
 
@@ -391,8 +519,9 @@ TEST_F(MetricsLogTest, MultiProfileCountInvalidated) {
   EXPECT_EQ(1u, log.system_profile().multi_profile_user_count());
 
   user_manager->LoginUser(user2);
-  log.RecordEnvironmentProto(std::vector<content::WebPluginInfo>(),
-                             GoogleUpdateMetrics());
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
+                        GoogleUpdateMetrics(), synthetic_trials);
   EXPECT_EQ(0u, log.system_profile().multi_profile_user_count());
 }
 #endif  // OS_CHROMEOS

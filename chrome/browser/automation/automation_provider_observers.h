@@ -39,7 +39,6 @@
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/automation_constants.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/importer/importer_data_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
@@ -47,13 +46,13 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
+#include "extensions/common/constants.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
 class AutomationProvider;
 class BalloonCollection;
 class Browser;
-class ExtensionProcessManager;
 class ExtensionService;
 class Notification;
 class Profile;
@@ -78,6 +77,7 @@ class WebContents;
 
 namespace extensions {
 class Extension;
+class ProcessManager;
 }
 
 namespace history {
@@ -347,7 +347,7 @@ class ExtensionReadyNotificationObserver
     : public content::NotificationObserver {
  public:
   // Creates an observer that replies using the JSON automation interface.
-  ExtensionReadyNotificationObserver(ExtensionProcessManager* manager,
+  ExtensionReadyNotificationObserver(extensions::ProcessManager* manager,
                                      ExtensionService* service,
                                      AutomationProvider* automation,
                                      IPC::Message* reply_message);
@@ -362,7 +362,7 @@ class ExtensionReadyNotificationObserver
   void Init();
 
   content::NotificationRegistrar registrar_;
-  ExtensionProcessManager* manager_;
+  extensions::ProcessManager* manager_;
   ExtensionService* service_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
@@ -399,7 +399,7 @@ class ExtensionUnloadNotificationObserver
 // observer waits until all updated extensions have actually been loaded.
 class ExtensionsUpdatedObserver : public content::NotificationObserver {
  public:
-  ExtensionsUpdatedObserver(ExtensionProcessManager* manager,
+  ExtensionsUpdatedObserver(extensions::ProcessManager* manager,
                             AutomationProvider* automation,
                             IPC::Message* reply_message);
   virtual ~ExtensionsUpdatedObserver();
@@ -416,7 +416,7 @@ class ExtensionsUpdatedObserver : public content::NotificationObserver {
   void MaybeReply();
 
   content::NotificationRegistrar registrar_;
-  ExtensionProcessManager* manager_;
+  extensions::ProcessManager* manager_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
   bool updater_finished_;
@@ -1099,7 +1099,7 @@ class AppLaunchObserver : public content::NotificationObserver {
   AppLaunchObserver(content::NavigationController* controller,
                     AutomationProvider* automation,
                     IPC::Message* reply_message,
-                    extension_misc::LaunchContainer launch_container);
+                    extensions::LaunchContainer launch_container);
   virtual ~AppLaunchObserver();
 
   // Overridden from content::NotificationObserver:
@@ -1112,7 +1112,7 @@ class AppLaunchObserver : public content::NotificationObserver {
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
   content::NotificationRegistrar registrar_;
-  extension_misc::LaunchContainer launch_container_;
+  extensions::LaunchContainer launch_container_;
   int new_window_id_;
 
   DISALLOW_COPY_AND_ASSIGN(AppLaunchObserver);

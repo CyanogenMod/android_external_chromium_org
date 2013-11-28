@@ -10,6 +10,12 @@
 #include "chrome/browser/ui/views/app_list/win/activation_tracker_win.h"
 #include "ui/app_list/views/app_list_view.h"
 
+namespace gfx {
+class Display;
+class Point;
+class Size;
+}  // namespace gfx
+
 // Responsible for positioning, hiding and showing an AppListView on Windows.
 // This includes watching window activation/deactivation messages to determine
 // if the user has clicked away from it.
@@ -19,19 +25,25 @@ class AppListWin : public AppList {
              const base::Closure& on_should_dismiss);
   virtual ~AppListWin();
 
+  // Finds the position for a window to anchor it to the taskbar. This chooses
+  // the most appropriate position for the window based on whether the taskbar
+  // exists, the position of the taskbar, and the mouse cursor. Returns the
+  // intended coordinates for the center of the window. If |taskbar_rect| is
+  // empty, assumes there is no taskbar on the given display.
+  static gfx::Point FindAnchorPoint(const gfx::Size view_size,
+                                    const gfx::Display& display,
+                                    const gfx::Point& cursor,
+                                    const gfx::Rect& taskbar_rect);
+
   // AppList overrides.
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void MoveNearCursor() OVERRIDE;
   virtual bool IsVisible() OVERRIDE;
   virtual void Prerender() OVERRIDE;
-  virtual void RegainNextLostFocus() OVERRIDE;
+  virtual void ReactivateOnNextFocusLoss() OVERRIDE;
   virtual gfx::NativeWindow GetWindow() OVERRIDE;
   virtual void SetProfile(Profile* profile) OVERRIDE;
-
-  app_list::AppListModel* model() {
-    return view_->model();
-  }
 
  private:
   // Weak pointer. The view manages its own lifetime.

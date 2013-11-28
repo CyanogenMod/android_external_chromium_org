@@ -11,12 +11,12 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/pending_extension_info.h"
-#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/browser/pending_extension_info.h"
+#include "extensions/browser/pending_extension_manager.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
@@ -95,6 +95,18 @@ std::vector<std::string> SyncExtensionHelper::GetInstalledExtensionNames(
   }
 
   return names;
+}
+
+void SyncExtensionHelper::EnableExtension(Profile* profile,
+                                          const std::string& name) {
+  profile->GetExtensionService()->EnableExtension(
+      extensions::id_util::GenerateId(name));
+}
+
+void SyncExtensionHelper::DisableExtension(Profile* profile,
+                                           const std::string& name) {
+  profile->GetExtensionService()->DisableExtension(
+      extensions::id_util::GenerateId(name), Extension::DISABLE_USER_ACTION);
 }
 
 bool SyncExtensionHelper::IsExtensionEnabled(

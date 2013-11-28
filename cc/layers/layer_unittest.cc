@@ -38,9 +38,9 @@ namespace {
 
 class MockLayerTreeHost : public LayerTreeHost {
  public:
-  explicit MockLayerTreeHost(LayerTreeHostClient* client)
+  explicit MockLayerTreeHost(FakeLayerTreeHostClient* client)
       : LayerTreeHost(client, NULL, LayerTreeSettings()) {
-    Initialize(NULL);
+    InitializeSingleThreaded(client);
   }
 
   MOCK_METHOD0(SetNeedsCommit, void());
@@ -545,6 +545,8 @@ TEST_F(LayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetBackgroundColor(SK_ColorLTGRAY));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetMasksToBounds(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.5f));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetBlendMode(SkXfermode::kHue_Mode));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetIsRootForIsolatedGroup(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetContentsOpaque(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetPosition(gfx::PointF(4.f, 9.f)));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetSublayerTransform(
@@ -803,12 +805,17 @@ class LayerTreeHostFactory {
       : client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
   scoped_ptr<LayerTreeHost> Create() {
-    return LayerTreeHost::Create(&client_, NULL, LayerTreeSettings(), NULL)
-        .Pass();
+    return LayerTreeHost::CreateSingleThreaded(&client_,
+                                               &client_,
+                                               NULL,
+                                               LayerTreeSettings()).Pass();
   }
 
   scoped_ptr<LayerTreeHost> Create(LayerTreeSettings settings) {
-    return LayerTreeHost::Create(&client_, NULL, settings, NULL).Pass();
+    return LayerTreeHost::CreateSingleThreaded(&client_,
+                                               &client_,
+                                               NULL,
+                                               settings).Pass();
   }
 
  private:

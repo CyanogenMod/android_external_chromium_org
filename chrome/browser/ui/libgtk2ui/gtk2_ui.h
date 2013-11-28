@@ -52,7 +52,6 @@ class Gtk2UI : public views::LinuxUI {
 
   // ui::LinuxUI:
   virtual void Initialize() OVERRIDE;
-  virtual bool UseNativeTheme() const OVERRIDE;
   virtual gfx::Image GetThemeImageNamed(int id) const OVERRIDE;
   virtual bool GetColor(int id, SkColor* color) const OVERRIDE;
   virtual bool HasCustomImage(int id) const OVERRIDE;
@@ -66,6 +65,7 @@ class Gtk2UI : public views::LinuxUI {
   virtual SkColor GetInactiveSelectionFgColor() const OVERRIDE;
   virtual double GetCursorBlinkInterval() const OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+  virtual void SetUseSystemTheme(bool use_system_theme) OVERRIDE;
   virtual bool GetDefaultUsesSystemTheme() const OVERRIDE;
   virtual void SetDownloadCount(int count) const OVERRIDE;
   virtual void SetProgressFraction(float percentage) const OVERRIDE;
@@ -73,6 +73,8 @@ class Gtk2UI : public views::LinuxUI {
   virtual scoped_ptr<views::StatusIconLinux> CreateLinuxStatusIcon(
       const gfx::ImageSkia& image,
       const string16& tool_tip) const OVERRIDE;
+  virtual gfx::Image GetIconForContentType(
+      const std::string& content_type, int size) const OVERRIDE;
   virtual void AddWindowButtonOrderObserver(
       views::WindowButtonOrderObserver* observer) OVERRIDE;
   virtual void RemoveWindowButtonOrderObserver(
@@ -183,9 +185,11 @@ class Gtk2UI : public views::LinuxUI {
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
 
+#if defined(USE_GCONF)
   // Currently, the only source of window button configuration. This will
   // change if we ever have to support XFCE's configuration system or KDE's.
   scoped_ptr<GConfTitlebarListener> titlebar_listener_;
+#endif  // defined(USE_GCONF)
 
   // If either of these vectors are non-empty, they represent the current
   // window button configuration.
@@ -197,6 +201,9 @@ class Gtk2UI : public views::LinuxUI {
 
   // Image cache of lazily created images.
   mutable ImageCache gtk_images_;
+
+  // Whether to use the Gtk2 version of the native theme.
+  bool use_gtk_;
 
   DISALLOW_COPY_AND_ASSIGN(Gtk2UI);
 };

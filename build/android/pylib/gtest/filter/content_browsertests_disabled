@@ -4,7 +4,6 @@ Http/MediaTest.*
 File/MediaTest.*
 WorkerTest.*
 MediaTest.*
-MediaSourceTest.*
 WebGLConformanceTest.*
 MessagePortTest.Tests
 CrossPlatformAccessibilityBrowserTest.*
@@ -39,6 +38,9 @@ DomSerializerTests.*
 DumpAccessibilityTreeTest.AccessibilityCanvas
 RendererAccessibilityTest.DetachAccessibilityObject
 RendererAccessibilityTest.EditableTextModeFocusEvents
+DumpAccessibilityTreeTest.AccessibilityDialog
+DumpAccessibilityTreeTest.AccessibilityModalDialogClosed
+DumpAccessibilityTreeTest.AccessibilityModalDialogInIframeOpened
 
 # http://crbug.com/187500
 RenderViewImplTest.*
@@ -51,7 +53,7 @@ PasswordFormConversionUtilsTest.ValidWebFormElementToPasswordForm
 PasswordFormConversionUtilsTest.InvalidWebFormElementToPasswordForm
 
 # Multiple test servers support: http://crbug/187570
-RenderViewHostManagerTest.*
+RenderFrameHostManagerTest.*
 
 # http://crbug.com/215894
 DownloadContentTest.CancelInterruptedDownload
@@ -79,6 +81,8 @@ WebrtcBrowserTest.GetAudioAndVideoStreamAndClone
 WebrtcBrowserTest.GetAudioAndVideoStreamAndStop
 WebrtcBrowserTest.GetVideoStreamAndStop
 WebRTCInternalsBrowserTest.WithRealPeerConnectionCall
+WebRTCInternalsBrowserTest.NegotiateUnsupportedVideoCodec
+WebRTCInternalsBrowserTest.NegotiateNonCryptoCall
 
 # http://crbug.com/175683
 WebrtcBrowserTest.CallWithDataAndLaterAddMedia

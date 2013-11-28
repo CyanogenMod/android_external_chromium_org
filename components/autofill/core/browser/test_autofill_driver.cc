@@ -10,10 +10,19 @@ namespace autofill {
 
 TestAutofillDriver::TestAutofillDriver(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
-      blocking_pool_(new base::SequencedWorkerPool(4, "TestAutofillDriver")) {}
+      blocking_pool_(new base::SequencedWorkerPool(4, "TestAutofillDriver")),
+      url_request_context_(NULL) {}
 
 TestAutofillDriver::~TestAutofillDriver() {
   blocking_pool_->Shutdown();
+}
+
+bool TestAutofillDriver::IsOffTheRecord() const {
+  return false;
+}
+
+net::URLRequestContextGetter* TestAutofillDriver::GetURLRequestContext() {
+  return url_request_context_;
 }
 
 content::WebContents* TestAutofillDriver::GetWebContents() {
@@ -40,10 +49,27 @@ void TestAutofillDriver::SendAutofillTypePredictionsToRenderer(
     const std::vector<FormStructure*>& forms) {
 }
 
+void TestAutofillDriver::RendererShouldAcceptDataListSuggestion(
+    const base::string16& value) {
+}
+
+void TestAutofillDriver::RendererShouldAcceptPasswordAutofillSuggestion(
+    const base::string16& username) {
+}
+
 void TestAutofillDriver::RendererShouldClearFilledForm() {
 }
 
 void TestAutofillDriver::RendererShouldClearPreviewedForm() {
+}
+
+void TestAutofillDriver::SetURLRequestContext(
+    net::URLRequestContextGetter* url_request_context) {
+  url_request_context_ = url_request_context;
+}
+
+void TestAutofillDriver::RendererShouldSetNodeText(
+    const base::string16& value) {
 }
 
 }  // namespace autofill

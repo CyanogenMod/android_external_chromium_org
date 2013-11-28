@@ -17,10 +17,9 @@
         '../../skia/skia.gyp:skia',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../compositor/compositor.gyp:compositor',
-        '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
+        '../resources/ui_resources.gyp:ui_resources',
         '../ui.gyp:ui',
-        '../ui.gyp:ui_resources',
       ],
       'defines': [
         'APP_LIST_IMPLEMENTATION',
@@ -42,6 +41,9 @@
         'app_list_model.cc',
         'app_list_model.h',
         'app_list_model_observer.h',
+        'app_list_switches.cc',
+        'app_list_switches.h',
+        'app_list_view_delegate.cc',
         'app_list_view_delegate.h',
         'cocoa/app_list_pager_view.h',
         'cocoa/app_list_pager_view.mm',
@@ -133,6 +135,7 @@
           'dependencies': [
             '../../content/content.gyp:content',
             '../../content/content.gyp:content_browser',
+            '../events/events.gyp:events',
             '../views/controls/webview/webview.gyp:webview',
             '../views/views.gyp:views',
           ],
@@ -163,6 +166,21 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      'target_name': 'app_list_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../gfx/gfx.gyp:gfx',
+        'app_list',
+      ],
+      'sources': [
+        'test/app_list_test_model.cc',
+        'test/app_list_test_model.h',
+        'test/app_list_test_view_delegate.cc',
+        'test/app_list_test_view_delegate.h',
+      ],
+    },
+    {
       'target_name': 'app_list_unittests',
       'type': 'executable',
       'dependencies': [
@@ -173,19 +191,16 @@
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
         '../compositor/compositor.gyp:compositor',
+        '../resources/ui_resources.gyp:ui_resources',
         '../ui.gyp:ui',
-        '../ui.gyp:ui_resources',
         '../ui_unittests.gyp:run_ui_unittests',
-        '../ui_unittests.gyp:ui_test_support',
         'app_list',
+        'app_list_test_support',
       ],
       'sources': [
+        'app_list_item_list_unittest.cc',
         'app_list_model_unittest.cc',
         'pagination_model_unittest.cc',
-        'test/app_list_test_model.cc',
-        'test/app_list_test_model.h',
-        'test/app_list_test_view_delegate.cc',
-        'test/app_list_test_view_delegate.h',
         'cocoa/app_list_view_controller_unittest.mm',
         'cocoa/app_list_window_controller_unittest.mm',
         'cocoa/apps_grid_controller_unittest.mm',
@@ -226,7 +241,7 @@
             ['exclude', 'cocoa/'],
           ],
         }],
-        ['use_glib == 1 or OS == "ios"', {
+        ['desktop_linux == 1 or chromeos == 1 or OS == "ios"', {
           'dependencies': [
             '../base/strings/ui_strings.gyp:ui_unittest_strings',
           ],
@@ -238,8 +253,8 @@
             # The following two dependencies provide the missing
             # symbol HeapProfilerStart in Linux component builds.
             # They probably can be removed after http://crbug.com/263316
+            '../../webkit/child/webkit_child.gyp:webkit_child',
             '../../webkit/glue/webkit_glue.gyp:glue',
-            '../../webkit/glue/webkit_glue.gyp:glue_child',
           ],
         }],
         ['OS=="win" and win_use_allocator_shim==1', {

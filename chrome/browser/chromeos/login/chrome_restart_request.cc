@@ -48,7 +48,7 @@ namespace chromeos {
 
 namespace {
 
-// Increase logging level for Guest mode to avoid LOG(INFO) messages in logs.
+// Increase logging level for Guest mode to avoid INFO messages in logs.
 const char kGuestModeLoggingLevel[] = "1";
 
 // Format of command line switch.
@@ -87,6 +87,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kDisableTouchDragDrop,
       ::switches::kDisableTouchEditing,
       ::switches::kDisableUniversalAcceleratedOverflowScroll,
+      ::switches::kDisableUnprefixedMediaSource,
       ::switches::kDisableWebKitMediaSource,
       ::switches::kDisableAcceleratedFixedRootBackground,
       ::switches::kEnableAcceleratedFixedRootBackground,
@@ -107,6 +108,8 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kEnableTouchEditing,
       ::switches::kEnableUniversalAcceleratedOverflowScroll,
       ::switches::kEnableViewport,
+      ::switches::kEnableViewportMeta,
+      ::switches::kMainFrameResizesAreOrientationChanges,
       ::switches::kForceDeviceScaleFactor,
       ::switches::kGpuStartupDialog,
       ::switches::kGpuSandboxAllowSysVShm,
@@ -139,10 +142,12 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kUserDataDir,
       ::switches::kV,
       ::switches::kVModule,
+      ::switches::kWebGLCommandBufferSizeKb,
       ::switches::kEnableWebGLDraftExtensions,
 #if defined(ENABLE_WEBRTC)
       ::switches::kDisableWebRtcHWDecoding,
       ::switches::kDisableWebRtcHWEncoding,
+      ::switches::kEnableAudioTrackProcessing,
       ::switches::kEnableWebRtcHWVp8Encoding,
 #endif
       ash::switches::kAshDefaultWallpaperLarge,
@@ -165,6 +170,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       cc::switches::kDisableImplSidePainting,
       cc::switches::kDisableMapImage,
       cc::switches::kDisableThreadedAnimation,
+      cc::switches::kEnableGPURasterization,
       cc::switches::kEnableImplSidePainting,
       cc::switches::kEnableMapImage,
       cc::switches::kEnablePartialSwap,

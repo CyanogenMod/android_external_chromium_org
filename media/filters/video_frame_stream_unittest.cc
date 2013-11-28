@@ -102,6 +102,7 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
   void Decrypt(Decryptor::StreamType stream_type,
                const scoped_refptr<DecoderBuffer>& encrypted,
                const Decryptor::DecryptCB& decrypt_cb) {
+    DCHECK(encrypted->decrypt_config());
     if (has_no_key_) {
       decrypt_cb.Run(Decryptor::kNoKey, NULL);
       return;
@@ -124,7 +125,7 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
     ASSERT_TRUE(status == VideoFrameStream::OK ||
                 status == VideoFrameStream::ABORTED) << status;
     frame_read_ = frame;
-    if (frame.get() && !frame->IsEndOfStream())
+    if (frame.get() && !frame->end_of_stream())
       num_decoded_frames_++;
     pending_read_ = false;
   }
@@ -345,7 +346,7 @@ TEST_P(VideoFrameStreamTest, ReadAllFrames) {
   Initialize();
   do {
     Read();
-  } while (frame_read_.get() && !frame_read_->IsEndOfStream());
+  } while (frame_read_.get() && !frame_read_->end_of_stream());
 
   const int total_num_frames = kNumConfigs * kNumBuffersInOneConfig;
   DCHECK_EQ(num_decoded_frames_, total_num_frames);

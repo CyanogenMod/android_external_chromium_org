@@ -10,9 +10,11 @@ namespace cc {
 
 ResourcePool::Resource::Resource(cc::ResourceProvider* resource_provider,
                                  gfx::Size size,
+                                 GLenum target,
                                  ResourceFormat format)
     : cc::Resource(resource_provider->CreateManagedResource(
                        size,
+                       target,
                        GL_CLAMP_TO_EDGE,
                        ResourceProvider::TextureUsageAny,
                        format),
@@ -28,8 +30,12 @@ ResourcePool::Resource::~Resource() {
   resource_provider_->DeleteResource(id());
 }
 
-ResourcePool::ResourcePool(ResourceProvider* resource_provider)
+ResourcePool::ResourcePool(ResourceProvider* resource_provider,
+                           GLenum target,
+                           ResourceFormat format)
     : resource_provider_(resource_provider),
+      target_(target),
+      format_(format),
       max_memory_usage_bytes_(0),
       max_unused_memory_usage_bytes_(0),
       max_resource_count_(0),
@@ -39,20 +45,26 @@ ResourcePool::ResourcePool(ResourceProvider* resource_provider)
 }
 
 ResourcePool::~ResourcePool() {
+  while (!busy_resources_.empty()) {
+    DidFinishUsingResource(busy_resources_.front());
+    busy_resources_.pop_front();
+  }
+
   SetResourceUsageLimits(0, 0, 0);
+  DCHECK_EQ(0u, unused_resources_.size());
+  DCHECK_EQ(0u, memory_usage_bytes_);
+  DCHECK_EQ(0u, unused_memory_usage_bytes_);
+  DCHECK_EQ(0u, resource_count_);
 }
 
 scoped_ptr<ResourcePool::Resource> ResourcePool::AcquireResource(
-    gfx::Size size, ResourceFormat format) {
+    gfx::Size size) {
   for (ResourceList::iterator it = unused_resources_.begin();
        it != unused_resources_.end(); ++it) {
     Resource* resource = *it;
+    DCHECK(resource_provider_->CanLockForWrite(resource->id()));
 
-    if (!resource_provider_->CanLockForWrite(resource->id()))
-      continue;
     if (resource->size() != size)
-      continue;
-    if (resource->format() != format)
       continue;
 
     unused_resources_.erase(it);
@@ -61,7 +73,8 @@ scoped_ptr<ResourcePool::Resource> ResourcePool::AcquireResource(
   }
 
   // Create new resource.
-  Resource* resource = new Resource(resource_provider_, size, format);
+  Resource* resource = new Resource(
+      resource_provider_, size, target_, format_);
 
   // Extend all read locks on all resources until the resource is
   // finished being used, such that we know when resources are
@@ -75,14 +88,7 @@ scoped_ptr<ResourcePool::Resource> ResourcePool::AcquireResource(
 
 void ResourcePool::ReleaseResource(
     scoped_ptr<ResourcePool::Resource> resource) {
-  if (ResourceUsageTooHigh()) {
-    memory_usage_bytes_ -= resource->bytes();
-    --resource_count_;
-    return;
-  }
-
-  unused_memory_usage_bytes_ += resource->bytes();
-  unused_resources_.push_back(resource.release());
+  busy_resources_.push_back(resource.release());
 }
 
 void ResourcePool::SetResourceUsageLimits(
@@ -125,6 +131,26 @@ bool ResourcePool::ResourceUsageTooHigh() {
   if (unused_memory_usage_bytes_ > max_unused_memory_usage_bytes_)
     return true;
   return false;
+}
+
+void ResourcePool::CheckBusyResources() {
+  ResourceList::iterator it = busy_resources_.begin();
+
+  while (it != busy_resources_.end()) {
+    Resource* resource = *it;
+
+    if (resource_provider_->CanLockForWrite(resource->id())) {
+      DidFinishUsingResource(resource);
+      it = busy_resources_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void ResourcePool::DidFinishUsingResource(ResourcePool::Resource* resource) {
+  unused_memory_usage_bytes_ += resource->bytes();
+  unused_resources_.push_back(resource);
 }
 
 }  // namespace cc

@@ -140,7 +140,7 @@ TEST_PPAPI_OUT_OF_PROCESS(DISABLED_Broker)
 
 IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Accept) {
   // Accepting the infobar should grant permission to access the PPAPI broker.
-  InfoBarObserver observer;
+  InfoBarObserver observer(this);
   observer.ExpectInfoBarAndAccept(true);
 
   // PPB_Broker_Trusted::IsAllowed should return false before the infobar is
@@ -160,7 +160,7 @@ IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Accept) {
 
 IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Deny) {
   // Canceling the infobar should deny permission to access the PPAPI broker.
-  InfoBarObserver observer;
+  InfoBarObserver observer(this);
   observer.ExpectInfoBarAndAccept(false);
 
   // PPB_Broker_Trusted::IsAllowed should return false before and after the
@@ -184,7 +184,7 @@ IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Blocked) {
       CONTENT_SETTINGS_TYPE_PPAPI_BROKER, CONTENT_SETTING_BLOCK);
 
   // We shouldn't see an infobar.
-  InfoBarObserver observer;
+  InfoBarObserver observer(this);
 
   RunTest("Broker_ConnectPermissionDenied");
   RunTest("Broker_IsAllowedPermissionDenied");
@@ -196,7 +196,7 @@ IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Allowed) {
       CONTENT_SETTINGS_TYPE_PPAPI_BROKER, CONTENT_SETTING_ALLOW);
 
   // We shouldn't see an infobar.
-  InfoBarObserver observer;
+  InfoBarObserver observer(this);
 
   RunTest("Broker_ConnectPermissionGranted");
   RunTest("Broker_IsAllowedPermissionGranted");
@@ -206,9 +206,15 @@ TEST_PPAPI_IN_PROCESS(Console)
 TEST_PPAPI_OUT_OF_PROCESS(Console)
 TEST_PPAPI_NACL(Console)
 
-TEST_PPAPI_IN_PROCESS(Core)
-TEST_PPAPI_OUT_OF_PROCESS(Core)
-TEST_PPAPI_NACL(Core)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/318961
+#define MAYBE_Core DISABLED_Core
+#else
+#define MAYBE_Core Core
+#endif
+TEST_PPAPI_IN_PROCESS(MAYBE_Core)
+TEST_PPAPI_OUT_OF_PROCESS(MAYBE_Core)
+TEST_PPAPI_NACL(MAYBE_Core)
 
 TEST_PPAPI_IN_PROCESS(TraceEvent)
 TEST_PPAPI_OUT_OF_PROCESS(TraceEvent)
@@ -472,8 +478,14 @@ TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(HostResolverPrivate_ResolveIPv4)
 TEST_PPAPI_NACL(HostResolverPrivate_Resolve)
 TEST_PPAPI_NACL(HostResolverPrivate_ResolveIPv4)
 
+// Flaky on official Windows builder. http://crbug.com/95005
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_WIN)
+#define MAYBE_PPAPIURLLoader DISABLED_URLLoader
+#else
+#define MAYBE_PPAPIURLLoader URLLoader
+#endif
 // URLLoader tests.
-IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader) {
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_PPAPIURLLoader) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -503,12 +515,12 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader) {
   );
 }
 // Timing out on Windows dbg. http://crbug.com/95005
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_URLLoader DISABLED_URLLoader
+#if defined(OS_WIN) && (!defined(NDEBUG) || defined(GOOGLE_CHROME_BUILD))
+#define MAYBE_OutOfProcessURLLoader DISABLED_URLLoader
 #else
-#define MAYBE_URLLoader URLLoader
+#define MAYBE_OutOfProcessURLLoader URLLoader
 #endif
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_URLLoader) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_OutOfProcessURLLoader) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -796,8 +808,15 @@ TEST_PPAPI_NACL(Memory)
 TEST_PPAPI_IN_PROCESS(VideoDecoder)
 TEST_PPAPI_OUT_OF_PROCESS(VideoDecoder)
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/318961
+#define MAYBE_FileIO DISABLED_FileIO
+#else
+#define MAYBE_FileIO FileIO
+#endif
+
 // FileIO tests.
-IN_PROC_BROWSER_TEST_F(PPAPITest, FileIO) {
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_OpenDirectory)
@@ -813,7 +832,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileIO) {
       LIST_TEST(FileIO_Mmap)
   );
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileIO) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -830,11 +849,11 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileIO) {
 }
 // Flaky on XP; times out, http://crbug.com/313401
 #if defined(OS_WIN)
-#define MAYBE_FileIO DISABLED_FileIO
+#define MAYBE_Nacl_Newlib_FileIO DISABLED_FileIO
 #else
-#define MAYBE_FileIO FileIO
+#define MAYBE_Nacl_Newlib_FileIO FileIO
 #endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_FileIO) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_Nacl_Newlib_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -850,12 +869,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_FileIO) {
   );
 }
 // Flaky on 32-bit linux bot; http://crbug.com/308905
-#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
-#define MAYBE_NaCl_Glibc_FileIO DISABLED_FileIO
-#else
-#define MAYBE_NaCl_Glibc_FileIO FileIO
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileIO) {
+// Flaky on Windows too; http://crbug.com/321300
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_NaCl_Glibc_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -1515,7 +1530,12 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FlashMessageLoop) {
   RunTest(LIST_TEST(FlashMessageLoop_Basics)
           LIST_TEST(FlashMessageLoop_RunWithoutQuit));
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FlashMessageLoop) {
+#if defined(OS_LINUX)  // Disabled due to flakiness http://crbug.com/316925
+#define MAYBE_FlashMessageLoop DISABLED_FlashMessageLoop
+#else
+#define MAYBE_FlashMessageLoop FlashMessageLoop
+#endif
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
   RunTest(LIST_TEST(FlashMessageLoop_Basics)
           LIST_TEST(FlashMessageLoop_RunWithoutQuit));
 }

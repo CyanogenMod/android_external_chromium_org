@@ -24,7 +24,7 @@ class IndexedDBBackingStore;
 class IndexedDBContextImpl;
 
 class CONTENT_EXPORT IndexedDBFactory
-    : NON_EXPORTED_BASE(public base::RefCounted<IndexedDBFactory>) {
+    : NON_EXPORTED_BASE(public base::RefCountedThreadSafe<IndexedDBFactory>) {
  public:
   explicit IndexedDBFactory(IndexedDBContextImpl* context);
 
@@ -61,14 +61,14 @@ class CONTENT_EXPORT IndexedDBFactory
   void ContextDestroyed();
 
  protected:
-  friend class base::RefCounted<IndexedDBFactory>;
+  friend class base::RefCountedThreadSafe<IndexedDBFactory>;
 
   virtual ~IndexedDBFactory();
 
   virtual scoped_refptr<IndexedDBBackingStore> OpenBackingStore(
       const GURL& origin_url,
       const base::FilePath& data_directory,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_reason,
       bool* disk_full);
 

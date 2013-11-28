@@ -7,12 +7,8 @@
 #include "base/callback.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/process_map.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
@@ -21,6 +17,10 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/browser/process_map.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/view_type.h"
 
 namespace extensions {
@@ -44,7 +44,7 @@ bool LazyBackgroundTaskQueue::ShouldEnqueueTask(
     const Extension* extension) {
   DCHECK(extension);
   if (BackgroundInfo::HasBackgroundPage(extension)) {
-    ExtensionProcessManager* pm = ExtensionSystem::GetForBrowserContext(
+    ProcessManager* pm = ExtensionSystem::GetForBrowserContext(
         browser_context)->process_manager();
     DCHECK(pm);
     ExtensionHost* background_host =
@@ -81,7 +81,7 @@ void LazyBackgroundTaskQueue::AddPendingTask(
     if (extension && BackgroundInfo::HasLazyBackgroundPage(extension)) {
       // If this is the first enqueued task, and we're not waiting for the
       // background page to unload, ensure the background page is loaded.
-      ExtensionProcessManager* pm = ExtensionSystem::GetForBrowserContext(
+      ProcessManager* pm = ExtensionSystem::GetForBrowserContext(
           browser_context)->process_manager();
       pm->IncrementLazyKeepaliveCount(extension);
       // Creating the background host may fail, e.g. if |profile| is incognito

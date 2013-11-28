@@ -166,6 +166,28 @@ bool TakeInt32FromEnvironment(const char* const var, int32* result) {
   return true;
 }
 
+// Unsets the environment variable |name| and returns true on success.
+// Also returns true if the variable just doesn't exist.
+bool UnsetEnvironmentVariableIfExists(const std::string& name) {
+  scoped_ptr<Environment> env(Environment::Create());
+  std::string str_val;
+
+  if (!env->GetVar(name.c_str(), &str_val))
+    return true;
+
+  return env->UnSetVar(name.c_str());
+}
+
+// Returns true if bot mode has been requested, i.e. defaults optimized
+// for continuous integration bots. This way developers don't have to remember
+// special command-line flags.
+bool BotModeEnabled() {
+  scoped_ptr<Environment> env(Environment::Create());
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kTestLauncherBotMode) ||
+      env->HasVar("CHROMIUM_TEST_LAUNCHER_BOT_MODE");
+}
+
 // For a basic pattern matching for gtest_filter options.  (Copied from
 // gtest.cc, see the comment below and http://crbug.com/44497)
 bool PatternMatchesString(const char* pattern, const char* str) {
@@ -219,6 +241,7 @@ void RunCallback(
 void DoLaunchChildTestProcess(
     const CommandLine& command_line,
     base::TimeDelta timeout,
+    bool redirect_stdio,
     scoped_refptr<MessageLoopProxy> message_loop_proxy,
     const TestLauncher::LaunchChildGTestProcessCallback& callback) {
   TimeTicks start_time = TimeTicks::Now();
@@ -229,48 +252,58 @@ void DoLaunchChildTestProcess(
 
   LaunchOptions options;
 #if defined(OS_WIN)
-  // Make the file handle inheritable by the child.
-  SECURITY_ATTRIBUTES sa_attr;
-  sa_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
-  sa_attr.lpSecurityDescriptor = NULL;
-  sa_attr.bInheritHandle = TRUE;
+  win::ScopedHandle handle;
 
-  win::ScopedHandle handle(CreateFile(output_file.value().c_str(),
-                                      GENERIC_WRITE,
-                                      FILE_SHARE_READ | FILE_SHARE_DELETE,
-                                      &sa_attr,
-                                      OPEN_EXISTING,
-                                      FILE_ATTRIBUTE_TEMPORARY,
-                                      NULL));
-  CHECK(handle.IsValid());
-  options.inherit_handles = true;
-  options.stdin_handle = INVALID_HANDLE_VALUE;
-  options.stdout_handle = handle.Get();
-  options.stderr_handle = handle.Get();
+  if (redirect_stdio) {
+    // Make the file handle inheritable by the child.
+    SECURITY_ATTRIBUTES sa_attr;
+    sa_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa_attr.lpSecurityDescriptor = NULL;
+    sa_attr.bInheritHandle = TRUE;
+
+    handle.Set(CreateFile(output_file.value().c_str(),
+                          GENERIC_WRITE,
+                          FILE_SHARE_READ | FILE_SHARE_DELETE,
+                          &sa_attr,
+                          OPEN_EXISTING,
+                          FILE_ATTRIBUTE_TEMPORARY,
+                          NULL));
+    CHECK(handle.IsValid());
+    options.inherit_handles = true;
+    options.stdin_handle = INVALID_HANDLE_VALUE;
+    options.stdout_handle = handle.Get();
+    options.stderr_handle = handle.Get();
+  }
 #elif defined(OS_POSIX)
   options.new_process_group = true;
 
-  int output_file_fd = open(output_file.value().c_str(), O_RDWR);
-  CHECK_GE(output_file_fd, 0);
-
-  file_util::ScopedFD output_file_fd_closer(&output_file_fd);
-
   base::FileHandleMappingVector fds_mapping;
-  fds_mapping.push_back(std::make_pair(output_file_fd, STDOUT_FILENO));
-  fds_mapping.push_back(std::make_pair(output_file_fd, STDERR_FILENO));
-  options.fds_to_remap = &fds_mapping;
+  file_util::ScopedFD output_file_fd_closer;
+
+  if (redirect_stdio) {
+    int output_file_fd = open(output_file.value().c_str(), O_RDWR);
+    CHECK_GE(output_file_fd, 0);
+
+    output_file_fd_closer.reset(&output_file_fd);
+
+    fds_mapping.push_back(std::make_pair(output_file_fd, STDOUT_FILENO));
+    fds_mapping.push_back(std::make_pair(output_file_fd, STDERR_FILENO));
+    options.fds_to_remap = &fds_mapping;
+  }
 #endif
 
   bool was_timeout = false;
   int exit_code = LaunchChildTestProcessWithOptions(
       command_line, options, timeout, &was_timeout);
 
+  if (redirect_stdio) {
 #if defined(OS_WIN)
   FlushFileBuffers(handle.Get());
   handle.Close();
 #elif defined(OS_POSIX)
   output_file_fd_closer.reset();
 #endif
+  }
 
   std::string output_file_contents;
   CHECK(base::ReadFileToString(output_file, &output_file_contents));
@@ -315,18 +348,32 @@ TestLauncher::TestLauncher(TestLauncherDelegate* launcher_delegate,
       test_success_count_(0),
       test_broken_count_(0),
       retry_count_(0),
-      retry_limit_(3),  // TODO(phajdan.jr): Make a flag control this.
+      retry_limit_(0),
       run_result_(true),
       watchdog_timer_(FROM_HERE,
                       TimeDelta::FromSeconds(kOutputTimeoutSeconds),
                       this,
                       &TestLauncher::OnOutputTimeout),
-      worker_pool_owner_(
-          new SequencedWorkerPoolOwner(parallel_jobs, "test_launcher")) {
+      parallel_jobs_(parallel_jobs) {
+  if (BotModeEnabled()) {
+    fprintf(stdout,
+            "Enabling defaults optimized for continuous integration bots.\n");
+    fflush(stdout);
+
+    // Enable test retries by default for bots. This can be still overridden
+    // from command line using --test-launcher-retry-limit flag.
+    retry_limit_ = 3;
+  } else {
+    // Default to serial test execution if not running on a bot. This makes it
+    // possible to disable stdio redirection and can still be overridden with
+    // --test-launcher-jobs flag.
+    parallel_jobs_ = 1;
+  }
 }
 
 TestLauncher::~TestLauncher() {
-  worker_pool_owner_->pool()->Shutdown();
+  if (worker_pool_owner_)
+    worker_pool_owner_->pool()->Shutdown();
 }
 
 bool TestLauncher::Run(int argc, char** argv) {
@@ -384,11 +431,17 @@ void TestLauncher::LaunchChildGTestProcess(
   CommandLine new_command_line(
       PrepareCommandLineForGTest(command_line, wrapper));
 
+  // When running in parallel mode we need to redirect stdio to avoid mixed-up
+  // output. We also always redirect on the bots to get the test output into
+  // JSON summary.
+  bool redirect_stdio = (parallel_jobs_ > 1) || BotModeEnabled();
+
   worker_pool_owner_->pool()->PostWorkerTask(
       FROM_HERE,
       Bind(&DoLaunchChildTestProcess,
            new_command_line,
            timeout,
+           redirect_stdio,
            MessageLoopProxy::current(),
            Bind(&TestLauncher::OnLaunchTestProcessFinished,
                 Unretained(this),
@@ -594,12 +647,47 @@ bool TestLauncher::Init() {
     return false;
   }
 
+  // Make sure we don't pass any sharding-related environment to the child
+  // processes. This test launcher implements the sharding completely.
+  CHECK(UnsetEnvironmentVariableIfExists("GTEST_TOTAL_SHARDS"));
+  CHECK(UnsetEnvironmentVariableIfExists("GTEST_SHARD_INDEX"));
+
   if (command_line->HasSwitch(kGTestRepeatFlag) &&
       !StringToInt(command_line->GetSwitchValueASCII(kGTestRepeatFlag),
                    &cycles_)) {
     LOG(ERROR) << "Invalid value for " << kGTestRepeatFlag;
     return false;
   }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kTestLauncherRetryLimit)) {
+    int retry_limit = -1;
+    if (!StringToInt(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                         switches::kTestLauncherRetryLimit), &retry_limit) ||
+        retry_limit < 0) {
+      LOG(ERROR) << "Invalid value for " << switches::kTestLauncherRetryLimit;
+      return false;
+    }
+
+    retry_limit_ = retry_limit;
+  }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kTestLauncherJobs)) {
+    int jobs = -1;
+    if (!StringToInt(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                         switches::kTestLauncherJobs), &jobs) ||
+        jobs < 0) {
+      LOG(ERROR) << "Invalid value for " << switches::kTestLauncherJobs;
+      return false;
+    }
+
+    parallel_jobs_ = jobs;
+  }
+  fprintf(stdout, "Using %" PRIuS " parallel jobs.\n", parallel_jobs_);
+  fflush(stdout);
+  worker_pool_owner_.reset(
+      new SequencedWorkerPoolOwner(parallel_jobs_, "test_launcher"));
 
   // Split --gtest_filter at '-', if there is one, to separate into
   // positive filter and negative filter portions.
@@ -755,7 +843,10 @@ std::string GetTestOutputSnippet(const TestResult& result,
   size_t end_pos = full_output.find(std::string("[  FAILED  ] ") +
                                     result.full_name,
                                     run_pos);
-  if (end_pos == std::string::npos) {
+  // Only clip the snippet to the "OK" message if the test really
+  // succeeded. It still might have e.g. crashed after printing it.
+  if (end_pos == std::string::npos &&
+      result.status == TestResult::TEST_SUCCESS) {
     end_pos = full_output.find(std::string("[       OK ] ") +
                                result.full_name,
                                run_pos);

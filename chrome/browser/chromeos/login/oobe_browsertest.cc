@@ -10,6 +10,7 @@
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/chromeos_switches.h"
@@ -34,8 +35,6 @@ class OobeTest : public InProcessBrowserTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
-    command_line->AppendSwitch(
-        chromeos::switches::kDisableChromeCaptivePortalDetector);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
     command_line->AppendSwitchASCII(
         chromeos::switches::kAuthExtensionPath, "gaia_auth");
@@ -84,7 +83,7 @@ IN_PROC_BROWSER_TEST_F(OobeTest, NewUser) {
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
   CHECK(wizard_controller);
-  wizard_controller->SkipToLoginForTesting();
+  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
   content::WindowedNotificationObserver(
     chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
@@ -104,7 +103,7 @@ IN_PROC_BROWSER_TEST_F(OobeTest, Accelerator) {
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
   CHECK(wizard_controller);
-  wizard_controller->SkipToLoginForTesting();
+  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
   content::WindowedNotificationObserver(
     chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,

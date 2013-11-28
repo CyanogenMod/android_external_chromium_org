@@ -199,6 +199,10 @@ def AddAndroidActions(actions):
   Arguments
     actions: set of actions to add to.
   """
+  actions.add('Cast_Sender_CastEnterFullscreen');
+  actions.add('Cast_Sender_CastDeviceSelected');
+  actions.add('Cast_Sender_YouTubeDeviceSelected');
+  actions.add('Cast_Sender_CastPlayRequested');
   actions.add('DataReductionProxy_PromoDisplayed');
   actions.add('DataReductionProxy_PromoLearnMore');
   actions.add('DataReductionProxy_TurnedOn');
@@ -372,6 +376,15 @@ def AddExtensionActions(actions):
   actions.add('GoogleNow.ButtonClicked0')
   actions.add('GoogleNow.ButtonClicked1')
   actions.add('GoogleNow.Dismissed')
+
+  # Actions sent by Chrome Connectivity Diagnostics.
+  actions.add('ConnectivityDiagnostics.LaunchSource.OfflineChromeOS')
+  actions.add('ConnectivityDiagnostics.LaunchSource.WebStore')
+  actions.add('ConnectivityDiagnostics.UA.LogsShown')
+  actions.add('ConnectivityDiagnostics.UA.PassingTestsShown')
+  actions.add('ConnectivityDiagnostics.UA.SettingsShown')
+  actions.add('ConnectivityDiagnostics.UA.TestResultExpanded')
+  actions.add('ConnectivityDiagnostics.UA.TestSuiteRun')
 
 def GrepForActions(path, actions):
   """Grep a source file for calls to UserMetrics functions.

@@ -38,12 +38,8 @@ const uint8 kKeyId[] = {
     0x00, 0x01, 0x02, 0x03
 };
 
-const uint8 kKey[] = {
-    // base64 equivalent is BAUGBwgJCgsMDQ4PEBESEw
-    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-    0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13
-};
-
+// Key is 0x0405060708090a0b0c0d0e0f10111213,
+// base64 equivalent is BAUGBwgJCgsMDQ4PEBESEw.
 const char kKeyAsJWK[] =
     "{"
     "  \"keys\": ["
@@ -192,7 +188,9 @@ class AesDecryptorTest : public testing::Test {
       : decryptor_(
             base::Bind(&AesDecryptorTest::KeyAdded, base::Unretained(this)),
             base::Bind(&AesDecryptorTest::KeyError, base::Unretained(this)),
-            base::Bind(&AesDecryptorTest::KeyMessage, base::Unretained(this))),
+            base::Bind(&AesDecryptorTest::KeyMessage, base::Unretained(this)),
+            base::Bind(&AesDecryptorTest::SetSession, base::Unretained(this))),
+        reference_id_(MediaKeys::kInvalidReferenceId),
         decrypt_cb_(base::Bind(&AesDecryptorTest::BufferDecrypted,
                                base::Unretained(this))),
         original_data_(kOriginalData, kOriginalData + kOriginalDataSize),
@@ -210,11 +208,12 @@ class AesDecryptorTest : public testing::Test {
 
  protected:
   void GenerateKeyRequest(const std::vector<uint8>& key_id) {
+    reference_id_ = 6;
     DCHECK(!key_id.empty());
-    EXPECT_CALL(*this, KeyMessage(StrNe(std::string()), key_id, ""))
-        .WillOnce(SaveArg<0>(&session_id_string_));
+    EXPECT_CALL(*this, SetSession(reference_id_, StrNe(std::string())));
+    EXPECT_CALL(*this, KeyMessage(reference_id_, key_id, ""));
     EXPECT_TRUE(decryptor_.GenerateKeyRequest(
-        std::string(), &key_id[0], key_id.size()));
+        reference_id_, std::string(), &key_id[0], key_id.size()));
   }
 
   enum AddKeyExpectation {
@@ -222,41 +221,22 @@ class AesDecryptorTest : public testing::Test {
     KEY_ERROR
   };
 
-  void AddRawKeyAndExpect(const std::vector<uint8>& key_id,
-                          const std::vector<uint8>& key,
-                          AddKeyExpectation result) {
-    // TODO(jrummell): Remove once raw keys no longer supported.
-    DCHECK(!key_id.empty());
-    DCHECK(!key.empty());
-
-    if (result == KEY_ADDED) {
-      EXPECT_CALL(*this, KeyAdded(session_id_string_));
-    } else if (result == KEY_ERROR) {
-      EXPECT_CALL(*this, KeyError(session_id_string_,
-                                  MediaKeys::kUnknownError, 0));
-    } else {
-      NOTREACHED();
-    }
-
-    decryptor_.AddKey(&key[0], key.size(), &key_id[0], key_id.size(),
-                      session_id_string_);
-  }
-
   void AddKeyAndExpect(const std::string& key, AddKeyExpectation result) {
     DCHECK(!key.empty());
 
     if (result == KEY_ADDED) {
-      EXPECT_CALL(*this, KeyAdded(session_id_string_));
+      EXPECT_CALL(*this, KeyAdded(reference_id_));
     } else if (result == KEY_ERROR) {
-      EXPECT_CALL(*this,
-                  KeyError(session_id_string_, MediaKeys::kUnknownError, 0));
+      EXPECT_CALL(*this, KeyError(reference_id_, MediaKeys::kUnknownError, 0));
     } else {
       NOTREACHED();
     }
 
-    decryptor_.AddKey(reinterpret_cast<const uint8*>(key.c_str()), key.length(),
-                      NULL, 0,
-                      session_id_string_);
+    decryptor_.AddKey(reference_id_,
+                      reinterpret_cast<const uint8*>(key.c_str()),
+                      key.length(),
+                      NULL,
+                      0);
   }
 
   MOCK_METHOD2(BufferDecrypted, void(Decryptor::Status,
@@ -307,15 +287,17 @@ class AesDecryptorTest : public testing::Test {
     }
   }
 
-  MOCK_METHOD1(KeyAdded, void(const std::string&));
-  MOCK_METHOD3(KeyError, void(const std::string&,
-                              MediaKeys::KeyError, int));
-  MOCK_METHOD3(KeyMessage, void(const std::string& session_id,
-                                const std::vector<uint8>& message,
-                                const std::string& default_url));
+  MOCK_METHOD1(KeyAdded, void(uint32 reference_id));
+  MOCK_METHOD3(KeyError, void(uint32 reference_id, MediaKeys::KeyError, int));
+  MOCK_METHOD3(KeyMessage,
+               void(uint32 reference_id,
+                    const std::vector<uint8>& message,
+                    const std::string& default_url));
+  MOCK_METHOD2(SetSession,
+               void(uint32 reference_id, const std::string& session_id));
 
   AesDecryptor decryptor_;
-  std::string session_id_string_;
+  uint32 reference_id_;
   AesDecryptor::DecryptCB decrypt_cb_;
 
   // Constants for testing.
@@ -329,8 +311,31 @@ class AesDecryptorTest : public testing::Test {
 };
 
 TEST_F(AesDecryptorTest, GenerateKeyRequestWithNullInitData) {
-  EXPECT_CALL(*this, KeyMessage(StrNe(std::string()), IsEmpty(), ""));
-  EXPECT_TRUE(decryptor_.GenerateKeyRequest(std::string(), NULL, 0));
+  reference_id_ = 8;
+  EXPECT_CALL(*this, KeyMessage(reference_id_, IsEmpty(), ""));
+  EXPECT_CALL(*this, SetSession(reference_id_, StrNe(std::string())));
+  EXPECT_TRUE(
+      decryptor_.GenerateKeyRequest(reference_id_, std::string(), NULL, 0));
+}
+
+TEST_F(AesDecryptorTest, MultipleGenerateKeyRequest) {
+  uint32 reference_id1 = 10;
+  EXPECT_CALL(*this, KeyMessage(reference_id1, IsEmpty(), ""));
+  EXPECT_CALL(*this, SetSession(reference_id1, StrNe(std::string())));
+  EXPECT_TRUE(
+      decryptor_.GenerateKeyRequest(reference_id1, std::string(), NULL, 0));
+
+  uint32 reference_id2 = 11;
+  EXPECT_CALL(*this, KeyMessage(reference_id2, IsEmpty(), ""));
+  EXPECT_CALL(*this, SetSession(reference_id2, StrNe(std::string())));
+  EXPECT_TRUE(
+      decryptor_.GenerateKeyRequest(reference_id2, std::string(), NULL, 0));
+
+  uint32 reference_id3 = 23;
+  EXPECT_CALL(*this, KeyMessage(reference_id3, IsEmpty(), ""));
+  EXPECT_CALL(*this, SetSession(reference_id3, StrNe(std::string())));
+  EXPECT_TRUE(
+      decryptor_.GenerateKeyRequest(reference_id3, std::string(), NULL, 0));
 }
 
 TEST_F(AesDecryptorTest, NormalDecryption) {
@@ -388,10 +393,6 @@ TEST_F(AesDecryptorTest, KeyReplacement) {
 TEST_F(AesDecryptorTest, WrongSizedKey) {
   GenerateKeyRequest(key_id_);
   AddKeyAndExpect(kWrongSizedKeyAsJWK, KEY_ERROR);
-
-  // Repeat for a raw key. Use "-1" to create a wrong sized key.
-  std::vector<uint8> wrong_sized_key(kKey, kKey + arraysize(kKey) - 1);
-  AddRawKeyAndExpect(key_id_, wrong_sized_key, KEY_ERROR);
 }
 
 TEST_F(AesDecryptorTest, MultipleKeysAndFrames) {
@@ -533,16 +534,16 @@ TEST_F(AesDecryptorTest, SubsampleCypherBytesOnly) {
 
 TEST_F(AesDecryptorTest, JWKKey) {
   // Try a simple JWK key (i.e. not in a set)
-  const std::string key1 =
+  const std::string kJwkSimple =
       "{"
       "  \"kty\": \"oct\","
       "  \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
       "  \"k\": \"FBUWFxgZGhscHR4fICEiIw\""
       "}";
-  AddKeyAndExpect(key1, KEY_ERROR);
+  AddKeyAndExpect(kJwkSimple, KEY_ERROR);
 
   // Try a key list with multiple entries.
-  const std::string key2 =
+  const std::string kJwksMultipleEntries =
       "{"
       "  \"keys\": ["
       "    {"
@@ -557,14 +558,14 @@ TEST_F(AesDecryptorTest, JWKKey) {
       "    }"
       "  ]"
       "}";
-  AddKeyAndExpect(key2, KEY_ADDED);
+  AddKeyAndExpect(kJwksMultipleEntries, KEY_ADDED);
 
   // Try a key with no spaces and some \n plus additional fields.
-  const std::string key3 =
+  const std::string kJwksNoSpaces =
       "\n\n{\"something\":1,\"keys\":[{\n\n\"kty\":\"oct\",\"alg\":\"A128KW\","
       "\"kid\":\"AAECAwQFBgcICQoLDA0ODxAREhM\",\"k\":\"GawgguFyGrWKav7AX4VKUg"
       "\",\"foo\":\"bar\"}]}\n\n";
-  AddKeyAndExpect(key3, KEY_ADDED);
+  AddKeyAndExpect(kJwksNoSpaces, KEY_ADDED);
 
   // Try some non-ASCII characters.
   AddKeyAndExpect("This is not ASCII due to \xff\xfe\xfd in it.", KEY_ERROR);
@@ -589,10 +590,8 @@ TEST_F(AesDecryptorTest, JWKKey) {
   // Try with 'keys' a list of integers.
   AddKeyAndExpect("{ \"keys\": [ 1, 2, 3 ] }", KEY_ERROR);
 
-  // TODO(jrummell): The next 2 tests should fail once checking for padding
-  // characters is enabled.
-  // Try a key with padding(=) at end of base64 string.
-  const std::string key4 =
+  // Try padding(=) at end of 'k' base64 string.
+  const std::string kJwksWithPaddedKey =
       "{"
       "  \"keys\": ["
       "    {"
@@ -602,10 +601,10 @@ TEST_F(AesDecryptorTest, JWKKey) {
       "    }"
       "  ]"
       "}";
-  AddKeyAndExpect(key4, KEY_ADDED);
+  AddKeyAndExpect(kJwksWithPaddedKey, KEY_ERROR);
 
-  // Try a key ID with padding(=) at end of base64 string.
-  const std::string key5 =
+  // Try padding(=) at end of 'kid' base64 string.
+  const std::string kJwksWithPaddedKeyId =
       "{"
       "  \"keys\": ["
       "    {"
@@ -615,10 +614,10 @@ TEST_F(AesDecryptorTest, JWKKey) {
       "    }"
       "  ]"
       "}";
-  AddKeyAndExpect(key5, KEY_ADDED);
+  AddKeyAndExpect(kJwksWithPaddedKeyId, KEY_ERROR);
 
   // Try a key with invalid base64 encoding.
-  const std::string key6 =
+  const std::string kJwksWithInvalidBase64 =
       "{"
       "  \"keys\": ["
       "    {"
@@ -628,12 +627,12 @@ TEST_F(AesDecryptorTest, JWKKey) {
       "    }"
       "  ]"
       "}";
-  AddKeyAndExpect(key6, KEY_ERROR);
+  AddKeyAndExpect(kJwksWithInvalidBase64, KEY_ERROR);
 
-  // Try a key where no padding is required. 'k' has to be 16 bytes, so it
-  // will always require padding. (Test above using |key2| has 2 'kid's that
-  // require 1 and 2 padding bytes).
-  const std::string key7 =
+  // Try a 3-byte 'kid' where no base64 padding is required.
+  // |kJwksMultipleEntries| above has 2 'kid's that require 1 and 2 padding
+  // bytes. Note that 'k' has to be 16 bytes, so it will always require padding.
+  const std::string kJwksWithNoPadding =
       "{"
       "  \"keys\": ["
       "    {"
@@ -643,10 +642,10 @@ TEST_F(AesDecryptorTest, JWKKey) {
       "    }"
       "  ]"
       "}";
-  AddKeyAndExpect(key7, KEY_ADDED);
+  AddKeyAndExpect(kJwksWithNoPadding, KEY_ADDED);
 
   // Empty key id.
-  const std::string key8 =
+  const std::string kJwksWithEmptyKeyId =
       "{"
       "  \"keys\": ["
       "    {"
@@ -656,18 +655,7 @@ TEST_F(AesDecryptorTest, JWKKey) {
       "    }"
       "  ]"
       "}";
-  AddKeyAndExpect(key8, KEY_ERROR);
-}
-
-TEST_F(AesDecryptorTest, RawKey) {
-  // Verify that v0.1b keys (raw key) is still supported. Raw keys are
-  // 16 bytes long. Use the undecoded value of |kKey|.
-  GenerateKeyRequest(key_id_);
-  AddRawKeyAndExpect(
-      key_id_, std::vector<uint8>(kKey, kKey + arraysize(kKey)), KEY_ADDED);
-  scoped_refptr<DecoderBuffer> encrypted_buffer = CreateEncryptedBuffer(
-      encrypted_data_, key_id_, iv_, 0, no_subsample_entries_);
-  DecryptAndExpect(encrypted_buffer, original_data_, SUCCESS);
+  AddKeyAndExpect(kJwksWithEmptyKeyId, KEY_ERROR);
 }
 
 }  // namespace media

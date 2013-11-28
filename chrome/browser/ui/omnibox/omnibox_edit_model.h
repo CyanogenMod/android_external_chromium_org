@@ -191,7 +191,17 @@ class OmniboxEditModel {
                    bool for_drop);
 
   // Asks the browser to load the item at |index|, with the given properties.
-  void OpenMatch(const AutocompleteMatch& match,
+  //
+  // |match| is passed by value for two reasons:
+  // (1) This function needs to modify |match|, so a const ref isn't
+  //     appropriate.  Callers don't actually care about the modifications, so a
+  //     pointer isn't required.
+  // (2) The passed-in match is, on the caller side, typically coming from data
+  //     associated with the popup.  Since this call can close the popup, that
+  //     could clear that data, leaving us with a pointer-to-garbage.  So at
+  //     some point someone needs to make a copy of the match anyway, to
+  //     preserve it past the popup closure.
+  void OpenMatch(AutocompleteMatch match,
                  WindowOpenDisposition disposition,
                  const GURL& alternate_nav_url,
                  size_t index);
@@ -258,7 +268,7 @@ class OmniboxEditModel {
   void OnControlKeyChanged(bool pressed);
 
   // Called when the user pastes in text.
-  void on_paste() { paste_state_ = PASTING; }
+  void OnPaste();
 
   // Returns true if pasting is in progress.
   bool is_pasting() const { return paste_state_ == PASTING; }
@@ -317,6 +327,9 @@ class OmniboxEditModel {
   // to InstantController is kept in Browser. We should try to get rid of this,
   // maybe by ensuring InstantController lives as long as Browser.
   InstantController* GetInstantController() const;
+
+  // Name of the histogram tracking cut or copy omnibox commands.
+  static const char kCutOrCopyAllTextHistogram[];
 
  private:
   friend class OmniboxControllerTest;

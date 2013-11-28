@@ -23,8 +23,7 @@ GURL GetAuthenticateInstrumentUrl(size_t user_index);
 GURL GetSendStatusUrl(size_t user_index);
 GURL GetSaveToWalletNoEscrowUrl(size_t user_index);
 GURL GetSaveToWalletUrl(size_t user_index);
-// This URL attempts to passively refresh all users.
-GURL GetPassiveAuthUrl();
+GURL GetPassiveAuthUrl(size_t user_index);
 
 // URL to visit for presenting the user with a sign-in dialog.
 GURL GetSignInUrl();
@@ -34,8 +33,10 @@ GURL GetSignInUrl();
 GURL GetSignInContinueUrl();
 
 // Returns true if |url| is an acceptable variant of the sign-in continue
-// url.  Can be used for detection of navigation to the continue url.
-bool IsSignInContinueUrl(const GURL& url);
+// url.  Can be used for detection of navigation to the continue url.  If
+// |url| is a sign-in url, |user_index| will also be filled in to indicate
+// which user account just signed in.
+bool IsSignInContinueUrl(const GURL& url, size_t* user_index);
 
 // Whether calls to Online Wallet are hitting the production server rather than
 // a sandbox or some malicious endpoint.

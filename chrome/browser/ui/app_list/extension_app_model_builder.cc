@@ -15,11 +15,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/extension_app_item.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/image/image_skia.h"
 
 using extensions::Extension;
@@ -57,27 +57,22 @@ ExtensionAppModelBuilder::~ExtensionAppModelBuilder() {
 }
 
 void ExtensionAppModelBuilder::OnBeginExtensionInstall(
-    const std::string& extension_id,
-    const std::string& extension_name,
-    const gfx::ImageSkia& installing_icon,
-    bool is_app,
-    bool is_platform_app) {
-  if (!is_app)
+    const ExtensionInstallParams& params) {
+  if (!params.is_app || params.is_ephemeral)
     return;
 
-  ExtensionAppItem* existing_item = GetExtensionAppItem(extension_id);
+  ExtensionAppItem* existing_item = GetExtensionAppItem(params.extension_id);
   if (existing_item) {
     existing_item->SetIsInstalling(true);
     return;
   }
 
   InsertApp(new ExtensionAppItem(profile_,
-                                 extension_id,
-                                 controller_,
-                                 extension_name,
-                                 installing_icon,
-                                 is_platform_app));
-  SetHighlightedApp(extension_id);
+                                 params.extension_id,
+                                 params.extension_name,
+                                 params.installing_icon,
+                                 params.is_platform_app));
+  SetHighlightedApp(params.extension_id);
 }
 
 void ExtensionAppModelBuilder::OnDownloadProgress(
@@ -91,7 +86,7 @@ void ExtensionAppModelBuilder::OnDownloadProgress(
 
 void ExtensionAppModelBuilder::OnInstallFailure(
     const std::string& extension_id) {
-  // Do nothing, item will be disabled
+  model_->item_list()->DeleteItem(extension_id);
 }
 
 void ExtensionAppModelBuilder::OnExtensionLoaded(const Extension* extension) {
@@ -106,7 +101,6 @@ void ExtensionAppModelBuilder::OnExtensionLoaded(const Extension* extension) {
 
   InsertApp(new ExtensionAppItem(profile_,
                                  extension->id(),
-                                 controller_,
                                  "",
                                  gfx::ImageSkia(),
                                  extension->is_platform_app()));
@@ -148,7 +142,6 @@ void ExtensionAppModelBuilder::AddApps(const ExtensionSet* extensions,
     if (ShouldDisplayInAppLauncher(profile_, *app))
       apps->push_back(new ExtensionAppItem(profile_,
                                            (*app)->id(),
-                                           controller_,
                                            "",
                                            gfx::ImageSkia(),
                                            (*app)->is_platform_app()));

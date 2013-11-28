@@ -14,6 +14,7 @@
 #include "base/basictypes.h"
 #include "chrome/browser/metrics/metrics_network_observer.h"
 #include "chrome/common/metrics/metrics_log_base.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "ui/gfx/size.h"
 
@@ -84,25 +85,15 @@ class MetricsLog : public MetricsLogBase {
   static const std::string& version_extension();
 
   // Records the current operating environment.  Takes the list of installed
-  // plugins and Google Update statistics as parameters because those can't be
-  // obtained synchronously from the UI thread.
-  // profile_metrics, if non-null, gives a dictionary of all profile metrics
-  // that are to be recorded. Each value in profile_metrics should be a
-  // dictionary giving the metrics for the profile.
+  // plugins, Google Update statistics, and synthetic trial IDs as parameters
+  // because those can't be obtained synchronously from the UI thread.
+  // A synthetic trial is one that is set up dynamically by code in Chrome. For
+  // example, a pref may be mapped to a synthetic trial such that the group
+  // is determined by the pref value.
   void RecordEnvironment(
       const std::vector<content::WebPluginInfo>& plugin_list,
       const GoogleUpdateMetrics& google_update_metrics,
-      base::TimeDelta incremental_uptime);
-
-  // Records the current operating environment.  Takes the list of installed
-  // plugins and Google Update statistics as parameters because those can't be
-  // obtained synchronously from the UI thread.  This is exposed as a separate
-  // method from the |RecordEnvironment()| method above because we record the
-  // environment with *each* protobuf upload, but only with the initial XML
-  // upload.
-  void RecordEnvironmentProto(
-      const std::vector<content::WebPluginInfo>& plugin_list,
-      const GoogleUpdateMetrics& google_update_metrics);
+      const std::vector<chrome_variations::ActiveGroupId>& synthetic_trials);
 
   // Records the input text, available choices, and selected entry when the
   // user uses the Omnibox to open a URL.
@@ -114,15 +105,20 @@ class MetricsLog : public MetricsLogBase {
       const tracked_objects::ProcessDataSnapshot& process_data,
       int process_type);
 
-  // Record recent delta for critical stability metrics.  We can't wait for a
-  // restart to gather these, as that delay biases our observation away from
-  // users that run happily for a looooong time.  We send increments with each
-  // uma log upload, just as we send histogram data.  Takes the list of
-  // installed plugins as a parameter because that can't be obtained
-  // synchronously from the UI thread.
-  void RecordIncrementalStabilityElements(
-      const std::vector<content::WebPluginInfo>& plugin_list,
-      base::TimeDelta incremental_uptime);
+  // Writes application stability metrics (as part of the profile log). The
+  // system profile portion of the log must have already been filled in by a
+  // call to RecordEnvironment().
+  // NOTE: Has the side-effect of clearing the stability prefs..
+  //
+  // If |log_type| is INITIAL_LOG, records additional info such as number of
+  // incomplete shutdowns as well as extra breakpad and debugger stats.
+  void RecordStabilityMetrics(
+      base::TimeDelta incremental_uptime,
+      LogType log_type);
+
+  const base::TimeTicks& creation_time() const {
+    return creation_time_;
+  }
 
  protected:
   // Exposed for the sake of mocking in test code.
@@ -142,22 +138,13 @@ class MetricsLog : public MetricsLogBase {
   // Fills |field_trial_ids| with the list of initialized field trials name and
   // group ids.
   virtual void GetFieldTrialIds(
-    std::vector<chrome_variations::ActiveGroupId>* field_trial_ids) const;
+      std::vector<chrome_variations::ActiveGroupId>* field_trial_ids) const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(MetricsLogTest, ChromeOSStabilityData);
 
-  // Writes application stability metrics (as part of the profile log).
-  // NOTE: Has the side-effect of clearing those counts.
-  void WriteStabilityElement(
-      const std::vector<content::WebPluginInfo>& plugin_list,
-      base::TimeDelta incremental_uptime,
-      PrefService* pref);
-
   // Within stability group, write plugin crash stats.
-  void WritePluginStabilityElements(
-      const std::vector<content::WebPluginInfo>& plugin_list,
-      PrefService* pref);
+  void WritePluginStabilityElements(PrefService* pref);
 
   // Within the stability group, write required attributes.
   void WriteRequiredStabilityAttributes(PrefService* pref);
@@ -200,6 +187,9 @@ class MetricsLog : public MetricsLogBase {
 
   // Bluetooth Adapter instance for collecting information about paired devices.
   scoped_refptr<device::BluetoothAdapter> adapter_;
+
+  // The time when the current log was created.
+  const base::TimeTicks creation_time_;
 
   DISALLOW_COPY_AND_ASSIGN(MetricsLog);
 };

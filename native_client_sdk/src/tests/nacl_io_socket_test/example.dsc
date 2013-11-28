@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl', 'linux'],
   'TARGETS': [
     {
       'NAME' : 'nacl_io_socket_test',
@@ -15,8 +15,7 @@
       # referenced before ppapi.
       'LIBS': ['gmock', 'ppapi_cpp', 'ppapi', 'gtest', 'pthread'],
       'INCLUDES': ['$(NACL_SDK_ROOT)/include/gtest/internal'],
-      'CXXFLAGS': ['-Wno-sign-compare', '-Wno-unused-private-field'],
-      'CFLAGS_GCC': ['-Wno-unused-local-typedefs'],
+      'CXXFLAGS': ['-Wno-sign-compare']
     }
   ],
   'DATA': [

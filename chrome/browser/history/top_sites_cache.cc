@@ -31,6 +31,7 @@ TopSitesCache::~TopSitesCache() {
 
 void TopSitesCache::SetTopSites(const MostVisitedURLList& top_sites) {
   top_sites_ = top_sites;
+  CountForcedURLs();
   GenerateCanonicalURLs();
 }
 
@@ -71,35 +72,6 @@ bool TopSitesCache::GetPageThumbnailScore(const GURL& url,
 const GURL& TopSitesCache::GetCanonicalURL(const GURL& url) const {
   CanonicalURLs::const_iterator it = GetCanonicalURLsIterator(url);
   return it == canonical_urls_.end() ? url : it->first.first->url;
-}
-
-GURL TopSitesCache::GetSpecializedCanonicalURL(const GURL& url) const {
-  // Perform effective binary search for URL prefix search.
-  CanonicalURLs::const_iterator it =
-      canonical_urls_.upper_bound(CanonicalURLQuery(url).entry());
-
-  // Check whether |prev_it| equals to |url|, ignoring "?query#ref". This
-  // handles exact match and equality matches with earlier "?query#ref" part.
-  if (it != canonical_urls_.begin()) {
-    CanonicalURLs::const_iterator prev_it = it;
-    --prev_it;
-    if (url.ReplaceComponents(clear_query_ref_) ==
-        GetURLFromIterator(prev_it).ReplaceComponents(clear_query_ref_)) {
-      return prev_it->first.first->url;
-    }
-  }
-
-  // Check whether |url| is a URL prefix of |it|. This handles strict
-  // specialized match and equality matches with later "?query#ref".
-  if (it != canonical_urls_.end()) {
-    GURL compare_url(GetURLFromIterator(it));
-    if (HaveSameSchemeHostAndPort(url, compare_url) &&
-        IsPathPrefix(url.path(), compare_url.path())) {
-      return it->first.first->url;
-    }
-  }
-
-  return GURL::EmptyGURL();
 }
 
 GURL TopSitesCache::GetGeneralizedCanonicalURL(const GURL& url) const {
@@ -146,6 +118,31 @@ bool TopSitesCache::IsKnownURL(const GURL& url) const {
 size_t TopSitesCache::GetURLIndex(const GURL& url) const {
   DCHECK(IsKnownURL(url));
   return GetCanonicalURLsIterator(url)->second;
+}
+
+size_t TopSitesCache::GetNumNonForcedURLs() const {
+  return top_sites_.size() - num_forced_urls_;
+}
+
+size_t TopSitesCache::GetNumForcedURLs() const {
+  return num_forced_urls_;
+}
+
+void TopSitesCache::CountForcedURLs() {
+  num_forced_urls_ = 0;
+  while (num_forced_urls_ < top_sites_.size()) {
+    // Forced sites are all at the beginning.
+    if (top_sites_[num_forced_urls_].last_forced_time.is_null())
+      break;
+    num_forced_urls_++;
+  }
+  // In debug, ensure the cache user has no forced URLs pass that point.
+  if (DCHECK_IS_ON()) {
+    for (size_t i = num_forced_urls_; i < top_sites_.size(); ++i) {
+      DCHECK(top_sites_[i].last_forced_time.is_null())
+          << "All the forced URLs must appear before non-forced URLs.";
+    }
+  }
 }
 
 void TopSitesCache::GenerateCanonicalURLs() {

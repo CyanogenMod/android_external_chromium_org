@@ -211,6 +211,7 @@ void ResourceMetadataStorage::Iterator::Advance() {
   for (it_->Next() ; it_->Valid(); it_->Next()) {
     if (!IsChildEntryKey(it_->key()) &&
         !IsCacheEntryKey(it_->key()) &&
+        !IsIdEntryKey(it_->key()) &&
         entry_.ParseFromArray(it_->value().data(), it_->value().size()))
       break;
   }
@@ -420,7 +421,7 @@ bool ResourceMetadataStorage::Initialize() {
     bool should_discard_db = true;
     if (db_version != kDBVersion) {
       open_existing_result = DB_INIT_INCOMPATIBLE;
-      LOG(INFO) << "Reject incompatible DB.";
+      DVLOG(1) << "Reject incompatible DB.";
     } else if (!CheckValidity()) {
       open_existing_result = DB_INIT_BROKEN;
       LOG(ERROR) << "Reject invalid DB.";
@@ -477,8 +478,8 @@ bool ResourceMetadataStorage::Initialize() {
   return resource_map_;
 }
 
-void ResourceMetadataStorage::RecoverCacheEntriesFromTrashedResourceMap(
-    std::map<std::string, FileCacheEntry>* out_entries) {
+void ResourceMetadataStorage::RecoverCacheInfoFromTrashedResourceMap(
+    RecoveredCacheInfoMap* out_info) {
   const base::FilePath trashed_resource_map_path =
       directory_path_.Append(kTrashedResourceMapDBName);
 
@@ -526,8 +527,20 @@ void ResourceMetadataStorage::RecoverCacheEntriesFromTrashedResourceMap(
     if (IsCacheEntryKey(it->key())) {
       const std::string& id = GetIdFromCacheEntryKey(it->key());
       FileCacheEntry cache_entry;
-      if (cache_entry.ParseFromArray(it->value().data(), it->value().size()))
-        (*out_entries)[id] = cache_entry;
+      if (cache_entry.ParseFromArray(it->value().data(), it->value().size())) {
+        RecoveredCacheInfo* info = &(*out_info)[id];
+        info->is_dirty = cache_entry.is_dirty();
+        info->md5 = cache_entry.md5();
+
+        // Get title from ResourceEntry if available.
+        std::string serialized_entry;
+        ResourceEntry entry;
+        if (resource_map->Get(leveldb::ReadOptions(),
+                              leveldb::Slice(id),
+                              &serialized_entry).ok() &&
+            entry.ParseFromString(serialized_entry))
+          info->title = entry.title();
+      }
     }
   }
 }
@@ -733,6 +746,11 @@ ResourceMetadataStorage::GetCacheEntryIterator() {
       resource_map_->NewIterator(leveldb::ReadOptions()));
   return make_scoped_ptr(new CacheEntryIterator(it.Pass()));
 }
+
+ResourceMetadataStorage::RecoveredCacheInfo::RecoveredCacheInfo()
+    : is_dirty(false) {}
+
+ResourceMetadataStorage::RecoveredCacheInfo::~RecoveredCacheInfo() {}
 
 bool ResourceMetadataStorage::GetIdByResourceId(
     const std::string& resource_id,

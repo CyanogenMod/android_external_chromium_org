@@ -16,15 +16,15 @@
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/cloud/mock_cloud_policy_client.h"
 #include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/policy_test_utils.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/policy/proto/cloud/chrome_extension_policy.pb.h"
 #include "chrome/browser/policy/test/local_policy_test_server.h"
+#include "chrome/browser/policy/test/policy_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "policy/proto/cloud_policy.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -33,7 +33,6 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
-#include "chrome/common/chrome_paths.h"
 #include "chromeos/chromeos_switches.h"
 #else
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
@@ -66,7 +65,6 @@ const char kTestPolicy[] =
     "  }"
     "}";
 
-#if defined(OS_CHROMEOS)
 const char kTestExtension2[] = "behllobkkfkfnphdnhnkndlbkcpglgmj";
 const base::FilePath::CharType kTestExtension2Path[] =
     FILE_PATH_LITERAL("extensions/managed_extension2");
@@ -81,7 +79,6 @@ const char kTestPolicy2[] =
     "}";
 
 const char kTestPolicy2JSON[] = "{\"Another\":\"turn_it_off\"}";
-#endif  // defined(OS_CHROMEOS)
 
 class ComponentCloudPolicyTest : public ExtensionBrowserTest {
  protected:
@@ -95,7 +92,7 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     // replace it. This is the default username sent in policy blobs from the
     // testserver.
     command_line->AppendSwitchASCII(
-        chromeos::switches::kLoginUser, "user@example.com");
+        ::chromeos::switches::kLoginUser, "user@example.com");
 #endif
   }
 
@@ -107,8 +104,7 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
 
     std::string url = test_server_.GetServiceURL().spec();
     CommandLine* command_line = CommandLine::ForCurrentProcess();
-    command_line->AppendSwitchASCII(switches::kDeviceManagementUrl, url);
-    command_line->AppendSwitch(switches::kEnableComponentCloudPolicy);
+    command_line->AppendSwitchASCII(::switches::kDeviceManagementUrl, url);
 
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
   }
@@ -143,7 +139,8 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     signin_manager->SetAuthenticatedUsername("user@example.com");
 
     UserCloudPolicyManager* policy_manager =
-        UserCloudPolicyManagerFactory::GetForProfile(browser()->profile());
+        UserCloudPolicyManagerFactory::GetForBrowserContext(
+            browser()->profile());
     ASSERT_TRUE(policy_manager);
     policy_manager->Connect(g_browser_process->local_state(),
                             g_browser_process->system_request_context(),
@@ -199,9 +196,6 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
   scoped_ptr<ExtensionTestMessageListener> event_listener_;
 };
 
-// TODO(joaodasilva): enable these for other platforms once ready.
-#if defined(OS_CHROMEOS)
-
 IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, FetchExtensionPolicy) {
   // Read the initial policy.
   ExtensionTestMessageListener policy_listener(kTestPolicyJSON, true);
@@ -251,7 +245,5 @@ IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, InstallNewExtension) {
   // and after verifying it has the expected value. Otherwise it sends 'fail'.
   EXPECT_TRUE(result_listener.WaitUntilSatisfied());
 }
-
-#endif  // OS_CHROMEOS
 
 }  // namespace policy

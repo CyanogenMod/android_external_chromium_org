@@ -20,10 +20,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
@@ -31,12 +28,14 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/test/test_utils.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/widget/widget.h"
 
-using testing::AnyNumber;
 using testing::Return;
 using testing::_;
 using testing::WithParamInterface;
@@ -62,7 +61,6 @@ class TrayAccessibilityTest
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
 

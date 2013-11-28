@@ -31,14 +31,16 @@
 #include "chrome/browser/policy/cloud/cloud_policy_service.h"
 #include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_domain_descriptor.h"
 #include "chrome/browser/policy/policy_service_impl.h"
 #include "chrome/browser/policy/policy_statistics_collector.h"
+#include "chrome/browser/policy/policy_transformations.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_pref_names.h"
+#include "components/policy/core/common/schema.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_client.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -106,6 +108,7 @@ EnterpriseInstallAttributes* g_testing_install_attributes = NULL;
 // Used in BrowserPolicyConnector::SetPolicyProviderForTesting.
 ConfigurationPolicyProvider* g_testing_provider = NULL;
 
+#if defined(OS_CHROMEOS)
 // Helper that returns a new SequencedTaskRunner backed by the blocking pool.
 // Each SequencedTaskRunner returned is independent from the others.
 scoped_refptr<base::SequencedTaskRunner> GetBackgroundTaskRunner() {
@@ -114,6 +117,7 @@ scoped_refptr<base::SequencedTaskRunner> GetBackgroundTaskRunner() {
   return pool->GetSequencedTaskRunnerWithShutdownBehavior(
       pool->GetSequenceToken(), base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
 }
+#endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 base::FilePath GetManagedPolicyPath() {
@@ -212,6 +216,12 @@ BrowserPolicyConnector::BrowserPolicyConnector()
   // threads aren't running yet; initialize components that need local_state,
   // the system request context or other threads (e.g. FILE) at Init().
 
+  // Initialize the SchemaRegistry with the Chrome schema before creating any
+  // of the policy providers.
+  chrome_schema_ = Schema::Wrap(GetChromeSchemaData());
+  schema_registry_.RegisterComponent(PolicyNamespace(POLICY_DOMAIN_CHROME, ""),
+                                     chrome_schema_);
+
   platform_provider_.reset(CreatePlatformProvider());
 
 #if defined(OS_CHROMEOS)
@@ -279,15 +289,18 @@ void BrowserPolicyConnector::Init(
       kServiceInitializationStartupDelay);
 
   if (g_testing_provider)
-    g_testing_provider->Init();
+    g_testing_provider->Init(GetSchemaRegistry());
   if (platform_provider_)
-    platform_provider_->Init();
+    platform_provider_->Init(GetSchemaRegistry());
 
 #if defined(OS_CHROMEOS)
-  global_user_cloud_policy_provider_.Init();
+  global_user_cloud_policy_provider_.Init(GetSchemaRegistry());
 
   if (device_cloud_policy_manager_) {
-    device_cloud_policy_manager_->Init();
+    // For now the |device_cloud_policy_manager_| is using the global schema
+    // registry. Eventually it will have its own registry, once device cloud
+    // policy for extensions is introduced.
+    device_cloud_policy_manager_->Init(GetSchemaRegistry());
     scoped_ptr<CloudPolicyClient::StatusProvider> status_provider(
         new DeviceStatusCollector(
             local_state_,
@@ -307,7 +320,11 @@ void BrowserPolicyConnector::Init(
             chromeos::DeviceSettingsService::Get(),
             chromeos::CrosSettings::Get(),
             GetBackgroundTaskRunner(),
-            GetBackgroundTaskRunner()));
+            GetBackgroundTaskRunner(),
+            GetBackgroundTaskRunner(),
+            content::BrowserThread::GetMessageLoopProxyForThread(
+                content::BrowserThread::IO),
+            request_context));
     device_local_account_policy_service_->Connect(
         device_management_service_.get());
   }
@@ -319,6 +336,8 @@ void BrowserPolicyConnector::Init(
 
   policy_statistics_collector_.reset(
       new policy::PolicyStatisticsCollector(
+          base::Bind(&GetChromePolicyDetails),
+          GetChromeSchema(),
           GetPolicyService(),
           local_state_,
           base::MessageLoop::current()->message_loop_proxy()));
@@ -358,7 +377,7 @@ void BrowserPolicyConnector::Shutdown() {
   if (device_cloud_policy_manager_)
     device_cloud_policy_manager_->Shutdown();
   if (device_local_account_policy_service_)
-    device_local_account_policy_service_->Disconnect();
+    device_local_account_policy_service_->Shutdown();
   global_user_cloud_policy_provider_.Shutdown();
 #endif
 
@@ -369,13 +388,37 @@ void BrowserPolicyConnector::Shutdown() {
 
 PolicyService* BrowserPolicyConnector::GetPolicyService() {
   if (!policy_service_) {
+    // |providers| in decreasing order of priority.
     std::vector<ConfigurationPolicyProvider*> providers;
+    if (g_testing_provider) {
+      providers.push_back(g_testing_provider);
+    } else {
+      if (platform_provider_)
+        providers.push_back(platform_provider_.get());
 #if defined(OS_CHROMEOS)
-    providers.push_back(&global_user_cloud_policy_provider_);
+      if (device_cloud_policy_manager_)
+        providers.push_back(device_cloud_policy_manager_.get());
+      providers.push_back(&global_user_cloud_policy_provider_);
 #endif
-    policy_service_ = CreatePolicyService(providers);
+    }
+    policy_service_.reset(new PolicyServiceImpl(
+        providers, base::Bind(&policy::FixDeprecatedPolicies)));
   }
   return policy_service_.get();
+}
+
+const Schema& BrowserPolicyConnector::GetChromeSchema() const {
+  return chrome_schema_;
+}
+
+CombinedSchemaRegistry* BrowserPolicyConnector::GetSchemaRegistry() {
+  return &schema_registry_;
+}
+
+ConfigurationPolicyProvider* BrowserPolicyConnector::GetPlatformProvider() {
+  if (g_testing_provider)
+    return g_testing_provider;
+  return platform_provider_.get();
 }
 
 #if defined(OS_CHROMEOS)
@@ -399,29 +442,6 @@ void BrowserPolicyConnector::ScheduleServiceInitialization(
   // initialized (unit tests).
   if (device_management_service_)
     device_management_service_->ScheduleInitialization(delay_milliseconds);
-}
-
-scoped_ptr<PolicyService> BrowserPolicyConnector::CreatePolicyService(
-    const std::vector<ConfigurationPolicyProvider*>& additional_providers) {
-  std::vector<ConfigurationPolicyProvider*> providers;
-  if (g_testing_provider) {
-    providers.push_back(g_testing_provider);
-  } else {
-    // |providers| in decreasing order of priority.
-    if (platform_provider_)
-      providers.push_back(platform_provider_.get());
-#if defined(OS_CHROMEOS)
-    if (device_cloud_policy_manager_)
-      providers.push_back(device_cloud_policy_manager_.get());
-#endif
-    std::copy(additional_providers.begin(), additional_providers.end(),
-              std::back_inserter(providers));
-  }
-  scoped_ptr<PolicyService> service(new PolicyServiceImpl(providers));
-  scoped_refptr<PolicyDomainDescriptor> descriptor = new PolicyDomainDescriptor(
-      POLICY_DOMAIN_CHROME);
-  service->RegisterPolicyDomain(descriptor);
-  return service.Pass();
 }
 
 const ConfigurationPolicyHandlerList*
@@ -564,22 +584,18 @@ void BrowserPolicyConnector::SetTimezoneIfPolicyAvailable() {
 #endif
 }
 
-// static
 ConfigurationPolicyProvider* BrowserPolicyConnector::CreatePlatformProvider() {
 #if defined(OS_WIN)
-  const PolicyDefinitionList* policy_list = GetChromePolicyDefinitionList();
   scoped_ptr<AsyncPolicyLoader> loader(PolicyLoaderWin::Create(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
-      policy_list));
-  return new AsyncPolicyProvider(loader.Pass());
+      kRegistryChromePolicyKey));
+  return new AsyncPolicyProvider(GetSchemaRegistry(), loader.Pass());
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
-  const PolicyDefinitionList* policy_list = GetChromePolicyDefinitionList();
   scoped_ptr<AsyncPolicyLoader> loader(new PolicyLoaderMac(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
-      policy_list,
       GetManagedPolicyPath(),
       new MacPreferences()));
-  return new AsyncPolicyProvider(loader.Pass());
+  return new AsyncPolicyProvider(GetSchemaRegistry(), loader.Pass());
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
   base::FilePath config_dir_path;
   if (PathService::Get(chrome::DIR_POLICY_FILES, &config_dir_path)) {
@@ -587,7 +603,7 @@ ConfigurationPolicyProvider* BrowserPolicyConnector::CreatePlatformProvider() {
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
         config_dir_path,
         POLICY_SCOPE_MACHINE));
-    return new AsyncPolicyProvider(loader.Pass());
+    return new AsyncPolicyProvider(GetSchemaRegistry(), loader.Pass());
   } else {
     return NULL;
   }

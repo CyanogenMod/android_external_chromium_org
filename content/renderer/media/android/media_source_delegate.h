@@ -20,7 +20,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
 #include "media/base/text_track.h"
-#include "third_party/WebKit/public/web/WebMediaPlayer.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
 
 namespace media {
 class ChunkDemuxer;
@@ -38,9 +38,9 @@ class RendererDemuxerAndroid;
 
 class MediaSourceDelegate : public media::DemuxerHost {
  public:
-  typedef base::Callback<void(WebKit::WebMediaSource*)>
+  typedef base::Callback<void(blink::WebMediaSource*)>
       MediaSourceOpenedCB;
-  typedef base::Callback<void(WebKit::WebMediaPlayer::NetworkState)>
+  typedef base::Callback<void(blink::WebMediaPlayer::NetworkState)>
       UpdateNetworkStateCB;
   typedef base::Callback<void(const base::TimeDelta&)> DurationChangeCB;
 
@@ -73,7 +73,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const UpdateNetworkStateCB& update_network_state_cb);
 #endif
 
-  const WebKit::WebTimeRanges& Buffered();
+  const blink::WebTimeRanges& Buffered();
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
   size_t AudioDecodedByteCount() const;
@@ -127,6 +127,9 @@ class MediaSourceDelegate : public media::DemuxerHost {
                                     base::TimeDelta end) OVERRIDE;
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
   virtual void OnDemuxerError(media::PipelineStatus status) OVERRIDE;
+  virtual void AddTextStream(media::DemuxerStream* text_stream,
+                             const media::TextTrackConfig& config) OVERRIDE;
+  virtual void RemoveTextStream(media::DemuxerStream* text_stream) OVERRIDE;
 
   // Notifies |demuxer_client_| and fires |duration_changed_cb_|.
   void OnDurationChanged(const base::TimeDelta& duration);
@@ -218,14 +221,14 @@ class MediaSourceDelegate : public media::DemuxerHost {
   media::PipelineStatistics statistics_;
   media::Ranges<base::TimeDelta> buffered_time_ranges_;
   // Keep a list of buffered time ranges.
-  WebKit::WebTimeRanges buffered_web_time_ranges_;
+  blink::WebTimeRanges buffered_web_time_ranges_;
 
   MediaSourceOpenedCB media_source_opened_cb_;
   media::Demuxer::NeedKeyCB need_key_cb_;
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.
-  WebKit::WebString current_key_system_;
+  blink::WebString current_key_system_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.

@@ -12,14 +12,14 @@ import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.common.CleanupReference;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * TestShell's implementation of a tab. This mirrors how Chrome for Android subclasses
  * and extends {@link TabBase}.
  */
 public class TestShellTab extends TabBase {
-    private int mNativeTestShellTab;
+    private long mNativeTestShellTab;
 
     private CleanupReference mCleanupReference;
 
@@ -79,7 +79,7 @@ public class TestShellTab extends TabBase {
 
         ContentView contentView = getContentView();
         if (TextUtils.equals(url, contentView.getUrl())) {
-            contentView.reload();
+            contentView.getContentViewCore().reload(true);
         } else {
             if (postData == null) {
                 contentView.loadUrl(new LoadUrlParams(url));
@@ -103,8 +103,8 @@ public class TestShellTab extends TabBase {
     }
 
     private static final class DestroyRunnable implements Runnable {
-        private final int mNativeTestShellTab;
-        private DestroyRunnable(int nativeTestShellTab) {
+        private final long mNativeTestShellTab;
+        private DestroyRunnable(long nativeTestShellTab) {
             mNativeTestShellTab = nativeTestShellTab;
         }
         @Override
@@ -139,7 +139,7 @@ public class TestShellTab extends TabBase {
         }
     }
 
-    private native int nativeInit();
-    private static native void nativeDestroy(int nativeTestShellTab);
-    private native String nativeFixupUrl(int nativeTestShellTab, String url);
+    private native long nativeInit();
+    private static native void nativeDestroy(long nativeTestShellTab);
+    private native String nativeFixupUrl(long nativeTestShellTab, String url);
 }

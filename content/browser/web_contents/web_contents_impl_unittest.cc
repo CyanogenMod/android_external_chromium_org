@@ -314,6 +314,26 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   EXPECT_EQ(ASCIIToUTF16("Lots O' Whitespace"), contents()->GetTitle());
 }
 
+TEST_F(WebContentsImplTest, DontUseTitleFromPendingEntry) {
+  const GURL kGURL("chrome://blah");
+  controller().LoadURL(
+      kGURL, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  EXPECT_EQ(string16(), contents()->GetTitle());
+}
+
+TEST_F(WebContentsImplTest, UseTitleFromPendingEntryIfSet) {
+  const GURL kGURL("chrome://blah");
+  const string16 title = ASCIIToUTF16("My Title");
+  controller().LoadURL(
+      kGURL, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+
+  NavigationEntry* entry = controller().GetVisibleEntry();
+  ASSERT_EQ(kGURL, entry->GetURL());
+  entry->SetTitle(title);
+
+  EXPECT_EQ(title, contents()->GetTitle());
+}
+
 // Test view source mode for a webui page.
 TEST_F(WebContentsImplTest, NTPViewSource) {
   NavigationControllerImpl& cont =
@@ -1065,7 +1085,7 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
   url_chain.push_back(GURL());
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
       pending_rvh, GlobalRequestID(0, 0), false, url_chain, Referrer(),
-      PAGE_TRANSITION_TYPED, 1);
+      PAGE_TRANSITION_TYPED, 1, false);
 
   // Suppose the original renderer navigates now, while the unload request is in
   // flight.  We should ignore it, wait for the unload ack, and let the pending
@@ -2101,7 +2121,7 @@ TEST_F(WebContentsImplTest, CopyStateFromAndPruneTargetInterstitial) {
 
   // Ensure that we do not allow calling CopyStateFromAndPrune when an
   // interstitial is showing in the target.
-  EXPECT_FALSE(other_controller.CanPruneAllButVisible());
+  EXPECT_FALSE(other_controller.CanPruneAllButLastCommitted());
 }
 
 // Regression test for http://crbug.com/168611 - the URLs passed by the

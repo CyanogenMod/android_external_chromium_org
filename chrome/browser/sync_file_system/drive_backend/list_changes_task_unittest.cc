@@ -64,8 +64,20 @@ class ListChangesTaskTest : public testing::Test,
     return fake_drive_service_.get();
   }
 
+  virtual drive::DriveUploader* GetDriveUploader() OVERRIDE {
+    return NULL;
+  }
+
   virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE {
     return metadata_database_.get();
+  }
+
+  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() OVERRIDE {
+    return NULL;
+  }
+
+  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE {
+    return base::MessageLoopProxy::current();
   }
 
   int64 GetRemoteLargestChangeID() {

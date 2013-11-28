@@ -85,6 +85,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -108,6 +109,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -174,6 +176,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -198,6 +201,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

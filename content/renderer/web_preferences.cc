@@ -16,18 +16,18 @@
 #include "third_party/icu/source/common/unicode/uscript.h"
 #include "webkit/common/webpreferences.h"
 
-using WebKit::WebNetworkStateNotifier;
-using WebKit::WebRuntimeFeatures;
-using WebKit::WebSettings;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebView;
+using blink::WebNetworkStateNotifier;
+using blink::WebRuntimeFeatures;
+using blink::WebSettings;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebView;
 
 namespace content {
 
 namespace {
 
-typedef void (*SetFontFamilyWrapper)(WebKit::WebSettings*,
+typedef void (*SetFontFamilyWrapper)(blink::WebSettings*,
                                      const base::string16&,
                                      UScriptCode);
 
@@ -146,11 +146,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setUsesEncodingDetector(prefs.uses_universal_detector);
   settings->setTextAreasAreResizable(prefs.text_areas_are_resizable);
   settings->setAllowScriptsToCloseWindows(prefs.allow_scripts_to_close_windows);
-  if (prefs.user_style_sheet_enabled)
-    settings->setUserStyleSheetLocation(prefs.user_style_sheet_location);
-  else
-    settings->setUserStyleSheetLocation(WebURL());
-  settings->setAuthorAndUserStylesEnabled(prefs.author_and_user_styles_enabled);
   settings->setDownloadableBinaryFontsEnabled(prefs.remote_fonts_enabled);
   settings->setJavaScriptCanAccessClipboard(
       prefs.javascript_can_access_clipboard);
@@ -216,6 +211,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   // Uses the mock theme engine for scrollbars.
   settings->setMockScrollbarsEnabled(prefs.mock_scrollbars_enabled);
+
+  settings->setLayerSquashingEnabled(prefs.layer_squashing_enabled);
 
   settings->setThreadedHTMLParser(prefs.threaded_html_parser);
 
@@ -319,6 +316,9 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   settings->setViewportEnabled(prefs.viewport_enabled);
   settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
+  settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
+  settings->setMainFrameResizesAreOrientationChanges(
+      prefs.main_frame_resizes_are_orientation_changes);
 
   settings->setSmartInsertDeleteEnabled(prefs.smart_insert_delete_enabled);
 
@@ -329,7 +329,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
-  settings->setTextAutosizingFontScaleFactor(prefs.font_scale_factor);
+  settings->setAccessibilityFontScaleFactor(prefs.font_scale_factor);
   settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
   web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
@@ -350,8 +350,12 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
       prefs.viewport_meta_layout_size_quirk);
   settings->setViewportMetaMergeContentQuirk(
       prefs.viewport_meta_merge_content_quirk);
+  settings->setViewportMetaNonUserScalableQuirk(
+      prefs.viewport_meta_non_user_scalable_quirk);
   settings->setViewportMetaZeroValuesQuirk(
       prefs.viewport_meta_zero_values_quirk);
+  settings->setClobberUserAgentInitialScaleQuirk(
+      prefs.clobber_user_agent_initial_scale_quirk);
   settings->setIgnoreMainFrameOverflowHiddenQuirk(
       prefs.ignore_main_frame_overflow_hidden_quirk);
   settings->setReportScreenSizeInPhysicalPixelsQuirk(

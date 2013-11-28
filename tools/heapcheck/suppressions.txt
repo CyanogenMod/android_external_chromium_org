@@ -229,6 +229,12 @@
    fun:base::internal::PostTaskAndReplyImpl::PostTaskAndReply
    fun:base::WorkerPool::PostTaskAndReply
 }
+{
+   UA style sheets are intentionally leaked - see bug 121729
+   Heapcheck:Leak
+   ...
+   fun:parseUASheet
+}
 # This one pops out too often on different leaks and the stacks are very often
 # uninformative, e.g. don't include anything related to the bug.
 # TODO(earthdok): revisit what we want to do with _Rep when we have LSan.
@@ -369,13 +375,13 @@
    bug_90013_a
    Heapcheck:Leak
    fun:??
-   fun:gfx::RenderTextLinux::EnsureLayout
+   fun:gfx::RenderTextPango::EnsureLayout
 }
 {
    bug_90013_b
    Heapcheck:Leak
    fun:??
-   fun:gfx::RenderTextLinux::GetStringSize
+   fun:gfx::RenderTextPango::GetStringSize
 }
 {
    bug_90013_c
@@ -450,7 +456,7 @@
    fun:content::SiteInstanceImpl::GetProcess
    fun:RenderViewHostImpl
    fun:content::RenderViewHostFactory::Create
-   fun:content::RenderViewHostManager::Init
+   fun:content::RenderFrameHostManager::Init
    fun:content::WebContentsImpl::Init
    fun:content::TestWebContents::Create
    fun:content::WebContentsTester::CreateTestWebContents
@@ -472,11 +478,11 @@
    fun:WTF::fastMalloc
    fun:WTF::StringImpl::createUninitialized
    fun:WTF::StringImpl::create
-   fun:WebKit::WebString::assign
+   fun:blink::WebString::assign
    fun:*WebString*
    fun:webkit_glue::CppBoundClass::BindToJavascript
    fun:*didClearWindowObject
-   fun:WebKit::FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld
+   fun:blink::FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld
    fun:WebCore::FrameLoader::dispatchDidClearWindowObjectInWorld
 }
 {
@@ -578,7 +584,7 @@
    bug_173597
    Heapcheck:Leak
    fun:FcConfigEvaluate
-   fun:gfx::RenderTextLinux::EnsureLayout
+   fun:gfx::RenderTextPango::EnsureLayout
    fun:gfx::RenderTextTest_PangoAttributes_Test::TestBody
 }
 {
@@ -627,7 +633,7 @@
    fun:GetStoragePartitionFromConfig
    fun:content::BrowserContext::GetStoragePartition
    fun:content::NavigationControllerImpl::GetSessionStorageNamespace
-   fun:content::RenderViewHostManager::Init
+   fun:content::RenderFrameHostManager::Init
 }
 {
    bug_236791
@@ -789,7 +795,7 @@
    bug_274114
    Heapcheck:Leak
    ...
-   fun:gfx::RenderTextLinux::GetBaseline
+   fun:gfx::RenderTextPango::GetBaseline
    fun:views::NativeTextfieldViews::GetTextfieldBaseline
    fun:_init
    fun:LocationBarView::Init
@@ -816,22 +822,6 @@
    fun:GtkThemeService::GtkThemeService
    ...
    fun:SavedFilesServiceUnitTest::SavedFilesServiceUnitTest
-}
-{
-   bug_282646
-   Heapcheck:Leak
-   ...
-   fun:SyncFileSystemBackend
-   fun:chrome::ChromeContentBrowserClient::GetAdditionalFileSystemBackends
-   fun:content::CreateFileSystemContext
-   fun:content::StoragePartitionImpl::Create
-   fun:content::StoragePartitionImplMap::Get
-   fun:GetStoragePartitionFromConfig
-   fun:content::BrowserContext::GetStoragePartitionForSite
-   fun:ExtensionService::NotifyExtensionUnloaded
-   fun:ExtensionService::UnloadExtension
-   fun:ExtensionService::AddExtension
-   fun:extensions::TestExtensionEnvironment::MakeExtension
 }
 {
    bug_286185
@@ -895,8 +885,23 @@
    fun:testing::internal::TestFactoryImpl::CreateTest
 }
 {
-   bug_313521
-   Heapcheck:Leak
-   ...
-   fun:app_list::AppListModelTest_FolderItem_Test::TestBody
+  bug_323149a
+  Heapcheck:Leak
+  fun:Genesis
+  fun:v8::internal::Bootstrapper::CreateEnvironment
+  fun:CreateEnvironment
+  fun:v8::Context::New
+  fun:net::ProxyResolverV8::Context::InitV8
+  fun:_init
+  fun:net::ProxyResolverV8Tracing::Job::ExecuteProxyResolver
+  fun:net::ProxyResolverV8Tracing::Job::ExecuteBlocking
+}
+{
+  bug_323149b
+  Heapcheck:Leak
+  fun:Genesis
+  fun:v8::internal::Bootstrapper::CreateEnvironment
+  fun:CreateEnvironment
+  fun:v8::Context::New
+  fun:V8UnitTest::SetUp
 }

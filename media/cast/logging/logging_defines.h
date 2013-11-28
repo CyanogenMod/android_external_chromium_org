@@ -15,15 +15,32 @@
 namespace media {
 namespace cast {
 
+static const uint32 kFrameIdUnknown = 0xFFFF;
+
+struct CastLoggingConfig {
+  CastLoggingConfig();
+  ~CastLoggingConfig();
+
+  bool enable_data_collection;
+  bool enable_uma_stats;
+  bool enable_tracing;
+};
+
+// By default, enable raw and stats data collection. Disable tracing and UMA.
+CastLoggingConfig GetDefaultCastLoggingConfig();
+
 enum CastLoggingEvent {
   // Generic events.
-  kRtt,
+  kUnknown,
+  kRttMs,
   kPacketLoss,
-  kJitter,
+  kJitterMs,
   kAckReceived,
+  kRembBitrate,
   kAckSent,
   kLastEvent,
   // Audio sender.
+  kAudioFrameReceived,
   kAudioFrameCaptured,
   kAudioFrameEncoded,
   // Audio receiver.
@@ -31,6 +48,7 @@ enum CastLoggingEvent {
   kAudioFrameDecoded,
   // Video sender.
   kVideoFrameCaptured,
+  kVideoFrameReceived,
   kVideoFrameSentToEncoder,
   kVideoFrameEncoded,
   // Video receiver.
@@ -42,6 +60,8 @@ enum CastLoggingEvent {
   kPacketRetransmited,
   // Receive-side packet events.
   kPacketReceived,
+
+  kNumOfLoggingEvents,
 };
 
 std::string CastLoggingToString(CastLoggingEvent event);
@@ -50,8 +70,8 @@ struct FrameEvent {
   FrameEvent();
   ~FrameEvent();
 
-  uint8 frame_id;
-  int size;  // Encoded size only.
+  uint32 frame_id;
+  size_t size;  // Encoded size only.
   std::vector<base::TimeTicks> timestamp;
   std::vector<CastLoggingEvent> type;
   base::TimeDelta delay_delta;  // Render/playout delay.
@@ -62,7 +82,7 @@ struct BasePacketInfo {
   BasePacketInfo();
   ~BasePacketInfo();
 
-  int size;
+  size_t size;
   std::vector<base::TimeTicks> timestamp;
   std::vector<CastLoggingEvent> type;
 };
@@ -72,7 +92,7 @@ typedef std::map<uint16, BasePacketInfo> BasePacketMap;
 struct PacketEvent {
   PacketEvent();
   ~PacketEvent();
-  uint8 frame_id;
+  uint32 frame_id;
   int max_packet_id;
   BasePacketMap packet_map;
 };

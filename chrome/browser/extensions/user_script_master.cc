@@ -23,13 +23,13 @@
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -285,15 +285,20 @@ static base::SharedMemory* Serialize(const UserScriptList& scripts) {
   }
 
   // Create the shared memory object.
-  scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
+  base::SharedMemory shared_memory;
 
-  if (!shared_memory->CreateAndMapAnonymous(pickle.size()))
+  if (!shared_memory.CreateAndMapAnonymous(pickle.size()))
     return NULL;
 
   // Copy the pickle to shared memory.
-  memcpy(shared_memory->memory(), pickle.data(), pickle.size());
+  memcpy(shared_memory.memory(), pickle.data(), pickle.size());
 
-  return shared_memory.release();
+  base::SharedMemoryHandle readonly_handle;
+  if (!shared_memory.ShareReadOnlyToProcess(base::GetCurrentProcessHandle(),
+                                            &readonly_handle))
+    return NULL;
+
+  return new base::SharedMemory(readonly_handle, /*read_only=*/true);
 }
 
 // This method will be called on the file thread.

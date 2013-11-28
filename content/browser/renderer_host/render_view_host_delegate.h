@@ -79,7 +79,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
  public:
   // RendererManagerment -------------------------------------------------------
   // Functions for managing switching of Renderers. For WebContents, this is
-  // implemented by the RenderViewHostManager.
+  // implemented by the RenderFrameHostManager.
 
   class CONTENT_EXPORT RendererManagement {
    public:
@@ -104,7 +104,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
         const std::vector<GURL>& transfer_url_chain,
         const Referrer& referrer,
         PageTransition page_transition,
-        int64 frame_id) = 0;
+        int64 frame_id,
+        bool should_replace_current_entry) = 0;
 
    protected:
     virtual ~RendererManagement() {}
@@ -404,7 +405,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // |popup_type| indicates if the widget is a popup and what kind of popup it
   // is (select, autofill...).
   virtual void CreateNewWidget(int route_id,
-                               WebKit::WebPopupType popup_type) {}
+                               blink::WebPopupType popup_type) {}
 
   // Creates a full screen RenderWidget. Similar to above.
   virtual void CreateNewFullscreenWidget(int route_id) {}

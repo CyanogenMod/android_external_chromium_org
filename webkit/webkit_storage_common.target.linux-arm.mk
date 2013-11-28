@@ -82,6 +82,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DWEBKIT_STORAGE_COMMON_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -102,6 +103,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -166,6 +168,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DWEBKIT_STORAGE_COMMON_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -187,6 +190,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

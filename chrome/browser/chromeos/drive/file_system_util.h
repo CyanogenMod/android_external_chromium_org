@@ -30,15 +30,14 @@ class ResourceEntry;
 
 namespace util {
 
-// Special resource IDs introduced to manage pseudo directory tree locally.
-// These strings are supposed to be different from any resource ID used on the
-// server, and are never sent to the server. Practical resource IDs used so far
-// have only alphabets/numbers ([a-zA-Z0-9]) and ':'.
-// Hence '<' and '>' around the directory name have been added to make them
-// different from normal server-side IDs.
-const char kDriveGrandRootSpecialResourceId[] = "<drive>";
+// "drive" diretory's local ID is fixed to this value.
+const char kDriveGrandRootLocalId[] = "<drive>";
 
-const char kDriveOtherDirSpecialResourceId[] = "<other>";
+// "drive/other" diretory's local ID is fixed to this value.
+const char kDriveOtherDirLocalId[] = "<other>";
+
+// "drive/trash" diretory's local ID is fixed to this value.
+const char kDriveTrashDirLocalId[] = "<trash>";
 
 // The directory names used for the Google Drive file system tree. These names
 // are used in URLs for the file manager, hence user-visible.
@@ -50,6 +49,9 @@ const base::FilePath::CharType kDriveMyDriveRootDirName[] =
 
 const base::FilePath::CharType kDriveOtherDirName[] =
     FILE_PATH_LITERAL("other");
+
+const base::FilePath::CharType kDriveTrashDirName[] =
+    FILE_PATH_LITERAL("trash");
 
 // Returns the path of the top root of the pseudo tree.
 const base::FilePath& GetDriveGrandRootPath();
@@ -197,10 +199,6 @@ GURL ReadUrlFromGDocFile(const base::FilePath& file_path);
 
 // Reads resource ID from a GDoc file.
 std::string ReadResourceIdFromGDocFile(const base::FilePath& file_path);
-
-// Returns the (base-16 encoded) MD5 digest of the file content at |file_path|,
-// or an empty string if an error is found.
-std::string GetMd5Digest(const base::FilePath& file_path);
 
 // Returns true if Drive is enabled for the given Profile.
 bool IsDriveEnabledForProfile(Profile* profile);

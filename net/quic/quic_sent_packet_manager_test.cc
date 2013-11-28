@@ -21,18 +21,12 @@ namespace {
 class MockHelper : public QuicSentPacketManager::HelperInterface {
  public:
   MOCK_METHOD0(GetNextPacketSequenceNumber, QuicPacketSequenceNumber());
-  MOCK_METHOD2(OnPacketNacked, void(QuicPacketSequenceNumber sequence_number,
-                                    size_t nack_count));
 };
 
 class QuicSentPacketManagerTest : public ::testing::TestWithParam<bool> {
  protected:
   QuicSentPacketManagerTest()
       : manager_(true, &helper_) {
-  }
-
-  void SetUp() {
-    FLAGS_track_retransmission_history = GetParam();
   }
 
   ~QuicSentPacketManagerTest() {
@@ -44,7 +38,7 @@ class QuicSentPacketManagerTest : public ::testing::TestWithParam<bool> {
                             size_t num_packets) {
     if (num_packets == 0) {
       EXPECT_FALSE(manager_.HasUnackedPackets());
-      EXPECT_EQ(0u, manager_.GetNumUnackedPackets());
+      EXPECT_EQ(0u, manager_.GetNumRetransmittablePackets());
       EXPECT_TRUE(manager_.GetUnackedPackets().empty());
       return;
     }
@@ -69,6 +63,7 @@ class QuicSentPacketManagerTest : public ::testing::TestWithParam<bool> {
         ++num_retransmittable;
       }
     }
+    EXPECT_EQ(num_packets, manager_.GetNumRetransmittablePackets());
     EXPECT_EQ(num_packets, num_retransmittable);
   }
 
@@ -119,11 +114,7 @@ class QuicSentPacketManagerTest : public ::testing::TestWithParam<bool> {
   vector<QuicPacket*> packets_;
 };
 
-INSTANTIATE_TEST_CASE_P(TrackRetransmissionHistory,
-                        QuicSentPacketManagerTest,
-                        ::testing::Values(false, true));
-
-TEST_P(QuicSentPacketManagerTest, IsUnacked) {
+TEST_F(QuicSentPacketManagerTest, IsUnacked) {
   VerifyUnackedPackets(NULL, 0);
 
   SerializedPacket serialized_packet(CreatePacket(1));
@@ -136,31 +127,20 @@ TEST_P(QuicSentPacketManagerTest, IsUnacked) {
   VerifyRetransmittablePackets(retransmittable, arraysize(retransmittable));
 }
 
-TEST_P(QuicSentPacketManagerTest, IsUnAckedRetransmit) {
-  if (!FLAGS_track_retransmission_history) {
-    // This tests restransmission tracking specifically.
-    return;
-  }
+TEST_F(QuicSentPacketManagerTest, IsUnAckedRetransmit) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
   RetransmitPacket(1, 2);
 
-  EXPECT_EQ(1u, manager_.GetRetransmissionCount(2));
+  EXPECT_TRUE(manager_.IsRetransmission(2));
   QuicPacketSequenceNumber unacked[] = { 1, 2 };
   VerifyUnackedPackets(unacked, arraysize(unacked));
   QuicPacketSequenceNumber retransmittable[] = { 2 };
   VerifyRetransmittablePackets(retransmittable, arraysize(retransmittable));
-
-  RetransmitPacket(2, 3);
-  EXPECT_EQ(2u, manager_.GetRetransmissionCount(3));
-  QuicPacketSequenceNumber unacked2[] = { 1, 2, 3 };
-  VerifyUnackedPackets(unacked2, arraysize(unacked2));
-  QuicPacketSequenceNumber retransmittable2[] = { 3 };
-  VerifyRetransmittablePackets(retransmittable2, arraysize(retransmittable2));
 }
 
-TEST_P(QuicSentPacketManagerTest, RetransmitThenAck) {
+TEST_F(QuicSentPacketManagerTest, RetransmitThenAck) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
@@ -170,14 +150,14 @@ TEST_P(QuicSentPacketManagerTest, RetransmitThenAck) {
   ReceivedPacketInfo received_info;
   received_info.largest_observed = 2;
   received_info.missing_packets.insert(1);
-  manager_.OnIncomingAck(received_info, false);
+  manager_.OnPacketAcked(received_info, false);
 
   // No unacked packets remain.
   VerifyUnackedPackets(NULL, 0);
   VerifyRetransmittablePackets(NULL, 0);
 }
 
-TEST_P(QuicSentPacketManagerTest, RetransmitThenAckBeforeSend) {
+TEST_F(QuicSentPacketManagerTest, RetransmitThenAckBeforeSend) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
@@ -187,7 +167,7 @@ TEST_P(QuicSentPacketManagerTest, RetransmitThenAckBeforeSend) {
   // Ack 1.
   ReceivedPacketInfo received_info;
   received_info.largest_observed = 1;
-  manager_.OnIncomingAck(received_info, false);
+  manager_.OnPacketAcked(received_info, false);
 
   // There should no longer be a pending retransmission.
   EXPECT_FALSE(manager_.HasPendingRetransmissions());
@@ -197,11 +177,7 @@ TEST_P(QuicSentPacketManagerTest, RetransmitThenAckBeforeSend) {
   VerifyRetransmittablePackets(NULL, 0);
 }
 
-TEST_P(QuicSentPacketManagerTest, RetransmitThenAckPrevious) {
-  if (!FLAGS_track_retransmission_history) {
-    // This tests restransmission tracking specifically.
-    return;
-  }
+TEST_F(QuicSentPacketManagerTest, RetransmitThenAckPrevious) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
@@ -211,8 +187,7 @@ TEST_P(QuicSentPacketManagerTest, RetransmitThenAckPrevious) {
   ReceivedPacketInfo received_info;
   received_info.largest_observed = 2;
   received_info.missing_packets.insert(2);
-  EXPECT_CALL(helper_, OnPacketNacked(2, 1)).Times(1);
-  manager_.OnIncomingAck(received_info, false);
+  manager_.OnPacketAcked(received_info, false);
 
   // 2 remains unacked, but no packets have retransmittable data.
   QuicPacketSequenceNumber unacked[] = { 2 };
@@ -220,11 +195,7 @@ TEST_P(QuicSentPacketManagerTest, RetransmitThenAckPrevious) {
   VerifyRetransmittablePackets(NULL, 0);
 }
 
-TEST_P(QuicSentPacketManagerTest, TruncatedAck) {
-  if (!FLAGS_track_retransmission_history) {
-    // This tests restransmission tracking specifically.
-    return;
-  }
+TEST_F(QuicSentPacketManagerTest, TruncatedAck) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
@@ -237,7 +208,7 @@ TEST_P(QuicSentPacketManagerTest, TruncatedAck) {
   received_info.largest_observed = 2;
   received_info.missing_packets.insert(1);
   received_info.missing_packets.insert(2);
-  manager_.OnIncomingAck(received_info, true);
+  manager_.OnPacketAcked(received_info, true);
 
   // High water mark will be raised.
   QuicPacketSequenceNumber unacked[] = { 2, 3, 4 };
@@ -246,11 +217,7 @@ TEST_P(QuicSentPacketManagerTest, TruncatedAck) {
   VerifyRetransmittablePackets(retransmittable, arraysize(retransmittable));
 }
 
-TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
-  if (!FLAGS_track_retransmission_history) {
-    // This tests restransmission tracking specifically.
-    return;
-  }
+TEST_F(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
   manager_.OnSerializedPacket(CreatePacket(1), QuicTime::Zero());
   manager_.OnSerializedPacket(CreatePacket(2), QuicTime::Zero());
   manager_.OnSerializedPacket(CreatePacket(3), QuicTime::Zero());
@@ -260,8 +227,7 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
     ReceivedPacketInfo received_info;
     received_info.largest_observed = 3;
     received_info.missing_packets.insert(2);
-    EXPECT_CALL(helper_, OnPacketNacked(2, 1)).Times(1);
-    manager_.OnIncomingAck(received_info, false);
+    manager_.OnPacketAcked(received_info, false);
 
     QuicPacketSequenceNumber unacked[] = { 2 };
     VerifyUnackedPackets(unacked, arraysize(unacked));
@@ -278,9 +244,7 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
     received_info.largest_observed = 5;
     received_info.missing_packets.insert(2);
     received_info.missing_packets.insert(4);
-    EXPECT_CALL(helper_, OnPacketNacked(2, 2)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(4, 1)).Times(1);
-    manager_.OnIncomingAck(received_info, false);
+    manager_.OnPacketAcked(received_info, false);
 
     QuicPacketSequenceNumber unacked[] = { 2, 4 };
     VerifyUnackedPackets(unacked, arraysize(unacked));
@@ -298,10 +262,7 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
     received_info.missing_packets.insert(2);
     received_info.missing_packets.insert(4);
     received_info.missing_packets.insert(6);
-    EXPECT_CALL(helper_, OnPacketNacked(2, 3)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(4, 2)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(6, 1)).Times(1);
-    manager_.OnIncomingAck(received_info, false);
+    manager_.OnPacketAcked(received_info, false);
 
     QuicPacketSequenceNumber unacked[] = { 2, 4, 6 };
     VerifyUnackedPackets(unacked, arraysize(unacked));
@@ -322,11 +283,7 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
     received_info.missing_packets.insert(6);
     received_info.missing_packets.insert(8);
     received_info.missing_packets.insert(9);
-    EXPECT_CALL(helper_, OnPacketNacked(4, 3)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(6, 2)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(8, 1)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(9, 1)).Times(1);
-    manager_.OnIncomingAck(received_info, false);
+    manager_.OnPacketAcked(received_info, false);
 
     QuicPacketSequenceNumber unacked[] = { 2, 4, 6, 8, 9 };
     VerifyUnackedPackets(unacked, arraysize(unacked));
@@ -350,12 +307,7 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
     received_info.missing_packets.insert(9);
     received_info.missing_packets.insert(11);
     received_info.missing_packets.insert(12);
-    EXPECT_CALL(helper_, OnPacketNacked(6, 3)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(8, 2)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(9, 2)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(11, 1)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(12, 1)).Times(1);
-    manager_.OnIncomingAck(received_info, false);
+    manager_.OnPacketAcked(received_info, false);
 
     QuicPacketSequenceNumber unacked[] = { 2, 4, 6, 8, 9, 11, 12 };
     VerifyUnackedPackets(unacked, arraysize(unacked));
@@ -378,11 +330,7 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
     received_info.missing_packets.insert(9);
     received_info.missing_packets.insert(11);
     received_info.missing_packets.insert(12);
-    EXPECT_CALL(helper_, OnPacketNacked(8, 3)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(9, 3)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(11, 2)).Times(1);
-    EXPECT_CALL(helper_, OnPacketNacked(12, 2)).Times(1);
-    manager_.OnIncomingAck(received_info, true);
+    manager_.OnPacketAcked(received_info, true);
 
     // Truncated ack raises the high water mark by clearing out 2, 4, and 6.
     QuicPacketSequenceNumber unacked[] = { 8, 9, 11, 12, 14, 15, 16 };
@@ -392,19 +340,19 @@ TEST_P(QuicSentPacketManagerTest, SendDropAckRetransmitManyPackets) {
   }
 }
 
-TEST_P(QuicSentPacketManagerTest, GetLeastUnackedSentPacket) {
+TEST_F(QuicSentPacketManagerTest, GetLeastUnackedSentPacket) {
   EXPECT_CALL(helper_, GetNextPacketSequenceNumber()).WillOnce(Return(1u));
   EXPECT_EQ(1u, manager_.GetLeastUnackedSentPacket());
 }
 
-TEST_P(QuicSentPacketManagerTest, GetLeastUnackedSentPacketUnacked) {
+TEST_F(QuicSentPacketManagerTest, GetLeastUnackedSentPacketUnacked) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
   EXPECT_EQ(1u, manager_.GetLeastUnackedSentPacket());
 }
 
-TEST_P(QuicSentPacketManagerTest, GetLeastUnackedSentPacketUnackedFec) {
+TEST_F(QuicSentPacketManagerTest, GetLeastUnackedSentPacketUnackedFec) {
   SerializedPacket serialized_packet(CreateFecPacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
@@ -413,7 +361,7 @@ TEST_P(QuicSentPacketManagerTest, GetLeastUnackedSentPacketUnackedFec) {
   EXPECT_EQ(2u, manager_.GetLeastUnackedSentPacket());
 }
 
-TEST_P(QuicSentPacketManagerTest, GetLeastUnackedSentPacketDiscardUnacked) {
+TEST_F(QuicSentPacketManagerTest, GetLeastUnackedSentPacketDiscardUnacked) {
   SerializedPacket serialized_packet(CreatePacket(1));
 
   manager_.OnSerializedPacket(serialized_packet, QuicTime::Zero());
@@ -422,7 +370,7 @@ TEST_P(QuicSentPacketManagerTest, GetLeastUnackedSentPacketDiscardUnacked) {
   EXPECT_EQ(2u, manager_.GetLeastUnackedSentPacket());
 }
 
-TEST_P(QuicSentPacketManagerTest, GetLeastUnackedFecPacketAndDiscard) {
+TEST_F(QuicSentPacketManagerTest, GetLeastUnackedFecPacketAndDiscard) {
   VerifyUnackedPackets(NULL, 0);
 
   SerializedPacket serialized_packet(CreateFecPacket(1));
@@ -446,7 +394,7 @@ TEST_P(QuicSentPacketManagerTest, GetLeastUnackedFecPacketAndDiscard) {
   // Ack 2.
   ReceivedPacketInfo received_info;
   received_info.largest_observed = 2;
-  manager_.OnIncomingAck(received_info, false);
+  manager_.OnPacketAcked(received_info, false);
 
   EXPECT_EQ(3u, manager_.GetLeastUnackedFecPacket());
 
@@ -455,7 +403,7 @@ TEST_P(QuicSentPacketManagerTest, GetLeastUnackedFecPacketAndDiscard) {
   EXPECT_FALSE(manager_.HasUnackedFecPackets());
 }
 
-TEST_P(QuicSentPacketManagerTest, GetFecSentTime) {
+TEST_F(QuicSentPacketManagerTest, GetFecSentTime) {
   VerifyUnackedPackets(NULL, 0);
 
   SerializedPacket serialized_packet(CreateFecPacket(1));

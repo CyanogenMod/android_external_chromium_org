@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+<include src="wallpaper_loader.js"></include>
+
 /**
  * @fileoverview User pod row implementation.
  */
@@ -15,25 +17,34 @@ cr.define('login', function() {
   var COLUMNS = [0, 1, 2, 3, 4, 5, 4, 4, 4, 5, 5, 6, 6, 5, 5, 6, 6, 6, 6];
 
   /**
+   * Mapping between number of columns in pod-row and margin between user pods
+   * for such layout.
+   * @type {Array.<number>}
+   * @const
+   */
+  var MARGIN_BY_COLUMNS = [undefined, 40, 40, 40, 40, 40, 12];
+
+  /**
+   * Maximal number of columns currently supported by pod-row.
+   * @type {number}
+   * @const
+   */
+  var MAX_NUMBER_OF_COLUMNS = 6;
+
+  /**
+   * Variables used for pod placement processing.
+   * Width and height should be synced with computed CSS sizes of pods.
+   */
+  var POD_WIDTH = 180;
+  var POD_HEIGHT = 217;
+  var POD_ROW_PADDING = 10;
+
+  /**
    * Whether to preselect the first pod automatically on login screen.
    * @type {boolean}
    * @const
    */
   var PRESELECT_FIRST_POD = true;
-
-  /**
-   * Wallpaper load delay in milliseconds.
-   * @type {number}
-   * @const
-   */
-  var WALLPAPER_LOAD_DELAY_MS = 500;
-
-  /**
-   * Wallpaper load delay in milliseconds. TODO(nkostylev): Tune this constant.
-   * @type {number}
-   * @const
-   */
-  var WALLPAPER_BOOT_LOAD_DELAY_MS = 100;
 
   /**
    * Maximum time for which the pod row remains hidden until all user images
@@ -195,6 +206,21 @@ cr.define('login', function() {
         e.preventDefault();
         return;
       }
+    },
+
+    /**
+     * Top edge margin number of pixels.
+     * @type {?number}
+     */
+    set top(top) {
+      this.style.top = cr.ui.toCssPx(top);
+    },
+    /**
+     * Left edge margin number of pixels.
+     * @type {?number}
+     */
+    set left(left) {
+      this.style.left = cr.ui.toCssPx(left);
     },
 
     /**
@@ -959,16 +985,8 @@ cr.define('login', function() {
     // Whether this user pod row is shown for the first time.
     firstShown_: true,
 
-    // Whether the initial wallpaper load after boot has been requested. Used
-    // only if |Oobe.getInstance().shouldLoadWallpaperOnBoot()| is true.
-    bootWallpaperLoaded_: false,
-
     // True if inside focusPod().
     insideFocusPod_: false,
-
-    // True if user pod has been activated with keyboard.
-    // In case of activation with keyboard we delay wallpaper change.
-    keyboardActivated_: false,
 
     // Focused pod.
     focusedPod_: undefined,
@@ -979,17 +997,14 @@ cr.define('login', function() {
     // Pod that was most recently focused, if any.
     lastFocusedPod_: undefined,
 
-    // When moving through users quickly at login screen, set a timeout to
-    // prevent loading intermediate wallpapers.
-    loadWallpaperTimeout_: null,
+    // Note: created only in decorate() !
+    wallpaperLoader_: undefined,
 
     // Pods whose initial images haven't been loaded yet.
     podsWithPendingImages_: [],
 
     /** @override */
     decorate: function() {
-      this.style.left = 0;
-
       // Event listeners that are installed for the time period during which
       // the element is visible.
       this.listeners_ = {
@@ -998,6 +1013,7 @@ cr.define('login', function() {
         mousemove: [this.handleMouseMove_.bind(this), false],
         keydown: [this.handleKeyDown.bind(this), false]
       };
+      this.wallpaperLoader_ = new login.WallpaperLoader();
     },
 
     /**
@@ -1005,7 +1021,7 @@ cr.define('login', function() {
      * @type {NodeList}
      */
     get pods() {
-      return this.children;
+      return Array.prototype.slice.call(this.children);
     },
 
     /**
@@ -1080,6 +1096,21 @@ cr.define('login', function() {
     },
 
     /**
+     * Removes user pod from pod row.
+     * @param {string} email User's email.
+     */
+    removeUserPod: function(username) {
+      var podToRemove = this.getPodWithUsername_(username);
+      if (podToRemove == null) {
+        console.warn('Attempt to remove not existing pod for ' + username +
+            '.');
+        return;
+      }
+      this.removeChild(podToRemove);
+      this.placePods_();
+    },
+
+    /**
      * Returns index of given pod or -1 if not found.
      * @param {UserPod} pod Pod to look up.
      * @private
@@ -1133,6 +1164,9 @@ cr.define('login', function() {
       this.activatedPod_ = undefined;
       this.lastFocusedPod_ = undefined;
 
+      // Switch off animation
+      Oobe.getInstance().toggleClass('flying-pods', false);
+
       // Populate the pod row.
       for (var i = 0; i < users.length; ++i) {
         this.addUserPod(users[i], animated);
@@ -1145,49 +1179,97 @@ cr.define('login', function() {
         $('pod-row').classList.remove('images-loading');
       }, POD_ROW_IMAGES_LOAD_TIMEOUT_MS);
 
-      var columns = users.length < COLUMNS.length ?
-          COLUMNS[users.length] : COLUMNS[COLUMNS.length - 1];
-      var rows = Math.floor((users.length - 1) / columns) + 1;
+      this.placePods_();
 
-      // Cancel any pending resize operation.
-      this.removeEventListener('mouseout', this.deferredResizeListener_);
-
-      // If this pod row is used in the desktop user manager, we need to
-      // force a resize, as it may be a background window which won't get a
-      // mouseout event for a while; the pods would be displayed incorrectly
-      // until then.
-      if (this.preselectedPod && this.preselectedPod.user.isDesktopUser)
-        this.resize_(columns, rows);
-
-      if (!this.columns || !this.rows) {
-        // Set initial dimensions.
-        this.resize_(columns, rows);
-      } else if (columns != this.columns || rows != this.rows) {
-        // Defer the resize until mouse cursor leaves the pod row.
-        this.deferredResizeListener_ = function(e) {
-          if (!findAncestorByClass(e.toElement, 'podrow')) {
-            this.resize_(columns, rows);
-          }
-        }.bind(this);
-        this.addEventListener('mouseout', this.deferredResizeListener_);
-      }
+      // Without timeout changes in pods positions will be animated even though
+      // it happened when 'flying-pods' class was disabled.
+      setTimeout(function() {
+        Oobe.getInstance().toggleClass('flying-pods', true);
+      }, 0);
 
       this.focusPod(this.preselectedPod);
     },
 
     /**
-     * Resizes the pod row and cancel any pending resize operations.
-     * @param {number} columns Number of columns.
-     * @param {number} rows Number of rows.
+     * Called when window was resized.
+     */
+    onWindowResize: function() {
+      var layout = this.calculateLayout_();
+      if (layout.columns != this.columns || layout.rows != this.rows)
+        this.placePods_();
+    },
+
+    /**
+     * Returns width of podrow having |columns| number of columns.
      * @private
      */
-    resize_: function(columns, rows) {
-      this.removeEventListener('mouseout', this.deferredResizeListener_);
-      this.columns = columns;
-      this.rows = rows;
-      if (this.parentNode == Oobe.getInstance().currentScreen) {
-        Oobe.getInstance().updateScreenSize(this.parentNode);
+    columnsToWidth_: function(columns) {
+      var margin = MARGIN_BY_COLUMNS[columns];
+      return 2 * POD_ROW_PADDING + columns * POD_WIDTH + (columns - 1) * margin;
+    },
+
+    /**
+     * Returns height of podrow having |rows| number of rows.
+     * @private
+     */
+    rowsToHeight_: function(rows) {
+      return 2 * POD_ROW_PADDING + rows * POD_HEIGHT;
+    },
+
+    /**
+     * Calculates number of columns and rows that podrow should have in order to
+     * hold as much its pods as possible for current screen size. Also it tries
+     * to choose layout that looks good.
+     * @return {{columns: number, rows: number}}
+     */
+    calculateLayout_: function() {
+      var preferredColumns = this.pods.length < COLUMNS.length ?
+          COLUMNS[this.pods.length] : COLUMNS[COLUMNS.length - 1];
+      var maxWidth = Oobe.getInstance().clientAreaSize.width;
+      var columns = preferredColumns;
+      while (maxWidth < this.columnsToWidth_(columns) && columns > 1)
+        --columns;
+      var rows = Math.floor((this.pods.length - 1) / columns) + 1;
+      var maxHeigth = Oobe.getInstance().clientAreaSize.height;
+      while (maxHeigth < this.rowsToHeight_(rows) && rows > 1)
+        --rows;
+      // One more iteration if it's not enough cells to place all pods.
+      while (maxWidth >= this.columnsToWidth_(columns + 1) &&
+             columns * rows < this.pods.length &&
+             columns < MAX_NUMBER_OF_COLUMNS) {
+         ++columns;
       }
+      return {columns: columns, rows: rows};
+    },
+
+    /**
+     * Places pods onto their positions onto pod grid.
+     * @private
+     */
+    placePods_: function() {
+      var layout = this.calculateLayout_();
+      var columns = this.columns = layout.columns;
+      var rows = this.rows = layout.rows;
+      var maxPodsNumber = columns * rows;
+      var margin = MARGIN_BY_COLUMNS[columns];
+      this.parentNode.setPreferredSize(
+          this.columnsToWidth_(columns), this.rowsToHeight_(rows));
+      this.pods.forEach(function(pod, index) {
+        if (pod.offsetHeight != POD_HEIGHT)
+          console.error('Pod offsetHeight and POD_HEIGHT are not equal.');
+        if (pod.offsetWidth != POD_WIDTH)
+          console.error('Pod offsetWidht and POD_WIDTH are not equal.');
+        if (index >= maxPodsNumber) {
+           pod.hidden = true;
+           return;
+        }
+        pod.hidden = false;
+        var column = index % columns;
+        var row = Math.floor(index / columns);
+        pod.left = POD_ROW_PADDING + column * (POD_WIDTH + margin);
+        pod.top = POD_ROW_PADDING + row * POD_HEIGHT;
+      });
+      Oobe.getInstance().updateScreenSize(this.parentNode);
     },
 
     /**
@@ -1242,7 +1324,7 @@ cr.define('login', function() {
       }
       this.insideFocusPod_ = true;
 
-      clearTimeout(this.loadWallpaperTimeout_);
+      this.wallpaperLoader_.reset();
       for (var i = 0, pod; pod = this.pods[i]; ++i) {
         if (!this.isSinglePod) {
           pod.isActionBoxMenuActive = false;
@@ -1265,30 +1347,14 @@ cr.define('login', function() {
         podToFocus.classList.remove('faded');
         podToFocus.classList.add('focused');
         podToFocus.reset(true);  // Reset and give focus.
-        chrome.send('focusPod', [podToFocus.user.emailAddress]);
-        if (hadFocus && this.keyboardActivated_) {
-          // Delay wallpaper loading to let user tab through pods without lag.
-          this.loadWallpaperTimeout_ = window.setTimeout(
-              this.loadWallpaper_.bind(this), WALLPAPER_LOAD_DELAY_MS);
-        } else if (!this.firstShown_) {
-          // Load wallpaper immediately if there no pod was focused
-          // previously, and it is not a boot into user pod list case.
-          this.loadWallpaper_();
-        }
+        chrome.send('focusPod', [podToFocus.user.username]);
+
+        this.wallpaperLoader_.scheduleLoad(podToFocus.user.username);
         this.firstShown_ = false;
         this.lastFocusedPod_ = podToFocus;
       }
       this.insideFocusPod_ = false;
       this.keyboardActivated_ = false;
-    },
-
-    /**
-     * Loads wallpaper for the active user pod, if any.
-     * @private
-     */
-    loadWallpaper_: function() {
-      if (this.focusedPod_)
-        chrome.send('loadWallpaper', [this.focusedPod_.user.username]);
     },
 
     /**
@@ -1307,7 +1373,15 @@ cr.define('login', function() {
      */
     loadLastWallpaper: function() {
       if (this.lastFocusedPod_)
-        chrome.send('loadWallpaper', [this.lastFocusedPod_.user.username]);
+        this.wallpaperLoader_.scheduleLoad(this.lastFocusedPod_.user.username);
+    },
+
+    /**
+     * Handles 'onWallpaperLoaded' event. Recalculates statistics and
+     * [re]schedules next wallpaper load.
+     */
+    onWallpaperLoaded: function(username) {
+      this.wallpaperLoader_.onWallpaperLoaded(username);
     },
 
     /**
@@ -1560,6 +1634,11 @@ cr.define('login', function() {
      * Called right after the pod row is shown.
      */
     handleAfterShow: function() {
+      // Without timeout changes in pods positions will be animated even though
+      // it happened when 'flying-pods' class was disabled.
+      setTimeout(function() {
+        Oobe.getInstance().toggleClass('flying-pods', true);
+      }, 0);
       // Force input focus for user pod on show and once transition ends.
       if (this.focusedPod_) {
         var focusedPod = this.focusedPod_;
@@ -1571,13 +1650,7 @@ cr.define('login', function() {
             focusedPod.reset(true);
             // Notify screen that it is ready.
             screen.onShow();
-            // Boot transition: load wallpaper.
-            if (!self.bootWallpaperLoaded_ &&
-                Oobe.getInstance().shouldLoadWallpaperOnBoot()) {
-              self.loadWallpaperTimeout_ = window.setTimeout(
-                  self.loadWallpaper_.bind(self), WALLPAPER_BOOT_LOAD_DELAY_MS);
-              self.bootWallpaperLoaded_ = true;
-            }
+            self.wallpaperLoader_.scheduleLoad(focusedPod.user.username);
           }
         });
         // Guard timer for 1 second -- it would conver all possible animations.
@@ -1589,6 +1662,7 @@ cr.define('login', function() {
      * Called right before the pod row is shown.
      */
     handleBeforeShow: function() {
+      Oobe.getInstance().toggleClass('flying-pods', false);
       for (var event in this.listeners_) {
         this.ownerDocument.addEventListener(
             event, this.listeners_[event][0], this.listeners_[event][1]);

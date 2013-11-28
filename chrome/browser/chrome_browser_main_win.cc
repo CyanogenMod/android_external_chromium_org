@@ -22,7 +22,7 @@
 #include "base/win/windows_version.h"
 #include "base/win/wrapped_window_proc.h"
 #include "chrome/browser/browser_util_win.h"
-#include "chrome/browser/install_module_verifier_win.h"
+#include "chrome/browser/install_verification/win/install_verification.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/shell_integration.h"
@@ -87,16 +87,8 @@ class TranslationDelegate : public installer::TranslationDelegate {
   virtual string16 GetLocalizedString(int installer_string_id) OVERRIDE;
 };
 
-// There is a special shortcut that you can start Chrome with that
-// puts it in a safe mode. Used for troubleshooting end-user issues.
 bool IsSafeModeStart() {
-  STARTUPINFOW si = {0};
-  ::GetStartupInfo(&si);
-  if ((si.dwFlags & STARTF_USEHOTKEY) == 0)
-    return false;
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  return (reinterpret_cast<ULONG_PTR>(si.hStdInput) ==
-          static_cast<ULONG_PTR>(dist->GetSafeModeHotkey()));
+  return ::GetEnvironmentVariableA(chrome::kSafeModeEnvVar, NULL, 0) != 0;
 }
 
 }  // namespace
@@ -222,11 +214,12 @@ int ChromeBrowserMainPartsWin::PreCreateThreads() {
   int rv = ChromeBrowserMainParts::PreCreateThreads();
 
   if (IsSafeModeStart()) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableGpu);
+    // TODO(cpu): disable other troublesome features for safe mode.
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kDisableGpu);
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kHighDPISupport, "0");
   }
-
   // TODO(viettrungluu): why don't we run this earlier?
   if (!parsed_command_line().HasSwitch(switches::kNoErrorDialogs) &&
       base::win::GetVersion() < base::win::VERSION_XP) {
@@ -253,7 +246,7 @@ void ChromeBrowserMainPartsWin::PostBrowserStart() {
   content::BrowserThread::GetMessageLoopProxyForThread(
       content::BrowserThread::UI)->PostDelayedTask(
           FROM_HERE,
-          base::Bind(&BeginModuleVerification),
+          base::Bind(&VerifyInstallation),
           base::TimeDelta::FromSeconds(45));
 }
 

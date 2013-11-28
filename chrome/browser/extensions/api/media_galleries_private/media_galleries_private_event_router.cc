@@ -11,12 +11,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/common/extensions/api/media_galleries_private.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
 
 namespace media_galleries_private = extensions::api::media_galleries_private;
 
@@ -138,7 +138,7 @@ void MediaGalleriesPrivateEventRouter::DispatchEvent(
     return;
   scoped_ptr<extensions::Event> event(new extensions::Event(
       event_name, event_args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   router->BroadcastEvent(event.Pass());
 }
 

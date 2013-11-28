@@ -418,6 +418,7 @@
             }], # internal_pdf
           ],
           'dependencies': [
+            '../components/components.gyp:startup_metric_utils',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp
@@ -448,10 +449,10 @@
             }],
             # For now, do not build nacl_helper when disable_nacl=1
             # http://code.google.com/p/gyp/issues/detail?id=239
-            ['disable_nacl==0 and coverage==0', {
+            ['disable_nacl==0', {
               'dependencies': [
                 '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
-                'nacl_helper',
+                '../components/nacl.gyp:nacl_helper',
                 ],
             }],
           ],
@@ -470,6 +471,7 @@
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:breakpad_component',
             '../sandbox/sandbox.gyp:sandbox',
             'app/policy/cloud_policy_codegen.gyp:policy',
@@ -498,6 +500,7 @@
             'VCManifestTool': {
               'AdditionalManifestFiles': [
                 '$(ProjectDir)\\app\\chrome.exe.manifest',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome_elf/version_assembly.manifest',
               ],
             },
           },
@@ -514,6 +517,18 @@
               'message': 'Copy first run complete sentinel file',
               'msvs_cygwin_shell': 1,
             },
+            {
+              'action_name': 'chrome_exe_manifest',
+              'includes': [
+                  '../chrome_elf/chrome_exe_manifest_action.gypi',
+              ],
+            },
+            {
+              'action_name': 'version_assembly_manifest',
+              'includes': [
+                  '../chrome_elf/version_assembly_manifest_action.gypi',
+              ],
+            },
           ],
         }, {  # 'OS!="win"
           'sources!': [
@@ -525,7 +540,7 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../win8/metro_driver/metro_driver.gyp:*',
+            '../win8/metro_driver/metro_driver.gyp:metro_driver',
             '../win8/delegate_execute/delegate_execute.gyp:*',
           ],
         }],

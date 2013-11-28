@@ -9,6 +9,7 @@
 
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/runtime.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -18,18 +19,52 @@ namespace base {
 class Version;
 }
 
+namespace content {
+class BrowserContext;
+}
+
 namespace extensions {
 class Extension;
 class ExtensionHost;
 
+// Runtime API dispatches onStartup, onInstalled, and similar events to
+// extensions. There is one instance shared between a browser context and
+// its related incognito instance.
+class RuntimeAPI : public BrowserContextKeyedService,
+                   public content::NotificationObserver {
+ public:
+  explicit RuntimeAPI(content::BrowserContext* context);
+  virtual ~RuntimeAPI();
+
+  // content::NotificationObserver overrides:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+ private:
+  void OnExtensionsReady();
+  void OnExtensionLoaded(const Extension* extension);
+  void OnExtensionInstalled(const Extension* extension);
+
+  content::BrowserContext* browser_context_;
+
+  // True if we should dispatch the chrome.runtime.onInstalled event with
+  // reason "chrome_update" upon loading each extension.
+  bool dispatch_chrome_updated_event_;
+
+  content::NotificationRegistrar registrar_;
+
+  DISALLOW_COPY_AND_ASSIGN(RuntimeAPI);
+};
+
 class RuntimeEventRouter {
  public:
   // Dispatches the onStartup event to all currently-loaded extensions.
-  static void DispatchOnStartupEvent(Profile* profile,
+  static void DispatchOnStartupEvent(content::BrowserContext* context,
                                      const std::string& extension_id);
 
   // Dispatches the onInstalled event to the given extension.
-  static void DispatchOnInstalledEvent(Profile* profile,
+  static void DispatchOnInstalledEvent(content::BrowserContext* context,
                                        const std::string& extension_id,
                                        const base::Version& old_version,
                                        bool chrome_updated);

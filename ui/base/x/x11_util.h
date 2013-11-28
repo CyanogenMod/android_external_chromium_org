@@ -51,7 +51,9 @@ namespace ui {
 
 // Check if there's an open connection to an X server.
 UI_EXPORT bool XDisplayExists();
-// Return an X11 connection for the current, primary display.
+
+// Returns true if the system supports XINPUT2.
+UI_EXPORT bool IsXInput2Available();
 
 // X shared memory comes in three flavors:
 // 1) No SHM support,
@@ -203,8 +205,13 @@ Atom GetAtom(const char* atom_name);
 // Sets the WM_CLASS attribute for a given X11 window.
 UI_EXPORT void SetWindowClassHint(XDisplay* display,
                                   XID window,
-                                  std::string res_name,
-                                  std::string res_class);
+                                  const std::string& res_name,
+                                  const std::string& res_class);
+
+// Sets the WM_WINDOW_ROLE attribute for a given X11 window.
+UI_EXPORT void SetWindowRole(XDisplay* display,
+                             XID window,
+                             const std::string& role);
 
 // Get |window|'s parent window, or None if |window| is the root window.
 UI_EXPORT XID GetParentWindow(XID window);
@@ -301,6 +308,11 @@ UI_EXPORT void SetDefaultX11ErrorHandlers();
 
 // Return true if a given window is in full-screen mode.
 UI_EXPORT bool IsX11WindowFullScreen(XID window);
+
+// Returns true if a given size is in list of bogus sizes in mm that X detects
+// that should be ignored.
+UI_EXPORT bool IsXDisplaySizeBlackListed(unsigned long mm_width,
+                                         unsigned long mm_height);
 
 // Manages a piece of X11 allocated memory as a RefCountedMemory segment. This
 // object takes ownership over the passed in memory and will free it with the

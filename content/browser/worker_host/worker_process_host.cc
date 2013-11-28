@@ -157,6 +157,7 @@ bool WorkerProcessHost::Init(int render_process_id) {
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
+    switches::kJavaScriptFlags
   };
   cmd_line->CopySwitchesFrom(*CommandLine::ForCurrentProcess(), kSwitchNames,
                              arraysize(kSwitchNames));
@@ -265,8 +266,8 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
   socket_stream_dispatcher_host_ = socket_stream_dispatcher_host;
   process_->AddFilter(socket_stream_dispatcher_host);
   process_->AddFilter(new WorkerDevToolsMessageFilter(process_->GetData().id));
-  process_->AddFilter(new IndexedDBDispatcherHost(
-      process_->GetData().id, partition_.indexed_db_context()));
+  process_->AddFilter(
+      new IndexedDBDispatcherHost(partition_.indexed_db_context()));
 }
 
 void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
@@ -323,6 +324,8 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_ForceKillWorker,
+                        OnForceKillWorkerProcess)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -391,6 +394,14 @@ void WorkerProcessHost::OnAllowIndexedDB(int worker_route_id,
                                          bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerIndexedDB(
       url, name, resource_context_, GetRenderViewIDsForWorker(worker_route_id));
+}
+
+void WorkerProcessHost::OnForceKillWorkerProcess() {
+  if (process_ && process_launched_)
+    base::KillProcess(
+          process_->GetData().handle, RESULT_CODE_NORMAL_EXIT, false);
+  else
+    RecordAction(UserMetricsAction("WorkerProcess_BadProcessToKill"));
 }
 
 void WorkerProcessHost::RelayMessage(

@@ -15,6 +15,7 @@
 #include "net/base/big_endian.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_log.h"
+#include "net/http/http_util.h"
 #include "net/websockets/websocket_errors.h"
 #include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_frame.h"
@@ -152,7 +153,7 @@ void WebSocketChannel::SendAddChannelRequest(
     const std::vector<std::string>& requested_subprotocols,
     const GURL& origin) {
   // Delegate to the tested version.
-  SendAddChannelRequestWithFactory(
+  SendAddChannelRequestWithSuppliedCreator(
       socket_url,
       requested_subprotocols,
       origin,
@@ -193,7 +194,7 @@ void WebSocketChannel::SendFrame(bool fin,
     AllowUnused(FailChannel(SEND_GOING_AWAY,
                             kWebSocketMuxErrorSendQuotaViolation,
                             "Send quota exceeded"));
-    // |this| is deleted here.
+    // |this| has been deleted.
     return;
   }
   if (!WebSocketFrameHeader::IsKnownDataOpCode(op_code)) {
@@ -253,9 +254,9 @@ void WebSocketChannel::SendAddChannelRequestForTesting(
     const GURL& socket_url,
     const std::vector<std::string>& requested_subprotocols,
     const GURL& origin,
-    const WebSocketStreamFactory& factory) {
-  SendAddChannelRequestWithFactory(
-      socket_url, requested_subprotocols, origin, factory);
+    const WebSocketStreamCreator& creator) {
+  SendAddChannelRequestWithSuppliedCreator(
+      socket_url, requested_subprotocols, origin, creator);
 }
 
 void WebSocketChannel::SetClosingHandshakeTimeoutForTesting(
@@ -263,16 +264,23 @@ void WebSocketChannel::SetClosingHandshakeTimeoutForTesting(
   timeout_ = delay;
 }
 
-void WebSocketChannel::SendAddChannelRequestWithFactory(
+void WebSocketChannel::SendAddChannelRequestWithSuppliedCreator(
     const GURL& socket_url,
     const std::vector<std::string>& requested_subprotocols,
     const GURL& origin,
-    const WebSocketStreamFactory& factory) {
+    const WebSocketStreamCreator& creator) {
   DCHECK_EQ(FRESHLY_CONSTRUCTED, state_);
+  if (!socket_url.SchemeIsWSOrWSS()) {
+    // TODO(ricea): Kill the renderer (this error should have been caught by
+    // Javascript).
+    AllowUnused(event_interface_->OnAddChannelResponse(true, ""));
+    // |this| is deleted here.
+    return;
+  }
   socket_url_ = socket_url;
   scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate(
       new ConnectDelegate(this));
-  stream_request_ = factory.Run(socket_url_,
+  stream_request_ = creator.Run(socket_url_,
                                 requested_subprotocols,
                                 origin,
                                 url_request_context_,
@@ -506,7 +514,7 @@ ChannelState WebSocketChannel::HandleFrame(
         // TODO(ricea): Need to fail the connection if UTF-8 is invalid
         // post-reassembly. Requires a streaming UTF-8 validator.
         // TODO(ricea): Can this copy be eliminated?
-        const char* const data_begin = data_buffer->data();
+        const char* const data_begin = size ? data_buffer->data() : NULL;
         const char* const data_end = data_begin + size;
         const std::vector<char> data(data_begin, data_end);
         // TODO(ricea): Handle the case when ReadFrames returns far
@@ -668,18 +676,17 @@ void WebSocketChannel::ParseClose(const scoped_refptr<IOBuffer>& buffer,
                                   size_t size,
                                   uint16* code,
                                   std::string* reason) {
-  const char* data = buffer->data();
   reason->clear();
   if (size < kWebSocketCloseCodeLength) {
     *code = kWebSocketErrorNoStatusReceived;
     if (size != 0) {
       VLOG(1) << "Close frame with payload size " << size << " received "
-              << "(the first byte is " << std::hex << static_cast<int>(data[0])
-              << ")";
-      return;
+              << "(the first byte is " << std::hex
+              << static_cast<int>(buffer->data()[0]) << ")";
     }
     return;
   }
+  const char* data = buffer->data();
   uint16 unchecked_code = 0;
   ReadBigEndian(data, &unchecked_code);
   COMPILE_ASSERT(sizeof(unchecked_code) == kWebSocketCloseCodeLength,

@@ -8,8 +8,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
-#include "base/prefs/scoped_user_pref_update.h"
-#include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -25,17 +23,15 @@
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -44,7 +40,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
-#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -56,35 +51,18 @@
 #endif
 
 using base::DictionaryValue;
-using base::Value;
 using content::BrowserThread;
-
-namespace {
 
 const char kManagedModeFinchActive[] = "Active";
 const char kManagedModeFinchName[] = "ManagedModeLaunch";
 const char kManagedUserAccessRequestKeyPrefix[] =
     "X-ManagedUser-AccessRequests";
 const char kManagedUserAccessRequestTime[] = "timestamp";
-const char kManagedUserPseudoEmail[] = "managed_user@localhost";
 const char kOpenManagedProfileKeyPrefix[] = "X-ManagedUser-Events-OpenProfile";
 const char kQuitBrowserKeyPrefix[] = "X-ManagedUser-Events-QuitBrowser";
 const char kSwitchFromManagedProfileKeyPrefix[] =
     "X-ManagedUser-Events-SwitchProfile";
 const char kEventTimestamp[] = "timestamp";
-
-std::string CanonicalizeHostname(const std::string& hostname) {
-  std::string canonicalized;
-  url_canon::StdStringCanonOutput output(&canonicalized);
-  url_parse::Component in_comp(0, hostname.length());
-  url_parse::Component out_comp;
-
-  url_canon::CanonicalizeHost(hostname.c_str(), in_comp, &output, &out_comp);
-  output.Complete();
-  return canonicalized;
-}
-
-}  // namespace
 
 ManagedUserService::URLFilterContext::URLFilterContext()
     : ui_url_filter_(new ManagedModeURLFilter),
@@ -150,12 +128,12 @@ void ManagedUserService::URLFilterContext::SetManualURLs(
 }
 
 ManagedUserService::ManagedUserService(Profile* profile)
-    : weak_ptr_factory_(this),
-      profile_(profile),
+    : profile_(profile),
       waiting_for_sync_initialization_(false),
       is_profile_active_(false),
       elevated_for_testing_(false),
-      did_shutdown_(false) {
+      did_shutdown_(false),
+      weak_ptr_factory_(this) {
 }
 
 ManagedUserService::~ManagedUserService() {
@@ -166,7 +144,11 @@ void ManagedUserService::Shutdown() {
   did_shutdown_ = true;
   if (ProfileIsManaged()) {
     RecordProfileAndBrowserEventsHelper(kQuitBrowserKeyPrefix);
+#if !defined(OS_ANDROID)
+    // TODO(bauerb): Get rid of the platform-specific #ifdef here.
+    // http://crbug.com/313377
     BrowserList::RemoveObserver(this);
+#endif
   }
 
   if (!waiting_for_sync_initialization_)
@@ -436,8 +418,10 @@ ScopedVector<ManagedModeSiteList> ManagedUserService::GetActiveSiteLists() {
 
     extensions::ExtensionResource site_list =
         extensions::ManagedModeInfo::GetContentPackSiteList(extension);
-    if (!site_list.empty())
-      site_lists.push_back(new ManagedModeSiteList(extension->id(), site_list));
+    if (!site_list.empty()) {
+      site_lists.push_back(new ManagedModeSiteList(extension->id(),
+                                                   site_list.GetFilePath()));
+    }
   }
 
   return site_lists.Pass();
@@ -531,9 +515,10 @@ void ManagedUserService::InitSync(const std::string& refresh_token) {
   // until we've finished configuration.
   service->SetSetupInProgress(true);
 
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  token_service->UpdateCredentialsWithOAuth2(
-      GaiaAuthConsumer::ClientOAuthResult(refresh_token, std::string(), 0));
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  token_service->UpdateCredentials(managed_users::kManagedUserPseudoEmail,
+                                   refresh_token);
 
   // Continue in SetupSync() once the Sync backend has been initialized.
   if (service->sync_initialized()) {
@@ -542,11 +527,6 @@ void ManagedUserService::InitSync(const std::string& refresh_token) {
     ProfileSyncServiceFactory::GetForProfile(profile_)->AddObserver(this);
     waiting_for_sync_initialization_ = true;
   }
-}
-
-// static
-const char* ManagedUserService::GetManagedUserPseudoEmail() {
-  return kManagedUserPseudoEmail;
 }
 
 void ManagedUserService::Init() {
@@ -565,10 +545,10 @@ void ManagedUserService::Init() {
         command_line->GetSwitchValueASCII(switches::kManagedUserSyncToken));
   }
 
-  // TokenService only loads tokens automatically if we're signed in, so we have
-  // to nudge it ourselves.
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  token_service->LoadTokensFromDB();
+  // TODO(rogerta): Remove this once PO2TS has replaced TokenService.
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  token_service->LoadCredentials();
 
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile_);
@@ -594,7 +574,11 @@ void ManagedUserService::Init() {
       base::Bind(&ManagedUserService::UpdateManualURLs,
                  base::Unretained(this)));
 
+#if !defined(OS_ANDROID)
+  // TODO(bauerb): Get rid of the platform-specific #ifdef here.
+  // http://crbug.com/313377
   BrowserList::AddObserver(this);
+#endif
 
   // Initialize the filter.
   OnDefaultFilteringBehaviorChanged();

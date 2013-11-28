@@ -14,7 +14,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/signed_in_devices/signed_in_devices_api.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -22,12 +21,13 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/extensions/api/signed_in_devices.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 
 using browser_sync::DeviceInfo;
 namespace extensions {
@@ -86,7 +86,7 @@ void SignedInDevicesChangeObserver::OnDeviceInfoChange() {
       api::signed_in_devices::OnDeviceInfoChange::kEventName,
       result.Pass()));
 
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
 
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id_, event.Pass());

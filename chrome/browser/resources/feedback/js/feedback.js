@@ -12,13 +12,24 @@ var FEEDBACK_LANDING_PAGE =
  */
 var MAX_ATTACH_FILE_SIZE = 3 * 1024 * 1024;
 
+/** @type {number}
+ * @const
+ */
+var CONTENT_MARGIN_HEIGHT = 40;
+
+/** @type {number}
+ * @const
+ */
+var MAX_SCREENSHOT_WIDTH = 100;
+
 var attachedFileBlob = null;
 var lastReader = null;
 
 var feedbackInfo = null;
 var systemInfo = null;
 
-var systemInfoWindowId = 0;
+var systemInfoWindow = {id: 0};
+var histogramsWindow = {id: 0};
 
 /**
  * Reads the selected file when the user selects a file.
@@ -58,17 +69,23 @@ function clearAttachedFile() {
 }
 
 /**
- * Opens a new window with chrome://system, showing the current system info.
+ * Creates and shows a window with the given url, if the window is not already
+ * open.
+ * @param {Object} window An object with the id of the window to update, or 0.
+ * @param {string} url The destination URL of the new window.
+ * @return {function()} A function to be called to open the window.
  */
-function openSystemInfoWindow() {
-  if (systemInfoWindowId == 0) {
-    chrome.windows.create({url: 'chrome://system'}, function(win) {
-      systemInfoWindowId = win.id;
-      chrome.app.window.current().show();
-    });
-  } else {
-    chrome.windows.update(systemInfoWindowId, {drawAttention: true});
-  }
+function windowOpener(window, url) {
+  return function() {
+    if (window.id == 0) {
+      chrome.windows.create({url: url}, function(win) {
+        window.id = win.id;
+        chrome.app.window.current().show();
+      });
+    } else {
+      chrome.windows.update(window.id, {drawAttention: true});
+    }
+  };
 }
 
 /**
@@ -107,13 +124,15 @@ function sendReport() {
   feedbackInfo.email = $('user-email-text').value;
 
   var useSystemInfo = false;
+  var useHistograms = false;
   // On ChromeOS, since we gather System info, check if the user has given his
   // permission for us to send system info.
 <if expr="pp_ifdef('chromeos')">
   if ($('sys-info-checkbox') != null &&
       $('sys-info-checkbox').checked &&
       systemInfo != null) {
-    useSystemInfo = true;
+    // Send histograms along with system info.
+    useSystemInfo = useHistograms = true;
   }
   if ($('performance-info-checkbox') == null ||
       !($('performance-info-checkbox').checked)) {
@@ -139,6 +158,8 @@ function sendReport() {
       feedbackInfo.systemInformation = systemInfo;
     }
   }
+
+  feedbackInfo.sendHistograms = useHistograms;
 
   // If the user doesn't want to send the screenshot.
   if (!$('screenshot-checkbox').checked)
@@ -194,6 +215,17 @@ function performanceFeedbackChanged() {
 }
 </if>
 
+function resizeAppWindow() {
+  // We pick the width from the titlebar, which has no margins.
+  var width = $('title-bar').scrollWidth;
+  // We get the height by adding the titlebar height and the content height +
+  // margins. We can't get the margins for the content-pane here by using
+  // style.margin - the variable seems to not exist.
+  var height = $('title-bar').scrollHeight +
+      $('content-pane').scrollHeight + CONTENT_MARGIN_HEIGHT;
+  chrome.app.window.current().resizeTo(width, height);
+}
+
 /**
  * Initializes our page.
  * Flow:
@@ -219,12 +251,20 @@ function initialize() {
       if (feedbackInfo.pageUrl)
         $('page-url-text').value = feedbackInfo.pageUrl;
 
-      takeScreenshot(function(screenshotDataUrl) {
-        $('screenshot-image').src = screenshotDataUrl;
-        feedbackInfo.screenshot = dataUrlToBlob(screenshotDataUrl);
+      takeScreenshot(function(screenshotCanvas) {
         // TODO(rkc):  Remove logging once crbug.com/284662 is closed.
         console.log('FEEDBACK_DEBUG: Taken screenshot. Showing window.');
+
+        // We've taken our screenshot, show the feedback page without any
+        // further delay.
+        resizeAppWindow();
         chrome.app.window.current().show();
+
+        var screenshotDataUrl = screenshotCanvas.toDataURL('image/png');
+        $('screenshot-image').src = screenshotDataUrl;
+        $('screenshot-image').classList.toggle('wide-screen',
+            $('screenshot-image').width > MAX_SCREENSHOT_WIDTH);
+        feedbackInfo.screenshot = dataUrlToBlob(screenshotDataUrl);
       });
 
       chrome.feedbackPrivate.getUserEmail(function(email) {
@@ -256,6 +296,17 @@ function initialize() {
       chrome.feedbackPrivate.getStrings(function(strings) {
         loadTimeData.data = strings;
         i18nTemplate.process(document, loadTimeData);
+
+        if ($('sys-info-url')) {
+          // Opens a new window showing the current system info.
+          $('sys-info-url').onclick =
+              windowOpener(systemInfoWindow, 'chrome://system');
+        }
+        if ($('histograms-url')) {
+          // Opens a new window showing the histogram metrics.
+          $('histograms-url').onclick =
+              windowOpener(histogramsWindow, 'chrome://histograms');
+        }
       });
     }
   });
@@ -277,12 +328,11 @@ function initialize() {
 </if>
 
     chrome.windows.onRemoved.addListener(function(windowId, removeInfo) {
-      if (windowId == systemInfoWindowId)
-        systemInfoWindowId = 0;
+      if (windowId == systemInfoWindow.id)
+        systemInfoWindow.id = 0;
+      else if (windowId == histogramsWindow.id)
+        histogramsWindow.id = 0;
     });
-    if ($('sysinfo-url')) {
-      $('sysinfo-url').onclick = openSystemInfoWindow;
-    }
   });
 }
 

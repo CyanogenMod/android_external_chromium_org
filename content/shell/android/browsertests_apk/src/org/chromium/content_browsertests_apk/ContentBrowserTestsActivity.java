@@ -16,7 +16,8 @@ import org.chromium.content.app.LibraryLoader;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.common.ProcessInitException;
 import org.chromium.content_shell.ShellManager;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 @JNINamespace("content")
 public class ContentBrowserTestsActivity extends Activity {
@@ -40,7 +41,7 @@ public class ContentBrowserTestsActivity extends Activity {
                 (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         View view = inflater.inflate(R.layout.test_activity, null);
         mShellManager = (ShellManager) view.findViewById(R.id.shell_container);
-        mWindowAndroid = new WindowAndroid(this);
+        mWindowAndroid = new ActivityWindowAndroid(this);
         mShellManager.setWindow(mWindowAndroid);
 
         Log.i(TAG, "Running tests");

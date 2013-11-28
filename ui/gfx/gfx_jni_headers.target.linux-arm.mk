@@ -15,13 +15,13 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "ui_gfx_gfx_gyp_gfx_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gfx/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gfx/BitmapHelper.java', '../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gfx/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt', '--ptr_type', 'int'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gfx/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gfx/BitmapHelper.java', '../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gfx/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/BitmapHelper.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/BitmapHelper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/BitmapHelper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_gfx_gfx_jni_headers_gyp_rule_trigger
 ui_gfx_gfx_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h
@@ -31,7 +31,7 @@ $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: gyp_intermedi
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_gfx_gfx_jni_headers_gyp_rule_trigger
 ui_gfx_gfx_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h
@@ -102,6 +102,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -180,6 +181,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

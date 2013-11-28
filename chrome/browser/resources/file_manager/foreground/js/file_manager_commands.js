@@ -386,13 +386,22 @@ CommandHandler.COMMANDS_['format'] = {
    * @param {FileManager} fileManager The file manager instance.
    */
   execute: function(event, fileManager) {
+    var directoryModel = fileManager.directoryModel;
     var root = CommandUtil.getCommandEntry(event.target);
+    // If an entry is not found from the event target, use the current
+    // directory. This can happen for the format button for unsupported and
+    // unrecognized volumes.
+    if (!root)
+      root = directoryModel.getCurrentDirEntry();
 
-    if (root) {
-      var url = util.makeFilesystemUrl(PathUtil.getRootPath(root.fullPath));
+    // TODO(satorux): Stop assuming fullPath to be unique. crbug.com/320967
+    var mountPath = root.fullPath;
+    var volumeInfo = fileManager.volumeManager.getVolumeInfo(mountPath);
+    if (volumeInfo) {
       fileManager.confirm.show(
           loadTimeData.getString('FORMATTING_WARNING'),
-          chrome.fileBrowserPrivate.formatDevice.bind(null, url));
+          chrome.fileBrowserPrivate.formatVolume.bind(null,
+                                                      volumeInfo.volumeId));
     }
   },
   /**
@@ -402,10 +411,15 @@ CommandHandler.COMMANDS_['format'] = {
   canExecute: function(event, fileManager) {
     var directoryModel = fileManager.directoryModel;
     var root = CommandUtil.getCommandEntry(event.target);
+    // See the comment in execute() for why doing this.
+    if (!root)
+      root = directoryModel.getCurrentDirEntry();
     var removable = root &&
                     PathUtil.getRootType(root.fullPath) == RootType.REMOVABLE;
-    var isReadOnly = root && directoryModel.isPathReadOnly(root.fullPath);
-    event.canExecute = removable && !isReadOnly;
+    // Don't check if the volume is read-only. Unformatted volume is
+    // considered read-only per directoryModel.isPathReadOnly(), but can be
+    // formatted. An error will be raised if formatting failed anyway.
+    event.canExecute = removable;
     event.command.setHidden(!removable);
   }
 };
@@ -473,17 +487,6 @@ CommandHandler.COMMANDS_['new-window'] = {
 };
 
 /**
- * Changed the default app handling inserted media.
- * @type {Command}
- */
-CommandHandler.COMMANDS_['change-default-app'] = {
-  execute: function(event, fileManager) {
-    fileManager.showChangeDefaultAppPicker();
-  },
-  canExecute: CommandUtil.canExecuteAlways
-};
-
-/**
  * Deletes selected files.
  * @type {Command}
  */
@@ -492,8 +495,11 @@ CommandHandler.COMMANDS_['delete'] = {
     fileManager.deleteSelection();
   },
   canExecute: function(event, fileManager) {
+    var allowDeletingWhileOffline =
+        fileManager.directoryModel.getCurrentRootType() === RootType.DRIVE;
     var selection = fileManager.getSelection();
-    event.canExecute = !fileManager.isOnReadonlyDirectory() &&
+    event.canExecute = (!fileManager.isOnReadonlyDirectory() ||
+                        allowDeletingWhileOffline) &&
                        selection &&
                        selection.totalCount > 0;
   }
@@ -559,20 +565,6 @@ CommandHandler.COMMANDS_['drive-buy-more-space'] = {
     util.visitURL(urlConstants.GOOGLE_DRIVE_BUY_STORAGE);
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
-};
-
-/**
- * Clears drive cache.
- * @type {Command}
- */
-CommandHandler.COMMANDS_['drive-clear-local-cache'] = {
-  execute: function(event, fileManager) {
-    chrome.fileBrowserPrivate.clearDriveCache();
-  },
-  canExecute: function(event, fileManager) {
-    event.canExecute = fileManager.isOnDrive() && this.ctrlKeyPressed_;
-    event.command.setHidden(!event.canExecute);
-  }
 };
 
 /**

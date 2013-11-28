@@ -2,27 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
 from collections import Mapping
 
 from api_schema_graph import APISchemaGraph
 from branch_utility import BranchUtility
+from extensions_paths import API, JSON_TEMPLATES
 from file_system import FileNotFoundError
-from svn_constants import API_PATH
-from third_party.json_schema_compiler import idl_schema, idl_parser
 from third_party.json_schema_compiler.model import UnixName
 
 
 _EXTENSION_API = 'extension_api.json'
 
 
-def _GetChannelFromFeatures(api_name, json_fs, path):
-  '''Finds API channel information within _features.json files at the given
-  |path| for the given |json_fs|. Returns None if channel information for the
-  API cannot be located.
+def _GetChannelFromFeatures(api_name, json_fs, file_name):
+  '''Finds API channel information from the features |file_name| within the the
+  given |json_fs|. Returns None if channel information for the API cannot be
+  located.
   '''
-  feature = json_fs.GetFromFile(path).Get().get(api_name)
-
+  feature = json_fs.GetFromFile('%s/%s' % (API, file_name)).Get().get(api_name)
   if feature is None:
     return None
   if isinstance(feature, Mapping):
@@ -34,22 +31,17 @@ def _GetChannelFromFeatures(api_name, json_fs, path):
 
 
 def _GetChannelFromApiFeatures(api_name, json_fs):
-  return _GetChannelFromFeatures(api_name,
-                                 json_fs,
-                                 '%s/_api_features.json' % API_PATH)
+  return _GetChannelFromFeatures(api_name, json_fs, '_api_features.json')
 
 
 def _GetChannelFromManifestFeatures(api_name, json_fs):
-  return _GetChannelFromFeatures(#_manifest_features uses unix_style API names
-                                 UnixName(api_name),
-                                 json_fs,
-                                 '%s/_manifest_features.json' % API_PATH)
+  # _manifest_features.json uses unix_style API names.
+  api_name = UnixName(api_name)
+  return _GetChannelFromFeatures(api_name, json_fs, '_manifest_features.json')
 
 
 def _GetChannelFromPermissionFeatures(api_name, json_fs):
-  return _GetChannelFromFeatures(api_name,
-                                 json_fs,
-                                 '%s/_permission_features.json' % API_PATH)
+  return _GetChannelFromFeatures(api_name, json_fs, '_permission_features.json')
 
 
 def _GetApiSchemaFilename(api_name, schema_fs):
@@ -58,7 +50,7 @@ def _GetApiSchemaFilename(api_name, schema_fs):
   single _EXTENSION_API file which all APIs share in older versions of Chrome.
   '''
   def under_api_path(path):
-    return '%s/%s' % (API_PATH, path)
+    return '%s/%s' % (API, path)
 
   try:
     # Prior to Chrome version 18, _EXTENSION_API contained all API schema
@@ -129,6 +121,22 @@ class AvailabilityFinder(object):
       return object_store_creator.Create(AvailabilityFinder, category=category)
     self._top_level_object_store = create_object_store('top_level')
     self._node_level_object_store = create_object_store('node_level')
+    self._json_fs = compiled_fs_factory.ForJson(self._host_file_system)
+
+  def _GetPredeterminedAvailability(self, api_name):
+    '''Checks a configuration file for hardcoded (i.e. predetermined)
+    availability information for an API.
+    '''
+    api_info = self._json_fs.GetFromFile(
+        '%s/api_availabilities.json' % JSON_TEMPLATES).Get().get(api_name)
+    if api_info is None:
+      return None
+    if api_info['channel'] == 'stable':
+      availability = self._branch_utility.GetStableChannelInfo(
+          api_info['version'])
+    else:
+      availability = self._branch_utility.GetChannelInfo(api_info['channel'])
+    return availability
 
   def _CheckStableAvailability(self, api_name, file_system, version):
     '''Checks for availability of an API, |api_name|, on the stable channel.
@@ -203,6 +211,12 @@ class AvailabilityFinder(object):
     if availability is not None:
       return availability
 
+    # Check for predetermined availability and cache this information if found.
+    availability = self._GetPredeterminedAvailability(api_name)
+    if availability is not None:
+      self._top_level_object_store.Set(api_name, availability)
+      return availability
+
     def check_api_availability(file_system, channel_info):
       return self._CheckApiAvailability(
           api_name,
@@ -226,25 +240,47 @@ class AvailabilityFinder(object):
     if availability_graph is not None:
       return availability_graph
 
-    def get_schema(api_name, file_system):
-      return _GetApiSchema(api_name,
-                           self._compiled_fs_factory.ForApiSchema(file_system))
+    def assert_not_none(value):
+      assert value is not None
+      return value
 
     availability_graph = APISchemaGraph()
-    trunk_graph = APISchemaGraph(get_schema(api_name, self._host_file_system))
+
+    host_fs = self._host_file_system
+    trunk_stat = assert_not_none(host_fs.Stat(_GetApiSchemaFilename(
+        api_name, self._compiled_fs_factory.ForApiSchema(host_fs))))
+
+    # Weird object thing here because nonlocal is Python 3.
+    previous = type('previous', (object,), {'stat': None, 'graph': None})
+
     def update_availability_graph(file_system, channel_info):
-      version_graph = APISchemaGraph(get_schema(api_name, file_system))
-      # Keep track of any new schema elements from this version by adding
-      # them to |availability_graph|.
-      #
-      # Calling |availability_graph|.Lookup() on the nodes being updated
-      # will return the |annotation| object.
-      availability_graph.Update(version_graph.Subtract(availability_graph),
-                                annotation=channel_info)
+      schema_fs = self._compiled_fs_factory.ForApiSchema(file_system)
+      version_filename = assert_not_none(
+          _GetApiSchemaFilename(api_name, schema_fs))
+      version_stat = assert_not_none(
+          file_system.Stat(version_filename))
+
+      # Important optimisation: only re-parse the graph if the file changed in
+      # the last revision. Parsing the same schema and forming a graph on every
+      # iteration is really expensive.
+      if version_stat == previous.stat:
+        version_graph = previous.graph
+      else:
+        # Keep track of any new schema elements from this version by adding
+        # them to |availability_graph|.
+        #
+        # Calling |availability_graph|.Lookup() on the nodes being updated
+        # will return the |annotation| object -- the current |channel_info|.
+        version_graph = APISchemaGraph(_GetApiSchema(api_name, schema_fs))
+        availability_graph.Update(version_graph.Subtract(availability_graph),
+                                  annotation=channel_info)
+
+      previous.stat = version_stat
+      previous.graph = version_graph
 
       # Continue looping until there are no longer differences between this
       # version and trunk.
-      return trunk_graph != version_graph
+      return version_stat != trunk_stat
 
     self._file_system_iterator.Ascending(self.GetApiAvailability(api_name),
                                          update_availability_graph)

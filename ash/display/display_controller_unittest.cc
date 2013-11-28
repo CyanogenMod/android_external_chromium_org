@@ -14,6 +14,8 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/cursor_manager_test_api.h"
+#include "ash/test/display_manager_test_api.h"
+#include "ash/wm/window_state.h"
 #include "base/command_line.h"
 #include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/client/activation_client.h"
@@ -275,20 +277,21 @@ gfx::Display::Rotation GetStoredRotation(int64 id) {
 }
 
 float GetStoredUIScale(int64 id) {
-  return Shell::GetInstance()->display_manager()->GetDisplayInfo(id).ui_scale();
+  return Shell::GetInstance()->display_manager()->GetDisplayInfo(id).
+      GetEffectiveUIScale();
 }
 
 #if defined(USE_X11)
 void GetPrimaryAndSeconary(aura::Window** primary,
                            aura::Window** secondary) {
   *primary = Shell::GetPrimaryRootWindow();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   *secondary = root_windows[0] == *primary ? root_windows[1] : root_windows[0];
 }
 
 std::string GetXWindowName(aura::RootWindow* window) {
   char* name = NULL;
-  XFetchName(gfx::GetXDisplay(), window->GetAcceleratedWidget(), &name);
+  XFetchName(gfx::GetXDisplay(), window->host()->GetAcceleratedWidget(), &name);
   std::string ret(name);
   XFree(name);
   return ret;
@@ -436,6 +439,66 @@ TEST_F(DisplayControllerTest, SecondaryDisplayLayout) {
   UpdateDisplay("500x500");
   EXPECT_LE(1, observer.GetFocusChangedCountAndReset());
   EXPECT_LE(1, observer.GetActivationChangedCountAndReset());
+}
+
+namespace {
+
+internal::DisplayInfo CreateDisplayInfo(int64 id,
+                                        const gfx::Rect& bounds,
+                                        float device_scale_factor) {
+  internal::DisplayInfo info(id, "", false);
+  info.SetBounds(bounds);
+  info.set_device_scale_factor(device_scale_factor);
+  return info;
+}
+
+}  // namespace
+
+TEST_F(DisplayControllerTest, MirrorToDockedWithFullscreen) {
+  // Creates windows to catch activation change event.
+  scoped_ptr<aura::Window> w1(CreateTestWindowInShellWithId(1));
+  w1->Focus();
+
+  // Docked mode.
+  internal::DisplayManager* display_manager =
+      Shell::GetInstance()->display_manager();
+
+  const internal::DisplayInfo internal_display_info =
+      CreateDisplayInfo(1, gfx::Rect(0, 0, 500, 500), 2.0f);
+  const internal::DisplayInfo external_display_info =
+      CreateDisplayInfo(2, gfx::Rect(0, 0, 500, 500), 1.0f);
+
+  std::vector<internal::DisplayInfo> display_info_list;
+  // Mirror.
+  display_info_list.push_back(internal_display_info);
+  display_info_list.push_back(external_display_info);
+  display_manager->OnNativeDisplaysChanged(display_info_list);
+  const int64 internal_display_id =
+      test::DisplayManagerTestApi(display_manager).
+      SetFirstDisplayAsInternalDisplay();
+  EXPECT_EQ(1, internal_display_id);
+  EXPECT_EQ(2U, display_manager->num_connected_displays());
+  EXPECT_EQ(1U, display_manager->GetNumDisplays());
+
+  wm::WindowState* window_state = wm::GetWindowState(w1.get());
+  window_state->ToggleFullscreen();
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_EQ("0,0 250x250", w1->bounds().ToString());
+  // Dock mode.
+  TestObserver observer;
+  display_info_list.clear();
+  display_info_list.push_back(external_display_info);
+  display_manager->OnNativeDisplaysChanged(display_info_list);
+  EXPECT_EQ(1U, display_manager->GetNumDisplays());
+  EXPECT_EQ(1U, display_manager->num_connected_displays());
+  EXPECT_EQ(0, observer.GetChangedDisplayIdAndReset());
+  EXPECT_EQ(0, observer.GetBoundsChangedCountAndReset());
+  EXPECT_EQ(1, observer.CountAndReset());
+  EXPECT_EQ(0, observer.GetFocusChangedCountAndReset());
+  EXPECT_EQ(0, observer.GetActivationChangedCountAndReset());
+
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_EQ("0,0 500x500", w1->bounds().ToString());
 }
 
 TEST_F(DisplayControllerTest, BoundsUpdated) {
@@ -905,7 +968,7 @@ TEST_F(DisplayControllerTest, OverscanInsets) {
 
   UpdateDisplay("120x200,300x400*2");
   gfx::Display display1 = Shell::GetScreen()->GetPrimaryDisplay();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   display_controller->SetOverscanInsets(display1.id(),
                                         gfx::Insets(10, 15, 20, 25));
@@ -931,12 +994,14 @@ TEST_F(DisplayControllerTest, OverscanInsets) {
   UpdateDisplay("400x300*2,600x400/o");
   root_windows = Shell::GetAllRootWindows();
   gfx::Point point;
-  Shell::GetAllRootWindows()[1]->GetRootTransform().TransformPoint(&point);
+  Shell::GetAllRootWindows()[1]->GetDispatcher()->
+      GetRootTransform().TransformPoint(&point);
   EXPECT_EQ("15,10", point.ToString());
 
   display_controller->SwapPrimaryDisplay();
   point.SetPoint(0, 0);
-  Shell::GetAllRootWindows()[1]->GetRootTransform().TransformPoint(&point);
+  Shell::GetAllRootWindows()[1]->GetDispatcher()->
+      GetRootTransform().TransformPoint(&point);
   EXPECT_EQ("15,10", point.ToString());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
@@ -954,7 +1019,7 @@ TEST_F(DisplayControllerTest, Rotate) {
   UpdateDisplay("120x200,300x400*2");
   gfx::Display display1 = Shell::GetScreen()->GetPrimaryDisplay();
   int64 display2_id = ScreenAsh::GetSecondaryDisplay().id();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   aura::test::EventGenerator generator1(root_windows[0]);
 
   EXPECT_EQ("120x200", root_windows[0]->bounds().size().ToString());
@@ -1026,7 +1091,7 @@ TEST_F(DisplayControllerTest, ScaleRootWindow) {
   gfx::Display::SetInternalDisplayId(display1.id());
 
   gfx::Display display2 = ScreenAsh::GetSecondaryDisplay();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ("0,0 450x300", display1.bounds().ToString());
   EXPECT_EQ("0,0 450x300", root_windows[0]->bounds().ToString());
   EXPECT_EQ("450,0 500x300", display2.bounds().ToString());
@@ -1060,8 +1125,8 @@ TEST_F(DisplayControllerTest, TouchScale) {
 
   UpdateDisplay("200x200*2");
   gfx::Display display = Shell::GetScreen()->GetPrimaryDisplay();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  aura::RootWindow* root_window = root_windows[0];
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  aura::Window* root_window = root_windows[0];
   aura::test::EventGenerator generator(root_window);
 
   generator.PressMoveAndReleaseTouchTo(50, 50);
@@ -1093,7 +1158,7 @@ TEST_F(DisplayControllerTest, ConvertHostToRootCoords) {
   UpdateDisplay("600x400*2/r@1.5");
 
   gfx::Display display1 = Shell::GetScreen()->GetPrimaryDisplay();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ("0,0 300x450", display1.bounds().ToString());
   EXPECT_EQ("0,0 300x450", root_windows[0]->bounds().ToString());
   EXPECT_EQ(1.5f, GetStoredUIScale(display1.id()));
@@ -1141,6 +1206,63 @@ TEST_F(DisplayControllerTest, ConvertHostToRootCoords) {
   EXPECT_EQ("0,0", event_handler.GetLocationAndReset());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
+}
+
+namespace {
+
+internal::DisplayInfo CreateDisplayInfo(int64 id,
+                                        int y,
+                                        gfx::Display::Rotation rotation) {
+  internal::DisplayInfo info(id, "", false);
+  info.SetBounds(gfx::Rect(0, y, 500, 500));
+  info.set_rotation(rotation);
+  return info;
+}
+
+}  // namespace
+
+// Make sure that the compositor based mirroring can switch
+// from/to dock mode.
+TEST_F(DisplayControllerTest, DockToSingle) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  internal::DisplayManager* display_manager =
+      Shell::GetInstance()->display_manager();
+
+  const int64 internal_id = 1;
+
+  const internal::DisplayInfo internal_display_info =
+      CreateDisplayInfo(internal_id, 0, gfx::Display::ROTATE_0);
+  const internal::DisplayInfo external_display_info =
+      CreateDisplayInfo(2, 1, gfx::Display::ROTATE_90);
+
+  std::vector<internal::DisplayInfo> display_info_list;
+  // Extended
+  display_info_list.push_back(internal_display_info);
+  display_info_list.push_back(external_display_info);
+  display_manager->OnNativeDisplaysChanged(display_info_list);
+  const int64 internal_display_id =
+      test::DisplayManagerTestApi(display_manager).
+      SetFirstDisplayAsInternalDisplay();
+  EXPECT_EQ(internal_id, internal_display_id);
+  EXPECT_EQ(2U, display_manager->GetNumDisplays());
+
+  // Dock mode.
+  display_info_list.clear();
+  display_info_list.push_back(external_display_info);
+  display_manager->OnNativeDisplaysChanged(display_info_list);
+  EXPECT_EQ(1U, display_manager->GetNumDisplays());
+  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->GetDispatcher()->
+               GetRootTransform().IsIdentityOrIntegerTranslation());
+
+  // Switch to single mode and make sure the transform is the one
+  // for the internal display.
+  display_info_list.clear();
+  display_info_list.push_back(internal_display_info);
+  display_manager->OnNativeDisplaysChanged(display_info_list);
+  EXPECT_TRUE(Shell::GetPrimaryRootWindow()->GetDispatcher()->
+              GetRootTransform().IsIdentityOrIntegerTranslation());
 }
 
 #if defined(USE_X11)

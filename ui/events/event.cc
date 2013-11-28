@@ -44,17 +44,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 #endif
 }
 
-gfx::Point CalibratePoint(const gfx::Point& point,
-                          const gfx::Size& from,
-                          const gfx::Size& to) {
-  float calibrated_x =
-      static_cast<float>(point.x()) * to.width() / from.width();
-  float calibrated_y =
-      static_cast<float>(point.y()) * to.height() / from.height();
-  return gfx::Point(static_cast<int>(floorf(calibrated_x + 0.5f)),
-                    static_cast<int>(floorf(calibrated_y + 0.5f)));
-}
-
 std::string EventTypeName(ui::EventType type) {
 #define RETURN_IF_TYPE(t) if (type == ui::t)  return #t
 #define CASE_TYPE(t) case ui::t:  return #t
@@ -156,7 +145,6 @@ Event::Event(EventType type, base::TimeDelta time_stamp, int flags)
     : type_(type),
       time_stamp_(time_stamp),
       flags_(flags),
-      dispatch_to_hidden_targets_(false),
 #if defined(USE_X11)
       native_event_(NULL),
 #endif
@@ -176,7 +164,6 @@ Event::Event(const base::NativeEvent& native_event,
     : type_(type),
       time_stamp_(EventTimeFromNative(native_event)),
       flags_(flags),
-      dispatch_to_hidden_targets_(false),
       delete_native_event_(false),
       cancelable_(true),
       target_(NULL),
@@ -205,7 +192,6 @@ Event::Event(const Event& copy)
       time_stamp_(copy.time_stamp_),
       latency_(copy.latency_),
       flags_(copy.flags_),
-      dispatch_to_hidden_targets_(false),
       native_event_(::CopyNativeEvent(copy.native_event_)),
       delete_native_event_(false),
       cancelable_(true),

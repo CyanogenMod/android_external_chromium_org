@@ -43,6 +43,12 @@ class _RunState(object):
       self.browser = possible_browser.Create()
       self.browser.credentials.credentials_path = credentials_path
 
+      # Set up WPR path on the new browser.
+      self.browser.SetReplayArchivePath(archive_path,
+                                        self._append_to_existing_wpr,
+                                        page_set.make_javascript_deterministic)
+      self._last_archive_path = page.archive_path
+
       test.WillStartBrowser(self.browser)
       self.browser.Start()
       test.DidStartBrowser(self.browser)
@@ -67,12 +73,6 @@ class _RunState(object):
                 logging.info('  %-20s: %s', k, v)
           else:
             logging.info('No GPU devices')
-
-      # Set up WPR path on the new browser.
-      self.browser.SetReplayArchivePath(archive_path,
-                                        self._append_to_existing_wpr,
-                                        page_set.make_javascript_deterministic)
-      self._last_archive_path = page.archive_path
     else:
       # Set up WPR path if it changed.
       if page.archive_path and self._last_archive_path != page.archive_path:
@@ -93,7 +93,7 @@ class _RunState(object):
           self.browser.tabs[-1].Close()
 
       # Must wait for tab to commit otherwise it can commit after the next
-      # navigation has begun and RenderViewHostManager::DidNavigateMainFrame()
+      # navigation has begun and RenderFrameHostManager::DidNavigateMainFrame()
       # will cancel the next navigation because it's pending. This manifests as
       # the first navigation in a PageSet freezing indefinitly because the
       # navigation was silently cancelled when |self.browser.tabs[0]| was
@@ -275,6 +275,8 @@ def Run(test, page_set, expectations, finder_options):
         '\n')
     sys.exit(1)
 
+  browser_options.browser_type = possible_browser.browser_type
+
   # Reorder page set based on options.
   pages = _ShuffleAndFilterPageSet(page_set, finder_options)
 
@@ -417,7 +419,7 @@ def _CheckArchives(page_set, pages, results):
 
 def _RunPage(test, page, state, expectation, results, finder_options):
   if expectation == 'skip':
-    logging.warning('Skipped %s' % page.url)
+    logging.info('Skipped %s' % page.url)
     return
 
   logging.info('Running %s' % page.url)
@@ -440,11 +442,12 @@ def _RunPage(test, page, state, expectation, results, finder_options):
     test.Run(finder_options, page, page_state.tab, results)
     util.CloseConnections(page_state.tab)
   except page_test.Failure:
-    logging.warning('%s:\n%s', page.url, traceback.format_exc())
     if expectation == 'fail':
+      logging.info('%s:\n%s', page.url, traceback.format_exc())
       logging.info('Failure was expected\n')
       results.AddSuccess(page)
     else:
+      logging.warning('%s:\n%s', page.url, traceback.format_exc())
       results.AddFailure(page, sys.exc_info())
   except (util.TimeoutException, exceptions.LoginException,
           exceptions.ProfilingException):

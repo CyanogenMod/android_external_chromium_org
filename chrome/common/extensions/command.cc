@@ -10,9 +10,9 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/common/chrome_version_info.h"  // TODO(finnur): Remove.
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -438,7 +438,9 @@ bool Command::Parse(const base::DictionaryValue* command,
 
   // Check if this is a global or a regular shortcut.
   bool global = false;
-  command->GetBoolean(keys::kGlobal, &global);
+  if (FeatureSwitch::global_commands()->IsEnabled() &&
+      chrome::VersionInfo::GetChannel() <= chrome::VersionInfo::CHANNEL_DEV)
+    command->GetBoolean(keys::kGlobal, &global);
 
   // Normalize the suggestions.
   for (SuggestionMap::iterator iter = suggestions.begin();

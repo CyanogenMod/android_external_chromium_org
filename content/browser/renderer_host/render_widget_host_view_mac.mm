@@ -49,8 +49,8 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/mac/WebInputEventFactory.h"
 #import "third_party/mozilla/ComplexTextInputPanel.h"
 #include "ui/base/cocoa/animation_utils.h"
@@ -76,10 +76,10 @@ using content::RenderWidgetHostImpl;
 using content::RenderWidgetHostViewMac;
 using content::RenderWidgetHostViewMacEditCommandHelper;
 using content::TextInputClientMac;
-using WebKit::WebInputEvent;
-using WebKit::WebInputEventFactory;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
+using blink::WebInputEvent;
+using blink::WebInputEventFactory;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
 
 enum CoreAnimationStatus {
   CORE_ANIMATION_DISABLED,
@@ -130,15 +130,6 @@ static NSString* const NSBackingPropertyOldScaleFactorKey =
 // (WebKit/mac/WebView/WebView.mm).
 
 #endif  // 10.7
-
-static inline int ToWebKitModifiers(NSUInteger flags) {
-  int modifiers = 0;
-  if (flags & NSControlKeyMask) modifiers |= WebInputEvent::ControlKey;
-  if (flags & NSShiftKeyMask) modifiers |= WebInputEvent::ShiftKey;
-  if (flags & NSAlternateKeyMask) modifiers |= WebInputEvent::AltKey;
-  if (flags & NSCommandKeyMask) modifiers |= WebInputEvent::MetaKey;
-  return modifiers;
-}
 
 // This method will return YES for OS X versions 10.7.3 and later, and NO
 // otherwise.
@@ -287,7 +278,7 @@ namespace {
 const size_t kMaxTooltipLength = 1024;
 
 // TODO(suzhe): Upstream this function.
-WebKit::WebColor WebColorFromNSColor(NSColor *color) {
+blink::WebColor WebColorFromNSColor(NSColor *color) {
   CGFloat r, g, b, a;
   [color getRed:&r green:&g blue:&b alpha:&a];
 
@@ -302,7 +293,7 @@ WebKit::WebColor WebColorFromNSColor(NSColor *color) {
 // third_party/WebKit/Source/WebKit/mac/WebView/WebHTMLView.mm
 void ExtractUnderlines(
     NSAttributedString* string,
-    std::vector<WebKit::WebCompositionUnderline>* underlines) {
+    std::vector<blink::WebCompositionUnderline>* underlines) {
   int length = [[string string] length];
   int i = 0;
   while (i < length) {
@@ -311,13 +302,13 @@ void ExtractUnderlines(
                               longestEffectiveRange:&range
                                             inRange:NSMakeRange(i, length - i)];
     if (NSNumber *style = [attrs objectForKey:NSUnderlineStyleAttributeName]) {
-      WebKit::WebColor color = SK_ColorBLACK;
+      blink::WebColor color = SK_ColorBLACK;
       if (NSColor *colorAttr =
           [attrs objectForKey:NSUnderlineColorAttributeName]) {
         color = WebColorFromNSColor(
             [colorAttr colorUsingColorSpaceName:NSDeviceRGBColorSpace]);
       }
-      underlines->push_back(WebKit::WebCompositionUnderline(
+      underlines->push_back(blink::WebCompositionUnderline(
           range.location, NSMaxRange(range), color, [style intValue] > 1));
     }
     i = range.location + range.length;
@@ -374,13 +365,13 @@ NSWindow* ApparentWindowForView(NSView* view) {
   return enclosing_window;
 }
 
-WebKit::WebScreenInfo GetWebScreenInfo(NSView* view) {
+blink::WebScreenInfo GetWebScreenInfo(NSView* view) {
   gfx::Display display =
       gfx::Screen::GetNativeScreen()->GetDisplayNearestWindow(view);
 
   NSScreen* screen = [NSScreen deepestScreen];
 
-  WebKit::WebScreenInfo results;
+  blink::WebScreenInfo results;
 
   results.deviceScaleFactor = static_cast<int>(display.device_scale_factor());
   results.depth = NSBitsPerPixelFromDepth([screen depth]);
@@ -407,7 +398,7 @@ RenderWidgetHostView* RenderWidgetHostView::CreateViewForWidget(
 
 // static
 void RenderWidgetHostViewPort::GetDefaultScreenInfo(
-    WebKit::WebScreenInfo* results) {
+    blink::WebScreenInfo* results) {
   *results = GetWebScreenInfo(NULL);
 }
 
@@ -536,16 +527,12 @@ bool RenderWidgetHostViewMac::CreateCompositedIOSurface() {
   }
   // Create the IOSurface texture.
   if (!compositing_iosurface_) {
-    compositing_iosurface_.reset(CompositingIOSurfaceMac::Create(
-        compositing_iosurface_context_));
+    compositing_iosurface_.reset(CompositingIOSurfaceMac::Create());
     if (!compositing_iosurface_) {
       LOG(ERROR) << "Failed to create CompositingIOSurface";
       return false;
     }
   }
-  // Make sure that the IOSurface is updated to use the context that is owned
-  // by the view.
-  compositing_iosurface_->SetContext(compositing_iosurface_context_);
 
   return true;
 }
@@ -626,7 +613,7 @@ void RenderWidgetHostViewMac::InitAsChild(
 void RenderWidgetHostViewMac::InitAsPopup(
     RenderWidgetHostView* parent_host_view,
     const gfx::Rect& pos) {
-  bool activatable = popup_type_ == WebKit::WebPopupTypeNone;
+  bool activatable = popup_type_ == blink::WebPopupTypeNone;
   [cocoa_view_ setCloseOnDeactivate:YES];
   [cocoa_view_ setCanBeKeyView:activatable ? YES : NO];
 
@@ -1139,7 +1126,7 @@ void RenderWidgetHostViewMac::SetShowingContextMenu(bool showing) {
 }
 
 bool RenderWidgetHostViewMac::IsPopup() const {
-  return popup_type_ != WebKit::WebPopupTypeNone;
+  return popup_type_ != blink::WebPopupTypeNone;
 }
 
 BackingStore* RenderWidgetHostViewMac::AllocBackingStore(
@@ -1399,8 +1386,8 @@ void RenderWidgetHostViewMac::ThrottledAckPendingSwapBuffers() {
   bool throttle_swap_ack =
       render_widget_host_ &&
       !render_widget_host_->is_threaded_compositing_enabled() &&
-      compositing_iosurface_ &&
-      !compositing_iosurface_->is_vsync_disabled();
+      compositing_iosurface_context_ &&
+      !compositing_iosurface_context_->is_vsync_disabled();
   base::Time now = base::Time::Now();
   if (throttle_swap_ack && next_swap_ack_time_ > now) {
     base::TimeDelta next_swap_ack_delay = next_swap_ack_time_ - now;
@@ -1419,7 +1406,6 @@ void RenderWidgetHostViewMac::ThrottledAckPendingSwapBuffers() {
 bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
   CHECK(!use_core_animation_);
   CHECK(compositing_iosurface_);
-  CHECK(compositing_iosurface_context_ == compositing_iosurface_->context());
 
   GLint old_gl_surface_order = 0;
   GLint new_gl_surface_order = allow_overlapping_views_ ? -1 : 1;
@@ -1441,10 +1427,11 @@ bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
 
   [compositing_iosurface_context_->nsgl_context() setView:cocoa_view_];
   return compositing_iosurface_->DrawIOSurface(
-      gfx::Size(NSSizeToCGSize([cocoa_view_ frame].size)),
+      compositing_iosurface_context_,
+      gfx::Rect(NSRectToCGRect([cocoa_view_ frame])),
       scale_factor(),
       frame_subscriber(),
-      false);
+      true);
 }
 
 void RenderWidgetHostViewMac::GotAcceleratedCompositingError() {
@@ -1697,13 +1684,24 @@ void RenderWidgetHostViewMac::OnSwapCompositorFrame(
   software_frame_manager_->SwapToNewFrameComplete(
       !render_widget_host_->is_hidden());
 
+  cc::CompositorFrameAck ack;
+  RenderWidgetHostImpl::SendSwapCompositorFrameAck(
+      render_widget_host_->GetRoutingID(),
+      output_surface_id,
+      render_widget_host_->GetProcess()->GetID(),
+      ack);
+
   [cocoa_view_ setNeedsDisplay:YES];
 }
 
 void RenderWidgetHostViewMac::OnAcceleratedCompositingStateChange() {
 }
 
-void RenderWidgetHostViewMac::GetScreenInfo(WebKit::WebScreenInfo* results) {
+void RenderWidgetHostViewMac::AcceleratedSurfaceInitialized(int host_id,
+                                                            int route_id) {
+}
+
+void RenderWidgetHostViewMac::GetScreenInfo(blink::WebScreenInfo* results) {
   *results = GetWebScreenInfo(GetNativeView());
 }
 
@@ -1766,7 +1764,7 @@ void RenderWidgetHostViewMac::UnlockMouse() {
 }
 
 void RenderWidgetHostViewMac::UnhandledWheelEvent(
-    const WebKit::WebMouseWheelEvent& event) {
+    const blink::WebMouseWheelEvent& event) {
   // Only record a wheel event as unhandled if JavaScript handlers got a chance
   // to see it (no-op wheel events are ignored by the event dispatcher)
   if (event.deltaX || event.deltaY)
@@ -1888,7 +1886,6 @@ void RenderWidgetHostViewMac::WindowFrameChanged() {
       // http://crbug.com/230883
       ClearBoundContextDrawable();
       compositing_iosurface_context_ = new_context;
-      compositing_iosurface_->SetContext(compositing_iosurface_context_);
     }
   }
 }
@@ -2413,7 +2410,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
     // So before sending the real key down event, we need to send a fake key up
     // event to balance it.
     NativeWebKeyboardEvent fakeEvent = event;
-    fakeEvent.type = WebKit::WebInputEvent::KeyUp;
+    fakeEvent.type = blink::WebInputEvent::KeyUp;
     fakeEvent.skip_in_browser = true;
     widgetHost->ForwardKeyboardEvent(fakeEvent);
     // Not checking |renderWidgetHostView_->render_widget_host_| here because
@@ -2439,7 +2436,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
     if (!textInserted && textToBeInserted_.length() == 1) {
       // If a single character was inserted, then we just send it as a keypress
       // event.
-      event.type = WebKit::WebInputEvent::Char;
+      event.type = blink::WebInputEvent::Char;
       event.text[0] = textToBeInserted_[0];
       event.text[1] = 0;
       event.skip_in_browser = true;
@@ -2451,7 +2448,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
       // We don't get insertText: calls if ctrl or cmd is down, or the key event
       // generates an insert command. So synthesize a keypress event for these
       // cases, unless the key event generated any other command.
-      event.type = WebKit::WebInputEvent::Char;
+      event.type = blink::WebInputEvent::Char;
       event.skip_in_browser = true;
       widgetHost->ForwardKeyboardEvent(event);
     }
@@ -3087,10 +3084,8 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 
 // Convert a web accessibility's location in web coordinates into a cocoa
 // screen coordinate.
-- (NSPoint)accessibilityPointInScreen:
-    (BrowserAccessibilityCocoa*)accessibility {
-  NSPoint origin = [accessibility origin];
-  NSSize size = [[accessibility size] sizeValue];
+- (NSPoint)accessibilityPointInScreen:(NSPoint)origin
+                                 size:(NSSize)size {
   origin.y = NSHeight([self bounds]) - origin.y;
   NSPoint originInWindow = [self convertPoint:origin toView:nil];
   NSPoint originInScreen = [[self window] convertBaseToScreen:originInWindow];
@@ -3117,8 +3112,9 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 - (void)performShowMenuAction:(BrowserAccessibilityCocoa*)accessibility {
   // Performs a right click copying WebKit's
   // accessibilityPerformShowMenuAction.
-  NSPoint location = [self accessibilityPointInScreen:accessibility];
+  NSPoint origin = [accessibility origin];
   NSSize size = [[accessibility size] sizeValue];
+  NSPoint location = [self accessibilityPointInScreen:origin size:size];
   location = [[self window] convertScreenToBase:location];
   location.x += size.width/2;
   location.y += size.height/2;
@@ -3538,7 +3534,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   } else {
     // Use a thin black underline by default.
     underlines_.push_back(
-        WebKit::WebCompositionUnderline(0, length, SK_ColorBLACK, false));
+        blink::WebCompositionUnderline(0, length, SK_ColorBLACK, false));
   }
 
   // If we are handling a key down event, then SetComposition() will be

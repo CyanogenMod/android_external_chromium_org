@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_base_strings_ui_strings_gyp)/ui_strings.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,GYP,ui_ui_jni_headers_gyp)/ui_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,ui_ui_base_jni_headers_gyp)/ui_base_jni_headers.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -85,6 +85,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSHELL_DIALOGS_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -92,6 +93,7 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -116,6 +118,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/ui \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -126,7 +129,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(gyp_shared_intermediate_dir)/ui/app_locale_settings \
 	$(gyp_shared_intermediate_dir)/ui/ui_strings \
@@ -196,6 +198,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSHELL_DIALOGS_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -203,6 +206,7 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -228,6 +232,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/ui \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -238,7 +243,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(gyp_shared_intermediate_dir)/ui/app_locale_settings \
 	$(gyp_shared_intermediate_dir)/ui/ui_strings \

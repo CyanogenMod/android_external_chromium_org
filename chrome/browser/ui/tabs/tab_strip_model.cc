@@ -277,9 +277,6 @@ void TabStripModel::AppendWebContents(WebContents* contents,
 void TabStripModel::InsertWebContentsAt(int index,
                                         WebContents* contents,
                                         int add_types) {
-  // TODO(sky): nuke, used in isolating 297118.
-  CHECK(!contents->IsBeingDestroyed());
-
   delegate_->WillAddWebContents(contents);
 
   bool active = add_types & ADD_ACTIVE;
@@ -947,7 +944,7 @@ void TabStripModel::ExecuteContextMenuCommand(
       UMA_HISTOGRAM_ENUMERATION("Tab.NewTab",
                                 TabStripModel::NEW_TAB_CONTEXT_MENU,
                                 TabStripModel::NEW_TAB_ENUM_COUNT);
-      delegate()->AddBlankTabAt(context_index + 1, true);
+      delegate()->AddTabAt(GURL(), context_index + 1, true);
       break;
 
     case CommandReload: {
@@ -1202,6 +1199,8 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
     std::map<content::RenderProcessHost*, size_t> processes;
     for (size_t i = 0; i < indices.size(); ++i) {
       WebContents* closing_contents = GetWebContentsAtImpl(indices[i]);
+      if (delegate_->ShouldRunUnloadListenerBeforeClosing(closing_contents))
+        continue;
       content::RenderProcessHost* process =
           closing_contents->GetRenderProcessHost();
       ++processes[process];

@@ -10,12 +10,12 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Proxy;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.NativeClassQualifiedName;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 // This class partners with native ProxyConfigServiceAndroid to listen for
 // proxy change notifications from Android.
@@ -24,7 +24,7 @@ public class ProxyChangeListener {
     private static final String TAG = "ProxyChangeListener";
     private static boolean sEnabled = true;
 
-    private int mNativePtr;
+    private long mNativePtr;
     private Context mContext;
     private ProxyReceiver mProxyReceiver;
     private Delegate mDelegate;
@@ -65,7 +65,7 @@ public class ProxyChangeListener {
     }
 
     @CalledByNative
-    public void start(int nativePtr) {
+    public void start(long nativePtr) {
         assert mNativePtr == 0;
         mNativePtr = nativePtr;
         registerReceiver();
@@ -101,7 +101,7 @@ public class ProxyChangeListener {
                 if (props == null) {
                     return null;
                 }
-                Class cls = Class.forName(CLASS_NAME);
+                Class<?> cls = Class.forName(CLASS_NAME);
                 Method getHostMethod = cls.getDeclaredMethod(GET_HOST_NAME);
                 Method getPortMethod = cls.getDeclaredMethod(GET_PORT_NAME);
 
@@ -164,9 +164,9 @@ public class ProxyChangeListener {
      * See net/proxy/proxy_config_service_android.cc
      */
     @NativeClassQualifiedName("ProxyConfigServiceAndroid::JNIDelegate")
-    private native void nativeProxySettingsChangedTo(int nativePtr,
+    private native void nativeProxySettingsChangedTo(long nativePtr,
                                                      String host,
                                                      int port);
     @NativeClassQualifiedName("ProxyConfigServiceAndroid::JNIDelegate")
-    private native void nativeProxySettingsChanged(int nativePtr);
+    private native void nativeProxySettingsChanged(long nativePtr);
 }

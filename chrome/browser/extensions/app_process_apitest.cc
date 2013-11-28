@@ -8,7 +8,6 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
@@ -18,7 +17,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -29,6 +27,9 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
+#include "extensions/browser/process_map.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "sync/api/string_ordinal.h"
@@ -58,7 +59,7 @@ class AppApiTest : public ExtensionApiTest {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kDisablePopupBlocking);
     CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kAllowHTTPBackgroundPage);
+        extensions::switches::kAllowHTTPBackgroundPage);
   }
 
   // Helper function to test that independent tabs of the named app are loaded
@@ -133,7 +134,7 @@ class BlockedAppApiTest : public AppApiTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kAllowHTTPBackgroundPage);
+        extensions::switches::kAllowHTTPBackgroundPage);
   }
 };
 
@@ -410,12 +411,19 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, AppProcessRedirectBack) {
                 GetRenderProcessHost());
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_NavigateIntoAppProcess DISABLED_NavigateIntoAppProcess
+#else
+#define MAYBE_NavigateIntoAppProcess NavigateIntoAppProcess
+#endif
+
 // Ensure that re-navigating to a URL after installing or uninstalling it as an
 // app correctly swaps the tab to the app process.  (http://crbug.com/80621)
 //
 // Fails on Windows. http://crbug.com/238670
 // Added logging to help diagnose the location of the problem.
-IN_PROC_BROWSER_TEST_F(AppApiTest, NavigateIntoAppProcess) {
+IN_PROC_BROWSER_TEST_F(AppApiTest, MAYBE_NavigateIntoAppProcess) {
   extensions::ProcessMap* process_map = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service()->process_map();
 

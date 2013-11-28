@@ -132,7 +132,6 @@ RemoteRootWindowHostWin* RemoteRootWindowHostWin::Create(
 
 RemoteRootWindowHostWin::RemoteRootWindowHostWin(const gfx::Rect& bounds)
     : remote_window_(NULL),
-      delegate_(NULL),
       host_(NULL),
       ignore_mouse_moves_until_set_cursor_ack_(false),
       event_flags_(0) {
@@ -150,7 +149,8 @@ void RemoteRootWindowHostWin::Connected(IPC::Sender* host, HWND remote_window) {
 }
 
 void RemoteRootWindowHostWin::Disconnected() {
-  CHECK(host_ != NULL);
+  // Don't CHECK here, Disconnected is called on a channel error which can
+  // happen before we're successfully Connected.
   host_ = NULL;
   remote_window_ = NULL;
 }
@@ -294,12 +294,12 @@ void RemoteRootWindowHostWin::HandleSelectFolder(
   host_->Send(new MetroViewerHostMsg_DisplaySelectFolder(title));
 }
 
-Window* RemoteRootWindowHostWin::GetAshWindow() {
-  return GetRootWindow();
+bool RemoteRootWindowHostWin::IsForegroundWindow() {
+  return ::GetForegroundWindow() == remote_window_;
 }
 
-void RemoteRootWindowHostWin::SetDelegate(RootWindowHostDelegate* delegate) {
-  delegate_ = delegate;
+Window* RemoteRootWindowHostWin::GetAshWindow() {
+  return GetRootWindow()->window();
 }
 
 RootWindow* RemoteRootWindowHostWin::GetRootWindow() {
@@ -358,7 +358,7 @@ void RemoteRootWindowHostWin::ReleaseCapture() {
 
 bool RemoteRootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
   aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(GetRootWindow());
+      aura::client::GetCursorClient(GetRootWindow()->window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -404,10 +404,6 @@ void RemoteRootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
   ignore_mouse_moves_until_set_cursor_ack_ = true;
   VLOG(1) << "In MoveCursorTo. Sending IPC";
   host_->Send(new MetroViewerHostMsg_SetCursorPos(location.x(), location.y()));
-}
-
-void RemoteRootWindowHostWin::SetFocusWhenShown(bool focus_when_shown) {
-  NOTIMPLEMENTED();
 }
 
 void RemoteRootWindowHostWin::PostNativeEvent(

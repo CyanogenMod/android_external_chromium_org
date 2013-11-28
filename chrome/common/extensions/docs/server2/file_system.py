@@ -5,18 +5,30 @@
 from future import Gettable, Future
 
 
-class FileNotFoundError(Exception):
+class _BaseFileSystemException(Exception):
+  def __init__(self, message):
+    Exception.__init__(self, message)
+
+  @classmethod
+  def RaiseInFuture(cls, message):
+    def boom(): raise cls(message)
+    return Future(delegate=Gettable(boom))
+
+
+class FileNotFoundError(_BaseFileSystemException):
   '''Raised when a file isn't found for read or stat.
   '''
   def __init__(self, filename):
-    Exception.__init__(self, filename)
+    _BaseFileSystemException.__init__(self, filename)
 
-class FileSystemError(Exception):
+
+class FileSystemError(_BaseFileSystemException):
   '''Raised on when there are errors reading or statting files, such as a
   network timeout.
   '''
   def __init__(self, filename):
-    Exception.__init__(self, filename)
+    _BaseFileSystemException.__init__(self, filename)
+
 
 class StatInfo(object):
   '''The result of calling Stat on a FileSystem.
@@ -40,6 +52,7 @@ class StatInfo(object):
   def __repr__(self):
     return str(self)
 
+
 def ToUnicode(data):
   '''Returns the str |data| as a unicode object. It's expected to be utf8, but
   there are also latin-1 encodings in there for some reason. Fall back to that.
@@ -48,6 +61,7 @@ def ToUnicode(data):
     return unicode(data, 'utf-8')
   except:
     return unicode(data, 'latin-1')
+
 
 class FileSystem(object):
   '''A FileSystem interface that can read files and directories.
@@ -76,6 +90,9 @@ class FileSystem(object):
     return Future(delegate=Gettable(lambda: read_single.Get()[path]))
 
   def Refresh(self):
+    '''Asynchronously refreshes the content of the FileSystem, returning a
+    future to its completion.
+    '''
     raise NotImplementedError(self.__class__)
 
   # TODO(cduvall): Allow Stat to take a list of paths like Read.

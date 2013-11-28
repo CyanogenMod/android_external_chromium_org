@@ -10,16 +10,15 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.res.Resources;
 import android.os.Handler;
 import android.util.Log;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
 import org.chromium.base.ThreadUtils;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.invalidation.InvalidationController;
 import org.chromium.chrome.browser.sync.ProfileSyncService;
-import org.chromium.chrome.R;
 import org.chromium.sync.internal_api.pub.base.ModelType;
 import org.chromium.sync.notifier.SyncStatusHelper;
 import org.chromium.sync.signin.ChromeSigninController;
@@ -43,7 +42,7 @@ public class SigninManager {
     private static SigninManager sSigninManager;
 
     private final Context mContext;
-    private final int mNativeSigninManagerAndroid;
+    private final long mNativeSigninManagerAndroid;
 
     /** Tracks whether the First Run check has been completed.
      *
@@ -51,7 +50,7 @@ public class SigninManager {
      * pending check from eventually starting a 2nd sign-in.
      */
     private boolean mFirstRunCheckIsPending = true;
-    private ObserverList<SignInAllowedObserver> mSignInAllowedObservers =
+    private final ObserverList<SignInAllowedObserver> mSignInAllowedObservers =
             new ObserverList<SignInAllowedObserver>();
 
     private Activity mSignInActivity;
@@ -165,7 +164,7 @@ public class SigninManager {
      * @param activity The context to use for the operation.
      * @param account The account to sign in to.
      * @param passive If passive is true then this operation should not interact with the user.
-     * @param callback The Observer to notify when the sign-in process is finished.
+     * @param observer The Observer to notify when the sign-in process is finished.
      */
     public void startSignIn(
             Activity activity, final Account account, boolean passive, final Observer observer) {
@@ -379,14 +378,14 @@ public class SigninManager {
     }
 
     // Native methods.
-    private native int nativeInit();
+    private native long nativeInit();
     private native boolean nativeShouldLoadPolicyForUser(String username);
     private native void nativeCheckPolicyBeforeSignIn(
-            int nativeSigninManagerAndroid, String username);
-    private native void nativeFetchPolicyBeforeSignIn(int nativeSigninManagerAndroid);
-    private native void nativeOnSignInCompleted(int nativeSigninManagerAndroid, String username);
-    private native void nativeSignOut(int nativeSigninManagerAndroid);
-    private native String nativeGetManagementDomain(int nativeSigninManagerAndroid);
-    private native void nativeWipeProfileData(int nativeSigninManagerAndroid);
-    private native void nativeLogInSignedInUser(int nativeSigninManagerAndroid);
+            long nativeSigninManagerAndroid, String username);
+    private native void nativeFetchPolicyBeforeSignIn(long nativeSigninManagerAndroid);
+    private native void nativeOnSignInCompleted(long nativeSigninManagerAndroid, String username);
+    private native void nativeSignOut(long nativeSigninManagerAndroid);
+    private native String nativeGetManagementDomain(long nativeSigninManagerAndroid);
+    private native void nativeWipeProfileData(long nativeSigninManagerAndroid);
+    private native void nativeLogInSignedInUser(long nativeSigninManagerAndroid);
 }

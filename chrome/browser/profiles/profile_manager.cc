@@ -33,6 +33,7 @@
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/profiles/startup_task_runner_service.h"
 #include "chrome/browser/profiles/startup_task_runner_service_factory.h"
+#include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -165,6 +166,15 @@ bool IsProfileMarkedForDeletion(const base::FilePath& profile_path) {
       profile_path) != ProfilesToDelete().end();
 }
 
+// Physically remove deleted profile directories from disk.
+void NukeProfileFromDisk(const base::FilePath& profile_path) {
+  // Delete both the profile directory and its corresponding cache.
+  base::FilePath cache_path;
+  chrome::GetUserCacheDirectory(profile_path, &cache_path);
+  base::DeleteFile(profile_path, true);
+  base::DeleteFile(cache_path, true);
+}
+
 #if defined(OS_CHROMEOS)
 void CheckCryptohomeIsMounted(chromeos::DBusMethodCallStatus call_status,
                               bool is_mounted) {
@@ -198,11 +208,7 @@ void ProfileManager::NukeDeletedProfilesFromDisk() {
           ProfilesToDelete().begin();
        it != ProfilesToDelete().end();
        ++it) {
-    // Delete both the profile directory and its corresponding cache.
-    base::FilePath cache_path;
-    chrome::GetUserCacheDirectory(*it, &cache_path);
-    base::DeleteFile(*it, true);
-    base::DeleteFile(cache_path, true);
+    NukeProfileFromDisk(*it);
   }
   ProfilesToDelete().clear();
 }
@@ -300,6 +306,10 @@ ProfileManager::ProfileManager(const base::FilePath& user_data_dir)
       this,
       chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED,
       content::NotificationService::AllSources());
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED,
+      content::NotificationService::AllSources());
 
   if (ProfileShortcutManager::IsFeatureEnabled() && !user_data_dir_.empty())
     profile_shortcut_manager_.reset(ProfileShortcutManager::Create(
@@ -387,19 +397,19 @@ std::vector<Profile*> ProfileManager::GetLastOpenedProfiles(
   DCHECK(local_state);
 
   std::vector<Profile*> to_return;
-  if (local_state->HasPrefPath(prefs::kProfilesLastActive)) {
-    const ListValue* profile_list =
-        local_state->GetList(prefs::kProfilesLastActive);
-    if (profile_list) {
-      ListValue::const_iterator it;
-      std::string profile;
-      for (it = profile_list->begin(); it != profile_list->end(); ++it) {
-        if (!(*it)->GetAsString(&profile) || profile.empty()) {
-          LOG(WARNING) << "Invalid entry in " << prefs::kProfilesLastActive;
-          continue;
-        }
-        to_return.push_back(GetProfile(user_data_dir.AppendASCII(profile)));
+  if (local_state->HasPrefPath(prefs::kProfilesLastActive) &&
+      local_state->GetList(prefs::kProfilesLastActive)) {
+    // Make a copy because the list might change in the calls to GetProfile.
+    scoped_ptr<base::ListValue> profile_list(
+        local_state->GetList(prefs::kProfilesLastActive)->DeepCopy());
+    base::ListValue::const_iterator it;
+    std::string profile;
+    for (it = profile_list->begin(); it != profile_list->end(); ++it) {
+      if (!(*it)->GetAsString(&profile) || profile.empty()) {
+        LOG(WARNING) << "Invalid entry in " << prefs::kProfilesLastActive;
+        continue;
       }
+      to_return.push_back(GetProfile(user_data_dir.AppendASCII(profile)));
     }
   }
   return to_return;
@@ -651,6 +661,10 @@ void ProfileManager::Observe(
       }
       break;
     }
+    case chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED: {
+      save_active_profiles = !closing_all_browsers_;
+      break;
+    }
     default: {
       NOTREACHED();
       break;
@@ -805,6 +819,9 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
   // Start the deferred task runners once the profile is loaded.
   StartupTaskRunnerServiceFactory::GetForProfile(profile)->
       StartDeferredTaskRunners();
+
+  if (profiles::IsNewProfileManagementEnabled())
+    AccountReconcilorFactory::GetForProfile(profile);
 }
 
 void ProfileManager::DoFinalInitLogging(Profile* profile) {
@@ -862,13 +879,15 @@ void ProfileManager::OnProfileCreated(Profile* profile,
     profiles_info_.erase(iter);
   }
 
-  // If this was the guest profile, finish setting its incognito status.
-  if (profile->GetPath() == ProfileManager::GetGuestProfilePath())
-    SetGuestProfilePrefs(profile);
+  if (profile) {
+    // If this was the guest profile, finish setting its incognito status.
+    if (profile->GetPath() == ProfileManager::GetGuestProfilePath())
+      SetGuestProfilePrefs(profile);
 
-  // Invoke CREATED callback for incognito profiles.
-  if (profile && go_off_the_record)
-    RunCallbacks(callbacks, profile, Profile::CREATE_STATUS_CREATED);
+    // Invoke CREATED callback for incognito profiles.
+    if (go_off_the_record)
+      RunCallbacks(callbacks, profile, Profile::CREATE_STATUS_CREATED);
+  }
 
   // Invoke INITIALIZED or FAIL for all profiles.
   RunCallbacks(callbacks, profile,
@@ -984,6 +1003,11 @@ void ProfileManager::AddProfileToCache(Profile* profile) {
                           username,
                           icon_index,
                           managed_user_id);
+
+  if (profile->GetPrefs()->GetBoolean(prefs::kForceEphemeralProfiles)) {
+    cache.SetProfileIsEphemeralAtIndex(
+        cache.GetIndexOfProfileWithPath(profile->GetPath()), true);
+  }
 }
 
 void ProfileManager::InitProfileUserPrefs(Profile* profile) {
@@ -1025,12 +1049,15 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
   if (!profile->GetPrefs()->HasPrefPath(prefs::kProfileName))
     profile->GetPrefs()->SetString(prefs::kProfileName, profile_name);
 
-  if (!profile->GetPrefs()->HasPrefPath(prefs::kManagedUserId)) {
-    if (managed_user_id.empty() &&
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kNewProfileIsSupervised)) {
-      managed_user_id = "Test ID";
-    }
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  bool force_managed_user_id =
+      command_line->HasSwitch(switches::kManagedUserId);
+  if (force_managed_user_id) {
+    managed_user_id =
+        command_line->GetSwitchValueASCII(switches::kManagedUserId);
+  }
+  if (force_managed_user_id ||
+      !profile->GetPrefs()->HasPrefPath(prefs::kManagedUserId)) {
     profile->GetPrefs()->SetString(prefs::kManagedUserId, managed_user_id);
   }
 }
@@ -1114,6 +1141,17 @@ void ProfileManager::ScheduleProfileForDeletion(
     }
   }
   FinishDeletingProfile(profile_dir);
+}
+
+// static
+void ProfileManager::CleanUpStaleProfiles(
+    const std::vector<base::FilePath>& profile_paths) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  for (std::vector<base::FilePath>::const_iterator it = profile_paths.begin();
+       it != profile_paths.end(); ++it) {
+    NukeProfileFromDisk(*it);
+  }
 }
 
 void ProfileManager::OnNewActiveProfileLoaded(

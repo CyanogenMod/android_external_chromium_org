@@ -15,7 +15,7 @@
 #include "content/common/webplugin_geometry.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 
 #if defined(OS_MACOSX)
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
@@ -29,19 +29,21 @@ namespace content {
 
 namespace {
 
+#if defined(OS_WIN) || defined(USE_AURA)
 bool ShouldSendPinchGesture() {
   static bool pinch_allowed =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnablePinch);
   return pinch_allowed;
 }
 
-WebKit::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
-  WebKit::WebGestureEvent gesture_event;
+blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
+  blink::WebGestureEvent gesture_event;
   gesture_event.timeStampSeconds = time_stamp;
-  gesture_event.type = WebKit::WebGestureEvent::GestureFlingCancel;
-  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchscreen;
+  gesture_event.type = blink::WebGestureEvent::GestureFlingCancel;
+  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
   return gesture_event;
 }
+#endif  // defined(OS_WIN) || defined(USE_AURA)
 
 }  // namespace
 
@@ -171,6 +173,10 @@ void RenderWidgetHostViewGuest::SetTooltipText(const string16& tooltip_text) {
   platform_view_->SetTooltipText(tooltip_text);
 }
 
+void RenderWidgetHostViewGuest::AcceleratedSurfaceInitialized(int host_id,
+                                                              int route_id) {
+}
+
 void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
     int gpu_host_id) {
@@ -252,7 +258,9 @@ gfx::NativeView RenderWidgetHostViewGuest::GetNativeView() const {
 }
 
 gfx::NativeViewId RenderWidgetHostViewGuest::GetNativeViewId() const {
-  return guest_->GetEmbedderRenderWidgetHostView()->GetNativeViewId();
+  if (guest_->GetEmbedderRenderWidgetHostView())
+    return guest_->GetEmbedderRenderWidgetHostView()->GetNativeViewId();
+  return static_cast<gfx::NativeViewId>(NULL);
 }
 
 gfx::NativeViewAccessible RenderWidgetHostViewGuest::GetNativeViewAccessible() {
@@ -398,7 +406,7 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
   return platform_view_->UnlockMouse();
 }
 
-void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
+void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
   RenderWidgetHostViewPort* embedder_view =
       RenderWidgetHostViewPort::FromRWHV(
           guest_->GetEmbedderRenderWidgetHostView());
@@ -501,6 +509,11 @@ void RenderWidgetHostViewGuest::WillWmDestroy() {
 void RenderWidgetHostViewGuest::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
 }
+
+gfx::NativeViewId RenderWidgetHostViewGuest::GetParentForWindowlessPlugin()
+    const {
+  return NULL;
+}
 #endif
 
 void RenderWidgetHostViewGuest::DestroyGuestView() {
@@ -525,8 +538,8 @@ void RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
   if (!host_)
     return;
 
-  WebKit::WebTouchEvent cancel_event;
-  cancel_event.type = WebKit::WebInputEvent::TouchCancel;
+  blink::WebTouchEvent cancel_event;
+  cancel_event.type = blink::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
   host_->ForwardTouchEventWithLatencyInfo(cancel_event, *event->latency());
 }
@@ -546,7 +559,7 @@ bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(
     return true;
   }
 
-  WebKit::WebGestureEvent web_gesture =
+  blink::WebGestureEvent web_gesture =
       MakeWebGestureEventFromUIEvent(*gesture);
   const gfx::Point& client_point = gesture->location();
   const gfx::Point& screen_point = gesture->location();
@@ -556,9 +569,9 @@ bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(
   web_gesture.globalX = screen_point.x();
   web_gesture.globalY = screen_point.y();
 
-  if (web_gesture.type == WebKit::WebGestureEvent::Undefined)
+  if (web_gesture.type == blink::WebGestureEvent::Undefined)
     return false;
-  if (web_gesture.type == WebKit::WebGestureEvent::GestureTapDown) {
+  if (web_gesture.type == blink::WebGestureEvent::GestureTapDown) {
     host_->ForwardGestureEvent(
         CreateFlingCancelEvent(gesture->time_stamp().InSecondsF()));
   }

@@ -7,11 +7,19 @@
 
 #include "base/basictypes.h"
 
+namespace base {
+class SequencedTaskRunner;
+}
+
 namespace drive {
 class DriveServiceInterface;
+class DriveUploaderInterface;
 }
 
 namespace sync_file_system {
+
+class RemoteChangeProcessor;
+
 namespace drive_backend {
 
 class MetadataDatabase;
@@ -22,7 +30,10 @@ class SyncEngineContext {
   ~SyncEngineContext() {}
 
   virtual drive::DriveServiceInterface* GetDriveService() = 0;
+  virtual drive::DriveUploaderInterface* GetDriveUploader() = 0;
   virtual MetadataDatabase* GetMetadataDatabase() = 0;
+  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() = 0;
+  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SyncEngineContext);

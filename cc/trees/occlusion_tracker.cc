@@ -22,7 +22,6 @@ OcclusionTrackerBase<LayerType, RenderSurfaceType>::OcclusionTrackerBase(
     gfx::Rect screen_space_clip_rect, bool record_metrics_for_frame)
     : screen_space_clip_rect_(screen_space_clip_rect),
       overdraw_metrics_(OverdrawMetrics::Create(record_metrics_for_frame)),
-      prevent_occlusion_(false),
       occluding_screen_space_rects_(NULL),
       non_occluding_screen_space_rects_(NULL) {}
 
@@ -31,16 +30,13 @@ OcclusionTrackerBase<LayerType, RenderSurfaceType>::~OcclusionTrackerBase() {}
 
 template <typename LayerType, typename RenderSurfaceType>
 void OcclusionTrackerBase<LayerType, RenderSurfaceType>::EnterLayer(
-    const LayerIteratorPosition<LayerType>& layer_iterator,
-    bool prevent_occlusion) {
+    const LayerIteratorPosition<LayerType>& layer_iterator) {
   LayerType* render_target = layer_iterator.target_render_surface_layer;
 
   if (layer_iterator.represents_itself)
     EnterRenderTarget(render_target);
   else if (layer_iterator.represents_target_render_surface)
     FinishedRenderTarget(render_target);
-
-  prevent_occlusion_ = prevent_occlusion;
 }
 
 template <typename LayerType, typename RenderSurfaceType>
@@ -54,8 +50,6 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::LeaveLayer(
   // but in a way that the surface's own occlusion won't occlude itself.
   else if (layer_iterator.represents_contributing_render_surface)
     LeaveToRenderTarget(render_target);
-
-  prevent_occlusion_ = false;
 }
 
 template <typename RenderSurfaceType>
@@ -156,14 +150,14 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::EnterRenderTarget(
     return;
 
   const LayerType* old_target = NULL;
-  const RenderSurfaceType* old_ancestor_that_moves_pixels = NULL;
+  const RenderSurfaceType* old_occlusion_immune_ancestor = NULL;
   if (!stack_.empty()) {
     old_target = stack_.back().target;
-    old_ancestor_that_moves_pixels =
-        old_target->render_surface()->nearest_ancestor_that_moves_pixels();
+    old_occlusion_immune_ancestor =
+        old_target->render_surface()->nearest_occlusion_immune_ancestor();
   }
-  const RenderSurfaceType* new_ancestor_that_moves_pixels =
-      new_target->render_surface()->nearest_ancestor_that_moves_pixels();
+  const RenderSurfaceType* new_occlusion_immune_ancestor =
+      new_target->render_surface()->nearest_occlusion_immune_ancestor();
 
   stack_.push_back(StackObject(new_target));
 
@@ -171,14 +165,11 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::EnterRenderTarget(
   // never copy in the occlusion from inside the target, since we are looking
   // at a new RenderSurface target.
 
-  // If we are entering a subtree that is going to move pixels around, then the
-  // occlusion we've computed so far won't apply to the pixels we're drawing
-  // here in the same way. We discard the occlusion thus far to be safe, and
-  // ensure we don't cull any pixels that are moved such that they become
-  //  visible.
-  bool entering_subtree_that_moves_pixels =
-      new_ancestor_that_moves_pixels &&
-      new_ancestor_that_moves_pixels != old_ancestor_that_moves_pixels;
+  // If entering an unoccluded subtree, do not carry forward the outside
+  // occlusion calculated so far.
+  bool entering_unoccluded_subtree =
+      new_occlusion_immune_ancestor &&
+      new_occlusion_immune_ancestor != old_occlusion_immune_ancestor;
 
   bool have_transform_from_screen_to_new_target = false;
   gfx::Transform inverse_new_target_screen_space_transform(
@@ -194,7 +185,7 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::EnterRenderTarget(
 
   bool copy_outside_occlusion_forward =
       stack_.size() > 1 &&
-      !entering_subtree_that_moves_pixels &&
+      !entering_unoccluded_subtree &&
       have_transform_from_screen_to_new_target &&
       !entering_root_target;
   if (!copy_outside_occlusion_forward)
@@ -233,9 +224,9 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::FinishedRenderTarget(
 
   // If the occlusion within the surface can not be applied to things outside of
   // the surface's subtree, then clear the occlusion here so it won't be used.
-  if (finished_target->mask_layer() ||
-      !SurfaceOpacityKnown(surface) ||
+  if (finished_target->mask_layer() || !SurfaceOpacityKnown(surface) ||
       surface->draw_opacity() < 1 ||
+      !finished_target->uses_default_blend_mode() ||
       target_is_only_for_copy_request ||
       finished_target->filters().HasFilterThatAffectsOpacity()) {
     stack_.back().occlusion_from_outside_target.Clear();
@@ -414,6 +405,9 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::
   if (!LayerOpacityKnown(layer) || layer->draw_opacity() < 1)
     return;
 
+  if (!layer->uses_default_blend_mode())
+    return;
+
   if (LayerIsInUnsorted3dRenderingContext(layer))
     return;
 
@@ -506,9 +500,6 @@ bool OcclusionTrackerBase<LayerType, RenderSurfaceType>::Occluded(
     gfx::Rect content_rect,
     const gfx::Transform& draw_transform,
     bool impl_draw_transform_is_unknown) const {
-  if (prevent_occlusion_)
-    return false;
-
   DCHECK(!stack_.empty());
   if (stack_.empty())
     return false;
@@ -558,9 +549,6 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
         gfx::Rect content_rect,
         const gfx::Transform& draw_transform,
         bool impl_draw_transform_is_unknown) const {
-  if (prevent_occlusion_)
-    return content_rect;
-
   DCHECK(!stack_.empty());
   if (stack_.empty())
     return content_rect;
@@ -621,9 +609,6 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
   // This should be called while the layer is still considered the current
   // target in the occlusion tracker.
   DCHECK_EQ(layer, stack_.back().target);
-
-  if (prevent_occlusion_)
-    return content_rect;
 
   if (content_rect.IsEmpty())
     return content_rect;

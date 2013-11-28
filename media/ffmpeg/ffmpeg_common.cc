@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_frame.h"
@@ -84,6 +85,8 @@ static AudioCodec CodecIDToAudioCodec(AVCodecID codec_id) {
       return kCodecAMR_WB;
     case AV_CODEC_ID_GSM_MS:
       return kCodecGSM_MS;
+    case AV_CODEC_ID_PCM_ALAW:
+      return kCodecPCM_ALAW;
     case AV_CODEC_ID_PCM_MULAW:
       return kCodecPCM_MULAW;
     case AV_CODEC_ID_OPUS:
@@ -129,6 +132,8 @@ static AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
       return AV_CODEC_ID_AMR_WB;
     case kCodecGSM_MS:
       return AV_CODEC_ID_GSM_MS;
+    case kCodecPCM_ALAW:
+      return AV_CODEC_ID_PCM_ALAW;
     case kCodecPCM_MULAW:
       return AV_CODEC_ID_PCM_MULAW;
     case kCodecOpus:
@@ -381,6 +386,12 @@ void AVStreamToVideoDecoderConfig(
 
   gfx::Size natural_size = GetNaturalSize(
       visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
+
+  if (record_stats) {
+    UMA_HISTOGRAM_ENUMERATION("Media.VideoColorRange",
+                              stream->codec->color_range,
+                              AVCOL_RANGE_NB);
+  }
 
   VideoFrame::Format format = PixelFormatToVideoFormat(stream->codec->pix_fmt);
   if (codec == kCodecVP9) {

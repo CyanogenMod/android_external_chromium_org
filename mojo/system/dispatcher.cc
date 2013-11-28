@@ -5,6 +5,7 @@
 #include "mojo/system/dispatcher.h"
 
 #include "base/logging.h"
+#include "mojo/system/limits.h"
 
 namespace mojo {
 namespace system {
@@ -19,28 +20,34 @@ MojoResult Dispatcher::Close() {
   return CloseImplNoLock();
 }
 
-MojoResult Dispatcher::WriteMessage(const void* bytes,
-                                    uint32_t num_bytes,
-                                    const MojoHandle* handles,
-                                    uint32_t num_handles,
+MojoResult Dispatcher::WriteMessage(const void* bytes, uint32_t num_bytes,
+                                    const std::vector<Dispatcher*>* dispatchers,
                                     MojoWriteMessageFlags flags) {
+  DCHECK(!dispatchers || (dispatchers->size() > 0 &&
+                          dispatchers->size() < kMaxMessageNumHandles));
+
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  return WriteMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
+  return WriteMessageImplNoLock(bytes, num_bytes, dispatchers, flags);
 }
 
-MojoResult Dispatcher::ReadMessage(void* bytes,
-                                   uint32_t* num_bytes,
-                                   MojoHandle* handles,
-                                   uint32_t* num_handles,
-                                   MojoReadMessageFlags flags) {
+MojoResult Dispatcher::ReadMessage(
+    void* bytes, uint32_t* num_bytes,
+    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
+    uint32_t* num_dispatchers,
+    MojoReadMessageFlags flags) {
+  DCHECK(!num_dispatchers || *num_dispatchers == 0 ||
+         (dispatchers && dispatchers->empty()));
+
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  return ReadMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
+  return ReadMessageImplNoLock(bytes, num_bytes,
+                               dispatchers, num_dispatchers,
+                               flags);
 }
 
 MojoResult Dispatcher::AddWaiter(Waiter* waiter,
@@ -60,6 +67,16 @@ void Dispatcher::RemoveWaiter(Waiter* waiter) {
   if (is_closed_)
     return;
   RemoveWaiterImplNoLock(waiter);
+}
+
+scoped_refptr<Dispatcher>
+Dispatcher::CreateEquivalentDispatcherAndCloseNoLock() {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+
+  is_closed_ = true;
+  CancelAllWaitersNoLock();
+  return CreateEquivalentDispatcherAndCloseImplNoLock();
 }
 
 Dispatcher::Dispatcher()
@@ -86,11 +103,10 @@ MojoResult Dispatcher::CloseImplNoLock() {
   return MOJO_RESULT_OK;
 }
 
-MojoResult Dispatcher::WriteMessageImplNoLock(const void* bytes,
-                                              uint32_t num_bytes,
-                                              const MojoHandle* handles,
-                                              uint32_t num_handles,
-                                              MojoWriteMessageFlags flags) {
+MojoResult Dispatcher::WriteMessageImplNoLock(
+    const void* bytes, uint32_t num_bytes,
+    const std::vector<Dispatcher*>* dispatchers,
+    MojoWriteMessageFlags flags) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, this isn't supported. Only dispatchers for message pipes (with
@@ -98,11 +114,11 @@ MojoResult Dispatcher::WriteMessageImplNoLock(const void* bytes,
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-MojoResult Dispatcher::ReadMessageImplNoLock(void* bytes,
-                                             uint32_t* num_bytes,
-                                             MojoHandle* handles,
-                                             uint32_t* num_handles,
-                                             MojoReadMessageFlags flags) {
+MojoResult Dispatcher::ReadMessageImplNoLock(
+    void* /*bytes*/, uint32_t* /*num_bytes*/,
+    std::vector<scoped_refptr<Dispatcher> >* /*dispatchers*/,
+    uint32_t* /*num_dispatchers*/,
+    MojoReadMessageFlags /*flags*/) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, this isn't supported. Only dispatchers for message pipes (with

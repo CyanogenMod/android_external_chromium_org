@@ -31,6 +31,7 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
@@ -61,13 +62,6 @@ const int kTabstripTopSpacingShort = 0;
 // area still drag restored windows.  This keeps the clickable area large enough
 // to hit easily.
 const int kTabShadowHeight = 4;
-
-// Space between right edge of tabstrip and caption buttons when using the
-// alternate caption button style.
-const int kTabstripRightSpacingAlternateCaptionButtonStyle = 0;
-// Space between top of window and top of tabstrip for short headers when using
-// the alternate caption button style.
-const int kTabstripTopSpacingShortAlternateCaptionButtonStyle = 4;
 
 }  // namespace
 
@@ -124,40 +118,32 @@ gfx::Rect BrowserNonClientFrameViewAsh::GetBoundsForTabStrip(
   // bounds are still used to compute the tab strip bounds so that the tabs have
   // the same horizontal position when the tab strip is painted in the immersive
   // light bar style as when the top-of-window views are revealed.
-  TabStripInsets insets(GetTabStripInsets(false));
-  return gfx::Rect(insets.left, insets.top,
-                   std::max(0, width() - insets.left - insets.right),
+  int left_inset = GetTabStripLeftInset();
+  int right_inset = GetTabStripRightInset();
+  return gfx::Rect(left_inset,
+                   GetTopInset(),
+                   std::max(0, width() - left_inset - right_inset),
                    tabstrip->GetPreferredSize().height());
 }
 
-BrowserNonClientFrameView::TabStripInsets
-BrowserNonClientFrameViewAsh::GetTabStripInsets(bool force_restored) const {
-  int left = avatar_button() ? kAvatarSideSpacing +
-      browser_view()->GetOTRAvatarIcon().width() + kAvatarSideSpacing :
-      kTabstripLeftSpacing;
-  int extra_right = ash::switches::UseAlternateFrameCaptionButtonStyle() ?
-      kTabstripRightSpacingAlternateCaptionButtonStyle :
-      kTabstripRightSpacing;
-  int right = header_painter_->GetRightInset() + extra_right;
+int BrowserNonClientFrameViewAsh::GetTopInset() const {
+  if (!ShouldPaint() || UseImmersiveLightbarHeaderStyle())
+    return 0;
 
-  int top = NonClientTopBorderHeight();
-  if (force_restored)
-    top = kTabstripTopSpacingTall;
-
-  if (browser_view()->IsTabStripVisible() &&
-      !UseImmersiveLightbarHeaderStyle() &&
-      !force_restored) {
-    if (UseShortHeader()) {
-      if (ash::switches::UseAlternateFrameCaptionButtonStyle())
-        top += kTabstripTopSpacingShortAlternateCaptionButtonStyle;
-      else
-        top += kTabstripTopSpacingShort;
-    } else {
-      top += kTabstripTopSpacingTall;
-    }
+  if (browser_view()->IsTabStripVisible()) {
+    if (UseShortHeader())
+      return kTabstripTopSpacingShort;
+    else
+      return kTabstripTopSpacingTall;
   }
 
-  return TabStripInsets(top, left, right);
+  int caption_buttons_bottom = caption_button_container_->bounds().bottom();
+
+  // The toolbar partially overlaps the caption buttons.
+  if (browser_view()->IsToolbarVisible())
+    return caption_buttons_bottom - kContentShadowHeight;
+
+  return caption_buttons_bottom + kClientEdgeThickness;
 }
 
 int BrowserNonClientFrameViewAsh::GetThemeBackgroundXInset() const {
@@ -281,8 +267,14 @@ void BrowserNonClientFrameViewAsh::Layout() {
   header_painter_->LayoutHeader(UseShortHeader());
   int header_height = 0;
   if (browser_view()->IsTabStripVisible()) {
-    header_height = GetTabStripInsets(false).top +
+    header_height = GetTopInset() +
         browser_view()->GetTabStripHeight();
+  } else if (browser_view()->IsToolbarVisible()) {
+    // Set the header's height so that it overlaps with the toolbar because the
+    // top few pixels of the toolbar are not opaque.
+    gfx::Point toolbar_origin(browser_view()->GetToolbarBounds().origin());
+    View::ConvertPointToTarget(browser_view(), this, &toolbar_origin);
+    header_height = toolbar_origin.y() + kFrameShadowThickness * 2;
   } else {
     header_height = NonClientTopBorderHeight();
   }
@@ -302,12 +294,11 @@ bool BrowserNonClientFrameViewAsh::HitTestRect(const gfx::Rect& rect) const {
     return false;
   }
   // If the rect is outside the bounds of the client area, claim it.
-  // TODO(tdanderson): Implement View::ConvertRectToTarget().
-  gfx::Point rect_in_client_view_coords_origin(rect.origin());
-  View::ConvertPointToTarget(this, frame()->client_view(),
-      &rect_in_client_view_coords_origin);
-  gfx::Rect rect_in_client_view_coords(
-      rect_in_client_view_coords_origin, rect.size());
+  gfx::RectF rect_in_client_view_coords_f(rect);
+  View::ConvertRectToTarget(this, frame()->client_view(),
+      &rect_in_client_view_coords_f);
+  gfx::Rect rect_in_client_view_coords = gfx::ToEnclosingRect(
+      rect_in_client_view_coords_f);
   if (!frame()->client_view()->HitTestRect(rect_in_client_view_coords))
     return true;
 
@@ -317,24 +308,19 @@ bool BrowserNonClientFrameViewAsh::HitTestRect(const gfx::Rect& rect) const {
   if (!tabstrip || !browser_view()->IsTabStripVisible())
     return false;
 
-  gfx::Point rect_in_tabstrip_coords_origin(rect.origin());
-  View::ConvertPointToTarget(this, tabstrip,
-      &rect_in_tabstrip_coords_origin);
-  gfx::Rect rect_in_tabstrip_coords(rect_in_tabstrip_coords_origin,
-      rect.size());
+  gfx::RectF rect_in_tabstrip_coords_f(rect);
+  View::ConvertRectToTarget(this, tabstrip, &rect_in_tabstrip_coords_f);
+  gfx::Rect rect_in_tabstrip_coords = gfx::ToEnclosingRect(
+      rect_in_tabstrip_coords_f);
 
-  if (rect_in_tabstrip_coords.bottom() > tabstrip->GetLocalBounds().bottom()) {
+  if (rect_in_tabstrip_coords.y() > tabstrip->GetLocalBounds().bottom()) {
     // |rect| is below the tabstrip.
     return false;
   }
 
   if (tabstrip->HitTestRect(rect_in_tabstrip_coords)) {
     // Claim |rect| if it is in a non-tab portion of the tabstrip.
-    // TODO(tdanderson): Pass |rect_in_tabstrip_coords| instead of its center
-    // point to TabStrip::IsPositionInWindowCaption() once
-    // GetEventHandlerForRect() is implemented.
-    return tabstrip->IsPositionInWindowCaption(
-        rect_in_tabstrip_coords.CenterPoint());
+    return tabstrip->IsRectInWindowCaption(rect_in_tabstrip_coords);
   }
 
   // We claim |rect| because it is above the bottom of the tabstrip, but
@@ -350,9 +336,17 @@ void BrowserNonClientFrameViewAsh::GetAccessibleState(
 
 gfx::Size BrowserNonClientFrameViewAsh::GetMinimumSize() {
   gfx::Size min_client_view_size(frame()->client_view()->GetMinimumSize());
-  return gfx::Size(
-      std::max(header_painter_->GetMinimumHeaderWidth(),
-               min_client_view_size.width()),
+  int min_width = std::max(header_painter_->GetMinimumHeaderWidth(),
+                           min_client_view_size.width());
+  if (browser_view()->IsTabStripVisible()) {
+    // Ensure that the minimum width is enough to hold a minimum width tab strip
+    // at its usual insets.
+    int min_tabstrip_width =
+        browser_view()->tabstrip()->GetMinimumSize().width();
+    min_width = std::max(min_width,
+        min_tabstrip_width + GetTabStripLeftInset() + GetTabStripRightInset());
+  }
+  return gfx::Size(min_width,
       NonClientTopBorderHeight() + min_client_view_size.height());
 }
 
@@ -382,6 +376,16 @@ gfx::ImageSkia BrowserNonClientFrameViewAsh::GetFaviconForTabIconView() {
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserNonClientFrameViewAsh, private:
 
+int BrowserNonClientFrameViewAsh::GetTabStripLeftInset() const {
+  return avatar_button() ? kAvatarSideSpacing +
+      browser_view()->GetOTRAvatarIcon().width() + kAvatarSideSpacing :
+      kTabstripLeftSpacing;
+}
+
+int BrowserNonClientFrameViewAsh::GetTabStripRightInset() const {
+  return header_painter_->GetRightInset() + kTabstripRightSpacing;
+}
+
 int BrowserNonClientFrameViewAsh::NonClientTopBorderHeight() const {
   if (!ShouldPaint() || browser_view()->IsTabStripVisible())
     return 0;
@@ -393,23 +397,11 @@ int BrowserNonClientFrameViewAsh::NonClientTopBorderHeight() const {
 }
 
 bool BrowserNonClientFrameViewAsh::UseShortHeader() const {
-  // Restored browser -> tall header
-  // Maximized browser -> short header
-  // Fullscreen browser, no immersive reveal -> hidden or super short light bar
-  // Fullscreen browser, immersive reveal -> short header
-  // Popup&App window -> tall header
-  // Panels use short header and are handled via ash::PanelFrameView.
-  // Dialogs use short header and are handled via ash::CustomFrameViewAsh.
-  Browser* browser = browser_view()->browser();
-  switch (browser->type()) {
-    case Browser::TYPE_TABBED:
-      return frame()->IsMaximized() || frame()->IsFullscreen();
-    case Browser::TYPE_POPUP:
-      return false;
-    default:
-      NOTREACHED();
-      return false;
-  }
+  // Restored tabbed browser windows use the tall header. All other windows use
+  // the short header.
+  return frame()->IsMaximized() ||
+         frame()->IsFullscreen() ||
+         !browser_view()->IsBrowserTypeNormal();
 }
 
 bool BrowserNonClientFrameViewAsh::UseImmersiveLightbarHeaderStyle() const {
@@ -422,14 +414,14 @@ bool BrowserNonClientFrameViewAsh::UseImmersiveLightbarHeaderStyle() const {
 
 void BrowserNonClientFrameViewAsh::LayoutAvatar() {
   DCHECK(avatar_button());
+  DCHECK(browser_view()->IsTabStripVisible());
   gfx::ImageSkia incognito_icon = browser_view()->GetOTRAvatarIcon();
 
-  int avatar_bottom = GetTabStripInsets(false).top +
+  int avatar_bottom = GetTopInset() +
       browser_view()->GetTabStripHeight() - kAvatarBottomSpacing;
   int avatar_restored_y = avatar_bottom - incognito_icon.height();
   int avatar_y = (frame()->IsMaximized() || frame()->IsFullscreen()) ?
-      GetTabStripInsets(false).top + kContentShadowHeight :
-      avatar_restored_y;
+      GetTopInset() + kContentShadowHeight : avatar_restored_y;
 
   // Hide the incognito icon in immersive fullscreen when the tab light bar is
   // visible because the header is too short for the icognito icon to be
@@ -482,6 +474,8 @@ void BrowserNonClientFrameViewAsh::PaintToolbarBackground(gfx::Canvas* canvas) {
   // (popup mode) the toolbar isn't tall enough to show the whole image.  The
   // split happens between the top shadow section and the bottom gradient
   // section so that we never break the gradient.
+  // NOTE(pkotwicz): If the computation for |bottom_y| is changed, Layout() must
+  // be changed as well.
   int split_point = kFrameShadowThickness * 2;
   int bottom_y = y + split_point;
   ui::ThemeProvider* tp = GetThemeProvider();
@@ -499,7 +493,7 @@ void BrowserNonClientFrameViewAsh::PaintToolbarBackground(gfx::Canvas* canvas) {
   canvas->TileImageInt(
       *theme_toolbar,
       x + GetThemeBackgroundXInset(),
-      bottom_y - GetTabStripInsets(false).top,
+      bottom_y - GetTopInset(),
       x, bottom_y,
       w, theme_toolbar->height());
 

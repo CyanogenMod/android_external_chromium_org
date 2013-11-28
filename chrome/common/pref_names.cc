@@ -1069,9 +1069,6 @@ const char kPerHostZoomLevels[] = "profile.per_host_zoom_levels";
 // the dialog.
 const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
 
-// Whether a user has ever paid with Wallet via the autofill dialog.
-const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
-
 // Whether a user opted out of making purchases with Google Wallet; changed via
 // the autofill dialog's account chooser and set explicitly on dialog submission
 // (but not cancel). If this isn't set, the dialog assumes it's the first run.
@@ -1081,9 +1078,6 @@ const char kAutofillDialogPayWithoutWallet[] = "autofill.pay_without_wallet";
 // location will be shared with fraud protection services.
 const char kAutofillDialogWalletLocationAcceptance[] =
     "autofill.wallet_location_disclosure";
-
-// The number of times the dialog has been shown (all time).
-const char kAutofillDialogShowCount[] = "autofill.show_count";
 
 // Whether a user wants to save data locally in Autofill.
 const char kAutofillDialogSaveData[] = "autofill.save_data";
@@ -1272,6 +1266,10 @@ const char kLocalDiscoveryNotificationsEnabled[] =
 // the user. Used both in user preferences and local state, in the latter, it is
 // actually a dictionary that maps profile keys to before-mentioned strings.
 const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
+
+// Stores the check-in info retrieved from the GCM server.
+const char kGCMUserAccountID[] = "gcm.user.account_id";
+const char kGCMUserToken[] = "gcm.user.token";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1707,20 +1705,34 @@ const char kExtensionInstallForceList[] = "extensions.install.forcelist";
 const char kExtensionStorageGarbageCollect[] =
     "extensions.storage.garbagecollect";
 
+// Customized app page names that appear on the New Tab Page.
+const char kNtpAppPageNames[] = "ntp.app_page_names";
+
 // Keeps track of which sessions are collapsed in the Other Devices menu.
 const char kNtpCollapsedForeignSessions[] = "ntp.collapsed_foreign_sessions";
+
+// Keeps track of recently closed tabs collapsed state in the Other Devices
+// menu.
+const char kNtpCollapsedRecentlyClosedTabs[] =
+    "ntp.collapsed_recently_closed_tabs";
+
+// Keeps track of snapshot documents collapsed state in the Other Devices menu.
+const char kNtpCollapsedSnapshotDocument[] = "ntp.collapsed_snapshot_document";
+
+// Keeps track of sync promo collapsed state in the Other Devices menu.
+const char kNtpCollapsedSyncPromo[] = "ntp.collapsed_sync_promo";
+
+// Serves dates to determine display of elements on the NTP.
+const char kNtpDateResourceServer[] = "ntp.date_resource_server";
 
 // New Tab Page URLs that should not be shown as most visited thumbnails.
 const char kNtpMostVisitedURLsBlacklist[] = "ntp.most_visited_blacklist";
 
+// True if a desktop sync session was found for this user.
+const char kNtpPromoDesktopSessionFound[] = "ntp.promo_desktop_session_found";
+
 // Last time of update of promo_resource_cache.
 const char kNtpPromoResourceCacheUpdate[] = "ntp.promo_resource_cache_update";
-
-// Serves tips for the NTP.
-const char kNtpTipsResourceServer[] = "ntp.tips_resource_server";
-
-// Serves dates to determine display of elements on the NTP.
-const char kNtpDateResourceServer[] = "ntp.date_resource_server";
 
 // Which bookmarks folder should be visible on the new tab page v4.
 const char kNtpShownBookmarksFolder[] = "ntp.shown_bookmarks_folder";
@@ -1728,14 +1740,11 @@ const char kNtpShownBookmarksFolder[] = "ntp.shown_bookmarks_folder";
 // Which page should be visible on the new tab page v4
 const char kNtpShownPage[] = "ntp.shown_page";
 
-// True if a desktop sync session was found for this user.
-const char kNtpPromoDesktopSessionFound[] = "ntp.promo_desktop_session_found";
+// Serves tips for the NTP.
+const char kNtpTipsResourceServer[] = "ntp.tips_resource_server";
 
 // Boolean indicating whether the web store is active for the current locale.
 const char kNtpWebStoreEnabled[] = "ntp.webstore_enabled";
-
-// Customized app page names that appear on the New Tab Page.
-const char kNtpAppPageNames[] = "ntp.app_page_names";
 
 // A private RSA key for ADB handshake.
 const char kDevToolsAdbKey[] = "devtools.adb_key";
@@ -1797,6 +1806,9 @@ const char kSyncLastSyncedTime[] = "sync.last_synced_time";
 // Boolean specifying whether the user finished setting up sync.
 const char kSyncHasSetupCompleted[] = "sync.has_setup_completed";
 
+// Boolean specifying whether sync has an auth error.
+const char kSyncHasAuthError[] = "sync.has_auth_error";
+
 // Boolean specifying whether to automatically sync all data types (including
 // future ones, as they're added).  If this is true, the following preferences
 // (kSyncBookmarks, kSyncPasswords, etc.) can all be ignored.
@@ -1841,10 +1853,6 @@ const char kSyncSuppressStart[] = "sync.suppress_start";
 // if a new sync type has rolled out so we can notify the user.
 const char kSyncAcknowledgedSyncTypes[] = "sync.acknowledged_types";
 
-// Dictionary from sync model type (as an int) to max invalidation
-// version (int64 represented as a string).
-const char kSyncMaxInvalidationVersions[] = "sync.max_invalidation_versions";
-
 // The GUID session sync will use to identify this client, even across sync
 // disable/enable events.
 const char kSyncSessionsGUID[] = "sync.session_sync_guid";
@@ -1856,11 +1864,9 @@ const char kInvalidatorClientId[] = "invalidator.client_id";
 // The value is base 64 encoded.
 const char kInvalidatorInvalidationState[] = "invalidator.invalidation_state";
 
-// List of {source, name, max invalidation version} tuples. source is an int,
-// while max invalidation version is an int64; both are stored as string
-// representations though.
-const char kInvalidatorMaxInvalidationVersions[] =
-    "invalidator.max_invalidation_versions";
+// List of received invalidations that have not been acted on by any clients
+// yet.  Used to keep invalidation clients in sync in case of a restart.
+const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
 
 // A string that can be used to restore sync encryption infrastructure on
 // startup so that the user doesn't need to provide credentials on each start.
@@ -2407,7 +2413,7 @@ const char kShelfAlignmentLocal[] = "shelf_alignment_local";
 const char kShelfAutoHideBehavior[] = "auto_hide_behavior";
 const char kShelfAutoHideBehaviorLocal[] = "auto_hide_behavior_local";
 // This value stores chrome icon's index in the launcher. This should be handled
-// separately with app shortcut's index because of LauncherModel's backward
+// separately with app shortcut's index because of ShelfModel's backward
 // compatability. If we add chrome icon index to |kPinnedLauncherApps|, its
 // index is also stored in the |kPinnedLauncherApp| pref. It may causes
 // creating two chrome icons.
@@ -2504,8 +2510,9 @@ const char kOverscrollHorizontalResistThreshold[] =
     "overscroll.horizontal_resist_threshold";
 const char kOverscrollVerticalResistThreshold[] =
     "overscroll.vertical_resist_threshold";
-// TODO(mohsen): Remove following pref in M32. By then, gesture prefs will have
-// been cleared for majority of the users: crbug.com/269292.
+// TODO(mohsen): Remove following pref in M33. By then, it will have been
+// cleared from preferences file for majority of users and it will be ready to
+// be removed: crbug.com/269292.
 // A temporary pref to do a one-time wipe of gesture preferences.
 const char kGestureConfigIsTrustworthy[] = "gesture.config_is_trustworthy";
 #endif

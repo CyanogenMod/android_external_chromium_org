@@ -18,7 +18,7 @@
 #include "chrome/browser/ui/views/new_avatar_button.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
-#include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -139,17 +139,13 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
   int tabstrip_width = minimize_button_offset - tabstrip_x -
       (frame()->IsMaximized() ?
           kNewTabCaptionMaximizedSpacing : kNewTabCaptionRestoredSpacing);
-  return gfx::Rect(tabstrip_x, GetTabStripInsets(false).top,
+  return gfx::Rect(tabstrip_x, NonClientTopBorderHeight(),
                    std::max(0, tabstrip_width),
                    tabstrip->GetPreferredSize().height());
 }
 
-BrowserNonClientFrameView::TabStripInsets
-GlassBrowserFrameView::GetTabStripInsets(bool restored) const {
-  if (!browser_view()->IsTabStripVisible())
-    return TabStripInsets();
-  // TODO: include OTR and caption.
-  return TabStripInsets(NonClientTopBorderHeight(restored), 0, 0);
+int GlassBrowserFrameView::GetTopInset() const {
+  return GetClientAreaInsets().top();
 }
 
 int GlassBrowserFrameView::GetThemeBackgroundXInset() const {
@@ -292,7 +288,7 @@ bool GlassBrowserFrameView::HitTestRect(const gfx::Rect& rect) const {
 void GlassBrowserFrameView::ButtonPressed(views::Button* sender,
                                           const ui::Event& event) {
   if (sender == new_avatar_button())
-    ShowProfileChooserViewBubble();
+    browser_view()->ShowAvatarBubbleFromAvatarButton();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -310,16 +306,15 @@ int GlassBrowserFrameView::NonClientBorderThickness() const {
   return kNonClientBorderThickness;
 }
 
-int GlassBrowserFrameView::NonClientTopBorderHeight(
-    bool restored) const {
-  if (!restored && frame()->IsFullscreen())
+int GlassBrowserFrameView::NonClientTopBorderHeight() const {
+  if (frame()->IsFullscreen())
     return 0;
 
   // We'd like to use FrameBorderThickness() here, but the maximized Aero glass
   // frame has a 0 frame border around most edges and a CYSIZEFRAME-thick border
   // at the top (see AeroGlassFrame::OnGetMinMaxInfo()).
   return gfx::win::GetSystemMetricsInDIP(SM_CYSIZEFRAME) +
-      ((!restored && !frame()->ShouldLeaveOffsetNearTopBorder()) ?
+      (!frame()->ShouldLeaveOffsetNearTopBorder() ?
       -kTabstripTopShadowThickness : kNonClientRestoredExtraThickness);
 }
 
@@ -348,7 +343,7 @@ void GlassBrowserFrameView::PaintToolbarBackground(gfx::Canvas* canvas) {
                    : y;
   canvas->TileImageInt(*theme_toolbar,
                        x + GetThemeBackgroundXInset(),
-                       dest_y - GetTabStripInsets(false).top, x,
+                       dest_y - GetTopInset(), x,
                        dest_y, w, theme_toolbar->height());
 
   if (browser_view()->IsTabStripVisible()) {
@@ -459,7 +454,7 @@ void GlassBrowserFrameView::LayoutNewStyleAvatar() {
     button_x = width() - frame()->GetMinimizeButtonOffset() +
         kNewAvatarButtonOffset;
 
-  int button_y = frame()->IsMaximized() ? NonClientTopBorderHeight(false) : 1;
+  int button_y = frame()->IsMaximized() ? NonClientTopBorderHeight() : 1;
   new_avatar_button()->SetBounds(
       button_x,
       button_y,
@@ -481,11 +476,11 @@ void GlassBrowserFrameView::LayoutAvatar() {
   if (base::i18n::IsRTL())
     avatar_x += width() - frame()->GetMinimizeButtonOffset();
 
-  int avatar_bottom = GetTabStripInsets(false).top +
+  int avatar_bottom = GetTopInset() +
       browser_view()->GetTabStripHeight() - kAvatarBottomSpacing;
   int avatar_restored_y = avatar_bottom - incognito_icon.height();
   int avatar_y = frame()->IsMaximized() ?
-      (NonClientTopBorderHeight(false) + kTabstripTopShadowThickness) :
+      (NonClientTopBorderHeight() + kTabstripTopShadowThickness) :
       avatar_restored_y;
   avatar_bounds_.SetRect(avatar_x, avatar_y, incognito_icon.width(),
       browser_view()->ShouldShowAvatar() ? (avatar_bottom - avatar_y) : 0);
@@ -501,7 +496,7 @@ gfx::Insets GlassBrowserFrameView::GetClientAreaInsets() const {
   if (!browser_view()->IsTabStripVisible())
     return gfx::Insets();
 
-  const int top_height = NonClientTopBorderHeight(false);
+  const int top_height = NonClientTopBorderHeight();
   const int border_thickness = NonClientBorderThickness();
   return gfx::Insets(top_height,
                      border_thickness,

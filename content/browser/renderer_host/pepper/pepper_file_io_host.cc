@@ -10,6 +10,7 @@
 #include "base/files/file_util_proxy.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/renderer_host/pepper/pepper_file_ref_host.h"
+#include "content/browser/renderer_host/pepper/pepper_file_system_browser_host.h"
 #include "content/browser/renderer_host/pepper/pepper_security_helper.h"
 #include "content/browser/renderer_host/pepper/quota_file_io.h"
 #include "content/common/fileapi/file_system_messages.h"
@@ -25,10 +26,12 @@
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -235,6 +238,8 @@ int32_t PepperFileIOHost::OnHostMsgOpen(
   if (file_ref_host->GetFileSystemType() == PP_FILESYSTEMTYPE_INVALID)
     return PP_ERROR_FAILED;
 
+  file_system_host_ = file_ref_host->GetFileSystemHost();
+
   open_flags_ = open_flags;
   file_system_type_ = file_ref_host->GetFileSystemType();
   file_system_url_ = file_ref_host->GetFileSystemURL();
@@ -304,9 +309,10 @@ void PepperFileIOHost::GotUIThreadStuffForInternalFileSystems(
     quota_policy_ = quota::kQuotaLimitTypeUnlimited;
   else
     quota_policy_ = quota::kQuotaLimitTypeLimited;
-  file_system_operation_runner_ =
-      file_system_context_->CreateFileSystemOperationRunner();
-  file_system_operation_runner_->OpenFile(
+
+  DCHECK(file_system_host_.get());
+  DCHECK(file_system_host_->GetFileSystemOperationRunner());
+  file_system_host_->GetFileSystemOperationRunner()->OpenFile(
       file_system_url_,
       platform_file_flags,
       base::Bind(&PepperFileIOHost::DidOpenInternalFile,
@@ -350,30 +356,16 @@ int32_t PepperFileIOHost::OnHostMsgTouch(
   if (rv != PP_OK)
     return rv;
 
-  base::FileUtilProxy::StatusCallback cb =
-      base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
-                 weak_factory_.GetWeakPtr(),
-                 context->MakeReplyMessageContext());
+  if (!base::FileUtilProxy::Touch(
+          file_message_loop_,
+          file_,
+          PPTimeToTime(last_access_time),
+          PPTimeToTime(last_modified_time),
+          base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
+                     weak_factory_.GetWeakPtr(),
+                     context->MakeReplyMessageContext())))
+    return PP_ERROR_FAILED;
 
-  if (file_system_type_ != PP_FILESYSTEMTYPE_EXTERNAL) {
-    // We use FileSystemOperationRunner here instead of working on the
-    // opened file because it may not have been opened with enough
-    // permissions for this operation. See http://crbug.com/313426 for
-    // details.
-    file_system_operation_runner_->TouchFile(
-        file_system_url_,
-        PPTimeToTime(last_access_time),
-        PPTimeToTime(last_modified_time),
-        cb);
-  } else {
-    if (!base::FileUtilProxy::Touch(
-            file_message_loop_,
-            file_,
-            PPTimeToTime(last_access_time),
-            PPTimeToTime(last_modified_time),
-            cb))
-      return PP_ERROR_FAILED;
-  }
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
   return PP_OK_COMPLETIONPENDING;
 }
@@ -423,15 +415,9 @@ int32_t PepperFileIOHost::OnHostMsgSetLength(
                  weak_factory_.GetWeakPtr(),
                  context->MakeReplyMessageContext());
 
-  // TODO(teravest): Use QuotaFileIO::SetLength here.
-  // The previous implementation did not use it in the renderer, so I'll
-  // do it in a follow-up change.
   if (file_system_type_ != PP_FILESYSTEMTYPE_EXTERNAL) {
-    // We use FileSystemOperationRunner here instead of working on the
-    // opened file because it may not have been opened with enough
-    // permissions for this operation. See http://crbug.com/313426 for
-    // details.
-    file_system_operation_runner_->Truncate(file_system_url_, length, cb);
+    if (!quota_file_io_->SetLength(length, cb))
+      return PP_ERROR_FAILED;
   } else {
     if (!base::FileUtilProxy::Truncate(file_message_loop_, file_, length, cb))
       return PP_ERROR_FAILED;
@@ -541,8 +527,7 @@ void PepperFileIOHost::ExecutePlatformOpenFileCallback(
 
   DCHECK(!quota_file_io_.get());
   if (file_ != base::kInvalidPlatformFileValue) {
-    if (file_system_type_ == PP_FILESYSTEMTYPE_LOCALTEMPORARY ||
-        file_system_type_ == PP_FILESYSTEMTYPE_LOCALPERSISTENT) {
+    if (ppapi::FileSystemTypeHasQuota(file_system_type_)) {
       quota_file_io_.reset(new QuotaFileIO(
           new QuotaFileIODelegate(file_system_context_, render_process_id_),
               file_, file_system_url_.ToGURL(), file_system_type_));

@@ -118,6 +118,34 @@
       ],
     },
     {
+      'target_name': 'angle_unittests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../testing/gmock.gyp:gmock',
+        '../testing/gtest.gyp:gtest',
+        '../third_party/angle_dx11/src/build_angle.gyp:translator_static',
+      ],
+      'variables': {
+        'ANGLE_DIR': '../third_party/angle_dx11',
+      },
+      'includes': [
+        '../third_party/angle_dx11/tests/preprocessor_tests/preprocessor_tests.gypi',
+        '../third_party/angle_dx11/tests/compiler_tests/compiler_tests.gypi',
+      ],
+      'include_dirs': [
+        '..',
+        '../third_party/angle_dx11/include',
+        '../third_party/angle_dx11/src',
+        '../third_party/angle_dx11/src/compiler/preprocessor',
+        '../third_party/angle_dx11/tests',
+      ],
+      'sources': [
+        'angle_unittest_main.cc',
+      ],
+    },
+    {
       'target_name': 'gpu_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -224,7 +252,6 @@
         'config/gpu_driver_bug_list_unittest.cc',
         'config/gpu_info_collector_unittest.cc',
         'config/gpu_info_unittest.cc',
-        'config/gpu_switching_list_unittest.cc',
         'config/gpu_test_config_unittest.cc',
         'config/gpu_test_expectations_parser_unittest.cc',
         'config/gpu_util_unittest.cc',

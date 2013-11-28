@@ -204,7 +204,7 @@ cr.define('options', function() {
     var container = $('page-container');
     var scrollTop = container.oldScrollTop || 0;
     container.oldScrollTop = undefined;
-    window.scroll(document.body.scrollLeft, scrollTop);
+    window.scroll(scrollLeftForDocument(document), scrollTop);
   };
 
   /**
@@ -611,7 +611,7 @@ cr.define('options', function() {
     if (freeze) {
       // Lock the width, since auto width computation may change.
       container.style.width = window.getComputedStyle(container).width;
-      container.oldScrollTop = document.documentElement.scrollTop;
+      container.oldScrollTop = scrollTopForDocument(document);
       container.classList.add('frozen');
       var verticalPosition =
           container.getBoundingClientRect().top - container.oldScrollTop;
@@ -703,8 +703,8 @@ cr.define('options', function() {
     if (isRTL()) {
       e.style.right = OptionsPage.horizontalOffset + 'px';
     } else {
-      e.style.left = OptionsPage.horizontalOffset -
-          document.body.scrollLeft + 'px';
+      var scrollLeft = scrollLeftForDocument(document);
+      e.style.left = OptionsPage.horizontalOffset - scrollLeft + 'px';
     }
   };
 
@@ -724,6 +724,8 @@ cr.define('options', function() {
       document.documentElement.removeAttribute(
           'flashPluginSupportsClearSiteData');
     }
+    if (navigator.plugins['Shockwave Flash'])
+      document.documentElement.setAttribute('hasFlashPlugin', '');
   };
 
   OptionsPage.setPepperFlashSettingsEnabled = function(enabled) {

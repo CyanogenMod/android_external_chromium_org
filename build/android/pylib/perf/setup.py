@@ -33,19 +33,15 @@ def _KillPendingServers():
         except Exception as e:
           logging.warning('Failed killing %s %s %s', server, pid, e)
   # Restart the adb server with taskset to set a single CPU affinity.
-  cmd_helper.RunCmd(['adb', 'kill-server'])
-  cmd_helper.RunCmd(['taskset', '-c', '0', 'adb', 'start-server'])
-  cmd_helper.RunCmd(['taskset', '-c', '0', 'adb', 'root'])
+  cmd_helper.RunCmd([constants.ADB_PATH, 'kill-server'])
+  cmd_helper.RunCmd(['taskset', '-c', '0', constants.ADB_PATH, 'start-server'])
+  cmd_helper.RunCmd(['taskset', '-c', '0', constants.ADB_PATH, 'root'])
   i = 1
   while not android_commands.GetAttachedDevices():
     time.sleep(i)
     i *= 2
     if i > 10:
       break
-  # Reset the test port allocation. It's important to do it before starting
-  # to dispatch any step.
-  if not ports.ResetTestServerPortAllocation():
-    raise Exception('Failed to reset test server port.')
 
   forwarder.Forwarder.UseMultiprocessing()
 
@@ -59,6 +55,8 @@ def Setup(test_options):
   Returns:
     A tuple of (TestRunnerFactory, tests).
   """
+  # TODO(bulach): remove this once the bot side lands. BUG=318369
+  constants.SetBuildType('Release')
   if os.path.exists(constants.PERF_OUTPUT_DIR):
     shutil.rmtree(constants.PERF_OUTPUT_DIR)
   os.makedirs(constants.PERF_OUTPUT_DIR)
@@ -66,8 +64,13 @@ def Setup(test_options):
   # Before running the tests, kill any leftover server.
   _KillPendingServers()
 
-  with file(test_options.steps, 'r') as f:
-    tests = json.load(f)
+  if test_options.single_step:
+    # Running a single command, build the tests structure.
+    tests = [['single_step', test_options.single_step]]
+
+  if test_options.steps:
+    with file(test_options.steps, 'r') as f:
+      tests = json.load(f)
 
   # The list is necessary to keep the steps order, but internally
   # the format is squashed from a list of lists into a single dict:

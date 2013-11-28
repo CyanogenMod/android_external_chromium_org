@@ -77,6 +77,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
 #endif
@@ -90,7 +91,6 @@ using content::OpenURLParams;
 using content::RenderViewHost;
 using content::SSLStatus;
 using content::WebContents;
-using WebKit::WebReferrerPolicy;
 
 namespace {
 
@@ -104,21 +104,18 @@ void ShowNativeView(gfx::NativeView view) {
 #endif
 }
 
-scoped_ptr<content::NativeWebKeyboardEvent> CreateKeyboardEvent(
-    const MSG& msg) {
+scoped_ptr<NativeWebKeyboardEvent> CreateKeyboardEvent(const MSG& msg) {
 #if defined(USE_AURA)
   // TODO(grt): confirm that this is a translated character event.
   ui::KeyEvent key_event(msg, true);
-  return scoped_ptr<content::NativeWebKeyboardEvent>(
-      new content::NativeWebKeyboardEvent(&key_event));
+  return scoped_ptr<NativeWebKeyboardEvent>(
+      new NativeWebKeyboardEvent(&key_event));
 #else
-  return scoped_ptr<content::NativeWebKeyboardEvent>(
-      new content::NativeWebKeyboardEvent(msg));
+  return scoped_ptr<NativeWebKeyboardEvent>(new NativeWebKeyboardEvent(msg));
 #endif
 }
 
-const MSG& MessageFromKeyboardEvent(
-    const content::NativeWebKeyboardEvent& event) {
+const MSG& MessageFromKeyboardEvent(const NativeWebKeyboardEvent& event) {
 #if defined(USE_AURA)
   DCHECK(event.os_event);
   return event.os_event->native_event();
@@ -167,18 +164,18 @@ bool ShouldHideReferrer(const GURL& url, const GURL& referrer) {
   return !url.SchemeIsSecure();
 }
 
-GURL GenerateReferrer(WebKit::WebReferrerPolicy policy,
+GURL GenerateReferrer(blink::WebReferrerPolicy policy,
                       const GURL& url,
                       const GURL& referrer) {
   if (referrer.is_empty())
     return GURL();
 
   switch (policy) {
-    case WebKit::WebReferrerPolicyNever:
+    case blink::WebReferrerPolicyNever:
       return GURL();
-    case WebKit::WebReferrerPolicyAlways:
+    case blink::WebReferrerPolicyAlways:
       return referrer;
-    case WebKit::WebReferrerPolicyOrigin:
+    case blink::WebReferrerPolicyOrigin:
       return referrer.GetOrigin();
     default:
       break;
@@ -747,7 +744,7 @@ void ExternalTabContainerWin::AddNewContents(WebContents* source,
     attach_params_.dimensions = initial_pos;
     attach_params_.user_gesture = user_gesture;
     attach_params_.disposition = disposition;
-    attach_params_.profile_name = WideToUTF8(
+    attach_params_.profile_name = base::WideToUTF8(
         profile->GetPath().DirName().BaseName().value());
     automation_->Send(new AutomationMsg_AttachExternalTab(
         tab_handle_, attach_params_));
@@ -1225,9 +1222,9 @@ bool ExternalTabContainerWin::InitNavigationInfo(
       web_contents_->GetController().GetCurrentEntryIndex();
   nav_info->url = entry->GetURL();
   nav_info->referrer = entry->GetReferrer().url;
-  nav_info->title = UTF16ToWideHack(entry->GetTitle());
+  nav_info->title = entry->GetTitle();
   if (nav_info->title.empty())
-    nav_info->title = UTF8ToWide(nav_info->url.spec());
+    nav_info->title = base::UTF8ToWide(nav_info->url.spec());
 
   nav_info->security_style = entry->GetSSL().security_style;
   int content_status = entry->GetSSL().content_status;
@@ -1315,7 +1312,7 @@ void ExternalTabContainerWin::Navigate(const GURL& url, const GURL& referrer) {
   TRACE_EVENT_BEGIN_ETW("ExternalTabContainerWin::Navigate", 0, url.spec());
 
   web_contents_->GetController().LoadURL(
-      url, content::Referrer(referrer, WebKit::WebReferrerPolicyDefault),
+      url, content::Referrer(referrer, blink::WebReferrerPolicyDefault),
       content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 }
 

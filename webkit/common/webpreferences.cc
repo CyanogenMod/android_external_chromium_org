@@ -10,7 +10,7 @@
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 
-using WebKit::WebSettings;
+using blink::WebSettings;
 
 WebPreferences::WebPreferences()
     : default_font_size(16),
@@ -43,8 +43,6 @@ WebPreferences::WebPreferences()
       caret_browsing_enabled(false),
       hyperlink_auditing_enabled(true),
       is_online(true),
-      user_style_sheet_enabled(false),
-      author_and_user_styles_enabled(true),
       allow_universal_access_from_file_urls(false),
       allow_file_access_from_file_urls(false),
       webaudio_enabled(false),
@@ -60,6 +58,7 @@ WebPreferences::WebPreferences()
       accelerated_compositing_for_scrollable_frames_enabled(false),
       composited_scrolling_for_frames_enabled(false),
       mock_scrollbars_enabled(false),
+      layer_squashing_enabled(false),
       threaded_html_parser(true),
       show_paint_rects(false),
       asynchronous_spell_checking_enabled(true),
@@ -109,6 +108,8 @@ WebPreferences::WebPreferences()
 #endif
       supports_multiple_windows(true),
       viewport_enabled(false),
+      viewport_meta_enabled(false),
+      main_frame_resizes_are_orientation_changes(false),
       initialize_at_minimum_page_scale(true),
 #if defined(OS_MACOSX)
       smart_insert_delete_enabled(true),
@@ -137,7 +138,9 @@ WebPreferences::WebPreferences()
       use_wide_viewport(true),
       viewport_meta_layout_size_quirk(false),
       viewport_meta_merge_content_quirk(false),
+      viewport_meta_non_user_scalable_quirk(false),
       viewport_meta_zero_values_quirk(false),
+      clobber_user_agent_initial_scale_quirk(false),
       ignore_main_frame_overflow_hidden_quirk(false),
       report_screen_size_in_physical_pixels_quirk(false)
 #endif

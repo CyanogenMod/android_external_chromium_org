@@ -17,10 +17,13 @@ namespace cc {
 
 class ContextProvider;
 class LayerTreeHost;
+class LayerTreeHostSingleThreadClient;
 
 class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
  public:
-  static scoped_ptr<Proxy> Create(LayerTreeHost* layer_tree_host);
+  static scoped_ptr<Proxy> Create(
+      LayerTreeHost* layer_tree_host,
+      LayerTreeHostSingleThreadClient* client);
   virtual ~SingleThreadProxy();
 
   // Proxy implementation
@@ -51,7 +54,8 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
 
   // LayerTreeHostImplClient implementation
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
-  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
+  virtual void DidSwapBuffersOnImplThread() OVERRIDE;
+  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
   virtual void BeginImplFrame(const BeginFrameArgs& args)
       OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
@@ -73,12 +77,14 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE {}
   virtual void DidActivatePendingTree() OVERRIDE {}
+  virtual void DidManageTiles() OVERRIDE {}
 
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);
 
  private:
-  explicit SingleThreadProxy(LayerTreeHost* layer_tree_host);
+  SingleThreadProxy(LayerTreeHost* layer_tree_host,
+                    LayerTreeHostSingleThreadClient* client);
 
   void OnOutputSurfaceInitializeAttempted(bool success);
   bool CommitAndComposite(base::TimeTicks frame_begin_time,
@@ -99,6 +105,7 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
 
   // Accessed on main thread only.
   LayerTreeHost* layer_tree_host_;
+  LayerTreeHostSingleThreadClient* client_;
   bool created_offscreen_context_provider_;
 
   // Holds the first output surface passed from Start. Should not be used for

@@ -21,8 +21,8 @@
 #include "chrome/browser/extensions/updater/extension_downloader_delegate.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/updater/request_queue.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/update_manifest.h"
+#include "extensions/common/extension.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
@@ -196,7 +196,7 @@ class ExtensionDownloader : public net::URLFetcherDelegate {
   ExtensionDownloaderDelegate* delegate_;
 
   // The request context to use for the URLFetchers.
-  net::URLRequestContextGetter* request_context_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
 
   // Used to create WeakPtrs to |this|.
   base::WeakPtrFactory<ExtensionDownloader> weak_ptr_factory_;

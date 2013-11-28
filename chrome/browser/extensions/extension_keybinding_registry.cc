@@ -7,11 +7,12 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/manifest_constants.h"
 
 namespace extensions {
@@ -37,22 +38,27 @@ ExtensionKeybindingRegistry::~ExtensionKeybindingRegistry() {
 void ExtensionKeybindingRegistry::RemoveExtensionKeybinding(
     const Extension* extension,
     const std::string& command_name) {
-  EventTargets::iterator iter = event_targets_.begin();
-  while (iter != event_targets_.end()) {
-    if (iter->second.first != extension->id() ||
-        (!command_name.empty() && (iter->second.second != command_name))) {
-      ++iter;
-      continue;  // Not the extension or command we asked for.
+  EventTargets::iterator it = event_targets_.begin();
+  while (it != event_targets_.end()) {
+    TargetList& target_list = it->second;
+    TargetList::iterator target = target_list.begin();
+    while (target != target_list.end()) {
+      if (target->first == extension->id() &&
+          (command_name.empty() || command_name == target->second))
+        target = target_list.erase(target);
+      else
+        target++;
     }
 
-    // Let each platform-specific implementation get a chance to clean up.
-    RemoveExtensionKeybindingImpl(iter->first, command_name);
+    EventTargets::iterator old = it++;
+    if (target_list.empty()) {
+      // Let each platform-specific implementation get a chance to clean up.
+      RemoveExtensionKeybindingImpl(old->first, command_name);
+      event_targets_.erase(old);
+    }
 
-    EventTargets::iterator old = iter++;
-    event_targets_.erase(old);
-
-    // If a specific command_name was requested, it has now been deleted so
-    // no further work is required.
+    // If a specific command_name was requested, it has now been deleted so no
+    // further work is required.
     if (!command_name.empty())
       break;
   }
@@ -78,6 +84,19 @@ bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
          command == manifest_values::kScriptBadgeCommandEvent;
 }
 
+bool ExtensionKeybindingRegistry::NotifyEventTargets(
+    const ui::Accelerator& accelerator) {
+  EventTargets::iterator targets = event_targets_.find(accelerator);
+  if (targets == event_targets_.end() || targets->second.empty())
+    return false;
+
+  for (TargetList::const_iterator it = targets->second.begin();
+       it != targets->second.end(); it++)
+    CommandExecuted(it->first, it->second);
+
+  return true;
+}
+
 void ExtensionKeybindingRegistry::CommandExecuted(
     const std::string& extension_id, const std::string& command) {
   ExtensionService* service =
@@ -100,7 +119,7 @@ void ExtensionKeybindingRegistry::CommandExecuted(
   args->Append(new base::StringValue(command));
 
   scoped_ptr<Event> event(new Event("commands.onCommand", args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
   ExtensionSystem::Get(profile_)->event_router()->
       DispatchEventToExtension(extension_id, event.Pass());

@@ -259,25 +259,15 @@ void PrefMetricsService::LogIntegerPrefChange(int boundary_value,
   histogram->Add(integer_value);
 }
 
-void PrefMetricsService::LogListPrefChange(
-    const LogHistogramValueCallback& item_callback,
-    const std::string& histogram_name,
-    const Value* value) {
-  const ListValue* items = NULL;
-  if (!value->GetAsList(&items))
-    return;
-  for (size_t i = 0; i < items->GetSize(); ++i) {
-    const Value *item_value = NULL;
-    if (items->Get(i, &item_value))
-      item_callback.Run(histogram_name, item_value);
-  }
-}
-
 void PrefMetricsService::GetDeviceIdCallback(const std::string& device_id) {
+#if !defined(OS_WIN) || defined(ENABLE_RLZ)
+  // A device_id is expected in all scenarios except when RLZ is disabled on
+  // Windows.
+  DCHECK(!device_id.empty());
+#endif
+
   device_id_ = device_id;
-  // On Aura, this seems to be called twice.
-  if (!checked_tracked_prefs_)
-    CheckTrackedPreferences();
+  CheckTrackedPreferences();
 }
 
 // To detect changes to Preferences that happen outside of Chrome, we hash
@@ -287,7 +277,9 @@ void PrefMetricsService::GetDeviceIdCallback(const std::string& device_id) {
 // profile. To make the system more resistant to spoofing, pref values are
 // hashed with the pref path and the device id.
 void PrefMetricsService::CheckTrackedPreferences() {
+  // Make sure this is only called once per instance of this service.
   DCHECK(!checked_tracked_prefs_);
+  checked_tracked_prefs_ = true;
 
   const base::DictionaryValue* pref_hash_dicts =
       local_state_->GetDictionary(prefs::kProfilePreferenceHashes);
@@ -301,45 +293,50 @@ void PrefMetricsService::CheckTrackedPreferences() {
     if (!prefs_->FindPreference(tracked_pref_paths_[i]))
       continue;
 
-    bool changed = false;
     const base::Value* value = prefs_->GetUserPrefValue(tracked_pref_paths_[i]);
-    if (value) {
-      std::string value_hash =
-          GetHashedPrefValue(tracked_pref_paths_[i], value);
-      std::string last_hash;
-      if (hashed_prefs &&
-          hashed_prefs->GetString(tracked_pref_paths_[i], &last_hash)) {
-        if (value_hash != last_hash) {
-          changed = true;
-          // Record that the preference changed from its last value.
-          UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceChanged",
-              i, tracked_pref_path_count_);
-          UpdateTrackedPreference(tracked_pref_paths_[i]);
-        }
-      } else {
-        changed = true;
-        // Record that we haven't tracked this preference yet, or the hash in
-        // local state was removed.
-        UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceInitialized",
+    std::string last_hash;
+    // First try to get the stored expected hash...
+    if (hashed_prefs &&
+        hashed_prefs->GetString(tracked_pref_paths_[i], &last_hash)) {
+      // ... if we have one get the hash of the current value...
+      const std::string value_hash =
+          GetHashedPrefValue(tracked_pref_paths_[i], value,
+                             HASHED_PREF_STYLE_NEW);
+      // ... and check that it matches...
+      if (value_hash == last_hash) {
+        UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceUnchanged",
             i, tracked_pref_path_count_);
+      } else {
+        // ... if it doesn't: was the value simply cleared?
+        if (!value) {
+          UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceCleared",
+              i, tracked_pref_path_count_);
+        } else {
+          // ... or does it match the old style hash?
+          std::string old_style_hash =
+              GetHashedPrefValue(tracked_pref_paths_[i], value,
+                                 HASHED_PREF_STYLE_DEPRECATED);
+          if (old_style_hash == last_hash) {
+            UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceMigrated",
+                i, tracked_pref_path_count_);
+          } else {
+            // ... or was it simply changed to something else?
+            UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceChanged",
+                i, tracked_pref_path_count_);
+          }
+        }
+
+        // ... either way update the expected hash to match the new value.
         UpdateTrackedPreference(tracked_pref_paths_[i]);
       }
     } else {
-      // There is no preference set. Remove any hashed value from local state
-      // and if one was present, record that a pref was cleared.
-      if (RemoveTrackedPreference(tracked_pref_paths_[i])) {
-        changed = true;
-        UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceCleared",
-            i, tracked_pref_path_count_);
-      }
-    }
-    if (!changed) {
-      UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceUnchanged",
+      // Record that we haven't tracked this preference yet, or the hash in
+      // local state was removed.
+      UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferenceInitialized",
           i, tracked_pref_path_count_);
+      UpdateTrackedPreference(tracked_pref_paths_[i]);
     }
   }
-
-  checked_tracked_prefs_ = true;
 
   // Now that we've checked the incoming preferences, register for change
   // notifications, unless this is test code.
@@ -353,57 +350,51 @@ void PrefMetricsService::CheckTrackedPreferences() {
 
 void PrefMetricsService::UpdateTrackedPreference(const char* path) {
   const base::Value* value = prefs_->GetUserPrefValue(path);
-  // If the pref value is now the default, remove the hash.
-  const ListValue* list_value;
-  const DictionaryValue* dict_value;
-  if (!value ||
-      (value->GetAsList(&list_value) && list_value->GetSize() == 0) ||
-      (value->GetAsDictionary(&dict_value) && dict_value->size() == 0)) {
-    RemoveTrackedPreference(path);
-  } else {
-    DictionaryPrefUpdate update(local_state_, prefs::kProfilePreferenceHashes);
-    DictionaryValue* child_dictionary = NULL;
-
-    // Get the dictionary corresponding to the profile name,
-    // which may have a '.'
-    if (!update->GetDictionaryWithoutPathExpansion(profile_name_,
-                                                   &child_dictionary)) {
-      child_dictionary = new DictionaryValue;
-      update->SetWithoutPathExpansion(profile_name_, child_dictionary);
-    }
-    child_dictionary->SetString(path, GetHashedPrefValue(path, value));
-  }
-}
-
-bool PrefMetricsService::RemoveTrackedPreference(const char* path) {
   DictionaryPrefUpdate update(local_state_, prefs::kProfilePreferenceHashes);
   DictionaryValue* child_dictionary = NULL;
 
+  // Get the dictionary corresponding to the profile name,
+  // which may have a '.'
   if (!update->GetDictionaryWithoutPathExpansion(profile_name_,
                                                  &child_dictionary)) {
-    return false;
+    child_dictionary = new DictionaryValue;
+    update->SetWithoutPathExpansion(profile_name_, child_dictionary);
   }
-  return child_dictionary->Remove(path, NULL);
+
+  child_dictionary->SetString(path,
+                              GetHashedPrefValue(path, value,
+                                                 HASHED_PREF_STYLE_NEW));
 }
 
 std::string PrefMetricsService::GetHashedPrefValue(
     const char* path,
-    const base::Value* value) {
-  DCHECK(value);
-
+    const base::Value* value,
+    HashedPrefStyle desired_style) {
   // Dictionary values may contain empty lists and sub-dictionaries. Make a
   // deep copy with those removed to make the hash more stable.
   const DictionaryValue* dict_value;
   scoped_ptr<DictionaryValue> canonical_dict_value;
-  if (value->GetAsDictionary(&dict_value)) {
+  if (value &&
+      value->GetAsDictionary(&dict_value)) {
     canonical_dict_value.reset(dict_value->DeepCopyWithoutEmptyChildren());
     value = canonical_dict_value.get();
   }
 
-  std::string string_to_hash(device_id_);
-  string_to_hash.append(path);
-  JSONStringValueSerializer serializer(&string_to_hash);
-  serializer.Serialize(*value);
+  std::string value_as_string;
+  // If |value| is NULL, we will still build a unique hash based on |device_id_|
+  // and |path| below.
+  if (value) {
+    JSONStringValueSerializer serializer(&value_as_string);
+    serializer.Serialize(*value);
+  }
+
+  std::string string_to_hash;
+  // TODO(gab): Remove this as the old style is phased out.
+  if (desired_style == HASHED_PREF_STYLE_NEW) {
+    string_to_hash.append(device_id_);
+    string_to_hash.append(path);
+  }
+  string_to_hash.append(value_as_string);
 
   crypto::HMAC hmac(crypto::HMAC::SHA256);
   unsigned char digest[kSHA256DigestSize];

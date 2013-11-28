@@ -90,7 +90,9 @@ using net::CookieStore;
 namespace content {
 namespace {
 
+#if defined(ENABLE_PLUGINS)
 const int kPluginsRefreshThresholdInSeconds = 3;
+#endif
 
 // When two CPU usage queries arrive within this interval, we sample the CPU
 // usage only once and send it as a response for both queries.
@@ -453,6 +455,18 @@ void RenderMessageFilter::OnCreateWindow(
     int* surface_id,
     int64* cloned_session_storage_namespace_id) {
   bool no_javascript_access;
+
+  // Merge the additional features into the WebWindowFeatures struct before we
+  // pass it on.
+  blink::WebVector<blink::WebString> additional_features(
+      params.additional_features.size());
+
+  for (size_t i = 0; i < params.additional_features.size(); ++i)
+    additional_features[i] = blink::WebString(params.additional_features[i]);
+
+  blink::WebWindowFeatures features = params.features;
+  features.additionalFeatures.swap(additional_features);
+
   bool can_create_window =
       GetContentClient()->browser()->CanCreateWindow(
           params.opener_url,
@@ -462,7 +476,7 @@ void RenderMessageFilter::OnCreateWindow(
           params.target_url,
           params.referrer,
           params.disposition,
-          params.features,
+          features,
           params.user_gesture,
           params.opener_suppressed,
           resource_context_,
@@ -494,7 +508,7 @@ void RenderMessageFilter::OnCreateWindow(
 }
 
 void RenderMessageFilter::OnCreateWidget(int opener_id,
-                                         WebKit::WebPopupType popup_type,
+                                         blink::WebPopupType popup_type,
                                          int* route_id,
                                          int* surface_id) {
   render_widget_helper_->CreateNewWidget(
@@ -648,6 +662,7 @@ void RenderMessageFilter::SendLoadFontReply(IPC::Message* reply,
 }
 #endif  // OS_MACOSX
 
+#if defined(ENABLE_PLUGINS)
 void RenderMessageFilter::OnGetPlugins(
     bool refresh,
     IPC::Message* reply_msg) {
@@ -788,6 +803,7 @@ void RenderMessageFilter::OnOpenChannelToPpapiBroker(
       path,
       new OpenChannelToPpapiBrokerCallback(this, routing_id));
 }
+#endif  // defined(ENABLE_PLUGINS)
 
 void RenderMessageFilter::OnGenerateRoutingID(int* route_id) {
   *route_id = render_widget_helper_->GetNextRoutingID();
@@ -854,7 +870,7 @@ void RenderMessageFilter::OnCheckNotificationPermission(
       CheckDesktopNotificationPermission(source_origin, resource_context_,
                                          render_process_id_);
 #else
-  *result = WebKit::WebNotificationPresenter::PermissionAllowed;
+  *result = blink::WebNotificationPresenter::PermissionAllowed;
 #endif
 }
 

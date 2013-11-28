@@ -4,17 +4,15 @@
 
 /**
  * Function to take the screenshot of the current screen.
- * @param {function(string)} callback Callback for returning the data URL to the
- *                           screenshot.
+ * @param {function(HTMLCanvasElement)} callback Callback for returning the
+ *                                      canvas with the screenshot on it.
  */
 function takeScreenshot(callback) {
-  var streaming = false;
+  var screenshotStream = null;
   var video = document.createElement('video');
 
   video.addEventListener('canplay', function(e) {
-    if (!streaming) {
-      streaming = true;
-
+    if (screenshotStream) {
       var canvas = document.createElement('canvas');
       canvas.setAttribute('width', video.videoWidth);
       canvas.setAttribute('height', video.videoHeight);
@@ -24,7 +22,10 @@ function takeScreenshot(callback) {
       video.pause();
       video.src = '';
 
-      callback(canvas.toDataURL('image/png'));
+      screenshotStream.stop();
+      screenshotStream = null;
+
+      callback(canvas);
     }
   }, false);
 
@@ -39,8 +40,11 @@ function takeScreenshot(callback) {
       }
     },
     function(stream) {
-      video.src = window.webkitURL.createObjectURL(stream);
-      video.play();
+      if (stream) {
+        screenshotStream = stream;
+        video.src = window.webkitURL.createObjectURL(screenshotStream);
+        video.play();
+      }
     },
     function(err) {
       console.error('takeScreenshot failed: ' +

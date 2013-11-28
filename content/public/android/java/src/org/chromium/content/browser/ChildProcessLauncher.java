@@ -9,10 +9,6 @@ import android.util.Log;
 import android.util.SparseIntArray;
 import android.view.Surface;
 
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.SysUtils;
@@ -25,12 +21,16 @@ import org.chromium.content.app.SandboxedProcessService;
 import org.chromium.content.common.IChildProcessCallback;
 import org.chromium.content.common.IChildProcessService;
 
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * This class provides the method to start/stop ChildProcess called by native.
  */
 @JNINamespace("content")
 public class ChildProcessLauncher {
-    private static String TAG = "ChildProcessLauncher";
+    private static final String TAG = "ChildProcessLauncher";
 
     private static final int CALLBACK_FOR_UNKNOWN_PROCESS = 0;
     private static final int CALLBACK_FOR_GPU_PROCESS = 1;
@@ -51,7 +51,7 @@ public class ChildProcessLauncher {
 
     private static class ChildConnectionAllocator {
         // Connections to services. Indices of the array correspond to the service numbers.
-        private ChildProcessConnection[] mChildProcessConnections;
+        private final ChildProcessConnection[] mChildProcessConnections;
 
         // The list of free (not bound) service indices. When looking for a free service, the first
         // index in that list should be used. When a service is unbound, its index is added to the
@@ -61,7 +61,7 @@ public class ChildProcessLauncher {
         // the process is reused and bad things happen (mostly static variables are set when we
         // don't expect them to).
         // SHOULD BE ACCESSED WITH mConnectionLock.
-        private ArrayList<Integer> mFreeConnectionIndices;
+        private final ArrayList<Integer> mFreeConnectionIndices;
         private final Object mConnectionLock = new Object();
 
         private Class<? extends ChildProcessService> mChildClass;
@@ -87,9 +87,9 @@ public class ChildProcessLauncher {
         public ChildProcessConnection allocate(
                 Context context, ChildProcessConnection.DeathCallback deathCallback,
                 LinkerParams linkerParams) {
-            synchronized(mConnectionLock) {
+            synchronized (mConnectionLock) {
                 if (mFreeConnectionIndices.isEmpty()) {
-                    Log.w(TAG, "Ran out of service." );
+                    Log.w(TAG, "Ran out of service.");
                     return null;
                 }
                 int slot = mFreeConnectionIndices.remove(0);
@@ -101,7 +101,7 @@ public class ChildProcessLauncher {
         }
 
         public void free(ChildProcessConnection connection) {
-            synchronized(mConnectionLock) {
+            synchronized (mConnectionLock) {
                 int slot = connection.getServiceNumber();
                 if (mChildProcessConnections[slot] != connection) {
                     int occupier = mChildProcessConnections[slot] == null ?
@@ -127,7 +127,9 @@ public class ChildProcessLauncher {
 
     private static boolean sConnectionAllocated = false;
 
-    // Sets service class for sandboxed service and privileged service.
+    /**
+     * Sets service class for sandboxed service and privileged service.
+     */
     public static void setChildProcessClass(
             Class<? extends SandboxedProcessService> sandboxedServiceClass,
             Class<? extends PrivilegedProcessService> privilegedServiceClass) {
@@ -219,9 +221,9 @@ public class ChildProcessLauncher {
         // Delay of 1 second used when removing the initial oom binding of a process.
         private static final long REMOVE_INITIAL_BINDING_DELAY_MILLIS = 1 * 1000;
 
-        // Delay of 5 second used when removing temporary strong binding of a process (only on
+        // Delay of 1 second used when removing temporary strong binding of a process (only on
         // non-low-memory devices).
-        private static final long DETACH_AS_ACTIVE_HIGH_END_DELAY_MILLIS = 5 * 1000;
+        private static final long DETACH_AS_ACTIVE_HIGH_END_DELAY_MILLIS = 1 * 1000;
 
         // Map from pid to the count of oom bindings bound for the service. Should be accessed with
         // mCountLock.
@@ -231,6 +233,10 @@ public class ChildProcessLauncher {
         // to drop oom bindings of a process when another one acquires them, making sure that only
         // one renderer process at a time is oom bound. Should be accessed with mCountLock.
         private int mLastOomPid = -1;
+
+        // Pid of the renderer that we bound with a strong binding for the background period. Equals
+        // -1 when the embedder is in foreground.
+        private int mBoundForBackgroundPeriodPid = -1;
 
         // Should be acquired before binding or unbinding the connections and modifying state
         // variables: mOomBindingCount and mLastOomPid.
@@ -267,7 +273,7 @@ public class ChildProcessLauncher {
         private void dropOomBindings(int pid) {
             ChildProcessConnection connection = sServiceMap.get(pid);
             if (connection == null) {
-                LogPidWarning(pid, "Tried to drop oom bindings for a non-existent connection");
+                logPidWarning(pid, "Tried to drop oom bindings for a non-existent connection");
                 return;
             }
             synchronized (mCountLock) {
@@ -305,7 +311,7 @@ public class ChildProcessLauncher {
         void removeInitialBinding(final int pid) {
             final ChildProcessConnection connection = sServiceMap.get(pid);
             if (connection == null) {
-                LogPidWarning(pid, "Tried to remove a binding for a non-existent connection");
+                logPidWarning(pid, "Tried to remove a binding for a non-existent connection");
                 return;
             }
             if (!connection.isInitialBindingBound()) return;
@@ -331,7 +337,7 @@ public class ChildProcessLauncher {
         void bindAsHighPriority(final int pid) {
             ChildProcessConnection connection = sServiceMap.get(pid);
             if (connection == null) {
-                LogPidWarning(pid, "Tried to bind a non-existent connection");
+                logPidWarning(pid, "Tried to bind a non-existent connection");
                 return;
             }
             synchronized (mCountLock) {
@@ -347,7 +353,7 @@ public class ChildProcessLauncher {
         void unbindAsHighPriority(final int pid) {
             final ChildProcessConnection connection = sServiceMap.get(pid);
             if (connection == null) {
-                LogPidWarning(pid, "Tried to unbind non-existent connection");
+                logPidWarning(pid, "Tried to unbind non-existent connection");
                 return;
             }
             if (!connection.isStrongBindingBound()) return;
@@ -385,12 +391,64 @@ public class ChildProcessLauncher {
                 return mOomBindingCount.get(pid) > 0;
             }
         }
+
+        /**
+         * Called when the embedding application is sent to background. We want to maintain a strong
+         * binding on the most recently used renderer while the embedder is in background, to
+         * indicate the relative importance of the renderer to system oom killer.
+         *
+         * The embedder needs to ensure that:
+         *  - every onBroughtToForeground() is followed by onSentToBackground()
+         *  - pairs of consecutive onBroughtToForeground() / onSentToBackground() calls do not
+         *    overlap
+         */
+        void onSentToBackground() {
+            assert mBoundForBackgroundPeriodPid == -1;
+            // mLastOomPid can be -1 at this point as the embedding application could be used in
+            // foreground without spawning any renderers.
+            if (mLastOomPid >= 0) {
+                bindAsHighPriority(mLastOomPid);
+                mBoundForBackgroundPeriodPid = mLastOomPid;
+            }
+        }
+
+        /**
+         * Called when the embedding application is brought to foreground. This will drop the strong
+         * binding kept on the main renderer during the background period, so the embedder should
+         * make sure that this is called after the regular strong binding is attached for the
+         * foreground session.
+         */
+        void onBroughtToForeground() {
+            if (mBoundForBackgroundPeriodPid >= 0) {
+                unbindAsHighPriority(mBoundForBackgroundPeriodPid);
+                mBoundForBackgroundPeriodPid = -1;
+            }
+        }
     }
 
     private static BindingManager sBindingManager = new BindingManager();
 
     static BindingManager getBindingManager() {
         return sBindingManager;
+    }
+
+    @CalledByNative
+    private static boolean isOomProtected(int pid) {
+        return sBindingManager.isOomProtected(pid);
+    }
+
+    /**
+     * Called when the embedding application is sent to background.
+     */
+    public static void onSentToBackground() {
+        sBindingManager.onSentToBackground();
+    }
+
+    /**
+     * Called when the embedding application is brought to foreground.
+     */
+    public static void onBroughtToForeground() {
+        sBindingManager.onBroughtToForeground();
     }
 
     /**
@@ -446,9 +504,9 @@ public class ChildProcessLauncher {
      *
      * @param context Context used to obtain the application context.
      * @param commandLine The child process command line argv.
-     * @param file_ids The ID that should be used when mapping files in the created process.
-     * @param file_fds The file descriptors that should be mapped in the created process.
-     * @param file_auto_close Whether the file descriptors should be closed once they were passed to
+     * @param fileIds The ID that should be used when mapping files in the created process.
+     * @param fileFds The file descriptors that should be mapped in the created process.
+     * @param fileAutoClose Whether the file descriptors should be closed once they were passed to
      * the created process.
      * @param clientContext Arbitrary parameter used by the client to distinguish this connection.
      */
@@ -459,7 +517,7 @@ public class ChildProcessLauncher {
             int[] fileIds,
             int[] fileFds,
             boolean[] fileAutoClose,
-            final int clientContext) {
+            final long clientContext) {
         assert fileIds.length == fileFds.length && fileFds.length == fileAutoClose.length;
         FileDescriptorInfo[] filesToBeMapped = new FileDescriptorInfo[fileFds.length];
         for (int i = 0; i < fileFds.length; i++) {
@@ -499,6 +557,7 @@ public class ChildProcessLauncher {
 
         ChildProcessConnection.ConnectionCallback connectionCallback =
                 new ChildProcessConnection.ConnectionCallback() {
+            @Override
             public void onConnected(int pid) {
                 Log.d(TAG, "on connect callback, pid=" + pid + " context=" + clientContext);
                 if (pid != NULL_PROCESS_HANDLE) {
@@ -531,7 +590,7 @@ public class ChildProcessLauncher {
         Log.d(TAG, "stopping child connection: pid=" + pid);
         ChildProcessConnection connection = sServiceMap.remove(pid);
         if (connection == null) {
-            LogPidWarning(pid, "Tried to stop non-existent connection");
+            logPidWarning(pid, "Tried to stop non-existent connection");
             return;
         }
         connection.stop();
@@ -573,16 +632,16 @@ public class ChildProcessLauncher {
                 return nativeGetViewSurface(surfaceId);
             }
         };
-    };
+    }
 
-    private static void LogPidWarning(int pid, String message) {
+    private static void logPidWarning(int pid, String message) {
         // This class is effectively a no-op in single process mode, so don't log warnings there.
         if (pid > 0 && !nativeIsSingleProcess()) {
             Log.w(TAG, message + ", pid=" + pid);
         }
     }
 
-    private static native void nativeOnChildProcessStarted(int clientContext, int pid);
+    private static native void nativeOnChildProcessStarted(long clientContext, int pid);
     private static native Surface nativeGetViewSurface(int surfaceId);
     private static native void nativeEstablishSurfacePeer(
             int pid, Surface surface, int primaryID, int secondaryID);

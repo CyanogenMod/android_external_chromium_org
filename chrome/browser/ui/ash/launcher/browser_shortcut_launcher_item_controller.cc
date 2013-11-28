@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_model.h"
-#include "ash/shelf/shelf_model_util.h"
+#include "ash/shelf/shelf_model.h"
+#include "ash/shelf/shelf_util.h"
 #include "ash/shell.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -57,11 +57,10 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
   if (!ash::Shell::HasInstance())
     return;
 
-  ash::LauncherModel* model = launcher_controller()->model();
+  ash::ShelfModel* model = launcher_controller()->model();
 
   // Determine the new browser's active state and change if necessary.
-  int browser_index =
-      ash::GetShelfItemIndexForType(ash::TYPE_BROWSER_SHORTCUT, *model);
+  int browser_index = model->GetItemIndexForType(ash::TYPE_BROWSER_SHORTCUT);
   DCHECK_GE(browser_index, 0);
   ash::LauncherItem browser_item = model->items()[browser_index];
   ash::LauncherItemStatus browser_status = ash::STATUS_CLOSED;
@@ -74,9 +73,13 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
     Browser* browser = chrome::FindBrowserWithWindow(window);
     if (IsBrowserRepresentedInBrowserList(browser)) {
       browser_status = ash::STATUS_ACTIVE;
-      // If an app is running in active window, browser item status cannot be
-      // active.
-      if (launcher_controller()->GetIDByWindow(window) != browser_item.id)
+      // If an app that has item is running in active WebContents, browser item
+      // status cannot be active.
+      content::WebContents* contents =
+          browser->tab_strip_model()->GetActiveWebContents();
+      if (contents &&
+          (launcher_controller()->GetLauncherIDForWebContents(contents) !=
+              browser_item.id))
         browser_status = ash::STATUS_RUNNING;
     }
   }
@@ -97,21 +100,6 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
     browser_item.status = browser_status;
     model->Set(browser_index, browser_item);
   }
-}
-
-bool BrowserShortcutLauncherItemController::IsCurrentlyShownInWindow(
-    aura::Window* window) const {
-  const BrowserList* ash_browser_list =
-      BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
-  for (BrowserList::const_iterator it = ash_browser_list->begin();
-       it != ash_browser_list->end(); ++it) {
-    // During browser creation it is possible that this function is called
-    // before a browser got a window (see crbug.com/263563).
-    if ((*it)->window() &&
-        (*it)->window()->GetNativeWindow() == window)
-      return true;
-  }
-  return false;
 }
 
 bool BrowserShortcutLauncherItemController::IsOpen() const {
@@ -143,7 +131,7 @@ void BrowserShortcutLauncherItemController::Launch(ash::LaunchSource source,
                                                    int event_flags) {
 }
 
-void BrowserShortcutLauncherItemController::Activate(ash::LaunchSource source) {
+bool BrowserShortcutLauncherItemController::Activate(ash::LaunchSource source) {
   Browser* last_browser = chrome::FindTabbedBrowser(
       launcher_controller()->profile(),
       true,
@@ -151,11 +139,12 @@ void BrowserShortcutLauncherItemController::Activate(ash::LaunchSource source) {
 
   if (!last_browser) {
     launcher_controller()->CreateNewWindow();
-    return;
+    return true;
   }
 
   launcher_controller()->ActivateWindowOrMinimizeIfActive(
       last_browser->window(), GetApplicationList(0).size() == 2);
+  return false;
 }
 
 void BrowserShortcutLauncherItemController::Close() {
@@ -215,7 +204,7 @@ BrowserShortcutLauncherItemController::GetApplicationList(int event_flags) {
   return items.Pass();
 }
 
-void BrowserShortcutLauncherItemController::ItemSelected(
+bool BrowserShortcutLauncherItemController::ItemSelected(
     const ui::Event& event) {
 #if defined(OS_CHROMEOS)
   chromeos::default_pinned_apps_field_trial::RecordShelfClick(
@@ -224,17 +213,17 @@ void BrowserShortcutLauncherItemController::ItemSelected(
 
   if (event.flags() & ui::EF_CONTROL_DOWN) {
     launcher_controller()->CreateNewWindow();
-    return;
+    return true;
   }
 
   // In case of a keyboard event, we were called by a hotkey. In that case we
   // activate the next item in line if an item of our list is already active.
   if (event.type() & ui::ET_KEY_RELEASED) {
     ActivateOrAdvanceToNextBrowser();
-    return;
+    return false;
   }
 
-  Activate(ash::LAUNCH_FROM_UNKNOWN);
+  return Activate(ash::LAUNCH_FROM_UNKNOWN);
 }
 
 string16 BrowserShortcutLauncherItemController::GetTitle() {

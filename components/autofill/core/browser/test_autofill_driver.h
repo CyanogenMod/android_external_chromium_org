@@ -23,6 +23,10 @@ class TestAutofillDriver : public AutofillDriver,
   virtual ~TestAutofillDriver();
 
   // AutofillDriver implementation.
+  virtual bool IsOffTheRecord() const OVERRIDE;
+  // Returns the value passed in to the last call to |SetURLRequestContext()|
+  // or NULL if that method has never been called.
+  virtual net::URLRequestContextGetter* GetURLRequestContext() OVERRIDE;
   virtual content::WebContents* GetWebContents() OVERRIDE;
   virtual base::SequencedWorkerPool* GetBlockingPool() OVERRIDE;
   virtual bool RendererIsAvailable() OVERRIDE;
@@ -32,11 +36,23 @@ class TestAutofillDriver : public AutofillDriver,
                                       const FormData& data) OVERRIDE;
   virtual void SendAutofillTypePredictionsToRenderer(
       const std::vector<FormStructure*>& forms) OVERRIDE;
+  virtual void RendererShouldAcceptDataListSuggestion(
+      const base::string16& value) OVERRIDE;
+  virtual void RendererShouldAcceptPasswordAutofillSuggestion(
+      const base::string16& username) OVERRIDE;
   virtual void RendererShouldClearFilledForm() OVERRIDE;
   virtual void RendererShouldClearPreviewedForm() OVERRIDE;
+  virtual void RendererShouldSetNodeText(const base::string16& value) OVERRIDE;
+
+  // Methods that tests can use to specialize functionality.
+
+  // Sets the URL request context for this instance. |url_request_context|
+  // should outlive this instance.
+  void SetURLRequestContext(net::URLRequestContextGetter* url_request_context);
 
  private:
   scoped_refptr<base::SequencedWorkerPool> blocking_pool_;
+  net::URLRequestContextGetter* url_request_context_;
 
   DISALLOW_COPY_AND_ASSIGN(TestAutofillDriver);
 };

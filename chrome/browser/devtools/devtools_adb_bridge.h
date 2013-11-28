@@ -94,14 +94,11 @@ class DevToolsAdbBridge
     scoped_refptr<AndroidDevice> device() { return device_; }
     std::string socket() { return socket_; }
 
-    std::string product() { return product_; }
-    void set_product(const std::string& product) { product_ = product; }
+    std::string display_name() { return display_name_; }
+    void set_display_name(const std::string& name) { display_name_ = name; }
+
     std::string version() { return version_; }
     void set_version(const std::string& version) { version_ = version; }
-    std::string pid() { return pid_; }
-    void set_pid(const std::string& pid) { pid_ = pid; }
-    std::string package() { return package_; }
-    void set_package(const std::string& package) { package_ = package; }
 
     bool IsChrome() const;
 
@@ -131,10 +128,8 @@ class DevToolsAdbBridge
     scoped_refptr<RefCountedAdbThread> adb_thread_;
     scoped_refptr<AndroidDevice> device_;
     const std::string socket_;
-    std::string product_;
+    std::string display_name_;
     std::string version_;
-    std::string pid_;
-    std::string package_;
     scoped_ptr<base::ListValue> page_descriptors_;
 
     DISALLOW_COPY_AND_ASSIGN(RemoteBrowser);

@@ -11,11 +11,19 @@ const char switches::kTestLargeTimeout[] = "test-large-timeout";
 // Maximum number of tests to run in a single batch.
 const char switches::kTestLauncherBatchLimit[] = "test-launcher-batch-limit";
 
+// Sets defaults desirable for the continuous integration bots, e.g. parallel
+// test execution and test retries.
+const char switches::kTestLauncherBotMode[] =
+    "test-launcher-bot-mode";
+
 // Number of parallel test launcher jobs.
 const char switches::kTestLauncherJobs[] = "test-launcher-jobs";
 
 // Path to test results file in our custom test launcher format.
 const char switches::kTestLauncherOutput[] = "test-launcher-output";
+
+// Maximum number of times to retry a test after failure.
+const char switches::kTestLauncherRetryLimit[] = "test-launcher-retry-limit";
 
 // Path to test results file with all the info from the test launcher.
 const char switches::kTestLauncherSummaryOutput[] =

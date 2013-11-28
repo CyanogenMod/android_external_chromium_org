@@ -223,7 +223,7 @@ WARN_UNUSED_RESULT static bool IsSchemaKnown(LevelDBDatabase* db, bool* known) {
   }
 
   const uint32 latest_known_data_version =
-      WebKit::kSerializedScriptValueVersion;
+      blink::kSerializedScriptValueVersion;
   int64 db_data_version = 0;
   ok = GetInt(db, DataVersionKey::Encode(), &db_data_version, &found);
   if (!ok)
@@ -246,7 +246,7 @@ WARN_UNUSED_RESULT static bool SetUpMetadata(
     LevelDBDatabase* db,
     const std::string& origin_identifier) {
   const uint32 latest_known_data_version =
-      WebKit::kSerializedScriptValueVersion;
+      blink::kSerializedScriptValueVersion;
   const std::string schema_version_key = SchemaVersionKey::Encode();
   const std::string data_version_key = DataVersionKey::Encode();
 
@@ -302,7 +302,7 @@ WARN_UNUSED_RESULT static bool SetUpMetadata(
     if (db_schema_version < 2) {
       db_schema_version = 2;
       PutInt(transaction.get(), schema_version_key, db_schema_version);
-      db_data_version = WebKit::kSerializedScriptValueVersion;
+      db_data_version = blink::kSerializedScriptValueVersion;
       PutInt(transaction.get(), data_version_key, db_data_version);
     }
   }
@@ -424,10 +424,10 @@ enum IndexedDBBackingStoreOpenResult {
 scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     const GURL& origin_url,
     const base::FilePath& path_base,
-    WebKit::WebIDBCallbacks::DataLoss* data_loss,
+    blink::WebIDBDataLoss* data_loss,
     std::string* data_loss_message,
     bool* disk_full) {
-  *data_loss = WebKit::WebIDBCallbacks::DataLossNone;
+  *data_loss = blink::WebIDBDataLossNone;
   DefaultLevelDBFactory leveldb_factory;
   return IndexedDBBackingStore::Open(origin_url,
                                      path_base,
@@ -437,10 +437,30 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
                                      &leveldb_factory);
 }
 
-static void HistogramOpenStatus(IndexedDBBackingStoreOpenResult result) {
+static std::string OriginToCustomHistogramSuffix(const GURL& origin_url) {
+  if (origin_url.host() == "docs.google.com")
+    return ".Docs";
+  return std::string();
+}
+
+static void HistogramOpenStatus(IndexedDBBackingStoreOpenResult result,
+                                const GURL& origin_url) {
   UMA_HISTOGRAM_ENUMERATION("WebCore.IndexedDB.BackingStore.OpenStatus",
                             result,
                             INDEXED_DB_BACKING_STORE_OPEN_MAX);
+  const std::string suffix = OriginToCustomHistogramSuffix(origin_url);
+  // Data from the WebCore.IndexedDB.BackingStore.OpenStatus histogram is used
+  // to generate a graph. So as not to alter the meaning of that graph,
+  // continue to collect all stats there (above) but also now collect docs stats
+  // separately (below).
+  if (!suffix.empty()) {
+    base::LinearHistogram::FactoryGet(
+        "WebCore.IndexedDB.BackingStore.OpenStatus" + suffix,
+        1,
+        INDEXED_DB_BACKING_STORE_OPEN_MAX,
+        INDEXED_DB_BACKING_STORE_OPEN_MAX + 1,
+        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(result);
+  }
 }
 
 static bool IsPathTooLong(const base::FilePath& leveldb_dir) {
@@ -477,25 +497,27 @@ static bool IsPathTooLong(const base::FilePath& leveldb_dir) {
 scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     const GURL& origin_url,
     const base::FilePath& path_base,
-    WebKit::WebIDBCallbacks::DataLoss* data_loss,
+    blink::WebIDBDataLoss* data_loss,
     std::string* data_loss_message,
     bool* is_disk_full,
     LevelDBFactory* leveldb_factory) {
   IDB_TRACE("IndexedDBBackingStore::Open");
   DCHECK(!path_base.empty());
-  *data_loss = WebKit::WebIDBCallbacks::DataLossNone;
+  *data_loss = blink::WebIDBDataLossNone;
   *data_loss_message = "";
   *is_disk_full = false;
 
   scoped_ptr<LevelDBComparator> comparator(new Comparator());
 
   if (!IsStringASCII(path_base.AsUTF8Unsafe())) {
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_ATTEMPT_NON_ASCII);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_ATTEMPT_NON_ASCII,
+                        origin_url);
   }
   if (!file_util::CreateDirectory(path_base)) {
     LOG(ERROR) << "Unable to create IndexedDB database path "
                << path_base.AsUTF8Unsafe();
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_DIRECTORY);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_DIRECTORY,
+                        origin_url);
     return scoped_refptr<IndexedDBBackingStore>();
   }
 
@@ -503,7 +525,8 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
       path_base.Append(ComputeFileName(origin_url));
 
   if (IsPathTooLong(file_path)) {
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_ORIGIN_TOO_LONG);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_ORIGIN_TOO_LONG,
+                        origin_url);
     return scoped_refptr<IndexedDBBackingStore>();
   }
 
@@ -516,7 +539,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     if (leveldb_env::IndicatesDiskFull(status)) {
       *is_disk_full = true;
     } else if (leveldb_env::IsCorruption(status)) {
-      *data_loss = WebKit::WebIDBCallbacks::DataLossTotal;
+      *data_loss = blink::WebIDBDataLossTotal;
       *data_loss_message = leveldb_env::GetCorruptionMessage(status);
     }
   }
@@ -528,16 +551,18 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
       LOG(ERROR) << "IndexedDB had IO error checking schema, treating it as "
                     "failure to open";
       HistogramOpenStatus(
-          INDEXED_DB_BACKING_STORE_OPEN_FAILED_IO_ERROR_CHECKING_SCHEMA);
+          INDEXED_DB_BACKING_STORE_OPEN_FAILED_IO_ERROR_CHECKING_SCHEMA,
+          origin_url);
       db.reset();
-      *data_loss = WebKit::WebIDBCallbacks::DataLossTotal;
+      *data_loss = blink::WebIDBDataLossTotal;
       *data_loss_message = "I/O error checking schema";
     } else if (!is_schema_known) {
       LOG(ERROR) << "IndexedDB backing store had unknown schema, treating it "
                     "as failure to open";
-      HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_SCHEMA);
+      HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_SCHEMA,
+                          origin_url);
       db.reset();
-      *data_loss = WebKit::WebIDBCallbacks::DataLossTotal;
+      *data_loss = blink::WebIDBDataLossTotal;
       *data_loss_message = "Unknown schema";
     }
   }
@@ -546,11 +571,11 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
          leveldb_env::IsCorruption(status));
 
   if (db) {
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_SUCCESS);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_SUCCESS, origin_url);
   } else if (leveldb_env::IsIOError(status)) {
     LOG(ERROR) << "Unable to open backing store, not trying to recover - "
                << status.ToString();
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY, origin_url);
     return scoped_refptr<IndexedDBBackingStore>();
   } else {
     DCHECK(!is_schema_known || leveldb_env::IsCorruption(status));
@@ -558,7 +583,8 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     bool success = leveldb_factory->DestroyLevelDB(file_path);
     if (!success) {
       LOG(ERROR) << "IndexedDB backing store cleanup failed";
-      HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_DESTROY_FAILED);
+      HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_DESTROY_FAILED,
+                          origin_url);
       return scoped_refptr<IndexedDBBackingStore>();
     }
 
@@ -566,15 +592,18 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     leveldb_factory->OpenLevelDB(file_path, comparator.get(), &db, NULL);
     if (!db) {
       LOG(ERROR) << "IndexedDB backing store reopen after recovery failed";
-      HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_FAILED);
+      HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_FAILED,
+                          origin_url);
       return scoped_refptr<IndexedDBBackingStore>();
     }
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS,
+                        origin_url);
   }
 
   if (!db) {
     NOTREACHED();
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR,
+                        origin_url);
     return scoped_refptr<IndexedDBBackingStore>();
   }
 
@@ -599,10 +628,11 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::OpenInMemory(
       LevelDBDatabase::OpenInMemory(comparator.get());
   if (!db) {
     LOG(ERROR) << "LevelDBDatabase::OpenInMemory failed.";
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_MEMORY_FAILED);
+    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_MEMORY_FAILED,
+                        origin_url);
     return scoped_refptr<IndexedDBBackingStore>();
   }
-  HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_MEMORY_SUCCESS);
+  HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_MEMORY_SUCCESS, origin_url);
 
   return Create(origin_url, db.Pass(), comparator.Pass());
 }
@@ -769,17 +799,6 @@ bool IndexedDBBackingStore::UpdateIDBDatabaseIntVersion(
             DatabaseMetaDataKey::Encode(row_id,
                                         DatabaseMetaDataKey::USER_INT_VERSION),
             int_version);
-  return true;
-}
-
-bool IndexedDBBackingStore::UpdateIDBDatabaseMetaData(
-    IndexedDBBackingStore::Transaction* transaction,
-    int64 row_id,
-    const string16& version) {
-  PutString(
-      transaction->transaction(),
-      DatabaseMetaDataKey::Encode(row_id, DatabaseMetaDataKey::USER_VERSION),
-      version);
   return true;
 }
 
@@ -965,7 +984,7 @@ bool IndexedDBBackingStore::GetObjectStores(
       // (2) Later, null vs. string vs. array was stored in the key_path itself.
       // So this check is only relevant for string-type key_paths.
       if (!has_key_path &&
-          (key_path.type() == WebKit::WebIDBKeyPathTypeString &&
+          (key_path.type() == blink::WebIDBKeyPathTypeString &&
            !key_path.string().empty())) {
         INTERNAL_CONSISTENCY_ERROR(GET_OBJECT_STORES);
         break;
@@ -1324,7 +1343,7 @@ bool IndexedDBBackingStore::GetKeyGeneratorCurrentNumber(
       return false;
     }
     scoped_ptr<IndexedDBKey> user_key = data_key.user_key();
-    if (user_key->type() == WebKit::WebIDBKeyTypeNumber) {
+    if (user_key->type() == blink::WebIDBKeyTypeNumber) {
       int64 n = static_cast<int64>(user_key->number());
       if (n > max_numeric_key)
         max_numeric_key = n;
@@ -1836,7 +1855,11 @@ bool IndexedDBBackingStore::Cursor::Advance(uint32 count) {
 }
 
 bool IndexedDBBackingStore::Cursor::Continue(const IndexedDBKey* key,
+                                             const IndexedDBKey* primary_key,
                                              IteratorState next_state) {
+  DCHECK(!key || key->IsValid());
+  DCHECK(!primary_key || primary_key->IsValid());
+
   // TODO(alecflett): avoid a copy here?
   IndexedDBKey previous_key = current_key_ ? *current_key_ : IndexedDBKey();
 
@@ -1852,8 +1875,14 @@ bool IndexedDBBackingStore::Cursor::Continue(const IndexedDBKey* key,
   for (;;) {
     if (next_state == SEEK) {
       // TODO(jsbell): Optimize seeking for reverse cursors as well.
-      if (first_iteration && key && key->IsValid() && forward) {
-        iterator_->Seek(EncodeKey(*key));
+      if (first_iteration && key && forward) {
+        std::string leveldb_key;
+        if (primary_key) {
+          leveldb_key = EncodeKey(*key, *primary_key);
+        } else {
+          leveldb_key = EncodeKey(*key);
+        }
+        iterator_->Seek(leveldb_key);
         first_iteration = false;
       } else if (forward) {
         iterator_->Next();
@@ -1894,11 +1923,17 @@ bool IndexedDBBackingStore::Cursor::Continue(const IndexedDBKey* key,
     if (!LoadCurrentRow())
       continue;
 
-    if (key && key->IsValid()) {
+    if (key) {
       if (forward) {
+        if (primary_key && current_key_->IsEqual(*key) &&
+            this->primary_key().IsLessThan(*primary_key))
+          continue;
         if (current_key_->IsLessThan(*key))
           continue;
       } else {
+        if (primary_key && key->IsEqual(*current_key_) &&
+            primary_key->IsLessThan(this->primary_key()))
+          continue;
         if (key->IsLessThan(*current_key_))
           continue;
       }
@@ -1998,6 +2033,11 @@ class ObjectStoreKeyCursorImpl : public IndexedDBBackingStore::Cursor {
     return ObjectStoreDataKey::Encode(
         cursor_options_.database_id, cursor_options_.object_store_id, key);
   }
+  virtual std::string EncodeKey(const IndexedDBKey& key,
+                                const IndexedDBKey& primary_key) OVERRIDE {
+    NOTREACHED();
+    return std::string();
+  }
 
  private:
   explicit ObjectStoreKeyCursorImpl(const ObjectStoreKeyCursorImpl* other)
@@ -2046,6 +2086,11 @@ class ObjectStoreCursorImpl : public IndexedDBBackingStore::Cursor {
   virtual std::string EncodeKey(const IndexedDBKey& key) OVERRIDE {
     return ObjectStoreDataKey::Encode(
         cursor_options_.database_id, cursor_options_.object_store_id, key);
+  }
+  virtual std::string EncodeKey(const IndexedDBKey& key,
+                                const IndexedDBKey& primary_key) OVERRIDE {
+    NOTREACHED();
+    return std::string();
   }
 
  private:
@@ -2112,6 +2157,14 @@ class IndexKeyCursorImpl : public IndexedDBBackingStore::Cursor {
                                 cursor_options_.object_store_id,
                                 cursor_options_.index_id,
                                 key);
+  }
+  virtual std::string EncodeKey(const IndexedDBKey& key,
+                                const IndexedDBKey& primary_key) OVERRIDE {
+    return IndexDataKey::Encode(cursor_options_.database_id,
+                                cursor_options_.object_store_id,
+                                cursor_options_.index_id,
+                                key,
+                                primary_key);
   }
 
  private:
@@ -2208,6 +2261,14 @@ class IndexCursorImpl : public IndexedDBBackingStore::Cursor {
                                 cursor_options_.object_store_id,
                                 cursor_options_.index_id,
                                 key);
+  }
+  virtual std::string EncodeKey(const IndexedDBKey& key,
+                                const IndexedDBKey& primary_key) OVERRIDE {
+    return IndexDataKey::Encode(cursor_options_.database_id,
+                                cursor_options_.object_store_id,
+                                cursor_options_.index_id,
+                                key,
+                                primary_key);
   }
 
  private:

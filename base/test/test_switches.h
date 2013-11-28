@@ -11,8 +11,10 @@ namespace switches {
 // alongside the definition of their values in the .cc file.
 extern const char kTestLargeTimeout[];
 extern const char kTestLauncherBatchLimit[];
+extern const char kTestLauncherBotMode[];
 extern const char kTestLauncherJobs[];
 extern const char kTestLauncherOutput[];
+extern const char kTestLauncherRetryLimit[];
 extern const char kTestLauncherSummaryOutput[];
 extern const char kTestLauncherPrintTestStdio[];
 extern const char kTestLauncherShardIndex[];

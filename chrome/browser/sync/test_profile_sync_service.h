@@ -14,6 +14,7 @@
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/sync/glue/data_type_manager_impl.h"
+#include "chrome/browser/sync/glue/sync_backend_host_impl.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_prefs.h"
@@ -36,7 +37,7 @@ ACTION(ReturnNewDataTypeManager) {
 
 namespace browser_sync {
 
-class SyncBackendHostForProfileSyncTest : public SyncBackendHost {
+class SyncBackendHostForProfileSyncTest : public SyncBackendHostImpl {
  public:
   // |synchronous_init| causes initialization to block until the syncapi has
   //     completed setting itself up and called us back.
@@ -105,6 +106,7 @@ class TestProfileSyncService : public ProfileSyncService {
  public:
   // TODO(tim): Remove |synchronous_backend_initialization|, and add ability to
   // inject TokenService alongside SigninManager.
+  // TODO(rogerta): what does above comment mean?
   TestProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
@@ -116,6 +118,9 @@ class TestProfileSyncService : public ProfileSyncService {
   virtual ~TestProfileSyncService();
 
   virtual void RequestAccessToken() OVERRIDE;
+  virtual void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
+                                 const std::string& access_token,
+                                 const base::Time& expiration_time) OVERRIDE;
   virtual void OnGetTokenFailure(const OAuth2TokenService::Request* request,
       const GoogleServiceAuthError& error) OVERRIDE;
 
@@ -183,28 +188,6 @@ class TestProfileSyncService : public ProfileSyncService {
 
   bool fail_initial_download_;
   syncer::StorageOption storage_option_;
-};
-
-
-class FakeOAuth2TokenService : public ProfileOAuth2TokenService {
- public:
-  static BrowserContextKeyedService* BuildTokenService(
-      content::BrowserContext* context);
-
- protected:
-  virtual void FetchOAuth2Token(
-      OAuth2TokenService::RequestImpl* request,
-      const std::string& account_id,
-      net::URLRequestContextGetter* getter,
-      const std::string& client_id,
-      const std::string& client_secret,
-      const OAuth2TokenService::ScopeSet& scopes) OVERRIDE;
-
-  virtual void PersistCredentials(const std::string& account_id,
-                                  const std::string& refresh_token) OVERRIDE;
-
-  virtual void ClearPersistedCredentials(
-      const std::string& account_id) OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_SYNC_TEST_PROFILE_SYNC_SERVICE_H_

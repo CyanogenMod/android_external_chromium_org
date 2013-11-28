@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.26",
+  "version": "3.6",
   "entries": [
     {
       "id": 1,
@@ -183,21 +183,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "features": [
         "max_texture_size_limit_4096",
         "max_cube_map_texture_size_limit_4096"
-      ]
-    },
-    {
-      "id": 15,
-      "description": "Some Android Qualcomm drivers falsely report GL_ANGLE_framebuffer_multisample",
-      "cr_bugs": [165736],
-      "os": {
-        "type": "android"
-      },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
-      "features": [
-        "disable_angle_framebuffer_multisample"
       ]
     },
     {
@@ -373,7 +358,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "cr_bugs": [278606],
       "description": "Testing fences is broken on QualComm.",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
@@ -396,8 +385,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 31,
-      "cr_bugs": [154715, 10068, 269829],
-      "description": "The Nexus 10 Mali driver does not guarantee flush ordering.",
+      "cr_bugs": [154715, 10068, 269829, 294779],
+      "description": "The Mali T-6xx driver does not guarantee flush ordering.",
       "os": {
         "type": "android"
       },
@@ -406,8 +395,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "value": "ARM"
       },
       "gl_renderer": {
-        "op": "contains",
-        "value": "Mali-T604"
+        "op": "beginwith",
+        "value": "Mali-T6"
       },
       "features": [
         "use_virtualized_gl_contexts"
@@ -633,6 +622,123 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 48,
+      "description": "Force to use discrete GPU on older MacBookPro models.",
+      "cr_bugs": [113703],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": ">=",
+          "value": "10.7"
+        }
+      },
+      "machine_model": {
+        "name": {
+          "op": "=",
+          "value": "MacBookPro"
+        },
+        "version": {
+          "op": "<",
+          "value": "8"
+        }
+      },
+      "gpu_count": {
+        "op": "=",
+        "value": "2"
+      },
+      "features": [
+        "force_discrete_gpu"
+      ]
+    },
+    {
+      "id": 49,
+      "cr_bugs": [309734],
+      "description": "The first draw operation from an idle state is slow.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "wake_up_gpu_before_drawing"
+      ]
+    },
+    {
+      "id": 50,
+      "description": "NVIDIA driver requires unbinding a GpuMemoryBuffer from the texture before mapping it to main memory",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "NVIDIA"
+      },
+      "features": [
+        "release_image_after_use"
+      ]
+    },
+    {
+      "id": 51,
+      "description": "TexSubImage2D() is faster for full uploads on ANGLE.",
+      "os": {
+        "type": "win"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "ANGLE"
+      },
+      "features": [
+        "texsubimage2d_faster_than_teximage2d"
+      ]
+    },
+    {
+      "id": 52,
+      "description": "ES3 MSAA is broken on Qualcomm.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_framebuffer_multisample"
+      ]
+    },
+    {
+      "id": 53,
+      "cr_bugs": [321701],
+      "description": "ES3 multisampling is too slow to be usable on Mali.",
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "Mali"
+      },
+      "features": [
+        "disable_framebuffer_multisample"
+      ]
+    },
+    {
+      "id": 54,
+      "cr_bugs": [321701],
+      "description": "ES3 multisampling is too slow to be usable on Mali (ChromeOS).",
+      "os": {
+        "type": "chromeos"
+      },
+      "cpu_info": {
+        "op": "=",
+        "value": "ARM"  // TODO(piman): consolidate with id 53 (needs GL_VENDOR/GL_RENDERER parsing support)
+      },
+      "features": [
+        "disable_framebuffer_multisample"
       ]
     }
   ]

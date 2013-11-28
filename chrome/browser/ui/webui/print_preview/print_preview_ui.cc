@@ -320,6 +320,8 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddLocalizedString(
       "noDestsPromoNotNowButtonLabel",
       IDS_PRINT_PREVIEW_NO_DESTS_PROMO_NOT_NOW_BUTTON_LABEL);
+  source->AddLocalizedString("couldNotPrint",
+                             IDS_PRINT_PREVIEW_COULD_NOT_PRINT);
 
   source->SetJsonPath("strings.js");
   source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
@@ -449,6 +451,10 @@ void PrintPreviewUI::OnInitiatorClosed() {
 }
 
 void PrintPreviewUI::OnPrintPreviewRequest(int request_id) {
+  if (!initial_preview_start_time_.is_null()) {
+    UMA_HISTOGRAM_TIMES("PrintPreview.InitializationTime",
+                        base::TimeTicks::Now() - initial_preview_start_time_);
+  }
   g_print_preview_request_id_map.Get().Set(id_, request_id);
 }
 
@@ -512,13 +518,6 @@ void PrintPreviewUI::OnDidPreviewPage(int page_number,
     web_ui()->CallJavascriptFunction("autoCancelForTesting");
 }
 
-void PrintPreviewUI::OnReusePreviewData(int preview_request_id) {
-  base::FundamentalValue ui_identifier(id_);
-  base::FundamentalValue ui_preview_request_id(preview_request_id);
-  web_ui()->CallJavascriptFunction("reloadPreviewPages", ui_identifier,
-                                   ui_preview_request_id);
-}
-
 void PrintPreviewUI::OnPreviewDataIsAvailable(int expected_pages_count,
                                               int preview_request_id) {
   VLOG(1) << "Print preview request finished with "
@@ -529,6 +528,9 @@ void PrintPreviewUI::OnPreviewDataIsAvailable(int expected_pages_count,
                         base::TimeTicks::Now() - initial_preview_start_time_);
     UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.Initial",
                          expected_pages_count);
+    UMA_HISTOGRAM_COUNTS(
+        "PrintPreview.RegeneratePreviewRequest.BeforeFirstData",
+        handler_->regenerate_preview_request_count());
     initial_preview_start_time_ = base::TimeTicks();
   }
   base::FundamentalValue ui_identifier(id_);

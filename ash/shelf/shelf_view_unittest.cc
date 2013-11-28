@@ -9,19 +9,22 @@
 
 #include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_button.h"
 #include "ash/launcher/launcher_item_delegate_manager.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_types.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/overflow_bubble.h"
+#include "ash/shelf/overflow_bubble_view.h"
+#include "ash/shelf/shelf_button.h"
 #include "ash/shelf/shelf_icon_observer.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_tooltip_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/launcher_test_api.h"
+#include "ash/test/overflow_bubble_view_test_api.h"
 #include "ash/test/shelf_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_launcher_delegate.h"
@@ -196,6 +199,26 @@ TEST_F(ShelfViewIconObserverTest, BoundsChanged) {
 ////////////////////////////////////////////////////////////////////////////////
 // ShelfView tests.
 
+// LauncherItemDelegate for ShelfViewTest.OverflowBubbleSize only.
+// This class should only be used for re-insert test because it cannot handle
+// unpin request.
+class TestLauncherDelegateForShelfView : public TestLauncherDelegate {
+ public:
+  explicit TestLauncherDelegateForShelfView(ShelfModel* model)
+      : TestLauncherDelegate(model) {}
+  virtual ~TestLauncherDelegateForShelfView() {}
+
+  // TestLauncherDelegate overrides:
+  virtual bool IsAppPinned(const std::string& app_id) OVERRIDE {
+    // Returns true for ShelfViewTest.OverflowBubbleSize. To test ripping off in
+    // that test, an item is already pinned state.
+    return true;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestLauncherDelegateForShelfView);
+};
+
 class ShelfViewTest : public AshTestBase {
  public:
   ShelfViewTest() : model_(NULL), shelf_view_(NULL), browser_index_(1) {}
@@ -204,7 +227,7 @@ class ShelfViewTest : public AshTestBase {
   virtual void SetUp() OVERRIDE {
     AshTestBase::SetUp();
     test::ShellTestApi test_api(Shell::GetInstance());
-    model_ = test_api.launcher_model();
+    model_ = test_api.shelf_model();
     Launcher* launcher = Launcher::ForPrimaryDisplay();
     shelf_view_ = test::LauncherTestAPI(launcher).shelf_view();
 
@@ -297,7 +320,7 @@ class ShelfViewTest : public AshTestBase {
     test_api_->RunMessageLoopUntilAnimationsDone();
   }
 
-  internal::LauncherButton* GetButtonByID(LauncherID id) {
+  internal::ShelfButton* GetButtonByID(LauncherID id) {
     int index = model_->ItemIndexByID(id);
     return test_api_->GetButton(index);
   }
@@ -336,9 +359,9 @@ class ShelfViewTest : public AshTestBase {
   }
 
   views::View* SimulateButtonPressed(
-      internal::LauncherButtonHost::Pointer pointer,
+      internal::ShelfButtonHost::Pointer pointer,
       int button_index) {
-    internal::LauncherButtonHost* button_host = shelf_view_;
+    internal::ShelfButtonHost* button_host = shelf_view_;
     views::View* button = test_api_->GetButton(button_index);
     ui::MouseEvent click_event(ui::ET_MOUSE_PRESSED,
                                button->bounds().origin(),
@@ -347,20 +370,20 @@ class ShelfViewTest : public AshTestBase {
     return button;
   }
 
-  views::View* SimulateClick(internal::LauncherButtonHost::Pointer pointer,
+  views::View* SimulateClick(internal::ShelfButtonHost::Pointer pointer,
                              int button_index) {
-    internal::LauncherButtonHost* button_host = shelf_view_;
+    internal::ShelfButtonHost* button_host = shelf_view_;
     views::View* button = SimulateButtonPressed(pointer, button_index);
     button_host->PointerReleasedOnButton(button,
-                                         internal::LauncherButtonHost::MOUSE,
+                                         internal::ShelfButtonHost::MOUSE,
                                          false);
     return button;
   }
 
-  views::View* SimulateDrag(internal::LauncherButtonHost::Pointer pointer,
+  views::View* SimulateDrag(internal::ShelfButtonHost::Pointer pointer,
                             int button_index,
                             int destination_index) {
-    internal::LauncherButtonHost* button_host = shelf_view_;
+    internal::ShelfButtonHost* button_host = shelf_view_;
     views::View* button = SimulateButtonPressed(pointer, button_index);
 
     // Drag.
@@ -376,7 +399,7 @@ class ShelfViewTest : public AshTestBase {
       std::vector<std::pair<LauncherID, views::View*> >* id_map) {
     // Initialize |id_map| with the automatically-created launcher buttons.
     for (size_t i = 0; i < model_->items().size(); ++i) {
-      internal::LauncherButton* button = test_api_->GetButton(i);
+      internal::ShelfButton* button = test_api_->GetButton(i);
       id_map->push_back(std::make_pair(model_->items()[i].id, button));
     }
     ASSERT_NO_FATAL_FAILURE(CheckModelIDs(*id_map));
@@ -400,7 +423,7 @@ class ShelfViewTest : public AshTestBase {
     shelf_view_->tooltip_manager()->ShowInternal();
   }
 
-  LauncherModel* model_;
+  ShelfModel* model_;
   internal::ShelfView* shelf_view_;
   int browser_index_;
   LauncherItemDelegateManager* item_manager_;
@@ -478,7 +501,7 @@ class ShelfViewTextDirectionTest
 // in both LTR and RTL.
 TEST_P(ShelfViewTextDirectionTest, IdealBoundsOfItemIcon) {
   LauncherID id = AddPlatformApp();
-  internal::LauncherButton* button = GetButtonByID(id);
+  internal::ShelfButton* button = GetButtonByID(id);
   gfx::Rect item_bounds = button->GetBoundsInScreen();
   gfx::Point icon_offset = button->GetIconBounds().origin();
   item_bounds.Offset(icon_offset.OffsetFromOrigin());
@@ -771,7 +794,7 @@ TEST_F(ShelfViewTest, AddButtonQuickly) {
 
   // Verifies non-overflow buttons are visible.
   for (int i = 0; i <= test_api_->GetLastVisibleIndex(); ++i) {
-    internal::LauncherButton* button = test_api_->GetButton(i);
+    internal::ShelfButton* button = test_api_->GetButton(i);
     if (button) {
       EXPECT_TRUE(button->visible()) << "button index=" << i;
       EXPECT_EQ(1.0f, button->layer()->opacity()) << "button index=" << i;
@@ -782,7 +805,7 @@ TEST_F(ShelfViewTest, AddButtonQuickly) {
 // Check that model changes are handled correctly while a launcher icon is being
 // dragged.
 TEST_F(ShelfViewTest, ModelChangesWhileDragging) {
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
 
   std::vector<std::pair<LauncherID, views::View*> > id_map;
   SetupForDragTest(&id_map);
@@ -790,19 +813,18 @@ TEST_F(ShelfViewTest, ModelChangesWhileDragging) {
   // Dragging browser shortcut at index 1.
   EXPECT_TRUE(model_->items()[1].type == TYPE_BROWSER_SHORTCUT);
   views::View* dragged_button = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 1, 3);
+      internal::ShelfButtonHost::MOUSE, 1, 3);
   std::rotate(id_map.begin() + 1,
               id_map.begin() + 2,
               id_map.begin() + 4);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
   EXPECT_TRUE(model_->items()[3].type == TYPE_BROWSER_SHORTCUT);
 
   // Dragging changes model order.
-  dragged_button = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 1, 3);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 1, 3);
   std::rotate(id_map.begin() + 1,
               id_map.begin() + 2,
               id_map.begin() + 4);
@@ -810,7 +832,7 @@ TEST_F(ShelfViewTest, ModelChangesWhileDragging) {
 
   // Cancelling the drag operation restores previous order.
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        true);
   std::rotate(id_map.begin() + 1,
               id_map.begin() + 3,
@@ -818,38 +840,38 @@ TEST_F(ShelfViewTest, ModelChangesWhileDragging) {
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 
   // Deleting an item keeps the remaining intact.
-  dragged_button = SimulateDrag(internal::LauncherButtonHost::MOUSE, 1, 3);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 1, 3);
   model_->RemoveItemAt(1);
   id_map.erase(id_map.begin() + 1);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
 
   // Adding a launcher item cancels the drag and respects the order.
-  dragged_button = SimulateDrag(internal::LauncherButtonHost::MOUSE, 1, 3);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 1, 3);
   LauncherID new_id = AddAppShortcut();
   id_map.insert(id_map.begin() + 6,
                 std::make_pair(new_id, GetButtonByID(new_id)));
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
 
   // Adding a launcher item at the end (i.e. a panel)  canels drag and respects
   // the order.
-  dragged_button = SimulateDrag(internal::LauncherButtonHost::MOUSE, 1, 3);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 1, 3);
   new_id = AddPanel();
   id_map.insert(id_map.begin() + 7,
                 std::make_pair(new_id, GetButtonByID(new_id)));
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
 }
 
 TEST_F(ShelfViewLegacyShelfLayoutTest, ModelChangesWhileDragging) {
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
 
   std::vector<std::pair<LauncherID, views::View*> > id_map;
   SetupForDragTest(&id_map);
@@ -857,19 +879,18 @@ TEST_F(ShelfViewLegacyShelfLayoutTest, ModelChangesWhileDragging) {
   // Dragging browser shortcut at index 0.
   EXPECT_TRUE(model_->items()[0].type == TYPE_BROWSER_SHORTCUT);
   views::View* dragged_button = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 0, 2);
+      internal::ShelfButtonHost::MOUSE, 0, 2);
   std::rotate(id_map.begin(),
               id_map.begin() + 1,
               id_map.begin() + 3);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
   EXPECT_TRUE(model_->items()[2].type == TYPE_BROWSER_SHORTCUT);
 
   // Dragging changes model order.
-  dragged_button = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 0, 2);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 0, 2);
   std::rotate(id_map.begin(),
               id_map.begin() + 1,
               id_map.begin() + 3);
@@ -877,7 +898,7 @@ TEST_F(ShelfViewLegacyShelfLayoutTest, ModelChangesWhileDragging) {
 
   // Cancelling the drag operation restores previous order.
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        true);
   std::rotate(id_map.begin(),
               id_map.begin() + 2,
@@ -885,80 +906,78 @@ TEST_F(ShelfViewLegacyShelfLayoutTest, ModelChangesWhileDragging) {
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 
   // Deleting an item keeps the remaining intact.
-  dragged_button = SimulateDrag(internal::LauncherButtonHost::MOUSE, 0, 2);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 0, 2);
   model_->RemoveItemAt(1);
   id_map.erase(id_map.begin() + 1);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
 
   // Adding a launcher item cancels the drag and respects the order.
-  dragged_button = SimulateDrag(internal::LauncherButtonHost::MOUSE, 0, 2);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 0, 2);
   LauncherID new_id = AddAppShortcut();
   id_map.insert(id_map.begin() + 5,
                 std::make_pair(new_id, GetButtonByID(new_id)));
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
 
   // Adding a launcher item at the end (i.e. a panel)  canels drag and respects
   // the order.
-  dragged_button = SimulateDrag(internal::LauncherButtonHost::MOUSE, 0, 2);
+  dragged_button = SimulateDrag(internal::ShelfButtonHost::MOUSE, 0, 2);
   new_id = AddPanel();
   id_map.insert(id_map.begin() + 7,
                 std::make_pair(new_id, GetButtonByID(new_id)));
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
 }
 
 // Check that 2nd drag from the other pointer would be ignored.
 TEST_F(ShelfViewTest, SimultaneousDrag) {
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
 
   std::vector<std::pair<LauncherID, views::View*> > id_map;
   SetupForDragTest(&id_map);
 
   // Start a mouse drag.
   views::View* dragged_button_mouse = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 1, 3);
+      internal::ShelfButtonHost::MOUSE, 1, 3);
   std::rotate(id_map.begin() + 1,
               id_map.begin() + 2,
               id_map.begin() + 4);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   // Attempt a touch drag before the mouse drag finishes.
   views::View* dragged_button_touch = SimulateDrag(
-      internal::LauncherButtonHost::TOUCH, 4, 2);
+      internal::ShelfButtonHost::TOUCH, 4, 2);
 
   // Nothing changes since 2nd drag is ignored.
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 
   // Finish the mouse drag.
   button_host->PointerReleasedOnButton(dragged_button_mouse,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 
   // Now start a touch drag.
-  dragged_button_touch = SimulateDrag(
-      internal::LauncherButtonHost::TOUCH, 4, 2);
+  dragged_button_touch = SimulateDrag(internal::ShelfButtonHost::TOUCH, 4, 2);
   std::rotate(id_map.begin() + 3,
               id_map.begin() + 4,
               id_map.begin() + 5);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 
   // And attempt a mouse drag before the touch drag finishes.
-  dragged_button_mouse = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 1, 2);
+  dragged_button_mouse = SimulateDrag(internal::ShelfButtonHost::MOUSE, 1, 2);
 
   // Nothing changes since 2nd drag is ignored.
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 
   button_host->PointerReleasedOnButton(dragged_button_touch,
-                                       internal::LauncherButtonHost::TOUCH,
+                                       internal::ShelfButtonHost::TOUCH,
                                        false);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
 }
@@ -966,24 +985,24 @@ TEST_F(ShelfViewTest, SimultaneousDrag) {
 // Check that clicking first on one item and then dragging another works as
 // expected.
 TEST_F(ShelfViewTest, ClickOneDragAnother) {
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
 
   std::vector<std::pair<LauncherID, views::View*> > id_map;
   SetupForDragTest(&id_map);
 
   // A click on item 1 is simulated.
-  SimulateClick(internal::LauncherButtonHost::MOUSE, 1);
+  SimulateClick(internal::ShelfButtonHost::MOUSE, 1);
 
   // Dragging browser index at 0 should change the model order correctly.
   EXPECT_TRUE(model_->items()[1].type == TYPE_BROWSER_SHORTCUT);
   views::View* dragged_button = SimulateDrag(
-      internal::LauncherButtonHost::MOUSE, 1, 3);
+      internal::ShelfButtonHost::MOUSE, 1, 3);
   std::rotate(id_map.begin() + 1,
               id_map.begin() + 2,
               id_map.begin() + 4);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
   button_host->PointerReleasedOnButton(dragged_button,
-                                       internal::LauncherButtonHost::MOUSE,
+                                       internal::ShelfButtonHost::MOUSE,
                                        false);
   EXPECT_TRUE(model_->items()[3].type == TYPE_BROWSER_SHORTCUT);
 }
@@ -997,14 +1016,14 @@ TEST_F(ShelfViewTest, LauncherItemStatus) {
   LauncherID last_added = AddPlatformApp();
   LauncherItem item = GetItemByID(last_added);
   int index = model_->ItemIndexByID(last_added);
-  internal::LauncherButton* button = GetButtonByID(last_added);
-  ASSERT_EQ(internal::LauncherButton::STATE_RUNNING, button->state());
+  internal::ShelfButton* button = GetButtonByID(last_added);
+  ASSERT_EQ(internal::ShelfButton::STATE_RUNNING, button->state());
   item.status = ash::STATUS_ACTIVE;
   model_->Set(index, item);
-  ASSERT_EQ(internal::LauncherButton::STATE_ACTIVE, button->state());
+  ASSERT_EQ(internal::ShelfButton::STATE_ACTIVE, button->state());
   item.status = ash::STATUS_ATTENTION;
   model_->Set(index, item);
-  ASSERT_EQ(internal::LauncherButton::STATE_ATTENTION, button->state());
+  ASSERT_EQ(internal::ShelfButton::STATE_ATTENTION, button->state());
 }
 
 TEST_F(ShelfViewLegacyShelfLayoutTest,
@@ -1015,17 +1034,17 @@ TEST_F(ShelfViewLegacyShelfLayoutTest,
   // Add 2 items to the launcher.
   LauncherID item1_id = AddPlatformApp();
   LauncherID item2_id = AddPlatformAppNoWait();
-  internal::LauncherButton* item1_button = GetButtonByID(item1_id);
-  internal::LauncherButton* item2_button = GetButtonByID(item2_id);
+  internal::ShelfButton* item1_button = GetButtonByID(item1_id);
+  internal::ShelfButton* item2_button = GetButtonByID(item2_id);
 
-  internal::LauncherButton::State state_mask =
-      static_cast<internal::LauncherButton::State>
-          (internal::LauncherButton::STATE_NORMAL |
-          internal::LauncherButton::STATE_HOVERED |
-          internal::LauncherButton::STATE_RUNNING |
-          internal::LauncherButton::STATE_ACTIVE |
-          internal::LauncherButton::STATE_ATTENTION |
-          internal::LauncherButton::STATE_FOCUSED);
+  internal::ShelfButton::State state_mask =
+      static_cast<internal::ShelfButton::State>(
+          internal::ShelfButton::STATE_NORMAL |
+          internal::ShelfButton::STATE_HOVERED |
+          internal::ShelfButton::STATE_RUNNING |
+          internal::ShelfButton::STATE_ACTIVE |
+          internal::ShelfButton::STATE_ATTENTION |
+          internal::ShelfButton::STATE_FOCUSED);
 
   // Clear the button states.
   item1_button->ClearState(state_mask);
@@ -1034,10 +1053,10 @@ TEST_F(ShelfViewLegacyShelfLayoutTest,
   // Since default alignment in tests is bottom, state is reflected in y-axis.
   ASSERT_EQ(item1_button->GetIconBounds().y(),
             item2_button->GetIconBounds().y());
-  item1_button->AddState(internal::LauncherButton::STATE_HOVERED);
+  item1_button->AddState(internal::ShelfButton::STATE_HOVERED);
   ASSERT_NE(item1_button->GetIconBounds().y(),
             item2_button->GetIconBounds().y());
-  item1_button->ClearState(internal::LauncherButton::STATE_HOVERED);
+  item1_button->ClearState(internal::ShelfButton::STATE_HOVERED);
 }
 
 // Confirm that item status changes are reflected in the buttons
@@ -1050,14 +1069,14 @@ TEST_F(ShelfViewTest, LauncherItemStatusPlatformApp) {
   LauncherID last_added = AddPlatformApp();
   LauncherItem item = GetItemByID(last_added);
   int index = model_->ItemIndexByID(last_added);
-  internal::LauncherButton* button = GetButtonByID(last_added);
-  ASSERT_EQ(internal::LauncherButton::STATE_RUNNING, button->state());
+  internal::ShelfButton* button = GetButtonByID(last_added);
+  ASSERT_EQ(internal::ShelfButton::STATE_RUNNING, button->state());
   item.status = ash::STATUS_ACTIVE;
   model_->Set(index, item);
-  ASSERT_EQ(internal::LauncherButton::STATE_ACTIVE, button->state());
+  ASSERT_EQ(internal::ShelfButton::STATE_ACTIVE, button->state());
   item.status = ash::STATUS_ATTENTION;
   model_->Set(index, item);
-  ASSERT_EQ(internal::LauncherButton::STATE_ATTENTION, button->state());
+  ASSERT_EQ(internal::ShelfButton::STATE_ATTENTION, button->state());
 }
 
 // Confirm that launcher item bounds are correctly updated on shelf changes.
@@ -1081,10 +1100,10 @@ TEST_F(ShelfViewTest, ShelfTooltipTest) {
   LauncherID app_button_id = AddAppShortcut();
   LauncherID platform_button_id = AddPlatformApp();
 
-  internal::LauncherButton* app_button = GetButtonByID(app_button_id);
-  internal::LauncherButton* platform_button = GetButtonByID(platform_button_id);
+  internal::ShelfButton* app_button = GetButtonByID(app_button_id);
+  internal::ShelfButton* platform_button = GetButtonByID(platform_button_id);
 
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
   internal::ShelfTooltipManager* tooltip_manager =
       shelf_view_->tooltip_manager();
 
@@ -1122,13 +1141,13 @@ TEST_F(ShelfViewTest, ShelfTooltipTest) {
 // Verify a fix for crash caused by a tooltip update for a deleted launcher
 // button, see crbug.com/288838.
 TEST_F(ShelfViewTest, RemovingItemClosesTooltip) {
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
   internal::ShelfTooltipManager* tooltip_manager =
       shelf_view_->tooltip_manager();
 
   // Add an item to the launcher.
   LauncherID app_button_id = AddAppShortcut();
-  internal::LauncherButton* app_button = GetButtonByID(app_button_id);
+  internal::ShelfButton* app_button = GetButtonByID(app_button_id);
 
   // Spawn a tooltip on that item.
   button_host->MouseEnteredButton(app_button);
@@ -1148,13 +1167,13 @@ TEST_F(ShelfViewTest, RemovingItemClosesTooltip) {
 
 // Changing the shelf alignment closes any open tooltip.
 TEST_F(ShelfViewTest, ShelfAlignmentClosesTooltip) {
-  internal::LauncherButtonHost* button_host = shelf_view_;
+  internal::ShelfButtonHost* button_host = shelf_view_;
   internal::ShelfTooltipManager* tooltip_manager =
       shelf_view_->tooltip_manager();
 
   // Add an item to the launcher.
   LauncherID app_button_id = AddAppShortcut();
-  internal::LauncherButton* app_button = GetButtonByID(app_button_id);
+  internal::ShelfButton* app_button = GetButtonByID(app_button_id);
 
   // Spawn a tooltip on the item.
   button_host->MouseEnteredButton(app_button);
@@ -1174,7 +1193,7 @@ TEST_F(ShelfViewTest, ShouldHideTooltipTest) {
 
   // The tooltip shouldn't hide if the mouse is on normal buttons.
   for (int i = 0; i < test_api_->GetButtonCount(); i++) {
-    internal::LauncherButton* button = test_api_->GetButton(i);
+    internal::ShelfButton* button = test_api_->GetButton(i);
     if (!button)
       continue;
 
@@ -1199,7 +1218,7 @@ TEST_F(ShelfViewTest, ShouldHideTooltipTest) {
   // The tooltip should hide if it's outside of all buttons.
   gfx::Rect all_area;
   for (int i = 0; i < test_api_->GetButtonCount(); i++) {
-    internal::LauncherButton* button = test_api_->GetButton(i);
+    internal::ShelfButton* button = test_api_->GetButton(i);
     if (!button)
       continue;
 
@@ -1225,7 +1244,7 @@ TEST_F(ShelfViewTest, ShouldHideTooltipWithAppListWindowTest) {
 
   // The tooltip shouldn't hide if the mouse is on normal buttons.
   for (int i = 1; i < test_api_->GetButtonCount(); i++) {
-    internal::LauncherButton* button = test_api_->GetButton(i);
+    internal::ShelfButton* button = test_api_->GetButton(i);
     if (!button)
       continue;
 
@@ -1318,6 +1337,75 @@ TEST_F(ShelfViewTest, ResizeDuringOverflowAddAnimation) {
   EXPECT_EQ(app_list_bounds, app_list_ideal_bounds);
 }
 
+// Checks the overflow bubble size when an item is ripped off and re-inserted.
+TEST_F(ShelfViewTest, OverflowBubbleSize) {
+  // Replace LauncherDelegate.
+  test::ShellTestApi test_api(Shell::GetInstance());
+  test_api.SetLauncherDelegate(NULL);
+  LauncherDelegate *delegate = new TestLauncherDelegateForShelfView(model_);
+  test_api.SetLauncherDelegate(delegate);
+  test::LauncherTestAPI(
+      Launcher::ForPrimaryDisplay()).SetLauncherDelegate(delegate);
+  test_api_->SetLauncherDelegate(delegate);
+
+  // Add buttons until overflow.
+  int items_added = 0;
+  while (!test_api_->IsOverflowButtonVisible()) {
+    AddAppShortcut();
+    ++items_added;
+    ASSERT_LT(items_added, 10000);
+  }
+
+  // Show overflow bubble.
+  test_api_->ShowOverflowBubble();
+  ASSERT_TRUE(test_api_->overflow_bubble() &&
+              test_api_->overflow_bubble()->IsShowing());
+
+  ash::test::ShelfViewTestAPI test_for_overflow_view(
+      test_api_->overflow_bubble()->shelf_view());
+
+  int ripped_index = test_for_overflow_view.GetLastVisibleIndex();
+  gfx::Size bubble_size = test_for_overflow_view.GetPreferredSize();
+  int item_width = test_for_overflow_view.GetButtonSize() +
+      test_for_overflow_view.GetButtonSpacing();
+
+  aura::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow(),
+                                       gfx::Point());
+  ash::internal::ShelfButton* button =
+      test_for_overflow_view.GetButton(ripped_index);
+  // Rip off the last visible item.
+  gfx::Point start_point = button->GetBoundsInScreen().CenterPoint();
+  gfx::Point rip_off_point(start_point.x(), 0);
+  generator.MoveMouseTo(start_point.x(), start_point.y());
+  base::MessageLoop::current()->RunUntilIdle();
+  generator.PressLeftButton();
+  base::MessageLoop::current()->RunUntilIdle();
+  generator.MoveMouseTo(rip_off_point.x(), rip_off_point.y());
+  base::MessageLoop::current()->RunUntilIdle();
+  test_for_overflow_view.RunMessageLoopUntilAnimationsDone();
+
+  // Check the overflow bubble size when an item is ripped off.
+  EXPECT_EQ(bubble_size.width() - item_width,
+            test_for_overflow_view.GetPreferredSize().width());
+  ASSERT_TRUE(test_api_->overflow_bubble() &&
+              test_api_->overflow_bubble()->IsShowing());
+
+  // Re-insert an item into the overflow bubble.
+  int first_index = test_for_overflow_view.GetFirstVisibleIndex();
+  button = test_for_overflow_view.GetButton(first_index);
+
+  // Check the bubble size after an item is re-inserted.
+  generator.MoveMouseTo(button->GetBoundsInScreen().CenterPoint());
+  test_for_overflow_view.RunMessageLoopUntilAnimationsDone();
+  EXPECT_EQ(bubble_size.width(),
+            test_for_overflow_view.GetPreferredSize().width());
+
+  generator.ReleaseLeftButton();
+  test_for_overflow_view.RunMessageLoopUntilAnimationsDone();
+  EXPECT_EQ(bubble_size.width(),
+            test_for_overflow_view.GetPreferredSize().width());
+}
+
 // Check that the first item in the list follows Fitt's law by including the
 // first pixel and being therefore bigger then the others.
 TEST_F(ShelfViewLegacyShelfLayoutTest, CheckFittsLaw) {
@@ -1329,8 +1417,145 @@ TEST_F(ShelfViewLegacyShelfLayoutTest, CheckFittsLaw) {
   EXPECT_GT(ideal_bounds_0.width(), ideal_bounds_1.width());
 }
 
+// Check the drag insertion bounds of scrolled overflow bubble.
+TEST_F(ShelfViewTest, CheckDragInsertBoundsOfScrolledOverflowBubble) {
+  UpdateDisplay("400x300");
+
+  EXPECT_EQ(2, model_->item_count());
+
+  // Add buttons until overflow.
+  int items_added = 0;
+  while (!test_api_->IsOverflowButtonVisible()) {
+    AddAppShortcut();
+    ++items_added;
+    ASSERT_LT(items_added, 10000);
+  }
+
+  // Show overflow bubble.
+  test_api_->ShowOverflowBubble();
+  ASSERT_TRUE(test_api_->overflow_bubble() &&
+              test_api_->overflow_bubble()->IsShowing());
+
+  int item_width = test_api_->GetButtonSize() +
+      test_api_->GetButtonSpacing();
+  internal::OverflowBubbleView* bubble_view =
+      test_api_->overflow_bubble()->bubble_view();
+  test::OverflowBubbleViewTestAPI bubble_view_api(bubble_view);
+
+  // Add more buttons until OverflowBubble is scrollable and it has 3 invisible
+  // items.
+  while (bubble_view_api.GetContentsSize().width() <
+         (bubble_view->GetContentsBounds().width() + 3 * item_width))
+    AddAppShortcut();
+
+  ASSERT_TRUE(test_api_->overflow_bubble() &&
+              test_api_->overflow_bubble()->IsShowing());
+
+  ash::test::ShelfViewTestAPI test_for_overflow_view(
+      test_api_->overflow_bubble()->shelf_view());
+  int first_index = test_for_overflow_view.GetFirstVisibleIndex();
+  int last_index = test_for_overflow_view.GetLastVisibleIndex();
+
+  ash::internal::ShelfButton* first_button =
+      test_for_overflow_view.GetButton(first_index);
+  ash::internal::ShelfButton* last_button =
+      test_for_overflow_view.GetButton(last_index);
+  gfx::Point first_point = first_button->GetBoundsInScreen().CenterPoint();
+  gfx::Point last_point = last_button->GetBoundsInScreen().CenterPoint();
+  gfx::Rect drag_reinsert_bounds =
+      test_for_overflow_view.GetBoundsForDragInsertInScreen();
+  EXPECT_TRUE(drag_reinsert_bounds.Contains(first_point));
+  EXPECT_FALSE(drag_reinsert_bounds.Contains(last_point));
+
+  // Scrolls sufficiently to show last item.
+  bubble_view_api.ScrollByXOffset(3 * item_width);
+  drag_reinsert_bounds =
+      test_for_overflow_view.GetBoundsForDragInsertInScreen();
+  first_point = first_button->GetBoundsInScreen().CenterPoint();
+  last_point = last_button->GetBoundsInScreen().CenterPoint();
+  EXPECT_FALSE(drag_reinsert_bounds.Contains(first_point));
+  EXPECT_TRUE(drag_reinsert_bounds.Contains(last_point));
+}
+
+// Check the drag insertion bounds of shelf view in multi monitor environment.
+TEST_F(ShelfViewTest, CheckDragInsertBoundsWithMultiMonitor) {
+  // win8-aura doesn't support multiple display.
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("800x600,800x600");
+  Launcher* secondary_launcher =
+      Launcher::ForWindow(ash::Shell::GetAllRootWindows()[1]);
+  internal::ShelfView* shelf_view_for_secondary =
+      test::LauncherTestAPI(secondary_launcher).shelf_view();
+
+  // The bounds should be big enough for 4 buttons + overflow chevron.
+  shelf_view_for_secondary->SetBounds(0, 0, 500,
+      internal::ShelfLayoutManager::GetPreferredShelfSize());
+
+  ShelfViewTestAPI test_api_for_secondary(shelf_view_for_secondary);
+  // Speeds up animation for test.
+  test_api_for_secondary.SetAnimationDuration(1);
+
+  // Add buttons until overflow.
+  int items_added = 0;
+  while (!test_api_->IsOverflowButtonVisible()) {
+    AddAppShortcut();
+    ++items_added;
+    ASSERT_LT(items_added, 10000);
+  }
+
+  // Test #1: Test drag insertion bounds of primary shelf.
+  // Show overflow bubble.
+  test_api_->ShowOverflowBubble();
+  ASSERT_TRUE(test_api_->overflow_bubble() &&
+              test_api_->overflow_bubble()->IsShowing());
+
+  ash::test::ShelfViewTestAPI test_api_for_overflow_view(
+      test_api_->overflow_bubble()->shelf_view());
+
+  ash::internal::ShelfButton* button = test_api_for_overflow_view.GetButton(
+      test_api_for_overflow_view.GetLastVisibleIndex());
+
+  // Checks that a point in shelf is contained in drag insert bounds.
+  gfx::Point point_in_shelf_view = button->GetBoundsInScreen().CenterPoint();
+  gfx::Rect drag_reinsert_bounds =
+      test_api_for_overflow_view.GetBoundsForDragInsertInScreen();
+  EXPECT_TRUE(drag_reinsert_bounds.Contains(point_in_shelf_view));
+  // Checks that a point out of shelf is not contained in drag insert bounds.
+  EXPECT_FALSE(drag_reinsert_bounds.Contains(
+      gfx::Point(point_in_shelf_view.x(), 0)));
+
+  // Test #2: Test drag insertion bounds of secondary shelf.
+  // Show overflow bubble.
+  test_api_for_secondary.ShowOverflowBubble();
+  ASSERT_TRUE(test_api_for_secondary.overflow_bubble() &&
+              test_api_for_secondary.overflow_bubble()->IsShowing());
+
+  ash::test::ShelfViewTestAPI test_api_for_overflow_view_of_secondary(
+      test_api_for_secondary.overflow_bubble()->shelf_view());
+
+  ash::internal::ShelfButton* button_in_secondary =
+      test_api_for_overflow_view_of_secondary.GetButton(
+          test_api_for_overflow_view_of_secondary.GetLastVisibleIndex());
+
+  // Checks that a point in shelf is contained in drag insert bounds.
+  gfx::Point point_in_secondary_shelf_view =
+      button_in_secondary->GetBoundsInScreen().CenterPoint();
+  gfx::Rect drag_reinsert_bounds_in_secondary =
+      test_api_for_overflow_view_of_secondary.GetBoundsForDragInsertInScreen();
+  EXPECT_TRUE(drag_reinsert_bounds_in_secondary.Contains(
+      point_in_secondary_shelf_view));
+  // Checks that a point out of shelf is not contained in drag insert bounds.
+  EXPECT_FALSE(drag_reinsert_bounds_in_secondary.Contains(
+      gfx::Point(point_in_secondary_shelf_view.x(), 0)));
+  // Checks that a point of overflow bubble in primary shelf should not be
+  // contained by insert bounds of secondary shelf.
+  EXPECT_FALSE(drag_reinsert_bounds_in_secondary.Contains(point_in_shelf_view));
+}
+
 class ShelfViewVisibleBoundsTest : public ShelfViewTest,
-                                      public testing::WithParamInterface<bool> {
+                                   public testing::WithParamInterface<bool> {
  public:
   ShelfViewVisibleBoundsTest() : text_direction_change_(GetParam()) {}
 
@@ -1339,7 +1564,7 @@ class ShelfViewVisibleBoundsTest : public ShelfViewTest,
     gfx::Rect launcher_bounds = shelf_view_->GetBoundsInScreen();
     EXPECT_TRUE(launcher_bounds.Contains(visible_bounds));
     for (int i = 0; i < test_api_->GetButtonCount(); ++i)
-      if (internal::LauncherButton* button = test_api_->GetButton(i))
+      if (internal::ShelfButton* button = test_api_->GetButton(i))
         EXPECT_TRUE(visible_bounds.Contains(button->GetBoundsInScreen()));
     CheckAppListButtonIsInBounds();
   }

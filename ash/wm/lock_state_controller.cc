@@ -16,6 +16,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/timer/timer.h"
+#include "content/public/browser/user_metrics.h"
 #include "ui/aura/root_window.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
@@ -269,7 +270,6 @@ void LockStateController::RequestShutdown() {
   shutting_down_ = true;
 
   Shell* shell = ash::Shell::GetInstance();
-  shell->env_filter()->set_cursor_hidden_by_filter(false);
   shell->cursor_manager()->HideCursor();
 
   animator_->StartGlobalAnimation(
@@ -307,8 +307,8 @@ void LockStateController::OnAppTerminating() {
   if (!shutting_down_) {
     shutting_down_ = true;
     Shell* shell = ash::Shell::GetInstance();
-    shell->env_filter()->set_cursor_hidden_by_filter(false);
     shell->cursor_manager()->HideCursor();
+    shell->cursor_manager()->LockCursor();
     animator_->StartAnimation(
         internal::SessionStateAnimator::kAllContainersMask,
         internal::SessionStateAnimator::ANIMATION_HIDE_IMMEDIATELY,
@@ -364,7 +364,6 @@ void LockStateController::OnPreShutdownAnimationTimeout() {
   shutting_down_ = true;
 
   Shell* shell = ash::Shell::GetInstance();
-  shell->env_filter()->set_cursor_hidden_by_filter(false);
   shell->cursor_manager()->HideCursor();
 
   StartRealShutdownTimer(false);
@@ -417,7 +416,6 @@ void LockStateController::OnRealShutdownTimeout() {
 void LockStateController::StartCancellableShutdownAnimation() {
   Shell* shell = ash::Shell::GetInstance();
   // Hide cursor, but let it reappear if the mouse moves.
-  shell->env_filter()->set_cursor_hidden_by_filter(true);
   shell->cursor_manager()->HideCursor();
 
   animator_->StartGlobalAnimation(

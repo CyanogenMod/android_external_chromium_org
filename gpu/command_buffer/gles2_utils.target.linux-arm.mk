@@ -24,8 +24,7 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	gpu/command_buffer/common/gles2_cmd_utils.cc \
-	gpu/command_buffer/common/logging_android.cc
+	gpu/command_buffer/common/gles2_cmd_utils.cc
 
 
 # Flags passed to both C and C++ files.
@@ -75,6 +74,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DGLES2_UTILS_IMPLEMENTATION' \
@@ -158,6 +158,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DGLES2_UTILS_IMPLEMENTATION' \

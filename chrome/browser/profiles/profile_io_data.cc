@@ -30,7 +30,6 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_protocols.h"
 #include "chrome/browser/extensions/extension_resource_protocols.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -45,8 +44,6 @@
 #include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/net/resource_prefetch_predictor_observer.h"
-#include "chrome/browser/net/transport_security_persister.h"
-#include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/policy/url_blacklist_manager.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor_factory.h"
@@ -62,12 +59,13 @@
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_context.h"
+#include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
-#include "net/cert/cert_verifier.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
+#include "net/http/transport_security_persister.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
@@ -90,12 +88,16 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
+#include "chrome/browser/chromeos/policy/policy_cert_service.h"
+#include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
 #include "chrome/browser/chromeos/policy/policy_cert_verifier.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/profile_policy_connector.h"
-#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chromeos/settings/cros_settings_names.h"
 #endif  // defined(OS_CHROMEOS)
+
+#if defined(USE_NSS)
+#include "chrome/browser/ui/crypto_module_password_dialog.h"
+#endif
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -225,22 +227,6 @@ class DebugDevToolsInterceptor
 };
 #endif  // defined(DEBUG_DEVTOOLS)
 
-#if defined(OS_CHROMEOS)
-scoped_ptr<policy::PolicyCertVerifier> CreatePolicyCertVerifier(
-    Profile* profile) {
-  policy::ProfilePolicyConnector* connector =
-      policy::ProfilePolicyConnectorFactory::GetForProfile(profile);
-  base::Closure policy_cert_trusted_callback =
-      base::Bind(base::IgnoreResult(&content::BrowserThread::PostTask),
-                 content::BrowserThread::UI,
-                 FROM_HERE,
-                 connector->GetPolicyCertTrustedCallback());
-  scoped_ptr<policy::PolicyCertVerifier> cert_verifier(
-      new policy::PolicyCertVerifier(policy_cert_trusted_callback));
-  connector->SetPolicyCertVerifier(cert_verifier.get());
-  return cert_verifier.Pass();
-}
-#endif
 }  // namespace
 
 void ProfileIOData::InitializeOnUIThread(Profile* profile) {
@@ -272,11 +258,6 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
         new chrome_browser_net::ResourcePrefetchPredictorObserver(predictor));
   }
 
-#if defined(ENABLE_NOTIFICATIONS)
-  params->notification_service =
-      DesktopNotificationServiceFactory::GetForProfile(profile);
-#endif
-
   ProtocolHandlerRegistry* protocol_handler_registry =
       ProtocolHandlerRegistryFactory::GetForProfile(profile);
   DCHECK(protocol_handler_registry);
@@ -295,9 +276,6 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
       ManagedUserServiceFactory::GetForProfile(profile);
   params->managed_mode_url_filter =
       managed_user_service->GetURLFilterForIOThread();
-#endif
-#if defined(OS_CHROMEOS)
-  params->cert_verifier = CreatePolicyCertVerifier(profile);
 #endif
 
   params->profile = profile;
@@ -346,6 +324,9 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
     signin_allowed_.MoveToThread(io_message_loop_proxy);
   }
 
+#if defined(OS_CHROMEOS)
+  cert_verifier_ = policy::PolicyCertServiceFactory::CreateForProfile(profile);
+#endif
   // The URLBlacklistManager has to be created on the UI thread to register
   // observers of |pref_service|, and it also has to clean up on
   // ShutdownOnUIThread to release these observers on the right thread.
@@ -405,9 +386,6 @@ ProfileIOData::AppRequestContext::~AppRequestContext() {}
 
 ProfileIOData::ProfileParams::ProfileParams()
     : io_thread(NULL),
-#if defined(ENABLE_NOTIFICATIONS)
-      notification_service(NULL),
-#endif
       profile(NULL) {
 }
 
@@ -415,9 +393,6 @@ ProfileIOData::ProfileParams::~ProfileParams() {}
 
 ProfileIOData::ProfileIOData(bool is_incognito)
     : initialized_(false),
-#if defined(ENABLE_NOTIFICATIONS)
-      notification_service_(NULL),
-#endif
       resource_context_(new ResourceContext(this)),
       load_time_stats_(NULL),
       initialized_on_UI_thread_(false),
@@ -622,7 +597,7 @@ ChromeURLRequestContext* ProfileIOData::GetIsolatedMediaRequestContext(
   return context;
 }
 
-ExtensionInfoMap* ProfileIOData::GetExtensionInfoMap() const {
+extensions::InfoMap* ProfileIOData::GetExtensionInfoMap() const {
   DCHECK(initialized_) << "ExtensionSystem not initialized";
   return extension_info_map_.get();
 }
@@ -637,13 +612,6 @@ HostContentSettingsMap* ProfileIOData::GetHostContentSettingsMap() const {
   DCHECK(initialized_);
   return host_content_settings_map_.get();
 }
-
-#if defined(ENABLE_NOTIFICATIONS)
-DesktopNotificationService* ProfileIOData::GetNotificationService() const {
-  DCHECK(initialized_);
-  return notification_service_;
-}
-#endif
 
 void ProfileIOData::InitializeMetricsEnabledStateOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -715,8 +683,14 @@ net::URLRequestContext* ProfileIOData::ResourceContext::GetRequestContext()  {
 scoped_ptr<net::ClientCertStore>
 ProfileIOData::ResourceContext::CreateClientCertStore() {
 #if !defined(USE_OPENSSL)
-  return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreImpl());
-#else
+  scoped_ptr<net::ClientCertStoreImpl> store(new net::ClientCertStoreImpl());
+#if defined(USE_NSS)
+  store->set_password_delegate_factory(
+      base::Bind(&chrome::NewCryptoModuleBlockingDialogDelegate,
+                 chrome::kCryptoModulePasswordClientAuth));
+#endif
+  return store.PassAs<net::ClientCertStore>();
+#else  // defined(USE_OPENSSL)
   // OpenSSL does not use the ClientCertStore infrastructure. On Android client
   // cert matching is done by the OS as part of the call to show the cert
   // selection dialog.
@@ -815,16 +789,15 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
 
   transport_security_state_.reset(new net::TransportSecurityState());
   transport_security_persister_.reset(
-      new TransportSecurityPersister(transport_security_state_.get(),
-                                     profile_params_->path,
-                                     is_incognito()));
+      new net::TransportSecurityPersister(
+          transport_security_state_.get(),
+          profile_params_->path,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
+          is_incognito()));
 
   // Take ownership over these parameters.
   cookie_settings_ = profile_params_->cookie_settings;
   host_content_settings_map_ = profile_params_->host_content_settings_map;
-#if defined(ENABLE_NOTIFICATIONS)
-  notification_service_ = profile_params_->notification_service;
-#endif
   extension_info_map_ = profile_params_->extension_info_map;
 
   resource_context_->host_resolver_ = io_thread_globals->host_resolver.get();
@@ -840,9 +813,13 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
 #endif
 
 #if defined(OS_CHROMEOS)
-  profile_params_->cert_verifier->InitializeOnIOThread();
-  cert_verifier_ = profile_params_->cert_verifier.Pass();
-  main_request_context_->set_cert_verifier(cert_verifier_.get());
+  if (cert_verifier_) {
+    cert_verifier_->InitializeOnIOThread();
+    main_request_context_->set_cert_verifier(cert_verifier_.get());
+  } else {
+    main_request_context_->set_cert_verifier(
+        io_thread_globals->cert_verifier.get());
+  }
 #else
   main_request_context_->set_cert_verifier(
       io_thread_globals->cert_verifier.get());

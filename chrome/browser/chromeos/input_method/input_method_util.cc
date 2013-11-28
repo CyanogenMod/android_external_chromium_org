@@ -345,7 +345,7 @@ bool InputMethodUtil::IsValidInputMethodId(
   // We can't check the component extension is whilelisted or not here because
   // it might not be initialized.
   return GetInputMethodDescriptorFromId(input_method_id) != NULL ||
-      ComponentExtensionIMEManager::IsComponentExtensionIMEId(input_method_id);
+      extension_ime_util::IsComponentExtensionIME(input_method_id);
 }
 
 // static
@@ -638,7 +638,8 @@ InputMethodDescriptor InputMethodUtil::GetFallbackInputMethodDescriptor() {
                                layouts,
                                languages,
                                true,  // login keyboard.
-                               GURL());  // options page, not available.
+                               GURL(),  // options page, not available.
+                               GURL()); // input view page, not available.
 }
 
 void InputMethodUtil::ReloadInternalMaps() {

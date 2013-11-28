@@ -11,13 +11,14 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Handler;
 import android.view.Surface;
-import android.view.SurfaceView;
 import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.widget.FrameLayout;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.content.common.TraceEvent;
+import org.chromium.ui.base.WindowAndroid;
 
 /***
  * This view is used by a ContentView to render its content.
@@ -29,11 +30,11 @@ public class ContentViewRenderView extends FrameLayout {
     private static final int MAX_SWAP_BUFFER_COUNT = 2;
 
     // The native side of this object.
-    private int mNativeContentViewRenderView;
+    private long mNativeContentViewRenderView;
     private final SurfaceHolder.Callback mSurfaceCallback;
 
-    private SurfaceView mSurfaceView;
-    private VSyncAdapter mVSyncAdapter;
+    private final SurfaceView mSurfaceView;
+    private final VSyncAdapter mVSyncAdapter;
 
     private int mPendingRenders;
     private int mPendingSwapBuffers;
@@ -53,10 +54,10 @@ public class ContentViewRenderView extends FrameLayout {
      * Native code should add/remove the layers to be rendered through the ContentViewLayerRenderer.
      * @param context The context used to create this.
      */
-    public ContentViewRenderView(Context context) {
+    public ContentViewRenderView(Context context, WindowAndroid rootWindow) {
         super(context);
-
-        mNativeContentViewRenderView = nativeInit();
+        assert rootWindow != null;
+        mNativeContentViewRenderView = nativeInit(rootWindow.getNativePointer());
         assert mNativeContentViewRenderView != 0;
 
         setBackgroundColor(Color.WHITE);
@@ -264,40 +265,39 @@ public class ContentViewRenderView extends FrameLayout {
         if (mPendingSwapBuffers > 0) mPendingSwapBuffers--;
     }
 
-    private void didCompositeAndDraw() {
-        if (mCurrentContentView == null) return;
-        ContentViewCore contentViewCore = mCurrentContentView.getContentViewCore();
-        if (contentViewCore == null || !contentViewCore.isReady() || getBackground() == null) {
-            return;
-        }
-        if (getBackground() != null) {
-            post(new Runnable() {
-                @Override
-                public void run() {
-                    setBackgroundResource(0);
-                }
-            });
-        }
-    }
-
     private void render() {
         if (mPendingRenders > 0) mPendingRenders--;
+
+        // Waiting for the content view contents to be ready avoids compositing
+        // when the surface texture is still empty.
+        if (mCurrentContentView == null) return;
+        ContentViewCore contentViewCore = mCurrentContentView.getContentViewCore();
+        if (contentViewCore == null || !contentViewCore.isReady()) {
+            return;
+        }
 
         boolean didDraw = nativeComposite(mNativeContentViewRenderView);
         if (didDraw) {
             mPendingSwapBuffers++;
-            didCompositeAndDraw();
+            if (getBackground() != null) {
+                post(new Runnable() {
+                    @Override
+                    public void run() {
+                        setBackgroundResource(0);
+                    }
+                });
+            }
         }
     }
 
-    private native int nativeInit();
-    private native void nativeDestroy(int nativeContentViewRenderView);
-    private native void nativeSetCurrentContentView(int nativeContentViewRenderView,
-            int nativeContentView);
-    private native void nativeSurfaceCreated(int nativeContentViewRenderView, Surface surface);
-    private native void nativeSurfaceDestroyed(int nativeContentViewRenderView);
-    private native void nativeSurfaceSetSize(int nativeContentViewRenderView,
+    private native long nativeInit(long rootWindowNativePointer);
+    private native void nativeDestroy(long nativeContentViewRenderView);
+    private native void nativeSetCurrentContentView(long nativeContentViewRenderView,
+            long nativeContentView);
+    private native void nativeSurfaceCreated(long nativeContentViewRenderView, Surface surface);
+    private native void nativeSurfaceDestroyed(long nativeContentViewRenderView);
+    private native void nativeSurfaceSetSize(long nativeContentViewRenderView,
             int width, int height);
-    private native boolean nativeComposite(int nativeContentViewRenderView);
-    private native boolean nativeCompositeToBitmap(int nativeContentViewRenderView, Bitmap bitmap);
+    private native boolean nativeComposite(long nativeContentViewRenderView);
+    private native boolean nativeCompositeToBitmap(long nativeContentViewRenderView, Bitmap bitmap);
 }

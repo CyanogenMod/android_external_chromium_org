@@ -117,14 +117,135 @@ TEST_F(KernelProxyTest, FileLeak) {
 
   for (int file_num = 0; file_num < 4096; file_num++) {
     sprintf(filename, "/foo%i.tmp", file_num++);
-    FILE* f = fopen(filename, "w");
-    ASSERT_NE((FILE*)NULL, f);
+    int fd = ki_open(filename, O_WRONLY | O_CREAT);
+    ASSERT_GT(fd, -1);
     ASSERT_EQ(1, root->ChildCount());
-    ASSERT_EQ(buffer_size, fwrite(garbage, 1, buffer_size, f));
-    fclose(f);
-    ASSERT_EQ(0, remove(filename));
+    ASSERT_EQ(buffer_size, ki_write(fd, garbage, buffer_size));
+    ki_close(fd);
+    ASSERT_EQ(0, ki_remove(filename));
   }
   ASSERT_EQ(0, root->ChildCount());
+}
+
+static bool g_handler_called = false;
+static void sighandler(int) {
+  g_handler_called = true;
+}
+
+TEST_F(KernelProxyTest, Sigaction) {
+  struct sigaction action;
+  struct sigaction oaction;
+  memset(&action, 0, sizeof(action));
+
+  // Invalid signum
+  ASSERT_EQ(-1, ki_sigaction(-1, NULL, &oaction));
+  ASSERT_EQ(-1, ki_sigaction(SIGSTOP, NULL, &oaction));
+  ASSERT_EQ(EINVAL, errno);
+
+  // Get existing handler
+  memset(&oaction, 0, sizeof(oaction));
+  ASSERT_EQ(0, ki_sigaction(SIGINT, NULL, &oaction));
+  ASSERT_EQ(SIG_DFL, oaction.sa_handler);
+
+  // Attempt to set handler for unsupported signum
+  action.sa_handler = sighandler;
+  ASSERT_EQ(-1, ki_sigaction(SIGINT, &action, NULL));
+  ASSERT_EQ(EINVAL, errno);
+
+  // Attempt to set handler for supported signum
+  action.sa_handler = sighandler;
+  ASSERT_EQ(0, ki_sigaction(SIGWINCH, &action, NULL));
+
+  memset(&oaction, 0, sizeof(oaction));
+  ASSERT_EQ(0, ki_sigaction(SIGWINCH, NULL, &oaction));
+  ASSERT_EQ((sighandler_t*)sighandler, (sighandler_t*)oaction.sa_handler);
+}
+
+TEST_F(KernelProxyTest, KillSignals) {
+  // SIGSEGV can't be sent via kill(2)
+  ASSERT_EQ(-1, ki_kill(0, SIGSEGV)) << "kill(SEGV) failed to return an error";
+  ASSERT_EQ(EINVAL, errno) << "kill(SEGV) failed to set errno to EINVAL";
+
+  // Our implemenation should understand SIGWINCH
+  ASSERT_EQ(0, ki_kill(0, SIGWINCH)) << "kill(SIGWINCH) failed: " << errno;
+
+  // And USR1/USR2
+  ASSERT_EQ(0, ki_kill(0, SIGUSR1)) << "kill(SIGUSR1) failed: " << errno;
+  ASSERT_EQ(0, ki_kill(0, SIGUSR2)) << "kill(SIGUSR2) failed: " << errno;
+}
+
+TEST_F(KernelProxyTest, KillPIDValues) {
+  // Any PID other than 0, -1 and getpid() should yield ESRCH
+  // since there is only one valid process under NaCl
+  int mypid = getpid();
+  ASSERT_EQ(0, ki_kill(0, SIGWINCH));
+  ASSERT_EQ(0, ki_kill(-1, SIGWINCH));
+  ASSERT_EQ(0, ki_kill(mypid, SIGWINCH));
+
+  // Don't use mypid + 1 since getpid() actually returns -1
+  // when the IRT interface is missing (e.g. within chrome),
+  // and 0 is always a valid PID when calling kill().
+  int invalid_pid = mypid + 10;
+  ASSERT_EQ(-1, ki_kill(invalid_pid, SIGWINCH));
+  ASSERT_EQ(ESRCH, errno);
+}
+
+TEST_F(KernelProxyTest, SignalValues) {
+  ASSERT_EQ(ki_signal(SIGSEGV, sighandler), SIG_ERR)
+      << "registering SEGV handler didn't fail";
+  ASSERT_EQ(errno, EINVAL) << "signal(SEGV) failed to set errno to EINVAL";
+
+  ASSERT_EQ(ki_signal(-1, sighandler), SIG_ERR)
+      << "registering handler for invalid signal didn't fail";
+  ASSERT_EQ(errno, EINVAL) << "signal(-1) failed to set errno to EINVAL";
+}
+
+TEST_F(KernelProxyTest, SignalHandlerValues) {
+  // Unsupported signal.
+  ASSERT_NE(SIG_ERR, ki_signal(SIGSEGV, SIG_DFL));
+  ASSERT_EQ(SIG_ERR, ki_signal(SIGSEGV, SIG_IGN));
+  ASSERT_EQ(SIG_ERR, ki_signal(SIGSEGV, sighandler));
+
+  // Supported signal.
+  ASSERT_NE(SIG_ERR, ki_signal(SIGWINCH, SIG_DFL));
+  ASSERT_NE(SIG_ERR, ki_signal(SIGWINCH, SIG_IGN));
+  ASSERT_NE(SIG_ERR, ki_signal(SIGWINCH, sighandler));
+}
+
+TEST_F(KernelProxyTest, SignalSigwinch) {
+  g_handler_called = false;
+
+  // Register WINCH handler
+  sighandler_t newsig = sighandler;
+  sighandler_t oldsig = ki_signal(SIGWINCH, newsig);
+  ASSERT_NE(oldsig, SIG_ERR);
+
+  // Send signal.
+  ki_kill(0, SIGWINCH);
+
+  // Verify that handler was called
+  EXPECT_TRUE(g_handler_called);
+
+  // Restore existing handler
+  oldsig = ki_signal(SIGWINCH, oldsig);
+
+  // Verify the our newsig was returned as previous handler
+  ASSERT_EQ(oldsig, newsig);
+}
+
+TEST_F(KernelProxyTest, Rename) {
+  // Create a dummy file
+  int file1 = ki_open("/test1.txt", O_RDWR | O_CREAT);
+  ASSERT_GT(file1, -1);
+  ASSERT_EQ(0, ki_close(file1));
+
+  // Test the renaming works
+  ASSERT_EQ(0, ki_rename("/test1.txt", "/test2.txt"));
+
+  // Test that renaming across mount points fails
+  ASSERT_EQ(0, ki_mount("", "/foo", "memfs", 0, ""));
+  ASSERT_EQ(-1, ki_rename("/test2.txt", "/foo/test2.txt"));
+  ASSERT_EQ(EXDEV, errno);
 }
 
 TEST_F(KernelProxyTest, WorkingDirectory) {
@@ -237,21 +358,21 @@ TEST_F(KernelProxyTest, MemMountIO) {
 TEST_F(KernelProxyTest, MemMountLseek) {
   int fd = ki_open("/foo", O_CREAT | O_RDWR);
   ASSERT_GT(fd, -1);
-  EXPECT_EQ(9, ki_write(fd, "Some text", 9));
+  ASSERT_EQ(9, ki_write(fd, "Some text", 9));
 
-  EXPECT_EQ(9, ki_lseek(fd, 0, SEEK_CUR));
-  EXPECT_EQ(9, ki_lseek(fd, 0, SEEK_END));
-  EXPECT_EQ(-1, ki_lseek(fd, -1, SEEK_SET));
-  EXPECT_EQ(EINVAL, errno);
+  ASSERT_EQ(9, ki_lseek(fd, 0, SEEK_CUR));
+  ASSERT_EQ(9, ki_lseek(fd, 0, SEEK_END));
+  ASSERT_EQ(-1, ki_lseek(fd, -1, SEEK_SET));
+  ASSERT_EQ(EINVAL, errno);
 
   // Seek past end of file.
-  EXPECT_EQ(13, ki_lseek(fd, 13, SEEK_SET));
+  ASSERT_EQ(13, ki_lseek(fd, 13, SEEK_SET));
   char buffer[4];
   memset(&buffer[0], 0xfe, 4);
-  EXPECT_EQ(9, ki_lseek(fd, -4, SEEK_END));
-  EXPECT_EQ(9, ki_lseek(fd, 0, SEEK_CUR));
-  EXPECT_EQ(4, ki_read(fd, &buffer[0], 4));
-  EXPECT_EQ(0, memcmp("\0\0\0\0", buffer, 4));
+  ASSERT_EQ(9, ki_lseek(fd, -4, SEEK_END));
+  ASSERT_EQ(9, ki_lseek(fd, 0, SEEK_CUR));
+  ASSERT_EQ(4, ki_read(fd, &buffer[0], 4));
+  ASSERT_EQ(0, memcmp("\0\0\0\0", buffer, 4));
 }
 
 TEST_F(KernelProxyTest, CloseTwice) {
@@ -407,6 +528,7 @@ class MountMockMMap : public Mount {
   virtual Error Mkdir(const Path& path, int permissions) { return ENOSYS; }
   virtual Error Rmdir(const Path& path) { return ENOSYS; }
   virtual Error Remove(const Path& path) { return ENOSYS; }
+  virtual Error Rename(const Path& path, const Path& newpath) { return ENOSYS; }
 
   friend class TypedMountFactory<MountMockMMap>;
 };
@@ -565,4 +687,3 @@ TEST_F(KernelProxyErrorTest, ReadError) {
   // propagate through.
   EXPECT_EQ(1234, errno);
 }
-

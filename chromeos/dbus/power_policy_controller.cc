@@ -81,6 +81,8 @@ PowerPolicyController::PrefValues::PrefValues()
       lid_closed_action(ACTION_SUSPEND),
       use_audio_activity(true),
       use_video_activity(true),
+      ac_brightness_percent(-1.0),
+      battery_brightness_percent(-1.0),
       allow_screen_wake_locks(true),
       enable_screen_lock(false),
       presentation_screen_dim_delay_factor(1.0),
@@ -105,6 +107,14 @@ std::string PowerPolicyController::GetPolicyDebugString(
     str += base::StringPrintf("use_audio=%d ", policy.use_audio_activity());
   if (policy.has_use_video_activity())
     str += base::StringPrintf("use_video=%d ", policy.use_audio_activity());
+  if (policy.has_ac_brightness_percent()) {
+    str += base::StringPrintf("ac_brightness_percent=%f ",
+        policy.ac_brightness_percent());
+  }
+  if (policy.has_battery_brightness_percent()) {
+    str += base::StringPrintf("battery_brightness_percent=%f ",
+        policy.battery_brightness_percent());
+  }
   if (policy.has_presentation_screen_dim_delay_factor()) {
     str += base::StringPrintf("presentation_screen_dim_delay_factor=%f ",
         policy.presentation_screen_dim_delay_factor());
@@ -123,19 +133,16 @@ std::string PowerPolicyController::GetPolicyDebugString(
   return str;
 }
 
-PowerPolicyController::PowerPolicyController(DBusThreadManager* manager,
-                                             PowerManagerClient* client)
-    : manager_(manager),
-      client_(client),
+PowerPolicyController::PowerPolicyController()
+    : manager_(NULL),
+      client_(NULL),
       prefs_were_set_(false),
       honor_screen_wake_locks_(true),
       next_wake_lock_id_(1) {
-  manager_->AddObserver(this);
-  client_->AddObserver(this);
-  SendCurrentPolicy();
 }
 
 PowerPolicyController::~PowerPolicyController() {
+  DCHECK(manager_);
   // The power manager's policy is reset before this point, in
   // OnDBusThreadManagerDestroying().  At the time that
   // PowerPolicyController is destroyed, PowerManagerClient's D-Bus proxy
@@ -144,6 +151,14 @@ PowerPolicyController::~PowerPolicyController() {
   client_ = NULL;
   manager_->RemoveObserver(this);
   manager_ = NULL;
+}
+
+void PowerPolicyController::Init(DBusThreadManager* manager) {
+  manager_ = manager;
+  manager_->AddObserver(this);
+  client_ = manager_->GetPowerManagerClient();
+  client_->AddObserver(this);
+  SendCurrentPolicy();
 }
 
 void PowerPolicyController::ApplyPrefs(const PrefValues& values) {
@@ -186,6 +201,12 @@ void PowerPolicyController::ApplyPrefs(const PrefValues& values) {
   prefs_policy_.set_lid_closed_action(GetProtoAction(values.lid_closed_action));
   prefs_policy_.set_use_audio_activity(values.use_audio_activity);
   prefs_policy_.set_use_video_activity(values.use_video_activity);
+  if (values.ac_brightness_percent >= 0.0)
+    prefs_policy_.set_ac_brightness_percent(values.ac_brightness_percent);
+  if (values.battery_brightness_percent >= 0.0) {
+    prefs_policy_.set_battery_brightness_percent(
+        values.battery_brightness_percent);
+  }
   prefs_policy_.set_presentation_screen_dim_delay_factor(
       values.presentation_screen_dim_delay_factor);
   prefs_policy_.set_user_activity_screen_dim_delay_factor(

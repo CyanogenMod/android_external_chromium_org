@@ -8,7 +8,7 @@
 #include "ash/ash_switches.h"
 #include "ash/display/display_manager.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_model.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shell.h"
 #include "ash/system/brightness_control_delegate.h"
 #include "ash/system/tray/system_tray_delegate.h"
@@ -20,6 +20,7 @@
 #include "ash/wm/gestures/long_press_affordance_handler.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/workspace/snap_sizer.h"
 #include "base/command_line.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -189,8 +190,8 @@ class SystemGestureEventFilterTest
     return &GetLongPressAffordance()->timer_;
   }
 
-  int GetLongPressAffordanceTouchId() {
-    return GetLongPressAffordance()->tap_down_touch_id_;
+  aura::Window* GetLongPressAffordanceTarget() {
+    return GetLongPressAffordance()->tap_down_target_;
   }
 
   views::View* GetLongPressAffordanceView() {
@@ -202,9 +203,9 @@ class SystemGestureEventFilterTest
   virtual void SetUp() OVERRIDE {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         ash::switches::kAshEnableAdvancedGestures);
-    if (docked_enabled_) {
+    if (!docked_enabled_) {
       CommandLine::ForCurrentProcess()->AppendSwitch(
-          ash::switches::kAshEnableDockedWindows);
+          ash::switches::kAshDisableDockedWindows);
     }
     test::AshTestBase::SetUp();
     // Enable brightness key.
@@ -228,61 +229,6 @@ ui::GestureEvent* CreateGesture(ui::EventType type,
   return new ui::GestureEvent(type, x, y, 0,
       base::TimeDelta::FromMilliseconds(base::Time::Now().ToDoubleT() * 1000),
       ui::GestureEventDetails(type, delta_x, delta_y), 1 << touch_id);
-}
-
-void MoveToDeviceControlBezelStartPosition(
-    aura::RootWindow* root_window,
-    DelegatePercentTracker* delegate,
-    double expected_value,
-    int xpos,
-    int ypos,
-    int ypos_half,
-    int touch_id) {
-  // Get a target for kTouchId
-  ui::TouchEvent press1(ui::ET_TOUCH_PRESSED,
-                        gfx::Point(-10, ypos + ypos_half),
-                        touch_id,
-                        ui::EventTimeForNow());
-  root_window->GetDispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(
-      &press1);
-
-  // There is a noise filter which will require several calls before it
-  // allows the touch event through.
-  int initial_count = delegate->handle_percent_count();
-
-  // Position the initial touch down slightly underneath the position of
-  // interest to avoid a conflict with the noise filter.
-  scoped_ptr<ui::GestureEvent> event1(CreateGesture(
-      ui::ET_GESTURE_SCROLL_BEGIN, xpos, ypos + ypos_half - 10,
-      0, 0, touch_id));
-  bool consumed = root_window->DispatchGestureEvent(event1.get());
-
-  EXPECT_TRUE(consumed);
-  EXPECT_EQ(initial_count, delegate->handle_percent_count());
-
-  // No move at the beginning will produce no events.
-  scoped_ptr<ui::GestureEvent> event2(CreateGesture(
-      ui::ET_GESTURE_SCROLL_UPDATE,
-      xpos, ypos + ypos_half - 10, 0, 0, touch_id));
-  consumed = root_window->DispatchGestureEvent(event2.get());
-
-  EXPECT_TRUE(consumed);
-  EXPECT_EQ(initial_count, delegate->handle_percent_count());
-
-  // A move to a new Y location will produce an event.
-  scoped_ptr<ui::GestureEvent> event3(CreateGesture(
-      ui::ET_GESTURE_SCROLL_UPDATE, xpos, ypos + ypos_half,
-      0, 10, touch_id));
-
-  int count = initial_count;
-  int loop_counter = 0;
-  while (count == initial_count && loop_counter++ < 100) {
-    EXPECT_TRUE(root_window->DispatchGestureEvent(event3.get()));
-    count = delegate->handle_percent_count();
-  }
-  EXPECT_TRUE(loop_counter && loop_counter < 100);
-  EXPECT_EQ(initial_count + 1, count);
-  EXPECT_EQ(expected_value, delegate->handle_percent());
 }
 
 TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
@@ -317,7 +263,7 @@ TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
   base::OneShotTimer<internal::LongPressAffordanceHandler>* timer =
       GetLongPressAffordanceTimer();
   EXPECT_TRUE(timer->IsRunning());
-  EXPECT_EQ(kTouchId, GetLongPressAffordanceTouchId());
+  EXPECT_EQ(window1, GetLongPressAffordanceTarget());
 
   // Force timeout so that the affordance animation can start.
   timer->user_task().Run();
@@ -329,7 +275,7 @@ TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
   EXPECT_TRUE(window2->HasCapture());
 
   EXPECT_TRUE(GetLongPressAffordance()->is_animating());
-  EXPECT_EQ(kTouchId, GetLongPressAffordanceTouchId());
+  EXPECT_EQ(window1, GetLongPressAffordanceTarget());
 
   // Animate to completion.
   GetLongPressAffordance()->End();  // end grow animation.
@@ -341,7 +287,7 @@ TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
   GetLongPressAffordance()->End();  // end shrink animation.
 
   // Check if state has reset.
-  EXPECT_EQ(-1, GetLongPressAffordanceTouchId());
+  EXPECT_EQ(NULL, GetLongPressAffordanceTarget());
   EXPECT_EQ(NULL, GetLongPressAffordanceView());
 }
 
@@ -496,7 +442,7 @@ TEST_P(SystemGestureEventFilterTest, TwoFingerDragTwoWindows) {
 }
 
 TEST_P(SystemGestureEventFilterTest, WindowsWithMaxSizeDontSnap) {
-  gfx::Rect bounds(150, 150, 100, 100);
+  gfx::Rect bounds(250, 150, 100, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
       new MaxSizeWidgetDelegate, root_window, bounds);
@@ -505,8 +451,8 @@ TEST_P(SystemGestureEventFilterTest, WindowsWithMaxSizeDontSnap) {
   const int kSteps = 15;
   const int kTouchPoints = 2;
   gfx::Point points[kTouchPoints] = {
-    gfx::Point(150+10, 150+30),
-    gfx::Point(150+30, 150+20),
+    gfx::Point(bounds.x() + 10, bounds.y() + 30),
+    gfx::Point(bounds.x() + 30, bounds.y() + 20),
   };
 
   aura::test::EventGenerator generator(root_window,
@@ -651,6 +597,71 @@ TEST_P(SystemGestureEventFilterTest, ThreeFingerGestureStopsDrag) {
   bounds += gfx::Vector2d(expected_drag, expected_drag);
   EXPECT_EQ(bounds.ToString(),
             toplevel->GetNativeWindow()->bounds().ToString());
+}
+
+TEST_P(SystemGestureEventFilterTest, DragLeftNearEdgeSnaps) {
+  gfx::Rect bounds(200, 150, 400, 100);
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
+  views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
+      new ResizableWidgetDelegate, root_window, bounds);
+  toplevel->Show();
+
+  const int kSteps = 15;
+  const int kTouchPoints = 2;
+  gfx::Point points[kTouchPoints] = {
+    gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
+    gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
+  };
+  aura::test::EventGenerator generator(root_window,
+                                       toplevel->GetNativeWindow());
+
+  // Check that dragging left snaps before reaching the screen edge.
+  gfx::Rect work_area =
+      Shell::GetScreen()->GetDisplayNearestWindow(root_window).work_area();
+  int drag_x = work_area.x() + 20 - points[0].x();
+  generator.GestureMultiFingerScroll(
+      kTouchPoints, points, 120, kSteps, drag_x, 0);
+
+  internal::SnapSizer snap_sizer(
+      wm::GetWindowState(toplevel->GetNativeWindow()),
+      gfx::Point(),
+      internal::SnapSizer::LEFT_EDGE,
+      internal::SnapSizer::OTHER_INPUT);
+  gfx::Rect expected_bounds(snap_sizer.target_bounds());
+  EXPECT_EQ(expected_bounds.ToString(),
+            toplevel->GetWindowBoundsInScreen().ToString());
+}
+
+TEST_P(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
+  gfx::Rect bounds(200, 150, 400, 100);
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
+  views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
+      new ResizableWidgetDelegate, root_window, bounds);
+  toplevel->Show();
+
+  const int kSteps = 15;
+  const int kTouchPoints = 2;
+  gfx::Point points[kTouchPoints] = {
+    gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
+    gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
+  };
+  aura::test::EventGenerator generator(root_window,
+                                       toplevel->GetNativeWindow());
+
+  // Check that dragging right snaps before reaching the screen edge.
+  gfx::Rect work_area =
+      Shell::GetScreen()->GetDisplayNearestWindow(root_window).work_area();
+  int drag_x = work_area.right() - 20 - points[0].x();
+  generator.GestureMultiFingerScroll(
+      kTouchPoints, points, 120, kSteps, drag_x, 0);
+  internal::SnapSizer snap_sizer(
+      wm::GetWindowState(toplevel->GetNativeWindow()),
+      gfx::Point(),
+      internal::SnapSizer::RIGHT_EDGE,
+      internal::SnapSizer::OTHER_INPUT);
+  gfx::Rect expected_bounds(snap_sizer.target_bounds());
+  EXPECT_EQ(expected_bounds.ToString(),
+            toplevel->GetWindowBoundsInScreen().ToString());
 }
 
 // Tests run twice - with docked windows disabled or enabled.

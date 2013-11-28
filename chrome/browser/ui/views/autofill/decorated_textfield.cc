@@ -120,19 +120,23 @@ const char* DecoratedTextfield::GetClassName() const {
   return kViewClassName;
 }
 
-views::View* DecoratedTextfield::GetEventHandlerForPoint(
-    const gfx::Point& point) {
+views::View* DecoratedTextfield::GetEventHandlerForRect(const gfx::Rect& rect) {
+  views::View* handler = views::Textfield::GetEventHandlerForRect(rect);
+  if (handler->GetClassName() == TooltipIcon::kViewClassName)
+    return handler;
   return native_wrapper_->GetView();
 }
 
 void DecoratedTextfield::OnFocus() {
   border_->set_has_focus(true);
   views::Textfield::OnFocus();
+  SchedulePaint();
 }
 
 void DecoratedTextfield::OnBlur() {
   border_->set_has_focus(false);
   views::Textfield::OnBlur();
+  SchedulePaint();
 }
 
 gfx::Size DecoratedTextfield::GetPreferredSize() {

@@ -7,17 +7,24 @@
 
 #include <string>
 
-namespace net {
+#include "base/memory/ref_counted.h"
 
-class X509Certificate;
+namespace net {
 
 namespace ct {
 
 struct LogEntry;
 struct SignedCertificateTimestamp;
 
+// Note: unless specified otherwise, all test data is taken from Certificate
+// Transparency test data repository.
+
 // Fills |entry| with test data for an X.509 entry.
 void GetX509CertLogEntry(LogEntry* entry);
+
+// Returns a DER-encoded X509 cert. The SCT provided by
+// GetX509CertSCT is signed over this certificate.
+std::string GetDerEncodedX509Cert();
 
 // Fills |entry| with test data for a Precertificate entry.
 void GetPrecertLogEntry(LogEntry* entry);
@@ -27,6 +34,21 @@ std::string GetTestDigitallySigned();
 
 // Returns the binary representation of a test serialized SCT.
 std::string GetTestSignedCertificateTimestamp();
+
+// Test log key
+std::string GetTestPublicKey();
+
+// ID of test log key
+std::string GetTestPublicKeyId();
+
+// SCT for the X509Certificate provided above.
+void GetX509CertSCT(scoped_refptr<SignedCertificateTimestamp>* sct);
+
+// SCT for the Precertificate log entry provided above.
+void GetPrecertSCT(scoped_refptr<SignedCertificateTimestamp>* sct);
+
+// Issuer key hash
+std::string GetDefaultIssuerKeyHash();
 
 }  // namespace ct
 

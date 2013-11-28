@@ -5,10 +5,10 @@
 #include "ash/shelf/shelf_widget.h"
 
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_button.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_button.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_view.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
@@ -38,7 +38,7 @@ internal::ShelfLayoutManager* GetShelfLayoutManager() {
 
 typedef test::AshTestBase ShelfWidgetTest;
 
-// Launcher can't be activated on mouse click, but it is activable from
+// Shelf can't be activated on mouse click, but it is activable from
 // the focus cycler or as fallback.
 // TODO(mtomasz): make this test work with the FocusController.
 // crbug.com/285364.
@@ -89,7 +89,7 @@ TEST_F(ShelfWidgetTest, TestAlignment) {
     return;
 
   UpdateDisplay("300x300,500x500");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   {
     SCOPED_TRACE("Primary Bottom");
     TestLauncherAlignment(root_windows[0],

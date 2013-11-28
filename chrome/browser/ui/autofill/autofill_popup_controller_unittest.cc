@@ -4,7 +4,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/testing_pref_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
@@ -13,6 +13,7 @@
 #include "components/autofill/content/browser/autofill_driver_impl.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_autofill_external_delegate.h"
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
 #include "grit/webkit_resources.h"
@@ -27,18 +28,16 @@ using ::testing::_;
 using ::testing::AtLeast;
 using ::testing::NiceMock;
 using base::WeakPtr;
-using WebKit::WebAutofillClient;
+using blink::WebAutofillClient;
 
 namespace autofill {
 namespace {
 
 class MockAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
-  MockAutofillExternalDelegate(content::WebContents* web_contents,
-                               AutofillManager* autofill_manager,
+  MockAutofillExternalDelegate(AutofillManager* autofill_manager,
                                AutofillDriver* autofill_driver)
-      : AutofillExternalDelegate(web_contents, autofill_manager,
-                                 autofill_driver) {}
+      : AutofillExternalDelegate(autofill_manager, autofill_driver) {}
   virtual ~MockAutofillExternalDelegate() {}
 
   virtual void DidSelectSuggestion(int identifier) OVERRIDE {}
@@ -53,13 +52,15 @@ class MockAutofillExternalDelegate : public AutofillExternalDelegate {
 class MockAutofillManagerDelegate
     : public autofill::TestAutofillManagerDelegate {
  public:
-  MockAutofillManagerDelegate() {}
+  MockAutofillManagerDelegate()
+      : prefs_(autofill::test::PrefServiceForTesting()) {
+  }
   virtual ~MockAutofillManagerDelegate() {}
 
-  virtual PrefService* GetPrefs() OVERRIDE { return &prefs_; }
+  virtual PrefService* GetPrefs() OVERRIDE { return prefs_.get(); }
 
  private:
-  TestingPrefServiceSimple prefs_;
+  scoped_ptr<PrefService> prefs_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAutofillManagerDelegate);
 };
@@ -138,7 +139,6 @@ class AutofillPopupControllerUnitTest : public ChromeRenderViewHostTestHarness {
         AutofillDriverImpl::FromWebContents(web_contents());
     external_delegate_.reset(
         new NiceMock<MockAutofillExternalDelegate>(
-            web_contents(),
             driver->autofill_manager(),
             driver));
 
@@ -428,8 +428,7 @@ TEST_F(AutofillPopupControllerUnitTest, PopupsWithOnlyDataLists) {
 TEST_F(AutofillPopupControllerUnitTest, GetOrCreate) {
   AutofillDriverImpl* driver =
       AutofillDriverImpl::FromWebContents(web_contents());
-  MockAutofillExternalDelegate delegate(
-      web_contents(), driver->autofill_manager(), driver);
+  MockAutofillExternalDelegate delegate(driver->autofill_manager(), driver);
 
   WeakPtr<AutofillPopupControllerImpl> controller =
       AutofillPopupControllerImpl::GetOrCreate(
@@ -591,7 +590,7 @@ TEST_F(AutofillPopupControllerUnitTest, GrowPopupInSpace) {
     AutofillDriverImpl* driver =
         AutofillDriverImpl::FromWebContents(web_contents());
     NiceMock<MockAutofillExternalDelegate> external_delegate(
-        web_contents(), driver->autofill_manager(), driver);
+        driver->autofill_manager(), driver);
     TestAutofillPopupController* autofill_popup_controller =
         new TestAutofillPopupController(external_delegate.GetWeakPtr(),
                                         element_bounds[i]);

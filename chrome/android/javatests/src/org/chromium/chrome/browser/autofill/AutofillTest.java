@@ -13,8 +13,9 @@ import org.chromium.content.browser.test.util.TouchCommon;
 import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
-import org.chromium.ui.ViewAndroidDelegate;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.ViewAndroidDelegate;
+import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.autofill.AutofillPopup;
 import org.chromium.ui.autofill.AutofillPopup.AutofillPopupDelegate;
 import org.chromium.ui.autofill.AutofillSuggestion;
@@ -39,7 +40,7 @@ public class AutofillTest extends ChromiumTestShellTestBase {
         waitForActiveShellToBeDoneLoading();
 
         mMockAutofillCallback = new MockAutofillCallback();
-        mWindowAndroid = new WindowAndroid(activity);
+        mWindowAndroid = new ActivityWindowAndroid(activity);
         final ViewAndroidDelegate viewDelegate =
                 activity.getActiveContentView().getContentViewCore().getViewAndroidDelegate();
 

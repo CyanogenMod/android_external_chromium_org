@@ -9,7 +9,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "chrome/browser/policy/policy_bundle.h"
+#include "components/policy/core/common/policy_bundle.h"
+
+using testing::Invoke;
 
 namespace policy {
 
@@ -25,6 +27,17 @@ void MockConfigurationPolicyProvider::UpdateChromePolicy(
   UpdatePolicy(bundle.Pass());
   if (base::MessageLoop::current())
     base::RunLoop().RunUntilIdle();
+}
+
+void MockConfigurationPolicyProvider::SetAutoRefresh() {
+  EXPECT_CALL(*this, RefreshPolicies()).WillRepeatedly(
+      Invoke(this, &MockConfigurationPolicyProvider::RefreshWithSamePolicies));
+}
+
+void MockConfigurationPolicyProvider::RefreshWithSamePolicies() {
+  scoped_ptr<PolicyBundle> bundle(new PolicyBundle);
+  bundle->CopyFrom(policies());
+  UpdatePolicy(bundle.Pass());
 }
 
 MockConfigurationPolicyObserver::MockConfigurationPolicyObserver() {}

@@ -46,7 +46,6 @@
 #include "ppapi/c/dev/ppb_printing_dev.h"
 #include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
@@ -112,12 +111,14 @@
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
+#include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/c/private/ppb_output_protection_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppb_tcp_server_socket_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
 #include "ppapi/c/private/ppb_video_destination_private.h"
@@ -285,7 +286,7 @@ void SetMinimumArrayBufferSizeForShmem(PP_Instance /*instance*/,
   // Does nothing. Not needed in-process.
 }
 
-const PPB_Testing_Dev testing_interface = {
+const PPB_Testing_Private testing_interface = {
   &ReadImageData,
   &RunMessageLoop,
   &QuitMessageLoop,
@@ -335,10 +336,8 @@ const void* InternalGetInterface(const char* name) {
   // in production code.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnablePepperTesting)) {
-    if (strcmp(name, PPB_TESTING_DEV_INTERFACE) == 0 ||
-        strcmp(name, PPB_TESTING_DEV_INTERFACE_0_9) == 0) {
+    if (strcmp(name, PPB_TESTING_PRIVATE_INTERFACE) == 0)
       return &testing_interface;
-    }
   }
   return NULL;
 }
@@ -553,7 +552,7 @@ bool PluginModule::SupportsInterface(const char* name) {
 
 PepperPluginInstanceImpl* PluginModule::CreateInstance(
     RenderViewImpl* render_view,
-    WebKit::WebPluginContainer* container,
+    blink::WebPluginContainer* container,
     const GURL& plugin_url) {
   PepperPluginInstanceImpl* instance = PepperPluginInstanceImpl::Create(
       render_view, this, container, plugin_url);

@@ -111,6 +111,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
+  virtual void AcceleratedSurfaceInitialized(int host_id,
+                                             int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
       int gpu_host_id) OVERRIDE;
@@ -124,7 +126,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE;
@@ -149,7 +151,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   // Mouse events always provide a movementX/Y which needs to be computed.
   // Also, mouse lock requires knowledge of last unlocked cursor coordinates.
   // State is stored on the host view to do this, and the mouse event modified.
-  void ModifyEventMovementAndCoords(WebKit::WebMouseEvent* event);
+  void ModifyEventMovementAndCoords(blink::WebMouseEvent* event);
 
   void Paint(const gfx::Rect&);
 

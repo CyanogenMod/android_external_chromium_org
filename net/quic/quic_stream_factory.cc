@@ -31,6 +31,9 @@
 #include "net/quic/quic_protocol.h"
 #include "net/socket/client_socket_factory.h"
 
+using std::string;
+using std::vector;
+
 namespace net {
 
 // Responsible for creating a new QUIC session to the specified server, and
@@ -243,7 +246,8 @@ QuicStreamFactory::QuicStreamFactory(
     base::WeakPtr<HttpServerProperties> http_server_properties,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
-    QuicClock* clock)
+    QuicClock* clock,
+    size_t max_packet_length)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
@@ -251,11 +255,17 @@ QuicStreamFactory::QuicStreamFactory(
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
+      max_packet_length_(max_packet_length),
       weak_factory_(this) {
   config_.SetDefaults();
   config_.set_idle_connection_state_lifetime(
       QuicTime::Delta::FromSeconds(30),
       QuicTime::Delta::FromSeconds(30));
+  config_.set_server_initial_congestion_window(kDefaultInitialWindow,
+                                               kDefaultInitialWindow);
+
+  cannoncial_suffixes_.push_back(string(".c.youtube.com"));
+  cannoncial_suffixes_.push_back(string(".googlevideo.com"));
 }
 
 QuicStreamFactory::~QuicStreamFactory() {
@@ -333,7 +343,7 @@ scoped_ptr<QuicHttpStream> QuicStreamFactory::CreateIfSessionExists(
     const HostPortProxyPair& host_port_proxy_pair,
     const BoundNetLog& net_log) {
   if (!HasActiveSession(host_port_proxy_pair)) {
-    DLOG(INFO) << "No active session";
+    DVLOG(1) << "No active session";
     return scoped_ptr<QuicHttpStream>();
   }
 
@@ -410,6 +420,23 @@ void QuicStreamFactory::OnIPAddressChanged() {
   require_confirmation_ = true;
 }
 
+void QuicStreamFactory::OnCertAdded(const X509Certificate* cert) {
+  CloseAllSessions(ERR_CERT_DATABASE_CHANGED);
+}
+
+void QuicStreamFactory::OnCACertChanged(const X509Certificate* cert) {
+  // We should flush the sessions if we removed trust from a
+  // cert, because a previously trusted server may have become
+  // untrusted.
+  //
+  // We should not flush the sessions if we added trust to a cert.
+  //
+  // Since the OnCACertChanged method doesn't tell us what
+  // kind of change it is, we have to flush the socket
+  // pools to be safe.
+  CloseAllSessions(ERR_CERT_DATABASE_CHANGED);
+}
+
 bool QuicStreamFactory::HasActiveSession(
     const HostPortProxyPair& host_port_proxy_pair) {
   return ContainsKey(active_sessions_, host_port_proxy_pair);
@@ -453,6 +480,7 @@ QuicClientSession* QuicStreamFactory::CreateSession(
                                                   writer.get(), false,
                                                   QuicSupportedVersions());
   writer->SetConnection(connection);
+  connection->options()->max_packet_length = max_packet_length_;
 
   QuicCryptoClientConfig* crypto_config =
       GetOrCreateCryptoConfig(host_port_proxy_pair);
@@ -506,12 +534,17 @@ void QuicStreamFactory::PopulateFromCanonicalConfig(
     const HostPortProxyPair& host_port_proxy_pair,
     QuicCryptoClientConfig* crypto_config) {
   const string server_hostname = host_port_proxy_pair.first.host();
-  const string kYouTubeSuffix(".c.youtube.com");
-  if (!EndsWith(server_hostname, kYouTubeSuffix, false)) {
-    return;
-  }
 
-  HostPortPair canonical_host_port(kYouTubeSuffix,
+  unsigned i = 0;
+  for (; i < cannoncial_suffixes_.size(); ++i) {
+    if (EndsWith(server_hostname, cannoncial_suffixes_[i], false)) {
+      break;
+    }
+  }
+  if (i == cannoncial_suffixes_.size())
+    return;
+
+  HostPortPair canonical_host_port(cannoncial_suffixes_[i],
                                    host_port_proxy_pair.first.port());
   if (!ContainsKey(canonical_hostname_to_origin_map_, canonical_host_port)) {
     // This is the first host we've seen which matches the suffix, so make it

@@ -13,7 +13,7 @@
 #include "base/time/time.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
-#include "content/browser/frame_host/web_contents_screenshot_manager.h"
+#include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -64,10 +64,10 @@ bool DoImagesMatch(const gfx::Image& a, const gfx::Image& b) {
                 a_bitmap.getSize()) == 0;
 }
 
-class MockScreenshotManager : public content::WebContentsScreenshotManager {
+class MockScreenshotManager : public content::NavigationEntryScreenshotManager {
  public:
   explicit MockScreenshotManager(content::NavigationControllerImpl* owner)
-      : content::WebContentsScreenshotManager(owner),
+      : content::NavigationEntryScreenshotManager(owner),
         encoding_screenshot_in_progress_(false) {
   }
 
@@ -85,7 +85,7 @@ class MockScreenshotManager : public content::WebContentsScreenshotManager {
   }
 
   int GetScreenshotCount() {
-    return content::WebContentsScreenshotManager::GetScreenshotCount();
+    return content::NavigationEntryScreenshotManager::GetScreenshotCount();
   }
 
   void WaitUntilScreenshotIsReady() {
@@ -96,7 +96,7 @@ class MockScreenshotManager : public content::WebContentsScreenshotManager {
   }
 
  private:
-  // Overridden from content::WebContentsScreenshotManager:
+  // Overridden from content::NavigationEntryScreenshotManager:
   virtual void TakeScreenshotImpl(
       content::RenderViewHost* host,
       content::NavigationEntryImpl* entry) OVERRIDE {
@@ -104,7 +104,7 @@ class MockScreenshotManager : public content::WebContentsScreenshotManager {
 
   virtual void OnScreenshotSet(content::NavigationEntryImpl* entry) OVERRIDE {
     encoding_screenshot_in_progress_ = false;
-    WebContentsScreenshotManager::OnScreenshotSet(entry);
+    NavigationEntryScreenshotManager::OnScreenshotSet(entry);
     if (message_loop_runner_.get())
       message_loop_runner_->Quit();
   }
@@ -193,7 +193,7 @@ class NavigationControllerTest
   }
 
   // WebContentsObserver:
-  virtual void NavigateToPendingEntry(
+  virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       NavigationController::ReloadType reload_type) OVERRIDE {
     navigated_url_ = url;
@@ -499,7 +499,7 @@ TEST_F(NavigationControllerTest, LoadURLWithParams) {
 
   NavigationController::LoadURLParams load_params(GURL("http://foo"));
   load_params.referrer =
-      Referrer(GURL("http://referrer"), WebKit::WebReferrerPolicyDefault);
+      Referrer(GURL("http://referrer"), blink::WebReferrerPolicyDefault);
   load_params.transition_type = PAGE_TRANSITION_GENERATED;
   load_params.extra_headers = "content-type: text/plain";
   load_params.load_type = NavigationController::LOAD_TYPE_DEFAULT;
@@ -3467,8 +3467,8 @@ TEST_F(NavigationControllerTest, HistoryNavigate) {
   EXPECT_TRUE(message == NULL);
 }
 
-// Test call to PruneAllButVisible for the only entry.
-TEST_F(NavigationControllerTest, PruneAllButVisibleForSingle) {
+// Test call to PruneAllButLastCommitted for the only entry.
+TEST_F(NavigationControllerTest, PruneAllButLastCommittedForSingle) {
   NavigationControllerImpl& controller = controller_impl();
   const GURL url1("http://foo1");
   NavigateAndCommit(url1);
@@ -3477,14 +3477,14 @@ TEST_F(NavigationControllerTest, PruneAllButVisibleForSingle) {
       GetSiteInstanceFromEntry(controller.GetEntryAtIndex(0)), 0,
       controller.GetEntryAtIndex(0)->GetPageID());
 
-  controller.PruneAllButVisible();
+  controller.PruneAllButLastCommitted();
 
   EXPECT_EQ(-1, controller.GetPendingEntryIndex());
   EXPECT_EQ(controller.GetEntryAtIndex(0)->GetURL(), url1);
 }
 
-// Test call to PruneAllButVisible for first entry.
-TEST_F(NavigationControllerTest, PruneAllButVisibleForFirst) {
+// Test call to PruneAllButLastCommitted for first entry.
+TEST_F(NavigationControllerTest, PruneAllButLastCommittedForFirst) {
   NavigationControllerImpl& controller = controller_impl();
   const GURL url1("http://foo/1");
   const GURL url2("http://foo/2");
@@ -3501,14 +3501,14 @@ TEST_F(NavigationControllerTest, PruneAllButVisibleForFirst) {
       GetSiteInstanceFromEntry(controller.GetEntryAtIndex(0)), 0,
       controller.GetEntryAtIndex(0)->GetPageID());
 
-  controller.PruneAllButVisible();
+  controller.PruneAllButLastCommitted();
 
   EXPECT_EQ(-1, controller.GetPendingEntryIndex());
   EXPECT_EQ(controller.GetEntryAtIndex(0)->GetURL(), url1);
 }
 
-// Test call to PruneAllButVisible for intermediate entry.
-TEST_F(NavigationControllerTest, PruneAllButVisibleForIntermediate) {
+// Test call to PruneAllButLastCommitted for intermediate entry.
+TEST_F(NavigationControllerTest, PruneAllButLastCommittedForIntermediate) {
   NavigationControllerImpl& controller = controller_impl();
   const GURL url1("http://foo/1");
   const GURL url2("http://foo/2");
@@ -3524,15 +3524,15 @@ TEST_F(NavigationControllerTest, PruneAllButVisibleForIntermediate) {
       GetSiteInstanceFromEntry(controller.GetEntryAtIndex(1)), 0,
       controller.GetEntryAtIndex(1)->GetPageID());
 
-  controller.PruneAllButVisible();
+  controller.PruneAllButLastCommitted();
 
   EXPECT_EQ(-1, controller.GetPendingEntryIndex());
   EXPECT_EQ(controller.GetEntryAtIndex(0)->GetURL(), url2);
 }
 
-// Test call to PruneAllButVisible for a pending entry that is not yet in the
-// list of entries.
-TEST_F(NavigationControllerTest, PruneAllButVisibleForPendingNotInList) {
+// Test call to PruneAllButLastCommitted for a pending entry that is not yet in
+// the list of entries.
+TEST_F(NavigationControllerTest, PruneAllButLastCommittedForPendingNotInList) {
   NavigationControllerImpl& controller = controller_impl();
   const GURL url1("http://foo/1");
   const GURL url2("http://foo/2");
@@ -3549,7 +3549,7 @@ TEST_F(NavigationControllerTest, PruneAllButVisibleForPendingNotInList) {
 
   contents()->ExpectSetHistoryLengthAndPrune(
       NULL, 0, controller.GetPendingEntry()->GetPageID());
-  controller.PruneAllButVisible();
+  controller.PruneAllButLastCommitted();
 
   // We should only have the last committed and pending entries at this point,
   // and the pending entry should still not be in the entry list.

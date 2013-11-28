@@ -38,7 +38,7 @@ IPC_STRUCT_BEGIN(DOMStorageMsg_Event_Params)
   IPC_STRUCT_MEMBER(int64, namespace_id)
 IPC_STRUCT_END()
 
-IPC_ENUM_TRAITS(WebKit::WebStorageArea::Result)
+IPC_ENUM_TRAITS(blink::WebStorageArea::Result)
 
 // DOM Storage messages sent from the browser to the renderer.
 
@@ -51,6 +51,11 @@ IPC_MESSAGE_CONTROL1(DOMStorageMsg_Event,
 // Used to maintain the integrity  of the renderer-side cache.
 IPC_MESSAGE_CONTROL1(DOMStorageMsg_AsyncOperationComplete,
                      bool /* success */)
+
+// Notification instructing the renderer to refresh all cached values for
+// the given namespace.
+IPC_MESSAGE_CONTROL1(DOMStorageMsg_ResetCachedValues,
+                     int64 /* namespace_id */)
 
 // DOM Storage messages sent from the renderer to the browser.
 // Note: The 'connection_id' must be the first parameter in these message.

@@ -25,7 +25,7 @@
 #include "ui/gfx/vector2d.h"
 
 using base::WeakPtr;
-using WebKit::WebAutofillClient;
+using blink::WebAutofillClient;
 
 namespace autofill {
 namespace {
@@ -113,7 +113,12 @@ AutofillPopupControllerImpl::AutofillPopupControllerImpl(
   ClearState();
 #if !defined(OS_ANDROID)
   subtext_font_ = name_font_.DeriveFont(kLabelFontSizeDelta);
+#if defined(OS_MACOSX)
+  // There is no italic version of the system font.
+  warning_font_ = name_font_;
+#else
   warning_font_ = name_font_.DeriveFont(0, gfx::Font::ITALIC);
+#endif
 #endif
 }
 
@@ -288,7 +293,7 @@ bool AutofillPopupControllerImpl::HandleKeyPressEvent(
       return (event.modifiers & content::NativeWebKeyboardEvent::ShiftKey) &&
              RemoveSelectedLine();
     case ui::VKEY_TAB:
-      // A tab press should cause the highlighted line to be selected, but still
+      // A tab press should cause the selected line to be accepted, but still
       // return false so the tab key press propagates and changes the cursor
       // location.
       AcceptSelectedLine();
@@ -312,16 +317,16 @@ void AutofillPopupControllerImpl::UpdateBoundsAndRedrawPopup() {
   view_->UpdateBoundsAndRedrawPopup();
 }
 
-void AutofillPopupControllerImpl::MouseHovered(int x, int y) {
+void AutofillPopupControllerImpl::LineSelectedAtPoint(int x, int y) {
   SetSelectedLine(LineFromY(y));
 }
 
-void AutofillPopupControllerImpl::MouseClicked(int x, int y) {
-  MouseHovered(x, y);
+void AutofillPopupControllerImpl::LineAcceptedAtPoint(int x, int y) {
+  LineSelectedAtPoint(x, y);
   AcceptSelectedLine();
 }
 
-void AutofillPopupControllerImpl::MouseExitedPopup() {
+void AutofillPopupControllerImpl::SelectionCleared() {
   SetSelectedLine(kNoSelection);
 }
 

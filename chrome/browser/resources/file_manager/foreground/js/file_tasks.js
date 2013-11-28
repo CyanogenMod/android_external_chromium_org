@@ -189,7 +189,6 @@ FileTasks.isInternalTask_ = function(taskId) {
           (actionId == 'play' ||
            actionId == 'watch' ||
            actionId == 'mount-archive' ||
-           actionId == 'format-device' ||
            actionId == 'gallery'));
 };
 
@@ -359,8 +358,8 @@ FileTasks.prototype.executeDefaultInternal_ = function(urls, opt_callback) {
         urls[0],
         function() {
           var newTasks = new FileTasks(fm);
-          tasks.init(urls, this.mimeTypes_);
-          tasks.executeDefault();
+          newTasks.init(urls, this.mimeTypes_);
+          newTasks.executeDefault();
           callback(true, urls);
         }.bind(this),
         // Cancelled callback.
@@ -513,13 +512,6 @@ FileTasks.prototype.executeInternalTask_ = function(id, urls) {
 
   if (id == 'mount-archive') {
     this.mountArchivesInternal_(urls);
-    return;
-  }
-
-  if (id == 'format-device') {
-    fm.confirm.show(loadTimeData.getString('FORMATTING_WARNING'), function() {
-      chrome.fileBrowserPrivate.formatDevice(urls[0]);
-    });
     return;
   }
 

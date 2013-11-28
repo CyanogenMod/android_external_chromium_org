@@ -8,7 +8,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,6 +15,7 @@
 #include "chrome/common/extensions/api/input_ime/input_components_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
 
 namespace input_ime = extensions::api::input_ime;
 namespace KeyEventHandled = extensions::api::input_ime::KeyEventHandled;
@@ -71,7 +71,7 @@ static void DispatchEventToExtension(Profile* profile,
                                      scoped_ptr<base::ListValue> args) {
   scoped_ptr<extensions::Event> event(new extensions::Event(
       event_name, args.Pass()));
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   extensions::ExtensionSystem::Get(profile)->event_router()->
       DispatchEventToExtension(extension_id, event.Pass());
 }
@@ -311,7 +311,7 @@ bool InputImeEventRouter::RegisterIme(
           observer, component.name.c_str(), extension_id.c_str(),
           component.id.c_str(), component.description.c_str(),
           languages, layouts, component.options_page_url,
-          &error);
+          component.input_view_url, &error);
   if (!engine) {
     delete observer;
     LOG(ERROR) << "RegisterIme: " << error;

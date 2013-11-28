@@ -275,7 +275,7 @@
             '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
             '../third_party/webrtc/modules/modules.gyp:desktop_capture',
-            '../ui/ui.gyp:keycode_converter',
+            '../ui/events/events.gyp:dom4_keycode_converter',
           ],
           'defines': [
             'VERSION=<(version_full)',
@@ -329,6 +329,10 @@
             'host/desktop_session_connector.h',
             'host/desktop_session_proxy.cc',
             'host/desktop_session_proxy.h',
+            'host/desktop_shape_tracker.h',
+            'host/desktop_shape_tracker_mac.cc',
+            'host/desktop_shape_tracker_win.cc',
+            'host/desktop_shape_tracker_x11.cc',
             'host/disconnect_window_aura.cc',
             'host/disconnect_window_gtk.cc',
             'host/disconnect_window_mac.h',
@@ -758,11 +762,39 @@
             'remoting_jingle_glue',
             'remoting_resources',
           ],
+          'defines': [
+            'VERSION=<(version_full)',
+          ],
           'sources': [
             'host/it2me/it2me_host.cc',
             'host/it2me/it2me_host.h',
+            'host/it2me/it2me_native_messaging_host.cc',
+            'host/it2me/it2me_native_messaging_host.h',
           ],
         },  # end of target 'remoting_it2me_host_static'
+        {
+          'target_name': 'remoting_it2me_native_messaging_host',
+          'type': 'executable',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'dependencies': [
+            '../base/base.gyp:base',
+            'remoting_base',
+            'remoting_host',
+            'remoting_jingle_glue',
+            'remoting_it2me_host_static',
+            'remoting_native_messaging_base',
+          ],
+          'sources': [
+            'host/it2me/it2me_native_messaging_host_main.cc',
+          ],
+          'conditions': [
+            ['OS=="linux" and linux_use_tcmalloc==1', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
+          ],
+        },  # end of target 'remoting_it2me_native_messaging_host'
         {
           'target_name': 'remoting_infoplist_strings',
           'type': 'none',
@@ -2106,6 +2138,7 @@
         '../ppapi/ppapi.gyp:ppapi_cpp_objects',
         '../skia/skia.gyp:skia',
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
+        '../ui/events/events.gyp:dom4_keycode_converter',
       ],
       'sources': [
         'client/plugin/chromoting_instance.cc',
@@ -2469,6 +2502,11 @@
             '-x', '<(copy_output_dir)/.',
             '<@(remoting_locales)',
           ],
+          # Without this, the /. in the -x command above fails, but only in VS
+          # builds (because VS puts the command in to a batch file and then
+          # the normalization and substitution of "...\Release\" cause the
+          # trailing " to be escaped.
+          'msvs_cygwin_shell': 1,
         }
       ],
       'includes': [ '../build/grit_target.gypi' ],
@@ -2481,7 +2519,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/ui.gyp:ui',
         '../net/net.gyp:net',
@@ -2789,7 +2826,6 @@
         '../ppapi/ppapi.gyp:ppapi_cpp',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/ui.gyp:ui',
         'remoting_base',
@@ -2799,6 +2835,7 @@
         'remoting_host',
         'remoting_host_event_logger',
         'remoting_host_setup_base',
+        'remoting_it2me_host_static',
         'remoting_jingle_glue',
         'remoting_native_messaging_base',
         'remoting_protocol',
@@ -2852,6 +2889,7 @@
         'host/desktop_process_unittest.cc',
         'host/desktop_session.cc',
         'host/desktop_session.h',
+        'host/desktop_shape_tracker_unittest.cc',
         'host/desktop_session_agent.cc',
         'host/desktop_session_agent.h',
         'host/heartbeat_sender_unittest.cc',
@@ -2861,6 +2899,7 @@
         'host/host_mock_objects.h',
         'host/host_status_monitor_fake.h',
         'host/ipc_desktop_environment_unittest.cc',
+        'host/it2me/it2me_native_messaging_host_unittest.cc',
         'host/json_host_config_unittest.cc',
         'host/linux/x_server_clipboard_unittest.cc',
         'host/local_input_monitor_unittest.cc',
@@ -2985,6 +3024,7 @@
           'dependencies!': [
             'remoting_host',
             'remoting_host_setup_base',
+            'remoting_it2me_host_static',
             'remoting_native_messaging_base',
           ],
           'sources/': [

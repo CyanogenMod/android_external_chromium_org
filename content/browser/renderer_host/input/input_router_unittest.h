@@ -36,16 +36,16 @@ class InputRouterTest : public testing::Test {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
-  void SendInputEventACK(WebKit::WebInputEvent::Type type,
+  void SendInputEventACK(blink::WebInputEvent::Type type,
                          InputEventAckState ack_result);
-  void SimulateKeyboardEvent(WebKit::WebInputEvent::Type type,
+  void SimulateKeyboardEvent(blink::WebInputEvent::Type type,
                              bool is_shortcut);
   void SimulateWheelEvent(float dX, float dY, int modifiers, bool precise);
   void SimulateMouseMove(int x, int y, int modifiers);
-  void SimulateWheelEventWithPhase(WebKit::WebMouseWheelEvent::Phase phase);
-  void SimulateGestureEvent(const WebKit::WebGestureEvent& event);
-  void SimulateGestureEvent(WebKit::WebInputEvent::Type type,
-                            WebKit::WebGestureEvent::SourceDevice sourceDevice);
+  void SimulateWheelEventWithPhase(blink::WebMouseWheelEvent::Phase phase);
+  void SimulateGestureEvent(const blink::WebGestureEvent& event);
+  void SimulateGestureEvent(blink::WebInputEvent::Type type,
+                            blink::WebGestureEvent::SourceDevice sourceDevice);
   void SimulateGestureScrollUpdateEvent(float dX, float dY, int modifiers);
   void SimulateGesturePinchUpdateEvent(float scale,
                                        float anchorX,
@@ -54,8 +54,8 @@ class InputRouterTest : public testing::Test {
   void SimulateGestureFlingStartEvent(
       float velocityX,
       float velocityY,
-      WebKit::WebGestureEvent::SourceDevice sourceDevice);
-  void SimulateTouchEvent(int x, int y);
+      blink::WebGestureEvent::SourceDevice sourceDevice);
+  void SimulateTouchEvent(blink::WebInputEvent::Type type);
   void SetTouchTimestamp(base::TimeDelta timestamp);
 
   // Sends a touch event (irrespective of whether the page has a touch-event
@@ -65,6 +65,7 @@ class InputRouterTest : public testing::Test {
   int PressTouchPoint(int x, int y);
   void MoveTouchPoint(int index, int x, int y);
   void ReleaseTouchPoint(int index);
+  void CancelTouchPoint(int index);
 
   scoped_ptr<MockRenderProcessHost> process_;
   scoped_ptr<MockInputRouterClient> client_;

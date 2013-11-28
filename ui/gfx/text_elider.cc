@@ -206,12 +206,6 @@ string16 ElideEmail(const string16& email,
   return username + kAtSignUTF16 + domain;
 }
 
-string16 ElideEmail(const string16& email,
-                    const Font& font,
-                    float available_pixel_width) {
-  return ElideEmail(email, FontList(font), available_pixel_width);
-}
-
 // TODO(pkasting): http://crbug.com/77883 This whole function gets
 // kerning/ligatures/etc. issues potentially wrong by assuming that the width of
 // a rendered string is always the sum of the widths of its substrings.  Also I
@@ -407,13 +401,6 @@ string16 ElideUrl(const GURL& url,
                    ELIDE_AT_END);
 }
 
-string16 ElideUrl(const GURL& url,
-                  const Font& font,
-                  float available_pixel_width,
-                  const std::string& languages) {
-  return ElideUrl(url, FontList(font), available_pixel_width, languages);
-}
-
 string16 ElideFilename(const base::FilePath& filename,
                        const FontList& font_list,
                        float available_pixel_width) {
@@ -461,12 +448,6 @@ string16 ElideFilename(const base::FilePath& filename,
       ElideText(rootname, font_list, available_root_width, ELIDE_AT_END);
   elided_name += extension;
   return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
-}
-
-string16 ElideFilename(const base::FilePath& filename,
-                       const Font& font,
-                       float available_pixel_width) {
-  return ElideFilename(filename, FontList(font), available_pixel_width);
 }
 
 string16 ElideText(const string16& text,
@@ -1093,17 +1074,6 @@ int ElideRectangleText(const string16& input,
   rect.Init();
   rect.AddString(input);
   return rect.Finalize();
-}
-
-int ElideRectangleText(const string16& input,
-                       const Font& font,
-                       float available_pixel_width,
-                       int available_pixel_height,
-                       WordWrapBehavior wrap_behavior,
-                       std::vector<string16>* lines) {
-  return ElideRectangleText(input, FontList(font),
-                            available_pixel_width, available_pixel_height,
-                            wrap_behavior, lines);
 }
 
 string16 TruncateString(const string16& string, size_t length) {

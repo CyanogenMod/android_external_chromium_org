@@ -154,6 +154,7 @@ class PSInstance : public pp::Instance, pp::MouseLock, pp::Graphics3DClient {
   ssize_t TtyOutputHandler(const char* buf, size_t count);
   void MessageHandlerInput(const pp::Var& message);
   void MessageHandlerResize(const pp::Var& message);
+  void HandleResize(int width, int height);
 
   static ssize_t TtyOutputHandlerStatic(const char* buf, size_t count,
                                         void* user_data);
@@ -183,6 +184,10 @@ class PSInstance : public pp::Instance, pp::MouseLock, pp::Graphics3DClient {
   int tty_fd_;
   const char* tty_prefix_;
   MessageHandlerMap message_handlers_;
+
+  // A message to Post to JavaScript instead of exiting, or NULL if exit()
+  // should be called instead.
+  char* exit_message_;
 
   PSMainFunc_t main_cb_;
 

@@ -25,8 +25,8 @@
 #include "build/build_config.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
-#include "content/browser/renderer_host/synthetic_gesture_controller.h"
 #include "content/common/browser_rendering_stats.h"
+#include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/browser/event_with_latency_info.h"
 #include "content/port/common/input_event_ack_state.h"
@@ -62,7 +62,7 @@ namespace ui {
 class KeyEvent;
 }
 
-namespace WebKit {
+namespace blink {
 class WebInputEvent;
 class WebMouseEvent;
 struct WebCompositionUnderline;
@@ -70,7 +70,7 @@ struct WebScreenInfo;
 }
 
 #if defined(OS_ANDROID)
-namespace WebKit {
+namespace blink {
 class WebLayer;
 }
 #endif
@@ -130,7 +130,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void Delete() OVERRIDE;
   virtual void SelectAll() OVERRIDE;
   virtual void Unselect() OVERRIDE;
-  virtual void UpdateTextDirection(WebKit::WebTextDirection direction) OVERRIDE;
+  virtual void UpdateTextDirection(blink::WebTextDirection direction) OVERRIDE;
   virtual void NotifyTextDirection() OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
@@ -149,9 +149,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 #endif
   virtual void EnableFullAccessibilityMode() OVERRIDE;
   virtual void ForwardMouseEvent(
-      const WebKit::WebMouseEvent& mouse_event) OVERRIDE;
+      const blink::WebMouseEvent& mouse_event) OVERRIDE;
   virtual void ForwardWheelEvent(
-      const WebKit::WebMouseWheelEvent& wheel_event) OVERRIDE;
+      const blink::WebMouseWheelEvent& wheel_event) OVERRIDE;
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) OVERRIDE;
   virtual const gfx::Vector2d& GetLastScrollOffset() const OVERRIDE;
@@ -179,7 +179,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const MouseEventCallback& callback) OVERRIDE;
   virtual void RemoveMouseEventCallback(
       const MouseEventCallback& callback) OVERRIDE;
-  virtual void GetWebScreenInfo(WebKit::WebScreenInfo* result) OVERRIDE;
+  virtual void GetWebScreenInfo(blink::WebScreenInfo* result) OVERRIDE;
   virtual void GetSnapshotFromRenderer(
       const gfx::Rect& src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
@@ -287,12 +287,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Forwards the given message to the renderer. These are called by the view
   // when it has received a message.
-  void ForwardGestureEvent(const WebKit::WebGestureEvent& gesture_event);
+  void ForwardGestureEvent(const blink::WebGestureEvent& gesture_event);
   void ForwardGestureEventWithLatencyInfo(
-      const WebKit::WebGestureEvent& gesture_event,
+      const blink::WebGestureEvent& gesture_event,
       const ui::LatencyInfo& ui_latency);
   void ForwardTouchEventWithLatencyInfo(
-      const WebKit::WebTouchEvent& touch_event,
+      const blink::WebTouchEvent& touch_event,
       const ui::LatencyInfo& ui_latency);
   void ForwardMouseEventWithLatencyInfo(
       const MouseEventWithLatencyInfo& mouse_event);
@@ -329,7 +329,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // * when markedText of NSTextInput is called (on Mac).
   void ImeSetComposition(
       const string16& text,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
 
@@ -511,8 +511,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return overscroll_controller_.get();
   }
 
-  base::TimeDelta GetSyntheticGestureMessageInterval() const;
-
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
 
@@ -522,6 +520,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Called by RenderWidgetHostView in response to OnSetNeedsFlushInput.
   void FlushInput();
+
+  // InputRouterClient
+  virtual void SetNeedsFlush() OVERRIDE;
 
   // Indicates whether the renderer drives the RenderWidgetHosts's size or the
   // other way around.
@@ -567,7 +568,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // its delegate.
 
   // Called when a mousewheel event was not processed by the renderer.
-  virtual void UnhandledWheelEvent(const WebKit::WebMouseWheelEvent& event) {}
+  virtual void UnhandledWheelEvent(const blink::WebMouseWheelEvent& event) {}
 
   // Notification that the user has made some kind of input that could
   // perform an action. The gestures that count are 1) any mouse down
@@ -646,7 +647,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnUpdateScreenRectsAck();
   void OnRequestMove(const gfx::Rect& pos);
   void OnSetTooltipText(const string16& tooltip_text,
-                        WebKit::WebTextDirection text_direction_hint);
+                        blink::WebTextDirection text_direction_hint);
   void OnPaintAtSizeAck(int tag, const gfx::Size& size);
 #if defined(OS_MACOSX)
   void OnCompositorSurfaceBuffersSwapped(
@@ -657,10 +658,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                       gfx::Vector2dF current_fling_velocity);
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
   void OnUpdateIsDelayed();
-  void OnBeginSmoothScroll(
-      const ViewHostMsg_BeginSmoothScroll_Params& params);
-  void OnBeginPinch(
-      const ViewHostMsg_BeginPinch_Params& params);
+  void OnQueueSyntheticGesture(const SyntheticGesturePacket& gesture_packet);
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
@@ -719,13 +717,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // InputRouterClient
   virtual InputEventAckState FilterInputEvent(
-      const WebKit::WebInputEvent& event,
+      const blink::WebInputEvent& event,
       const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void IncrementInFlightEventCount() OVERRIDE;
   virtual void DecrementInFlightEventCount() OVERRIDE;
   virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
   virtual OverscrollController* GetOverscrollController() const OVERRIDE;
-  virtual void SetNeedsFlush() OVERRIDE;
   virtual void DidFlush() OVERRIDE;
 
   // InputAckHandler
@@ -783,7 +780,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Cached copy of the screen info so that it doesn't need to be updated every
   // time the window is resized.
-  scoped_ptr<WebKit::WebScreenInfo> screen_info_;
+  scoped_ptr<blink::WebScreenInfo> screen_info_;
 
   // Set if screen_info_ may have changed and should be recomputed and force a
   // resize message.
@@ -866,7 +863,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Set when we update the text direction of the selected input element.
   bool text_direction_updated_;
-  WebKit::WebTextDirection text_direction_;
+  blink::WebTextDirection text_direction_;
 
   // Set when we cancel updating the text direction.
   // This flag also ignores succeeding update requests until we call
@@ -901,7 +898,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 
-  SyntheticGestureController synthetic_gesture_controller_;
+  scoped_ptr<SyntheticGestureController> synthetic_gesture_controller_;
 
   // Receives and handles all input events.
   scoped_ptr<InputRouter> input_router_;

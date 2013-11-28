@@ -18,10 +18,10 @@
 #include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/common/extension.h"
 #include "ui/events/event_constants.h"
 
 namespace app_list {
@@ -64,6 +64,13 @@ void StartPageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "launchApp",
       base::Bind(&StartPageHandler::HandleLaunchApp, base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "search",
+      base::Bind(&StartPageHandler::HandleSearch, base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setSpeechRecognitionState",
+      base::Bind(&StartPageHandler::HandleSpeechRecognition,
+                 base::Unretained(this)));
 }
 
 void StartPageHandler::OnRecommendedAppsChanged() {
@@ -107,15 +114,30 @@ void StartPageHandler::HandleLaunchApp(const base::ListValue* args) {
     return;
   }
 
-  AppListService* app_list_service = AppListService::Get(
+  AppListControllerDelegate* controller = AppListService::Get(
       chrome::GetHostDesktopTypeForNativeView(
-          web_ui()->GetWebContents()->GetView()->GetNativeView()));
-  scoped_ptr<AppListControllerDelegate> controller(
-      app_list_service->CreateControllerDelegate());
+          web_ui()->GetWebContents()->GetView()->GetNativeView()))
+      ->GetControllerDelegate();
   controller->ActivateApp(profile,
                           app,
                           AppListControllerDelegate::LAUNCH_FROM_APP_LIST,
                           ui::EF_NONE);
+}
+
+void StartPageHandler::HandleSearch(const base::ListValue* args) {
+  base::string16 query;
+  CHECK(args->GetString(0, &query));
+
+  StartPageService::Get(Profile::FromWebUI(web_ui()))->OnSearch(query);
+}
+
+void StartPageHandler::HandleSpeechRecognition(const base::ListValue* args) {
+  bool recognizing;
+  CHECK(args->GetBoolean(0, &recognizing));
+
+  StartPageService* service =
+      StartPageService::Get(Profile::FromWebUI(web_ui()));
+  service->OnSpeechRecognitionStateChanged(recognizing);
 }
 
 }  // namespace app_list

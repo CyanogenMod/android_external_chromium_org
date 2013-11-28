@@ -23,20 +23,13 @@ namespace policy {
 UserPolicySigninServiceBase::UserPolicySigninServiceBase(
     Profile* profile,
     PrefService* local_state,
-    scoped_refptr<net::URLRequestContextGetter> request_context,
     DeviceManagementService* device_management_service)
     : profile_(profile),
       local_state_(local_state),
-      request_context_(request_context),
       device_management_service_(device_management_service),
       weak_factory_(this) {
-  // Initialize/shutdown the UserCloudPolicyManager when the user signs out.
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-                 content::Source<Profile>(profile));
-
   // Register a listener to be called back once the current profile has finished
-  // initializing, so we can startup the UserCloudPolicyManager.
+  // initializing, so we can startup/shutdown the UserCloudPolicyManager.
   registrar_.Add(this,
                  chrome::NOTIFICATION_PROFILE_ADDED,
                  content::Source<Profile>(profile));
@@ -45,9 +38,14 @@ UserPolicySigninServiceBase::UserPolicySigninServiceBase(
 UserPolicySigninServiceBase::~UserPolicySigninServiceBase() {}
 
 void UserPolicySigninServiceBase::FetchPolicyForSignedInUser(
-    scoped_ptr<CloudPolicyClient> client,
+    const std::string& username,
+    const std::string& dm_token,
+    const std::string& client_id,
     const PolicyFetchCallback& callback) {
-  DCHECK(client);
+  scoped_ptr<CloudPolicyClient> client(
+      UserCloudPolicyManager::CreateCloudPolicyClient(
+          device_management_service_).Pass());
+  client->SetupRegistration(dm_token, client_id);
   DCHECK(client->is_registered());
   // The user has just signed in, so the UserCloudPolicyManager should not yet
   // be initialized. This routine will initialize the UserCloudPolicyManager
@@ -56,7 +54,7 @@ void UserPolicySigninServiceBase::FetchPolicyForSignedInUser(
   UserCloudPolicyManager* manager = GetManager();
   DCHECK(manager);
   DCHECK(!manager->core()->client());
-  InitializeUserCloudPolicyManager(client.Pass());
+  InitializeUserCloudPolicyManager(username, client.Pass());
   DCHECK(manager->IsClientRegistered());
 
   // Now initiate a policy fetch.
@@ -67,13 +65,6 @@ void UserPolicySigninServiceBase::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  // If using a TestingProfile with no SigninManager or UserCloudPolicyManager,
-  // skip initialization.
-  if (!GetManager() || !GetSigninManager()) {
-    DVLOG(1) << "Skipping initialization for tests due to missing components.";
-    return;
-  }
-
   switch (type) {
     case chrome::NOTIFICATION_GOOGLE_SIGNED_OUT:
       ShutdownUserCloudPolicyManager();
@@ -179,11 +170,37 @@ bool UserPolicySigninServiceBase::ShouldLoadPolicyForUser(
 }
 
 void UserPolicySigninServiceBase::InitializeOnProfileReady() {
+  // If using a TestingProfile with no SigninManager or UserCloudPolicyManager,
+  // skip initialization.
+  if (!GetManager() || !GetSigninManager()) {
+    DVLOG(1) << "Skipping initialization for tests due to missing components.";
+    return;
+  }
+
+  // Shutdown the UserCloudPolicyManager when the user signs out. We do
+  // this here because we don't want to get SIGNED_OUT notifications until
+  // after the profile has started initializing (http://crbug.com/316229).
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
+                 content::Source<Profile>(profile_));
+
+  // TODO(atwilson): Initialize a request context from the profile object
+  // if we don't have one yet (currently the UserPolicySigninServiceFactory
+  // injects the system request context, but this needs to change to use one
+  // owned by the profile - http://crbug.com/316115).
+  DCHECK(request_context_);
+
   std::string username = GetSigninManager()->GetAuthenticatedUsername();
   if (username.empty())
     ShutdownUserCloudPolicyManager();
   else
     InitializeForSignedInUser(username);
+}
+
+void UserPolicySigninServiceBase::SetRequestContext(
+    scoped_refptr<net::URLRequestContextGetter> request_context) {
+  DCHECK(!request_context_);
+  request_context_ = request_context;
 }
 
 void UserPolicySigninServiceBase::InitializeForSignedInUser(
@@ -201,8 +218,11 @@ void UserPolicySigninServiceBase::InitializeForSignedInUser(
     // OnInitializationCompleted() callback is invoked and this will
     // initiate a policy fetch.
     InitializeUserCloudPolicyManager(
+        username,
         UserCloudPolicyManager::CreateCloudPolicyClient(
             device_management_service_).Pass());
+  } else {
+    manager->SetSigninUsername(username);
   }
 
   // If the CloudPolicyService is initialized, kick off registration.
@@ -213,9 +233,12 @@ void UserPolicySigninServiceBase::InitializeForSignedInUser(
 }
 
 void UserPolicySigninServiceBase::InitializeUserCloudPolicyManager(
+    const std::string& username,
     scoped_ptr<CloudPolicyClient> client) {
   UserCloudPolicyManager* manager = GetManager();
+  manager->SetSigninUsername(username);
   DCHECK(!manager->core()->client());
+  DCHECK(request_context_);
   manager->Connect(local_state_, request_context_, client.Pass());
   DCHECK(manager->core()->service());
 
@@ -233,7 +256,7 @@ void UserPolicySigninServiceBase::ShutdownUserCloudPolicyManager() {
 }
 
 UserCloudPolicyManager* UserPolicySigninServiceBase::GetManager() {
-  return UserCloudPolicyManagerFactory::GetForProfile(profile_);
+  return UserCloudPolicyManagerFactory::GetForBrowserContext(profile_);
 }
 
 SigninManager* UserPolicySigninServiceBase::GetSigninManager() {

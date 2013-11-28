@@ -77,6 +77,9 @@
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/configuration_policy_provider.h"
 #include "chrome/browser/policy/policy_service_impl.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
+#include "components/policy/core/common/schema.h"
 #else
 #include "chrome/browser/policy/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
@@ -148,14 +151,12 @@ class TestExtensionURLRequestContextGetter
   scoped_ptr<net::URLRequestContext> context_;
 };
 
+#if defined(ENABLE_NOTIFICATIONS)
 BrowserContextKeyedService* CreateTestDesktopNotificationService(
     content::BrowserContext* profile) {
-#if defined(ENABLE_NOTIFICATIONS)
   return new DesktopNotificationService(static_cast<Profile*>(profile), NULL);
-#else
-  return NULL;
-#endif
 }
+#endif
 
 }  // namespace
 
@@ -323,7 +324,8 @@ void TestingProfile::Init() {
   // TODO(joaodasilva): remove this once this PKS isn't created in ProfileImpl
   // anymore, after converting the PrefService to a PKS. Until then it must
   // be associated with a TestingProfile too.
-  CreateProfilePolicyConnector();
+  if (!IsOffTheRecord())
+    CreateProfilePolicyConnector();
 
   extensions::ExtensionSystemFactory::GetInstance()->SetTestingFactory(
       this, extensions::TestExtensionSystem::Build);
@@ -396,9 +398,7 @@ TestingProfile::~TestingProfile() {
 
 static BrowserContextKeyedService* BuildFaviconService(
     content::BrowserContext* profile) {
-  return new FaviconService(
-      HistoryServiceFactory::GetForProfileWithoutCreating(
-          static_cast<Profile*>(profile)));
+  return new FaviconService(static_cast<Profile*>(profile));
 }
 
 void TestingProfile::CreateFaviconService() {
@@ -630,13 +630,19 @@ void TestingProfile::CreateTestingPrefService() {
 void TestingProfile::CreateProfilePolicyConnector() {
   scoped_ptr<policy::PolicyService> service;
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  schema_registry_service_ =
+      policy::SchemaRegistryServiceFactory::CreateForContext(
+          this, policy::Schema(), NULL);
+  CHECK_EQ(schema_registry_service_.get(),
+           policy::SchemaRegistryServiceFactory::GetForContext(this));
+
   std::vector<policy::ConfigurationPolicyProvider*> providers;
-  service.reset(new policy::PolicyServiceImpl(providers));
+  service.reset(new policy::PolicyServiceImpl(
+      providers, policy::PolicyServiceImpl::PreprocessCallback()));
 #else
   service.reset(new policy::PolicyServiceStub());
 #endif
-  profile_policy_connector_.reset(
-      new policy::ProfilePolicyConnector(this));
+  profile_policy_connector_.reset(new policy::ProfilePolicyConnector());
   profile_policy_connector_->InitForTesting(service.Pass());
   policy::ProfilePolicyConnectorFactory::GetInstance()->SetServiceForTesting(
       this, profile_policy_connector_.get());
@@ -843,12 +849,6 @@ bool TestingProfile::IsGuestSession() const {
 Profile::ExitType TestingProfile::GetLastSessionExitType() {
   return last_session_exited_cleanly_ ? EXIT_NORMAL : EXIT_CRASHED;
 }
-
-#if defined(OS_CHROMEOS)
-bool TestingProfile::IsLoginProfile() {
-  return false;
-}
-#endif
 
 TestingProfile::Builder::Builder()
     : build_called_(false),

@@ -33,11 +33,11 @@
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
+#include "chrome/browser/ui/passwords/manage_passwords_icon_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_prompt_view.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
-#include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/generated_credit_card_view.h"
@@ -53,15 +53,15 @@
 #include "chrome/browser/ui/views/location_bar/translate_icon_view.h"
 #include "chrome/browser/ui/views/location_bar/zoom_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/zoom_view.h"
-#include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
-#include "chrome/browser/ui/views/omnibox/omnibox_views.h"
+#include "chrome/browser/ui/views/passwords/manage_passwords_bubble_view.h"
+#include "chrome/browser/ui/views/passwords/manage_passwords_icon_view.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -82,39 +82,23 @@
 #include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/widget/widget.h"
-#include "ui/views/window/non_client_view.h"
-
-#if defined(OS_WIN)
-#include "base/win/scoped_hdc.h"
-#include "base/win/scoped_select_object.h"
-#include "ui/native_theme/native_theme_win.h"
-#endif
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include "chrome/browser/ui/views/omnibox/omnibox_view_win.h"
-#endif
 
 #if !defined(OS_CHROMEOS)
 #include "chrome/browser/ui/views/first_run_bubble.h"
 #endif
 
-#if defined(USE_AURA)
-#include "ui/compositor/layer.h"
-#include "ui/compositor/scoped_layer_animation_settings.h"
-#endif
-
 using content::WebContents;
 using views::View;
 
-
 namespace {
 
+#if !defined(OS_CHROMEOS)
 Browser* GetBrowserFromDelegate(LocationBarView::Delegate* delegate) {
   WebContents* contents = delegate->GetWebContents();
   return contents ? chrome::FindBrowserWithWebContents(contents) : NULL;
 }
+#endif
 
 // Given a containing |height| and a |base_font_list|, shrinks the font size
 // until the font list will fit within |height| while having its cap height
@@ -146,7 +130,13 @@ gfx::FontList GetLargestFontListWithHeightBound(
   for (int font_size = font_list.GetFontSize(); font_size > 1; --font_size) {
     const int internal_leading =
         font_list.GetBaseline() - font_list.GetCapHeight();
-    const int space = height - font_list.GetCapHeight();
+    // Some platforms don't support getting the cap height, and simply return
+    // the entire font ascent from GetCapHeight().  Centering the ascent makes
+    // the font look too low, so if GetCapHeight() returns the ascent, center
+    // the entire font height instead.
+    const int space =
+        height - ((internal_leading != 0) ?
+                  font_list.GetCapHeight() : font_list.GetHeight());
     const int y_offset = space / 2 - internal_leading;
     const int space_at_bottom = height - (y_offset + font_list.GetHeight());
     if ((y_offset >= 0) && (space_at_bottom >= 0))
@@ -175,11 +165,11 @@ LocationBarView::LocationBarView(Browser* browser,
                                  bool is_popup_mode)
     : OmniboxEditController(command_updater),
       browser_(browser),
+      omnibox_view_(NULL),
       profile_(profile),
       delegate_(delegate),
       location_icon_view_(NULL),
       ev_bubble_view_(NULL),
-      location_entry_view_(NULL),
       ime_inline_autocomplete_view_(NULL),
       selected_keyword_view_(NULL),
       suggested_text_view_(NULL),
@@ -188,17 +178,15 @@ LocationBarView::LocationBarView(Browser* browser,
       zoom_view_(NULL),
       generated_credit_card_view_(NULL),
       open_pdf_in_reader_view_(NULL),
+      manage_passwords_icon_view_(NULL),
       script_bubble_icon_view_(NULL),
-      star_view_(NULL),
       translate_icon_view_(NULL),
+      star_view_(NULL),
       is_popup_mode_(is_popup_mode),
       show_focus_rect_(false),
       template_url_service_(NULL),
       animation_offset_(0),
       weak_ptr_factory_(this) {
-  if (!views::Textfield::IsViewsTextfieldEnabled())
-    set_id(VIEW_ID_OMNIBOX);
-
   const int kOmniboxBorderImages[] = IMAGE_GRID(IDR_OMNIBOX_BORDER);
   const int kOmniboxPopupImages[] = IMAGE_GRID(IDR_OMNIBOX_POPUP_BORDER);
   background_border_painter_.reset(
@@ -278,10 +266,11 @@ void LocationBarView::Init() {
   AddChildView(ev_bubble_view_);
 
   // Initialize the Omnibox view.
-  location_entry_.reset(CreateOmniboxView(this, profile_, command_updater(),
-                                          is_popup_mode_, this, font_list));
-  SetLocationEntryFocusable(true);
-  location_entry_view_ = location_entry_->AddToView(this);
+  omnibox_view_ = new OmniboxViewViews(this, profile_, command_updater(),
+                                       is_popup_mode_, this, font_list);
+  omnibox_view_->Init();
+  omnibox_view_->set_focusable(true);
+  AddChildView(omnibox_view_);
 
   // Initialize the inline autocomplete view which is visible only when IME is
   // turned on.  Use the same font with the omnibox and highlighted background.
@@ -351,20 +340,21 @@ void LocationBarView::Init() {
   open_pdf_in_reader_view_ = new OpenPDFInReaderView(this);
   AddChildView(open_pdf_in_reader_view_);
 
+  manage_passwords_icon_view_ = new ManagePasswordsIconView(delegate_);
+  manage_passwords_icon_view_->set_id(VIEW_ID_MANAGE_PASSWORDS_ICON_BUTTON);
+  AddChildView(manage_passwords_icon_view_);
+
   script_bubble_icon_view_ = new ScriptBubbleIconView(delegate());
   script_bubble_icon_view_->SetVisible(false);
   AddChildView(script_bubble_icon_view_);
 
+  translate_icon_view_ = new TranslateIconView(command_updater());
+  translate_icon_view_->SetVisible(false);
+  AddChildView(translate_icon_view_);
+
   star_view_ = new StarView(command_updater());
   star_view_->SetVisible(false);
   AddChildView(star_view_);
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableTranslateNewUX)) {
-    translate_icon_view_ = new TranslateIconView(command_updater());
-    translate_icon_view_->SetVisible(false);
-    AddChildView(translate_icon_view_);
-  }
 
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
@@ -376,7 +366,7 @@ void LocationBarView::Init() {
 }
 
 bool LocationBarView::IsInitialized() const {
-  return location_entry_view_ != NULL;
+  return omnibox_view_ != NULL;
 }
 
 SkColor LocationBarView::GetColor(ToolbarModel::SecurityLevel security_level,
@@ -481,16 +471,24 @@ void LocationBarView::SetAnimationOffset(int offset) {
 }
 
 void LocationBarView::UpdateContentSettingsIcons() {
-  UpdateContentSettingViewsPreLayout();
-  Layout();
-  UpdateContentSettingViewsPostLayout();
-  SchedulePaint();
+  if (RefreshContentSettingViews()) {
+    Layout();
+    SchedulePaint();
+  }
+}
+
+void LocationBarView::UpdateManagePasswordsIconAndBubble() {
+  if (RefreshManagePasswordsIconView()) {
+    Layout();
+    SchedulePaint();
+  }
+  ShowManagePasswordsBubbleIfNeeded();
 }
 
 void LocationBarView::UpdatePageActions() {
   size_t count_before = page_action_views_.size();
-  RefreshPageActionViews();
-  RefreshScriptBubble();
+  bool changed = RefreshPageActionViews();
+  changed |= RefreshScriptBubble();
   if (page_action_views_.size() != count_before) {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
@@ -498,8 +496,10 @@ void LocationBarView::UpdatePageActions() {
         content::NotificationService::NoDetails());
   }
 
-  Layout();
-  SchedulePaint();
+  if (changed) {
+    Layout();
+    SchedulePaint();
+  }
 }
 
 void LocationBarView::InvalidatePageActions() {
@@ -535,7 +535,7 @@ void LocationBarView::OnFocus() {
 
   // Then focus the native location view which implements accessibility for
   // Windows.
-  location_entry_->SetFocus();
+  omnibox_view_->SetFocus();
 }
 
 void LocationBarView::SetPreviewEnabledPageAction(ExtensionAction* page_action,
@@ -574,6 +574,10 @@ void LocationBarView::SetStarToggled(bool on) {
     star_view_->SetToggled(on);
 }
 
+void LocationBarView::SetTranslateIconToggled(bool on) {
+  translate_icon_view_->SetToggled(on);
+}
+
 void LocationBarView::ShowBookmarkPrompt() {
   if (star_view_ && star_view_->visible())
     BookmarkPromptView::ShowPrompt(star_view_, profile_->GetPrefs());
@@ -581,17 +585,17 @@ void LocationBarView::ShowBookmarkPrompt() {
 
 void LocationBarView::ZoomChangedForActiveTab(bool can_show_bubble) {
   DCHECK(zoom_view_);
-  RefreshZoomView();
-
-  Layout();
-  SchedulePaint();
+  if (RefreshZoomView()) {
+    Layout();
+    SchedulePaint();
+  }
 
   if (can_show_bubble && zoom_view_->visible() && delegate_->GetWebContents())
     ZoomBubbleView::ShowBubble(delegate_->GetWebContents(), true);
 }
 
-gfx::Point LocationBarView::GetLocationEntryOrigin() const {
-  gfx::Point origin(location_entry_view_->bounds().origin());
+gfx::Point LocationBarView::GetOmniboxViewOrigin() const {
+  gfx::Point origin(omnibox_view_->bounds().origin());
   // If the UI layout is RTL, the coordinate system is not transformed and
   // therefore we need to adjust the X coordinate so that bubble appears on the
   // right hand side of the location bar.
@@ -619,25 +623,12 @@ string16 LocationBarView::GetGrayTextAutocompletion() const {
   return HasValidSuggestText() ? suggested_text_view_->text() : string16();
 }
 
-void LocationBarView::SetLocationEntryFocusable(bool focusable) {
-  OmniboxViewViews* omnibox_views = GetOmniboxViewViews(location_entry_.get());
-  if (omnibox_views)
-    omnibox_views->set_focusable(focusable);
-  else
-    set_focusable(focusable);
-}
-
-bool LocationBarView::IsLocationEntryFocusableInRootView() const {
-  OmniboxViewViews* omnibox_views = GetOmniboxViewViews(location_entry_.get());
-  return omnibox_views ? omnibox_views->IsFocusable() : View::IsFocusable();
-}
-
 gfx::Size LocationBarView::GetPreferredSize() {
   return background_border_painter_->GetMinimumSize();
 }
 
 void LocationBarView::Layout() {
-  if (!location_entry_.get())
+  if (!omnibox_view_)
     return;
 
   selected_keyword_view_->SetVisible(false);
@@ -646,18 +637,15 @@ void LocationBarView::Layout() {
   keyword_hint_view_->SetVisible(false);
 
   const int item_padding = GetItemPadding();
-  // The native edit has 1 px of whitespace inside it before the text when the
-  // text is not scrolled off the leading edge.  The views textfield has 1 px of
-  // whitespace before the text in the RTL case only.
-  const int kEditLeadingInternalSpace =
-      (base::i18n::IsRTL() || GetOmniboxViewWin(location_entry_.get())) ? 1 : 0;
+  // The textfield has 1 px of whitespace before the text in the RTL case only.
+  const int kEditLeadingInternalSpace = base::i18n::IsRTL() ? 1 : 0;
   LocationBarLayout leading_decorations(
       LocationBarLayout::LEFT_EDGE, item_padding - kEditLeadingInternalSpace);
   LocationBarLayout trailing_decorations(LocationBarLayout::RIGHT_EDGE,
                                          item_padding);
 
-  const string16 keyword(location_entry_->model()->keyword());
-  const bool is_keyword_hint(location_entry_->model()->is_keyword_hint());
+  const string16 keyword(omnibox_view_->model()->keyword());
+  const bool is_keyword_hint(omnibox_view_->model()->is_keyword_hint());
   const int bubble_location_y = vertical_edge_thickness() + kBubblePadding;
   // In some cases (e.g. fullscreen mode) we may have 0 height.  We still want
   // to position our child views in this case, because other things may be
@@ -701,28 +689,33 @@ void LocationBarView::Layout() {
         location_icon_view_);
   }
 
-  if (star_view_ && star_view_->visible()) {
+  if (star_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
         GetBuiltInHorizontalPaddingForChildViews(), star_view_);
   }
-  if (translate_icon_view_ && translate_icon_view_->visible()) {
+  if (translate_icon_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
         GetBuiltInHorizontalPaddingForChildViews(),
         translate_icon_view_);
   }
-  if (script_bubble_icon_view_ && script_bubble_icon_view_->visible()) {
+  if (script_bubble_icon_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
         GetBuiltInHorizontalPaddingForChildViews(),
         script_bubble_icon_view_);
   }
-  if (open_pdf_in_reader_view_ && open_pdf_in_reader_view_->visible()) {
+  if (open_pdf_in_reader_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
         GetBuiltInHorizontalPaddingForChildViews(),
         open_pdf_in_reader_view_);
+  }
+  if (manage_passwords_icon_view_->visible()) {
+    trailing_decorations.AddDecoration(vertical_edge_thickness(),
+                                       location_height, 0,
+                                       manage_passwords_icon_view_);
   }
   for (PageActionViews::const_iterator i(page_action_views_.begin());
        i != page_action_views_.end(); ++i) {
@@ -756,8 +749,7 @@ void LocationBarView::Layout() {
   }
   // Because IMEs may eat the tab key, we don't show "press tab to search" while
   // IME composition is in progress.
-  if (!keyword.empty() && is_keyword_hint &&
-      !location_entry_->IsImeComposing()) {
+  if (!keyword.empty() && is_keyword_hint && !omnibox_view_->IsImeComposing()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
                                        location_height, true, 0, item_padding,
                                        item_padding, 0, keyword_hint_view_);
@@ -774,7 +766,7 @@ void LocationBarView::Layout() {
   leading_decorations.LayoutPass2(&entry_width);
   trailing_decorations.LayoutPass2(&entry_width);
 
-  int location_needed_width = location_entry_->TextWidth();
+  int location_needed_width = omnibox_view_->TextWidth();
   int available_width = entry_width - location_needed_width;
   // The bounds must be wide enough for all the decorations to fit.
   gfx::Rect location_bounds(
@@ -794,15 +786,13 @@ void LocationBarView::Layout() {
   // showing keyword hints and suggested text is minimal and we're not confident
   // this is the right approach for suggested text.
 
-  OmniboxViewViews* omnibox_views =
-      GetOmniboxViewViews(location_entry_.get());
-  int omnibox_views_margin = 0;
+  int omnibox_view_margin = 0;
   if (suggested_text_view_->visible()) {
     // We do not display the suggested text when it contains a mix of RTL and
     // LTR characters since this could mean the suggestion should be displayed
     // in the middle of the string.
     base::i18n::TextDirection text_direction =
-        base::i18n::GetStringDirection(location_entry_->GetText());
+        base::i18n::GetStringDirection(omnibox_view_->GetText());
     if (text_direction !=
         base::i18n::GetStringDirection(suggested_text_view_->text()))
       text_direction = base::i18n::UNKNOWN_DIRECTION;
@@ -823,10 +813,6 @@ void LocationBarView::Layout() {
                                       location_bounds.height());
       // TODO(sky): figure out why this needs the -1.
       suggested_text_bounds.Offset(location_needed_width - 1, 0);
-      // For non-views the omnibox needs to be shrunk so that the suggest text
-      // is visible.
-      if (!omnibox_views)
-        location_bounds.set_width(location_needed_width);
 
       // We reverse the order of the location entry and suggested text if:
       // - Chrome is RTL but the text is fully LTR, or
@@ -837,22 +823,14 @@ void LocationBarView::Layout() {
           base::i18n::LEFT_TO_RIGHT : base::i18n::RIGHT_TO_LEFT)) {
         // TODO(sky): Figure out why we need the +1.
         suggested_text_bounds.set_x(location_bounds.x() + 1);
-        if (omnibox_views) {
-          // Use a margin to prevent the omnibox text from overlapping the
-          // suggest text.
-          omnibox_views_margin = suggested_text_bounds.width();
-        } else {
-          // Non-views doesn't support margins so move the omnibox over.
-          location_bounds.set_x(
-              location_bounds.x() + suggested_text_bounds.width());
-        }
+        // Use a margin to prevent omnibox text from overlapping suggest text.
+        omnibox_view_margin = suggested_text_bounds.width();
       }
       suggested_text_view_->SetBoundsRect(suggested_text_bounds);
     }
   }
 
-  if (omnibox_views)
-    omnibox_views->SetHorizontalMargins(0, omnibox_views_margin);
+  omnibox_view_->SetHorizontalMargins(0, omnibox_view_margin);
 
   // Layout |ime_inline_autocomplete_view_| next to the user input.
   if (ime_inline_autocomplete_view_->visible()) {
@@ -873,7 +851,7 @@ void LocationBarView::Layout() {
         std::min(width, entry_width), location_bounds.height());
   }
 
-  location_entry_view_->SetBoundsRect(location_bounds);
+  omnibox_view_->SetBoundsRect(location_bounds);
 }
 
 void LocationBarView::OnPaint(gfx::Canvas* canvas) {
@@ -914,7 +892,7 @@ void LocationBarView::OnPaint(gfx::Canvas* canvas) {
   // For non-InstantExtendedAPI cases, if necessary, show focus rect.
   // Note: |Canvas::DrawFocusRect| paints a dashed rect with gray color.
   if (show_focus_rect_ && HasFocus()) {
-    gfx::Rect r = location_entry_view_->bounds();
+    gfx::Rect r = omnibox_view_->bounds();
     // TODO(jamescook): Is this still needed?
     r.Inset(-1, 0);
 #if defined(OS_WIN)
@@ -930,55 +908,30 @@ void LocationBarView::SetShowFocusRect(bool show) {
 }
 
 void LocationBarView::SelectAll() {
-  location_entry_->SelectAll(true);
+  omnibox_view_->SelectAll(true);
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-bool LocationBarView::OnMousePressed(const ui::MouseEvent& event) {
-  UINT msg;
-  if (event.IsLeftMouseButton()) {
-    msg = (event.flags() & ui::EF_IS_DOUBLE_CLICK) ?
-        WM_LBUTTONDBLCLK : WM_LBUTTONDOWN;
-  } else if (event.IsMiddleMouseButton()) {
-    msg = (event.flags() & ui::EF_IS_DOUBLE_CLICK) ?
-        WM_MBUTTONDBLCLK : WM_MBUTTONDOWN;
-  } else if (event.IsRightMouseButton()) {
-    msg = (event.flags() & ui::EF_IS_DOUBLE_CLICK) ?
-        WM_RBUTTONDBLCLK : WM_RBUTTONDOWN;
-  } else {
-    NOTREACHED();
-    return false;
-  }
-  OnMouseEvent(event, msg);
-  return true;
+views::ImageView* LocationBarView::GetLocationIconView() {
+  return location_icon_view_;
 }
 
-bool LocationBarView::OnMouseDragged(const ui::MouseEvent& event) {
-  OnMouseEvent(event, WM_MOUSEMOVE);
-  return true;
+const views::ImageView* LocationBarView::GetLocationIconView() const {
+  return location_icon_view_;
 }
 
-void LocationBarView::OnMouseReleased(const ui::MouseEvent& event) {
-  UINT msg;
-  if (event.IsLeftMouseButton()) {
-    msg = WM_LBUTTONUP;
-  } else if (event.IsMiddleMouseButton()) {
-    msg = WM_MBUTTONUP;
-  } else if (event.IsRightMouseButton()) {
-    msg = WM_RBUTTONUP;
-  } else {
-    NOTREACHED();
-    return;
-  }
-  OnMouseEvent(event, msg);
+views::View* LocationBarView::GetLocationBarAnchor() {
+  return GetLocationIconView();
 }
 
-void LocationBarView::OnMouseCaptureLost() {
-  OmniboxViewWin* omnibox_win = GetOmniboxViewWin(location_entry_.get());
-  if (omnibox_win)
-    omnibox_win->HandleExternalMsg(WM_CAPTURECHANGED, 0, CPoint());
+gfx::Point LocationBarView::GetLocationBarAnchorPoint() const {
+  // The +1 in the next line creates a 1-px gap between icon and arrow tip.
+  gfx::Point icon_bottom(0, GetLocationIconView()->GetImageBounds().bottom() -
+      LocationBarView::kIconInternalPadding + 1);
+  gfx::Point icon_center(GetLocationIconView()->GetImageBounds().CenterPoint());
+  gfx::Point point(icon_center.x(), icon_bottom.y());
+  ConvertPointToTarget(GetLocationIconView(), this, &point);
+  return point;
 }
-#endif
 
 views::View* LocationBarView::generated_credit_card_view() {
   return generated_credit_card_view_;
@@ -988,13 +941,14 @@ void LocationBarView::Update(const WebContents* contents) {
   mic_search_view_->SetVisible(
       !GetToolbarModel()->input_in_progress() && browser_ &&
       browser_->search_model()->voice_search_supported());
-  UpdateContentSettingViewsPreLayout();
+  RefreshContentSettingViews();
   generated_credit_card_view_->Update();
   ZoomBubbleView::CloseBubble();
   RefreshZoomView();
   RefreshPageActionViews();
   RefreshScriptBubble();
   RefreshTranslateIcon();
+  RefreshManagePasswordsIconView();
   open_pdf_in_reader_view_->Update(
       GetToolbarModel()->input_in_progress() ? NULL : GetWebContents());
 
@@ -1009,18 +963,17 @@ void LocationBarView::Update(const WebContents* contents) {
     star_view_->SetVisible(star_enabled);
 
   if (contents)
-    location_entry_->OnTabChanged(contents);
+    omnibox_view_->OnTabChanged(contents);
   else
-    location_entry_->Update();
+    omnibox_view_->Update();
 
   OnChanged();  // NOTE: Calls Layout().
-  UpdateContentSettingViewsPostLayout();
 }
 
 void LocationBarView::OnChanged() {
   location_icon_view_->SetImage(
-      GetThemeProvider()->GetImageSkiaNamed(location_entry_->GetIcon()));
-  location_icon_view_->ShowTooltip(!GetLocationEntry()->IsEditingOrEmpty());
+      GetThemeProvider()->GetImageSkiaNamed(omnibox_view_->GetIcon()));
+  location_icon_view_->ShowTooltip(!GetOmniboxView()->IsEditingOrEmpty());
 
   Layout();
   SchedulePaint();
@@ -1050,44 +1003,17 @@ const char* LocationBarView::GetClassName() const {
   return kViewClassName;
 }
 
-bool LocationBarView::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
-#if defined(OS_WIN)
-  if (views::FocusManager::IsTabTraversalKeyEvent(event)) {
-    if (location_entry_->model()->popup_model()->IsOpen()) {
-      // Return true so that the edit sees the tab and moves the selection.
-      return true;
-    }
-    if (keyword_hint_view_->visible() && !event.IsShiftDown()) {
-      // Return true so the edit gets the tab event and enters keyword mode.
-      return true;
-    }
-  }
-
-#if defined(USE_AURA)
-  NOTIMPLEMENTED();
-#else
-  OmniboxViewWin* omnibox_win = GetOmniboxViewWin(location_entry_.get());
-  if (omnibox_win)
-    return omnibox_win->SkipDefaultKeyEventProcessing(event);
-#endif  // USE_AURA
-#endif  // OS_WIN
-
-  // This method is not used for Linux ports. See FocusManager::OnKeyEvent() in
-  // src/ui/views/focus/focus_manager.cc for details.
-  return false;
-}
-
 void LocationBarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  if (!location_entry_)
+  if (!omnibox_view_)
     return;
 
   state->role = ui::AccessibilityTypes::ROLE_LOCATION_BAR;
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_LOCATION);
-  state->value = location_entry_->GetText();
+  state->value = omnibox_view_->GetText();
 
   string16::size_type entry_start;
   string16::size_type entry_end;
-  location_entry_->GetSelectionBounds(&entry_start, &entry_end);
+  omnibox_view_->GetSelectionBounds(&entry_start, &entry_end);
   state->selection_start = entry_start;
   state->selection_end = entry_end;
 
@@ -1101,13 +1027,13 @@ void LocationBarView::GetAccessibleState(ui::AccessibleViewState* state) {
 }
 
 bool LocationBarView::HasFocus() const {
-  return location_entry_->model()->has_focus();
+  return omnibox_view_->model()->has_focus();
 }
 
 void LocationBarView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   if (browser_ && browser_->instant_controller() && parent())
     browser_->instant_controller()->SetOmniboxBounds(bounds());
-  OmniboxPopupView* popup = location_entry_->model()->popup_model()->view();
+  OmniboxPopupView* popup = omnibox_view_->model()->popup_model()->view();
   if (popup->IsOpen())
     popup->UpdatePopupAppearance();
 }
@@ -1140,7 +1066,7 @@ int LocationBarView::GetDragOperationsForView(views::View* sender,
   DCHECK((sender == location_icon_view_) || (sender == ev_bubble_view_));
   WebContents* web_contents = delegate_->GetWebContents();
   return (web_contents && web_contents->GetURL().is_valid() &&
-          !GetLocationEntry()->IsEditingOrEmpty()) ?
+          !GetOmniboxView()->IsEditingOrEmpty()) ?
       (ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK) :
       ui::DragDropTypes::DRAG_NONE;
 }
@@ -1180,34 +1106,34 @@ content::PageTransition LocationBarView::GetPageTransition() const {
 }
 
 void LocationBarView::AcceptInput() {
-  location_entry_->model()->AcceptInput(CURRENT_TAB, false);
+  omnibox_view_->model()->AcceptInput(CURRENT_TAB, false);
 }
 
 void LocationBarView::FocusLocation(bool select_all) {
-  location_entry_->SetFocus();
+  omnibox_view_->SetFocus();
   if (select_all)
-    location_entry_->SelectAll(true);
+    omnibox_view_->SelectAll(true);
 }
 
 void LocationBarView::FocusSearch() {
-  location_entry_->SetFocus();
-  location_entry_->SetForcedQuery();
+  omnibox_view_->SetFocus();
+  omnibox_view_->SetForcedQuery();
 }
 
 void LocationBarView::SaveStateToContents(WebContents* contents) {
-  location_entry_->SaveStateToTab(contents);
+  omnibox_view_->SaveStateToTab(contents);
 }
 
 void LocationBarView::Revert() {
-  location_entry_->RevertAll();
+  omnibox_view_->RevertAll();
 }
 
-const OmniboxView* LocationBarView::GetLocationEntry() const {
-  return location_entry_.get();
+const OmniboxView* LocationBarView::GetOmniboxView() const {
+  return omnibox_view_;
 }
 
-OmniboxView* LocationBarView::GetLocationEntry() {
-  return location_entry_.get();
+OmniboxView* LocationBarView::GetOmniboxView() {
+  return omnibox_view_;
 }
 
 LocationBarTesting* LocationBarView::GetLocationBarForTesting() {
@@ -1276,7 +1202,7 @@ void LocationBarView::OnTemplateURLServiceChanged() {
   template_url_service_ = NULL;
   // If the browser is no longer active, let's not show the info bubble, as this
   // would make the browser the active window again.
-  if (location_entry_view_ && location_entry_view_->GetWidget()->IsActive())
+  if (omnibox_view_ && omnibox_view_->GetWidget()->IsActive())
     ShowFirstRunBubble();
 }
 
@@ -1328,20 +1254,17 @@ int LocationBarView::GetHorizontalEdgeThickness() const {
       browser_->window()->IsMaximized()) ? 0 : vertical_edge_thickness();
 }
 
-void LocationBarView::UpdateContentSettingViewsPreLayout() {
+bool LocationBarView::RefreshContentSettingViews() {
+  bool visibility_changed = false;
   for (ContentSettingViews::const_iterator i(content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
-    (*i)->UpdatePreLayout(GetToolbarModel()->input_in_progress() ?
+    const bool was_visible = (*i)->visible();
+    (*i)->Update(GetToolbarModel()->input_in_progress() ?
         NULL : GetWebContents());
+    if (was_visible != (*i)->visible())
+      visibility_changed = true;
   }
-}
-
-void LocationBarView::UpdateContentSettingViewsPostLayout() {
-  for (ContentSettingViews::const_iterator i(content_setting_views_.begin());
-       i != content_setting_views_.end(); ++i) {
-    (*i)->UpdatePostLayout(GetToolbarModel()->input_in_progress() ?
-        NULL : GetWebContents());
-  }
+  return visibility_changed;
 }
 
 void LocationBarView::DeletePageActionViews() {
@@ -1351,9 +1274,11 @@ void LocationBarView::DeletePageActionViews() {
   STLDeleteElements(&page_action_views_);
 }
 
-void LocationBarView::RefreshPageActionViews() {
+bool LocationBarView::RefreshPageActionViews() {
   if (is_popup_mode_)
-    return;
+    return false;
+
+  bool changed = false;
 
   // Remember the previous visibility of the page actions so that we can
   // notify when this changes.
@@ -1377,6 +1302,8 @@ void LocationBarView::RefreshPageActionViews() {
   // On startup we sometimes haven't loaded any extensions. This makes sure
   // we catch up when the extensions (and any page actions) load.
   if (page_actions_ != new_page_actions) {
+    changed = true;
+
     page_actions_.swap(new_page_actions);
     DeletePageActionViews();  // Delete the old views (if any).
 
@@ -1411,6 +1338,7 @@ void LocationBarView::RefreshPageActionViews() {
       ExtensionAction* action = (*i)->image_view()->page_action();
       if (old_visibility.find(action) == old_visibility.end() ||
           old_visibility[action] != (*i)->visible()) {
+        changed = true;
         content::NotificationService::current()->Notify(
             chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
             content::Source<ExtensionAction>(action),
@@ -1418,6 +1346,7 @@ void LocationBarView::RefreshPageActionViews() {
       }
     }
   }
+  return changed;
 }
 
 size_t LocationBarView::ScriptBubbleScriptsRunning() {
@@ -1437,54 +1366,59 @@ size_t LocationBarView::ScriptBubbleScriptsRunning() {
   return script_count;
 }
 
-void LocationBarView::RefreshScriptBubble() {
+bool LocationBarView::RefreshScriptBubble() {
   if (!script_bubble_icon_view_)
-    return;
+    return false;
   size_t script_count = ScriptBubbleScriptsRunning();
+  const bool was_visible = script_bubble_icon_view_->visible();
   script_bubble_icon_view_->SetVisible(script_count > 0);
   if (script_count > 0)
     script_bubble_icon_view_->SetScriptCount(script_count);
+  return was_visible != script_bubble_icon_view_->visible();
 }
 
-void LocationBarView::RefreshZoomView() {
+bool LocationBarView::RefreshZoomView() {
   DCHECK(zoom_view_);
   WebContents* web_contents = GetWebContents();
   if (!web_contents)
-    return;
+    return false;
+  const bool was_visible = zoom_view_->visible();
+  zoom_view_->Update(ZoomController::FromWebContents(web_contents));
+  return was_visible != zoom_view_->visible();
+}
 
-  ZoomController* zoom_controller =
-      ZoomController::FromWebContents(web_contents);
-  zoom_view_->Update(zoom_controller);
+bool LocationBarView::RefreshManagePasswordsIconView() {
+  DCHECK(manage_passwords_icon_view_);
+  WebContents* web_contents = GetWebContents();
+  if (!web_contents)
+    return false;
+  const bool was_visible = manage_passwords_icon_view_->visible();
+  manage_passwords_icon_view_->Update(
+      ManagePasswordsIconController::FromWebContents(web_contents));
+  return was_visible != manage_passwords_icon_view_->visible();
 }
 
 void LocationBarView::RefreshTranslateIcon() {
-  if (!translate_icon_view_)
+  WebContents* web_contents = GetWebContents();
+  if (!web_contents || !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableTranslateNewUX))
     return;
+  LanguageState& language_state = TranslateTabHelper::FromWebContents(
+      web_contents)->language_state();
+  bool enabled = language_state.translate_enabled();
+  command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);
+  translate_icon_view_->SetVisible(enabled);
+  translate_icon_view_->SetToggled(language_state.IsPageTranslated());
+}
 
+void LocationBarView::ShowManagePasswordsBubbleIfNeeded() {
+  DCHECK(manage_passwords_icon_view_);
   WebContents* web_contents = GetWebContents();
   if (!web_contents)
     return;
-
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents);
-  bool enabled =
-      translate_tab_helper->language_state().translate_enabled();
-
-  command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);
-  translate_icon_view_->SetVisible(enabled);
+  manage_passwords_icon_view_->ShowBubbleIfNeeded(
+      ManagePasswordsIconController::FromWebContents(web_contents));
 }
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-void LocationBarView::OnMouseEvent(const ui::MouseEvent& event, UINT msg) {
-  OmniboxViewWin* omnibox_win = GetOmniboxViewWin(location_entry_.get());
-  if (omnibox_win) {
-    UINT flags = event.native_event().wParam;
-    gfx::Point screen_point(event.location());
-    ConvertPointToScreen(this, &screen_point);
-    omnibox_win->HandleExternalMsg(msg, flags, screen_point.ToPOINT());
-  }
-}
-#endif
 
 bool LocationBarView::HasValidSuggestText() const {
   return suggested_text_view_->visible() &&
@@ -1498,7 +1432,7 @@ void LocationBarView::ShowFirstRunBubbleInternal() {
   if (!browser)
     return; // Possible when browser is shutting down.
 
-  FirstRunBubble::ShowBubble(browser, location_icon_view_);
+  FirstRunBubble::ShowBubble(browser, GetLocationBarAnchor());
 #endif
 }
 
@@ -1536,5 +1470,5 @@ void LocationBarView::PaintPageActionBackgrounds(gfx::Canvas* canvas) {
 }
 
 void LocationBarView::AccessibilitySetValue(const string16& new_value) {
-  location_entry_->SetUserText(new_value);
+  omnibox_view_->SetUserText(new_value, new_value, true);
 }

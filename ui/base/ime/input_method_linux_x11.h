@@ -9,8 +9,6 @@
 #include "ui/base/ime/input_method_base.h"
 #include "ui/base/ime/linux/linux_input_method_context.h"
 
-typedef struct _GtkIMContext GtkIMContext;
-
 namespace ui {
 
 // A ui::InputMethod implementation for a X11 event loop on GNU/Linux.
@@ -22,13 +20,16 @@ class InputMethodLinuxX11 : public InputMethodBase,
   explicit InputMethodLinuxX11(internal::InputMethodDelegate* delegate);
   virtual ~InputMethodLinuxX11();
 
+  // Initializes input methods.  This function must be called once prior to
+  // any use of this instance.  This function is supposed to be called from
+  // ui::InitializeInputMethod().
+  static void Initialize();
+
   // Overriden from InputMethod.
   virtual void Init(bool focused) OVERRIDE;
   virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                         NativeEventResult* result) OVERRIDE;
-  virtual bool DispatchKeyEvent(const base::NativeEvent& native_key_event)
-      OVERRIDE;
-  virtual bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
+  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
   virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
   virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
@@ -51,6 +52,8 @@ class InputMethodLinuxX11 : public InputMethodBase,
                                         TextInputClient* focused) OVERRIDE;
 
  private:
+  bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event);
+
   scoped_ptr<LinuxInputMethodContext> input_method_context_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodLinuxX11);

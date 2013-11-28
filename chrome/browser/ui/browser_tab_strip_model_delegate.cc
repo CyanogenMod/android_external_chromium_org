@@ -39,8 +39,10 @@ BrowserTabStripModelDelegate::~BrowserTabStripModelDelegate() {
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserTabStripModelDelegate, TabStripModelDelegate implementation:
 
-void BrowserTabStripModelDelegate::AddBlankTabAt(int index, bool foreground) {
-  chrome::AddBlankTabAt(browser_, index, foreground);
+void BrowserTabStripModelDelegate::AddTabAt(const GURL& url,
+                                            int index,
+                                            bool foreground) {
+  chrome::AddTabAt(browser_, url, index, foreground);
 }
 
 Browser* BrowserTabStripModelDelegate::CreateNewStripWithContents(
@@ -135,6 +137,11 @@ void BrowserTabStripModelDelegate::CreateHistoricalTab(
 bool BrowserTabStripModelDelegate::RunUnloadListenerBeforeClosing(
     content::WebContents* contents) {
   return Browser::RunUnloadEventsHelper(contents);
+}
+
+bool BrowserTabStripModelDelegate::ShouldRunUnloadListenerBeforeClosing(
+    content::WebContents* contents) {
+  return Browser::ShouldRunUnloadEventsHelper(contents);
 }
 
 bool BrowserTabStripModelDelegate::CanBookmarkAllTabs() const {

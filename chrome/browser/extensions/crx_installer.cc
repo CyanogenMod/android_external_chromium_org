@@ -37,18 +37,18 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/feature_switch.h"
-#include "chrome/common/extensions/manifest_handlers/kiosk_mode_info.h"
-#include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handlers/kiosk_mode_info.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -158,6 +158,9 @@ CrxInstaller::CrxInstaller(
   }
 
   show_dialog_callback_ = approval->show_dialog_callback;
+
+  if (approval->is_ephemeral)
+    creation_flags_ |= Extension::IS_EPHEMERAL;
 }
 
 CrxInstaller::~CrxInstaller() {

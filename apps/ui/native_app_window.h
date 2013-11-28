@@ -18,8 +18,11 @@ namespace apps {
 class NativeAppWindow : public ui::BaseWindow,
                         public web_modal::WebContentsModalDialogHost {
  public:
-  // Fullscreen changes may be asynchronous on some platforms.
-  virtual void SetFullscreen(bool fullscreen) = 0;
+  // Sets whether the window is fullscreen and the type of fullscreen.
+  // |fullscreen_types| is a bit field of ShellWindow::FullscreenType.
+  virtual void SetFullscreen(int fullscreen_types) = 0;
+
+  // Returns whether the window is fullscreen or about to enter fullscreen.
   virtual bool IsFullscreenOrPending() const = 0;
 
   // Returns true if the window is a panel that has been detached.
@@ -38,9 +41,9 @@ class NativeAppWindow : public ui::BaseWindow,
   // Returns the region used by frameless windows for dragging. May return NULL.
   virtual SkRegion* GetDraggableRegion() = 0;
 
-  // Called when the region that accepts input events is changed.
-  // If |region| is NULL, then the entire window will accept input events.
-  virtual void UpdateInputRegion(scoped_ptr<SkRegion> region) = 0;
+  // Called when the window shape is changed. If |region| is NULL then the
+  // window is restored to the default shape.
+  virtual void UpdateShape(scoped_ptr<SkRegion> region) = 0;
 
   // Allows the window to handle unhandled keyboard messages coming back from
   // the renderer.

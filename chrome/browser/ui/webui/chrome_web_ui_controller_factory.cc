@@ -52,7 +52,6 @@
 #include "chrome/browser/ui/webui/version_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/dom_distiller/core/dom_distiller_constants.h"
@@ -62,6 +61,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_utils.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/feature_switch.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
 #include "url/gurl.h"
@@ -98,7 +98,6 @@
 #include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_ui.h"
 #include "chrome/browser/ui/webui/chromeos/choose_mobile_network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/cryptohome_ui.h"
-#include "chrome/browser/ui/webui/chromeos/diagnostics/diagnostics_ui.h"
 #include "chrome/browser/ui/webui/chromeos/drive_internals_ui.h"
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_ui.h"
 #include "chrome/browser/ui/webui/chromeos/imageburner/imageburner_ui.h"
@@ -159,6 +158,7 @@ WebUIController* NewWebUI(WebUI* web_ui, const GURL& url) {
   return new T(web_ui);
 }
 
+#if defined(ENABLE_EXTENSIONS)
 // Special cases for extensions.
 template<>
 WebUIController* NewWebUI<ExtensionWebUI>(WebUI* web_ui,
@@ -171,6 +171,7 @@ WebUIController* NewWebUI<extensions::ExtensionInfoUI>(WebUI* web_ui,
                                                        const GURL& url) {
   return new extensions::ExtensionInfoUI(web_ui, url);
 }
+#endif  // defined(ENABLE_EXTENSIONS)
 
 // Special case for older about: handlers.
 template<>
@@ -253,7 +254,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<FlagsUI>;
   if (url.host() == chrome::kChromeUIHistoryFrameHost)
     return &NewWebUI<HistoryUI>;
-  if (url.host() == chrome::kChromeUIInlineLoginHost)
+  if (url.host() == chrome::kChromeUIChromeSigninHost)
     return &NewWebUI<InlineLoginUI>;
   if (url.host() == chrome::kChromeUIInstantHost)
     return &NewWebUI<InstantUI>;
@@ -381,8 +382,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<chromeos::CryptohomeUI>;
   if (url.host() == chrome::kChromeUIDriveInternalsHost)
     return &NewWebUI<chromeos::DriveInternalsUI>;
-  if (url.host() == chrome::kChromeUIDiagnosticsHost)
-    return &NewWebUI<chromeos::DiagnosticsUI>;
   if (url.host() == chrome::kChromeUIFirstRunHost)
     return &NewWebUI<chromeos::FirstRunUI>;
   if (url.host() == chrome::kChromeUIImageBurnerHost)

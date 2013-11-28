@@ -12,7 +12,9 @@
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event.h"
 #include "content/common/input/input_param_traits.h"
+#include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/input/synthetic_gesture_params.h"
+#include "content/common/input/synthetic_pinch_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
@@ -58,8 +60,16 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothScrollGestureParams)
   IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
   IPC_STRUCT_TRAITS_MEMBER(distance)
-  IPC_STRUCT_TRAITS_MEMBER(anchor_x)
-  IPC_STRUCT_TRAITS_MEMBER(anchor_y)
+  IPC_STRUCT_TRAITS_MEMBER(anchor)
+  IPC_STRUCT_TRAITS_MEMBER(speed_in_pixels_s)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticPinchGestureParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(zoom_in)
+  IPC_STRUCT_TRAITS_MEMBER(total_num_pixels_covered)
+  IPC_STRUCT_TRAITS_MEMBER(anchor)
+  IPC_STRUCT_TRAITS_MEMBER(relative_pointer_speed_in_pixels_s)
 IPC_STRUCT_TRAITS_END()
 
 // Sends an input event to the render widget.
@@ -150,14 +160,19 @@ IPC_MESSAGE_ROUTED3(InputMsg_ActivateNearestFindResult,
                     float /* y */)
 #endif
 
+IPC_MESSAGE_ROUTED0(InputMsg_SyntheticGestureCompleted);
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
 // Acknowledges receipt of a InputMsg_HandleInputEvent message.
 IPC_MESSAGE_ROUTED3(InputHostMsg_HandleInputEvent_ACK,
-                    WebKit::WebInputEvent::Type,
+                    blink::WebInputEvent::Type,
                     content::InputEventAckState /* ack_result */,
                     ui::LatencyInfo /* latency_info */)
+
+IPC_MESSAGE_ROUTED1(InputHostMsg_QueueSyntheticGesture,
+                    content::SyntheticGesturePacket)
 
 
 // Adding a new message? Stick to the sort order above: first platform

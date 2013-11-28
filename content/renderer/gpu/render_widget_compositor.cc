@@ -39,9 +39,9 @@ namespace cc {
 class Layer;
 }
 
-using WebKit::WebFloatPoint;
-using WebKit::WebSize;
-using WebKit::WebRect;
+using blink::WebFloatPoint;
+using blink::WebSize;
+using blink::WebRect;
 
 namespace content {
 namespace {
@@ -307,7 +307,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   }
 #endif
 
-  if (!compositor->initialize(settings))
+  if (!compositor->Initialize(settings))
     return scoped_ptr<RenderWidgetCompositor>();
 
   return compositor.Pass();
@@ -386,7 +386,7 @@ void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
 
 void RenderWidgetCompositor::SetNeedsForcedRedraw() {
   layer_tree_host_->SetNextCommitForcesRedraw();
-  setNeedsRedraw();
+  setNeedsAnimate();
 }
 
 void RenderWidgetCompositor::SetLatencyInfo(
@@ -413,11 +413,16 @@ bool RenderWidgetCompositor::ScheduleMicroBenchmark(
   return layer_tree_host_->ScheduleMicroBenchmark(name, value.Pass(), callback);
 }
 
-bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
+bool RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
-  layer_tree_host_ = cc::LayerTreeHost::Create(
-      this, NULL, settings, compositor_message_loop_proxy);
+  if (compositor_message_loop_proxy.get()) {
+    layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
+        this, NULL, settings, compositor_message_loop_proxy);
+  } else {
+    layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
+        this, this, NULL, settings);
+  }
   return layer_tree_host_;
 }
 
@@ -425,7 +430,7 @@ void RenderWidgetCompositor::setSurfaceReady() {
   layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
-void RenderWidgetCompositor::setRootLayer(const WebKit::WebLayer& layer) {
+void RenderWidgetCompositor::setRootLayer(const blink::WebLayer& layer) {
   layer_tree_host_->SetRootLayer(
       static_cast<const webkit::WebLayerImpl*>(&layer)->layer());
 }
@@ -461,7 +466,7 @@ float RenderWidgetCompositor::deviceScaleFactor() const {
   return layer_tree_host_->device_scale_factor();
 }
 
-void RenderWidgetCompositor::setBackgroundColor(WebKit::WebColor color) {
+void RenderWidgetCompositor::setBackgroundColor(blink::WebColor color) {
   layer_tree_host_->set_background_color(color);
 }
 
@@ -484,7 +489,7 @@ void RenderWidgetCompositor::setPageScaleFactorAndLimits(
 }
 
 void RenderWidgetCompositor::startPageScaleAnimation(
-    const WebKit::WebPoint& destination,
+    const blink::WebPoint& destination,
     bool use_anchor,
     float new_page_scale,
     double duration_sec) {
@@ -501,13 +506,6 @@ void RenderWidgetCompositor::setNeedsAnimate() {
   layer_tree_host_->SetNeedsAnimate();
 }
 
-void RenderWidgetCompositor::setNeedsRedraw() {
-  if (threaded_)
-    layer_tree_host_->SetNeedsAnimate();
-  else
-    widget_->scheduleAnimation();
-}
-
 bool RenderWidgetCompositor::commitRequested() const {
   return layer_tree_host_->CommitRequested();
 }
@@ -516,16 +514,16 @@ void RenderWidgetCompositor::didStopFlinging() {
   layer_tree_host_->DidStopFlinging();
 }
 
-void RenderWidgetCompositor::registerForAnimations(WebKit::WebLayer* layer) {
+void RenderWidgetCompositor::registerForAnimations(blink::WebLayer* layer) {
   cc::Layer* cc_layer = static_cast<webkit::WebLayerImpl*>(layer)->layer();
   cc_layer->layer_animation_controller()->SetAnimationRegistrar(
       layer_tree_host_->animation_registrar());
 }
 
 void RenderWidgetCompositor::registerViewportLayers(
-    const WebKit::WebLayer* pageScaleLayer,
-    const WebKit::WebLayer* innerViewportScrollLayer,
-    const WebKit::WebLayer* outerViewportScrollLayer) {
+    const blink::WebLayer* pageScaleLayer,
+    const blink::WebLayer* innerViewportScrollLayer,
+    const blink::WebLayer* outerViewportScrollLayer) {
   layer_tree_host_->RegisterViewportLayers(
       static_cast<const webkit::WebLayerImpl*>(pageScaleLayer)->layer(),
       static_cast<const webkit::WebLayerImpl*>(innerViewportScrollLayer)
@@ -589,8 +587,8 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
-void RenderWidgetCompositor::WillBeginMainFrame() {
-  widget_->InstrumentWillBeginFrame();
+void RenderWidgetCompositor::WillBeginMainFrame(int frame_id) {
+  widget_->InstrumentWillBeginFrame(frame_id);
   widget_->willBeginCompositorFrame();
 }
 
@@ -636,6 +634,13 @@ void RenderWidgetCompositor::DidCommitAndDrawFrame() {
 
 void RenderWidgetCompositor::DidCompleteSwapBuffers() {
   widget_->didCompleteSwapBuffers();
+  if (!threaded_)
+    widget_->OnSwapBuffersComplete();
+}
+
+scoped_refptr<cc::ContextProvider>
+RenderWidgetCompositor::OffscreenContextProvider() {
+  return RenderThreadImpl::current()->OffscreenCompositorContextProvider();
 }
 
 void RenderWidgetCompositor::ScheduleComposite() {
@@ -643,9 +648,22 @@ void RenderWidgetCompositor::ScheduleComposite() {
     widget_->scheduleComposite();
 }
 
-scoped_refptr<cc::ContextProvider>
-RenderWidgetCompositor::OffscreenContextProvider() {
-  return RenderThreadImpl::current()->OffscreenCompositorContextProvider();
+void RenderWidgetCompositor::ScheduleAnimation() {
+  widget_->scheduleAnimation();
+}
+
+void RenderWidgetCompositor::DidPostSwapBuffers() {
+  widget_->OnSwapBuffersPosted();
+}
+
+void RenderWidgetCompositor::DidAbortSwapBuffers() {
+  widget_->OnSwapBuffersAborted();
+}
+
+void RenderWidgetCompositor::RateLimitSharedMainThreadContext() {
+  cc::ContextProvider* provider =
+      RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
+  provider->Context3d()->rateLimitOffscreenContextCHROMIUM();
 }
 
 }  // namespace content

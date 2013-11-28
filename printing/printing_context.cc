@@ -60,9 +60,11 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
 
   bool print_to_pdf = false;
   bool is_cloud_dialog = false;
+  bool print_with_privet = false;
 
   if (!job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf) ||
-      !job_settings.GetBoolean(kSettingCloudPrintDialog, &is_cloud_dialog)) {
+      !job_settings.GetBoolean(kSettingCloudPrintDialog, &is_cloud_dialog) ||
+      !job_settings.GetBoolean(kSettingPrintWithPrivet, &print_with_privet)) {
     NOTREACHED();
     return OnError();
   }
@@ -71,14 +73,14 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
   bool open_in_external_preview =
       job_settings.HasKey(kSettingOpenPDFInPreview);
 
-  if (!open_in_external_preview &&
-      (print_to_pdf || print_to_cloud || is_cloud_dialog)) {
+  if (!open_in_external_preview && (print_to_pdf || print_to_cloud ||
+                                    is_cloud_dialog || print_with_privet)) {
     settings_.set_dpi(kDefaultPdfDpi);
     // Cloud print should get size and rect from capabilities received from
     // server.
     gfx::Size paper_size(GetPdfPaperSizeDeviceUnits());
     gfx::Rect paper_rect(0, 0, paper_size.width(), paper_size.height());
-    if (print_to_cloud) {
+    if (print_to_cloud || print_with_privet) {
       paper_rect.Inset(
           kCloudPrintMarginInch * settings_.device_units_per_inch(),
           kCloudPrintMarginInch * settings_.device_units_per_inch());

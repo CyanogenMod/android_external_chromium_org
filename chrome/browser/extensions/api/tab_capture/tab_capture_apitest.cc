@@ -17,7 +17,6 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/common/extensions/features/complex_feature.h"
 #include "chrome/common/extensions/features/simple_feature.h"
@@ -25,6 +24,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/features/feature.h"
 #include "ui/compositor/compositor_switches.h"
 
@@ -59,13 +59,7 @@ class TabCaptureApiTest : public ExtensionApiTest {
 
 }  // namespace
 
-// http://crbug.com/261493
-#if defined(OS_CHROMEOS)
-#define MAYBE_ApiTests DISABLED_ApiTests
-#else
-#define MAYBE_ApiTests ApiTests
-#endif
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTests) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, ApiTests) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -109,12 +103,6 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_EndToEnd) {
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
     return;
   }
-#endif
-#if defined(OS_MACOSX)
-  // TODO(miu): Disabled for Mac OS X 10.6 due to timeout issues.
-  // http://crbug.com/174640
-  if (base::mac::IsOSSnowLeopard())
-    return;
 #endif
 
   AddExtensionToCommandLineWhitelist();
@@ -256,16 +244,8 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_FullscreenEvents) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-// Times out on Win dbg bots: http://crbug.com/177163
-// #if defined(OS_WIN) && !defined(NDEBUG)
-// Times out on all Win bots: http://crbug.com/294431
-#if defined(OS_WIN)
-#define MAYBE_GrantForChromePages DISABLED_GrantForChromePages
-#else
-#define MAYBE_GrantForChromePages GrantForChromePages
-#endif
 // Make sure tabCapture API can be granted for Chrome:// pages.
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GrantForChromePages) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, GrantForChromePages) {
   ExtensionTestMessageListener before_open_tab("ready1", true);
   ASSERT_TRUE(RunExtensionSubtest("tab_capture/experimental",
                                   "active_tab_chrome_pages.html")) << message_;

@@ -15,13 +15,13 @@
 #include "base/values.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
-#include "chrome/service/cloud_print/cloud_print_helpers.h"
+#include "chrome/service/cloud_print/cloud_print_service_helpers.h"
 #include "chrome/service/cloud_print/job_status_updater.h"
 #include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
-#include "printing/backend/print_backend.h"
+#include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -701,7 +701,7 @@ void PrinterJobHandler::OnReceivePrinterCaps(
           "CloudPrint.CapsUpdateInterval",
           base::Time::Now() - last_caps_update_time_,
           base::TimeDelta::FromMilliseconds(1),
-          base::TimeDelta::FromDays(30), 50);
+          base::TimeDelta::FromDays(7), 50);
     }
     last_caps_update_time_ = base::Time::Now();
   }
@@ -767,10 +767,9 @@ void PrinterJobHandler::DoPrint(const JobDetails& job_details,
   if (!job_spooler_.get())
     return;
   string16 document_name =
-      printing::PrintBackend::SimplifyDocumentTitle(
-          UTF8ToUTF16(job_details.job_title_));
+      printing::SimplifyDocumentTitle(UTF8ToUTF16(job_details.job_title_));
   if (document_name.empty()) {
-    document_name = printing::PrintBackend::SimplifyDocumentTitle(
+    document_name = printing::SimplifyDocumentTitle(
         l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE));
   }
   UMA_HISTOGRAM_ENUMERATION("CloudPrint.JobHandlerEvent",

@@ -16,14 +16,14 @@
 #include "chrome/browser/sync_file_system/sync_task_manager.h"
 #include "net/base/network_change_notifier.h"
 
-class ExtensionService;
+class ExtensionServiceInterface;
 
 namespace base {
 class SequencedTaskRunner;
 }
 
 namespace drive {
-class DriveAPIService;
+class DriveServiceInterface;
 class DriveNotificationManager;
 }
 
@@ -47,9 +47,10 @@ class SyncEngine : public RemoteFileSyncService,
 
   SyncEngine(const base::FilePath& base_dir,
              base::SequencedTaskRunner* task_runner,
-             scoped_ptr<drive::DriveAPIService> drive_service,
+             scoped_ptr<drive::DriveServiceInterface> drive_service,
+             scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
              drive::DriveNotificationManager* notification_manager,
-             ExtensionService* extension_service);
+             ExtensionServiceInterface* extension_service);
   virtual ~SyncEngine();
 
   void Initialize();
@@ -92,15 +93,16 @@ class SyncEngine : public RemoteFileSyncService,
 
   // LocalChangeProcessor overrides.
   virtual void ApplyLocalChange(
-      const FileChange& change,
-      const base::FilePath& local_file_path,
-      const SyncFileMetadata& local_file_metadata,
+      const FileChange& local_change,
+      const base::FilePath& local_path,
+      const SyncFileMetadata& local_metadata,
       const fileapi::FileSystemURL& url,
       const SyncStatusCallback& callback) OVERRIDE;
 
   // SyncTaskManager::Client overrides.
   virtual void MaybeScheduleNextTask() OVERRIDE;
-  virtual void NotifyLastOperationStatus(SyncStatusCode sync_status) OVERRIDE;
+  virtual void NotifyLastOperationStatus(SyncStatusCode sync_status,
+                                         bool used_network) OVERRIDE;
 
   // drive::DriveNotificationObserver overrides.
   virtual void OnNotificationReceived() OVERRIDE;
@@ -116,9 +118,13 @@ class SyncEngine : public RemoteFileSyncService,
 
   // SyncEngineContext overrides.
   virtual drive::DriveServiceInterface* GetDriveService() OVERRIDE;
+  virtual drive::DriveUploaderInterface* GetDriveUploader() OVERRIDE;
   virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE;
+  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() OVERRIDE;
+  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE;
 
  private:
+  friend class SyncEngineTest;
   void DoDisableApp(const std::string& app_id,
                     const SyncStatusCallback& callback);
   void DoEnableApp(const std::string& app_id,
@@ -135,18 +141,19 @@ class SyncEngine : public RemoteFileSyncService,
   void DidFetchChangeList(SyncStatusCallback& callback);
 
   void MaybeStartFetchChanges();
-  void UpdateServiceStateFromSyncStatusCode(
-      SyncStatusCode state,
-      const std::string& description);
+  void UpdateServiceStateFromSyncStatusCode(SyncStatusCode state,
+                                            bool used_network);
   void UpdateServiceState(RemoteServiceState state,
                           const std::string& description);
+  void UpdateRegisteredApps();
 
   base::FilePath base_dir_;
   base::FilePath temporary_file_dir_;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
-  scoped_ptr<drive::DriveAPIService> drive_service_;
+  scoped_ptr<drive::DriveServiceInterface> drive_service_;
+  scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
   scoped_ptr<MetadataDatabase> metadata_database_;
 
   // These external services are not owned by SyncEngine.
@@ -154,7 +161,7 @@ class SyncEngine : public RemoteFileSyncService,
   // I.e. the owner should declare the dependency explicitly by calling
   // BrowserContextKeyedService::DependsOn().
   drive::DriveNotificationManager* notification_manager_;
-  ExtensionService* extension_service_;
+  ExtensionServiceInterface* extension_service_;
 
   ObserverList<SyncServiceObserver> service_observers_;
   ObserverList<FileStatusObserver> file_status_observers_;

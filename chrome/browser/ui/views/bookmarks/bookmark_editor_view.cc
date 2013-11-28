@@ -23,6 +23,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/views/background.h"
@@ -163,6 +164,12 @@ bool BookmarkEditorView::HandleKeyEvent(views::Textfield* sender,
     return false;
 }
 
+void BookmarkEditorView::GetAccessibleState(ui::AccessibleViewState* state) {
+  state->name =
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_TITLE);
+  state->role = ui::AccessibilityTypes::ROLE_DIALOG;
+}
+
 void BookmarkEditorView::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {
   DCHECK_EQ(new_folder_button_.get(), sender);
@@ -270,9 +277,10 @@ void BookmarkEditorView::Init() {
     title = details_.title;
   }
   title_tf_ = new views::Textfield;
+  title_tf_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_EDITOR_NAME_LABEL));
   title_tf_->SetText(title);
   title_tf_->SetController(this);
-  title_tf_->SetAccessibleName(title_label_->text());
 
   if (show_tree_) {
     tree_view_ = new views::TreeView;
@@ -301,13 +309,8 @@ void BookmarkEditorView::Init() {
                         GridLayout::USE_PREF, 0, 0);
 
   column_set = layout->AddColumnSet(single_column_view_set_id);
-  if (views::DialogDelegate::UseNewStyle()) {
-    column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
-                          GridLayout::USE_PREF, 0, 0);
-  } else {
-    column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
-                          GridLayout::FIXED, 300, 0);
-  }
+  column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
+                        GridLayout::USE_PREF, 0, 0);
 
   column_set = layout->AddColumnSet(buttons_column_set_id);
   column_set->AddColumn(GridLayout::FILL, GridLayout::LEADING, 0,
@@ -333,7 +336,8 @@ void BookmarkEditorView::Init() {
         profile_ ? user_prefs::UserPrefs::Get(profile_) : NULL;
     url_tf_->SetText(chrome::FormatBookmarkURLForDisplay(url, prefs));
     url_tf_->SetController(this);
-    url_tf_->SetAccessibleName(url_label_->text());
+    url_tf_->SetAccessibleName(
+        l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_EDITOR_URL_LABEL));
 
     layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 

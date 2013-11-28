@@ -11,14 +11,14 @@
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using content::WebContents;
 
@@ -48,8 +48,8 @@ class ScriptBadgesCommandsApiTest : public ExtensionApiTest {
   ScriptBadgesCommandsApiTest() {
     // We cannot add this to CommandsApiTest because then PageActions get
     // treated like BrowserActions and the PageAction test starts failing.
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-        switches::kScriptBadges, "1");
+    FeatureSwitch::script_badges()->SetOverrideValue(
+        FeatureSwitch::OVERRIDE_ENABLED);
   }
   virtual ~ScriptBadgesCommandsApiTest() {}
 };
@@ -259,6 +259,32 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_DontOverwriteSystemShortcuts) {
       "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
+}
+
+#if defined(OS_WIN)
+// Currently this feature is implemented on Windows only.
+#define MAYBE_AllowDuplicatedMediaKeys AllowDuplicatedMediaKeys
+#else
+#define MAYBE_AllowDuplicatedMediaKeys DISABLED_AllowDuplicatedMediaKeys
+#endif
+
+// Test that media keys go to all extensions that register for them.
+IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_AllowDuplicatedMediaKeys) {
+  ResultCatcher catcher;
+  ASSERT_TRUE(RunExtensionTest("keybinding/non_global_media_keys_0"))
+      << message_;
+  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(RunExtensionTest("keybinding/non_global_media_keys_1"))
+      << message_;
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  // Activate the Media Stop key.
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_MEDIA_STOP, false, false, false, false));
+
+  // We should get two success result.
+  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(catcher.GetNextResult());
 }
 
 }  // namespace extensions

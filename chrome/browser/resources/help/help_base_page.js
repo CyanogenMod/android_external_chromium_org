@@ -76,12 +76,11 @@ cr.define('help', function() {
      */
     setOverlayVisible_: function(visible) {
       assert(this.isOverlay);
-      var pageDiv = this.pageDiv;
       this.container.hidden = !visible;
       if (visible)
-        pageDiv.classList.add('showing');
+        this.pageDiv.classList.add('showing');
       else
-        pageDiv.classList.remove('showing');
+        this.pageDiv.classList.remove('showing');
     },
 
     /**
@@ -115,13 +114,14 @@ cr.define('help', function() {
      * @private
      */
     freeze_: function(freeze) {
+      var scrollLeft = scrollLeftForDocument(document);
       if (freeze) {
-        this.lastScrollTop = document.documentElement.scrollTop;
+        this.lastScrollTop = scrollTopForDocument(document);
         document.body.style.overflow = 'hidden';
-        window.scroll(document.body.scrollLeft, 0);
+        window.scroll(scrollLeft, 0);
       } else {
         document.body.style.overflow = 'auto';
-        window.scroll(document.body.scrollLeft, this.lastScrollTop);
+        window.scroll(scrollLeft, this.lastScrollTop);
       }
     },
 
@@ -132,6 +132,12 @@ cr.define('help', function() {
     initialize: function(name) {
       this.name = name;
       this.pageDiv = $(name);
+    },
+
+    /**
+     * Called before overlay is displayed.
+     */
+    onBeforeShow: function() {
     },
 
     /**
@@ -169,6 +175,9 @@ cr.define('help', function() {
 
       if (visible)
         this.restoreLastFocusedElement_();
+
+      if (visible)
+        this.onBeforeShow();
     },
 
     /**

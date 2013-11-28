@@ -16,15 +16,15 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
@@ -53,7 +53,6 @@
 #endif
 
 using testing::AllOf;
-using testing::AnyNumber;
 using testing::Mock;
 using testing::Property;
 using testing::Return;
@@ -191,8 +190,6 @@ void PreferencesBrowserTest::SetUpInProcessBrowserTestFixture() {
   // Sets up a mock policy provider for user and device policies.
   EXPECT_CALL(policy_provider_, IsInitializationComplete(_))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(policy_provider_, RegisterPolicyDomain(_))
-      .Times(AnyNumber());
   policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
       &policy_provider_);
 };

@@ -23,7 +23,6 @@
         '../media/cast/cast.gyp:cast_config',
         '../media/cast/cast_sender.gyp:cast_sender',
         '../net/net.gyp:net',
-        '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/hunspell/hunspell.gyp:hunspell',
@@ -33,9 +32,9 @@
         '../third_party/re2/re2.gyp:re2',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/surface/surface.gyp:surface',
+        '../webkit/child/webkit_child.gyp:webkit_child',
         '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/glue/webkit_glue.gyp:glue',
-        '../webkit/glue/webkit_glue.gyp:glue_child',
         '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
@@ -69,6 +68,8 @@
         'renderer/extensions/app_window_custom_bindings.h',
         'renderer/extensions/binding_generating_native_handler.cc',
         'renderer/extensions/binding_generating_native_handler.h',
+        'renderer/extensions/blob_native_handler.cc',
+        'renderer/extensions/blob_native_handler.h',
         'renderer/extensions/chrome_v8_context.cc',
         'renderer/extensions/chrome_v8_context.h',
         'renderer/extensions/chrome_v8_context_set.cc',
@@ -93,15 +94,11 @@
         'renderer/extensions/dom_activity_logger.h',
         'renderer/extensions/event_bindings.cc',
         'renderer/extensions/event_bindings.h',
-        'renderer/extensions/extension_custom_bindings.cc',
-        'renderer/extensions/extension_custom_bindings.h',
         'renderer/extensions/extension_groups.h',
         'renderer/extensions/extension_helper.cc',
         'renderer/extensions/extension_helper.h',
         'renderer/extensions/extension_localization_peer.cc',
         'renderer/extensions/extension_localization_peer.h',
-        'renderer/extensions/feedback_private_custom_bindings.cc',
-        'renderer/extensions/feedback_private_custom_bindings.h',
         'renderer/extensions/file_browser_handler_custom_bindings.cc',
         'renderer/extensions/file_browser_handler_custom_bindings.h',
         'renderer/extensions/file_browser_private_custom_bindings.cc',
@@ -210,7 +207,10 @@
         'renderer/resources/extensions/file_browser_handler_custom_bindings.js',
         'renderer/resources/extensions/file_browser_private_custom_bindings.js',
         'renderer/resources/extensions/file_system_custom_bindings.js',
+        'renderer/resources/extensions/file_system_provider_custom_bindings.js',
+        'renderer/resources/extensions/gcm_custom_bindings.js',
         'renderer/resources/extensions/greasemonkey_api.js',
+        'renderer/resources/extensions/identity_custom_bindings.js',
         'renderer/resources/extensions/input.ime_custom_bindings.js',
         'renderer/resources/extensions/json_schema.js',
         'renderer/resources/extensions/last_error.js',
@@ -387,6 +387,8 @@
         }],
         ['enable_webrtc==0', {
           'sources!': [
+            'renderer/extensions/webrtc_native_handler.cc',
+            'renderer/extensions/webrtc_native_handler.h',
             'renderer/media/chrome_webrtc_log_message_delegate.cc',
             'renderer/media/chrome_webrtc_log_message_delegate.h',
             'renderer/media/webrtc_logging_message_filter.cc',
@@ -399,11 +401,6 @@
           ],
           'dependencies!': [
             '../third_party/hunspell/hunspell.gyp:hunspell',
-          ],
-        }],
-        ['chromeos==1', {
-          'sources': [
-            'renderer/resources/extensions/wallpaper_custom_bindings.js',
           ],
         }],
         ['OS=="mac"', {
@@ -436,7 +433,6 @@
             'renderer/extensions/chrome_v8_extension.cc',
             'renderer/extensions/chrome_v8_extension_handler.cc',
             'renderer/extensions/context_menus_custom_bindings.cc',
-            'renderer/extensions/extension_custom_bindings.cc',
             'renderer/extensions/file_browser_handler_custom_bindings.cc',
             'renderer/extensions/page_actions_custom_bindings.cc',
             'renderer/extensions/render_view_observer_natives.cc',
@@ -465,6 +461,18 @@
                 '<(allocator_target)',
               ],
             }],
+          ],
+        }],
+        ['OS != "ios"', {
+          'dependencies': [
+            # TODO(hclam): See crbug.com/298380 for details.
+            # We should isolate the APIs needed by the renderer.
+            '<(DEPTH)/chrome/common/extensions/api/api.gyp:api',
+          ],
+        }],
+        ['enable_printing!=0', {
+          'dependencies': [
+            '../printing/printing.gyp:printing',
           ],
         }],
       ],

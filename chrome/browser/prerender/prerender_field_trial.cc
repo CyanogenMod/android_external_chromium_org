@@ -74,6 +74,8 @@ const int kDefaultPrerenderServiceTimeoutMs = 1000;
 const char kSkipPrerenderLocalCanadidates[] = "SkipPrerenderLocalCandidates";
 const char kSkipPrerenderServiceCanadidates[] =
     "SkipPrerenderServiceCandidates";
+const char kDisableSessionStorageNamespaceMerging[] =
+    "DisableSessionStorageNamespaceMerging";
 
 
 void SetupPrefetchFieldTrial() {
@@ -320,7 +322,7 @@ string GetLocalPredictorSpecValue(string spec_key) {
 bool IsUnencryptedSyncEnabled(Profile* profile) {
   ProfileSyncService* service = ProfileSyncServiceFactory::GetInstance()->
       GetForProfile(profile);
-  return service && service->GetSessionModelAssociator() &&
+  return service && service->GetOpenTabsUIDelegate() &&
       !service->EncryptEverythingEnabled();
 }
 
@@ -474,6 +476,11 @@ bool SkipLocalPredictorLocalCandidates() {
 bool SkipLocalPredictorServiceCandidates() {
   return GetLocalPredictorSpecValue(kSkipPrerenderServiceCanadidates) ==
       kEnabledGroup;
+}
+
+bool ShouldMergeSessionStorageNamespaces() {
+  return GetLocalPredictorSpecValue(kDisableSessionStorageNamespaceMerging) !=
+      kDisabledGroup;
 }
 
 }  // namespace prerender

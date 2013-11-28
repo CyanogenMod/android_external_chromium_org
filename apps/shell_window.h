@@ -14,6 +14,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/console_message_level.h"
 #include "ui/base/ui_base_types.h"  // WindowShowState
 #include "ui/gfx/image/image.h"
@@ -74,6 +75,7 @@ class ShellWindowContents {
 // have a WebContents but none of the chrome of normal browser windows.
 class ShellWindow : public content::NotificationObserver,
                     public content::WebContentsDelegate,
+                    public content::WebContentsObserver,
                     public web_modal::WebContentsModalDialogManagerDelegate,
                     public extensions::ExtensionKeybindingRegistry::Delegate,
                     public extensions::IconImage::Observer {
@@ -88,6 +90,21 @@ class ShellWindow : public content::NotificationObserver,
   enum Frame {
     FRAME_CHROME,  // Chrome-style window frame.
     FRAME_NONE,  // Frameless window.
+  };
+
+  enum FullscreenType {
+    // Not fullscreen.
+    FULLSCREEN_TYPE_NONE = 0,
+
+    // Fullscreen entered by the app.window api.
+    FULLSCREEN_TYPE_WINDOW_API = 1 << 0,
+
+    // Fullscreen entered by HTML requestFullscreen().
+    FULLSCREEN_TYPE_HTML_API = 1 << 1,
+
+    // Fullscreen entered by the OS. ChromeOS uses this type of fullscreen to
+    // enter immersive fullscreen when the user hits the <F4> key.
+    FULLSCREEN_TYPE_OS = 1 << 2
   };
 
   class SizeConstraints {
@@ -263,9 +280,8 @@ class ShellWindow : public content::NotificationObserver,
   // Specifies a url for the launcher icon.
   void SetAppIconUrl(const GURL& icon_url);
 
-  // Set the region in the window that will accept input events.
-  // If |region| is NULL, then the entire window will accept input events.
-  void UpdateInputRegion(scoped_ptr<SkRegion> region);
+  // Set the window shape. Passing a NULL |region| sets the default shape.
+  void UpdateShape(scoped_ptr<SkRegion> region);
 
   // Called from the render interface to modify the draggable regions.
   void UpdateDraggableRegions(
@@ -282,9 +298,25 @@ class ShellWindow : public content::NotificationObserver,
   void Minimize();
   void Restore();
 
+  // Transitions to OS fullscreen. See FULLSCREEN_TYPE_OS for more details.
+  void OSFullscreen();
+
   // Set the minimum and maximum size that this window is allowed to be.
   void SetMinimumSize(const gfx::Size& min_size);
   void SetMaximumSize(const gfx::Size& max_size);
+
+  enum ShowType {
+    SHOW_ACTIVE,
+    SHOW_INACTIVE
+  };
+
+  // Shows the window if its contents have been painted; otherwise flags the
+  // window to be shown as soon as its contents are painted for the first time.
+  void Show(ShowType show_type);
+
+  // Hides the window. If the window was previously flagged to be shown on
+  // first paint, it will be unflagged.
+  void Hide();
 
   ShellWindowContents* shell_window_contents_for_test() {
     return shell_window_contents_.get();
@@ -294,6 +326,15 @@ class ShellWindow : public content::NotificationObserver,
   const SizeConstraints& size_constraints() const {
     return size_constraints_;
   }
+
+  // Set whether the window should stay above other windows which are not
+  // configured to be always-on-top.
+  void SetAlwaysOnTop(bool always_on_top);
+
+  // Whether the always-on-top property has been set by the chrome.app.window
+  // API. Note that the actual value of this property in the native app window
+  // will be false in fullscreen mode.
+  bool IsAlwaysOnTop() const;
 
  protected:
   virtual ~ShellWindow();
@@ -333,12 +374,19 @@ class ShellWindow : public content::NotificationObserver,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
+  virtual bool PreHandleKeyboardEvent(
+      content::WebContents* source,
+      const content::NativeWebKeyboardEvent& event,
+      bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void RequestToLockMouse(content::WebContents* web_contents,
                                   bool user_gesture,
                                   bool last_unlocked_by_target) OVERRIDE;
+
+  // content::WebContentsObserver implementation.
+  virtual void DidFirstVisuallyNonEmptyPaint(int32 page_id) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -377,6 +425,9 @@ class ShellWindow : public content::NotificationObserver,
 
   // Called when size_constraints is changed.
   void OnSizeConstraintsChanged();
+
+  // Set the fullscreen state in the native app window.
+  void SetNativeWindowFullscreen(int fullscreen_types);
 
   // extensions::ExtensionKeybindingRegistry::Delegate implementation.
   virtual extensions::ActiveTabPermissionGranter*
@@ -426,13 +477,26 @@ class ShellWindow : public content::NotificationObserver,
 
   base::WeakPtrFactory<ShellWindow> image_loader_ptr_factory_;
 
-  // Fullscreen entered by app.window api.
-  bool fullscreen_for_window_api_;
-  // Fullscreen entered by HTML requestFullscreen.
-  bool fullscreen_for_tab_;
+  // Bit field of FullscreenType.
+  int fullscreen_types_;
 
   // Size constraints on the window.
   SizeConstraints size_constraints_;
+
+  // Show has been called, so the window should be shown once the first visually
+  // non-empty paint occurs.
+  bool show_on_first_paint_;
+
+  // The first visually non-empty paint has completed.
+  bool first_paint_complete_;
+
+  // Whether the delayed Show() call was for an active or inactive window.
+  ShowType delayed_show_type_;
+
+  // Cache the desired value of the always-on-top property. When windows enter
+  // fullscreen, this property will be automatically switched off for security
+  // reasons. It is reinstated when the window exits fullscreen.
+  bool cached_always_on_top_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellWindow);
 };

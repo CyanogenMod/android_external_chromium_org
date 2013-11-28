@@ -22,6 +22,7 @@
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/file_manager/volume_manager.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -50,64 +51,6 @@ using fileapi::FileSystemURL;
 
 namespace extensions {
 namespace {
-
-// Error messages.
-const char kFileError[] = "File error %d";
-
-const DiskMountManager::Disk* GetVolumeAsDisk(const std::string& mount_path) {
-  DiskMountManager* disk_mount_manager = DiskMountManager::GetInstance();
-
-  DiskMountManager::MountPointMap::const_iterator mount_point_it =
-      disk_mount_manager->mount_points().find(mount_path);
-  if (mount_point_it == disk_mount_manager->mount_points().end())
-    return NULL;
-
-  const DiskMountManager::Disk* disk = disk_mount_manager->FindDiskBySourcePath(
-      mount_point_it->second.source_path);
-
-  return (disk && disk->is_hidden()) ? NULL : disk;
-}
-
-base::DictionaryValue* CreateValueFromDisk(
-    Profile* profile,
-    const std::string& extension_id,
-    const DiskMountManager::Disk* volume) {
-  base::DictionaryValue* volume_info = new base::DictionaryValue();
-
-  std::string mount_path;
-  if (!volume->mount_path().empty()) {
-    base::FilePath relative_mount_path;
-    file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
-        profile, extension_id, base::FilePath(volume->mount_path()),
-        &relative_mount_path);
-    mount_path = relative_mount_path.value();
-  }
-
-  volume_info->SetString("devicePath", volume->device_path());
-  volume_info->SetString("mountPath", mount_path);
-  volume_info->SetString("systemPath", volume->system_path());
-  volume_info->SetString("filePath", volume->file_path());
-  volume_info->SetString("deviceLabel", volume->device_label());
-  volume_info->SetString("driveLabel", volume->drive_label());
-  volume_info->SetString(
-      "deviceType",
-      DiskMountManager::DeviceTypeToString(volume->device_type()));
-  volume_info->SetDouble("totalSize",
-                         static_cast<double>(volume->total_size_in_bytes()));
-  volume_info->SetBoolean("isParent", volume->is_parent());
-  volume_info->SetBoolean("isReadOnly", volume->is_read_only());
-  volume_info->SetBoolean("hasMedia", volume->has_media());
-  volume_info->SetBoolean("isOnBootDevice", volume->on_boot_device());
-
-  return volume_info;
-}
-
-base::DictionaryValue* CreateDownloadsVolumeMetadata() {
-  base::DictionaryValue* volume_info = new base::DictionaryValue;
-  volume_info->SetString("mountPath", "Downloads");
-  volume_info->SetBoolean("isReadOnly", false);
-  return volume_info;
-}
 
 // Sets permissions for the Drive mount point so Files.app can access files
 // in the mount point directory. It's safe to call this function even if
@@ -296,7 +239,7 @@ void FileBrowserPrivateRequestFileSystemFunction::DidFail(
     base::PlatformFileError error_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  error_ = base::StringPrintf(kFileError, static_cast<int>(error_code));
+  error_ = base::StringPrintf("File error %d", static_cast<int>(error_code));
   SendResponse(false);
 }
 
@@ -342,8 +285,8 @@ bool FileBrowserPrivateRequestFileSystemFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  // TODO(satorux): Handle the file system ID. crbug.com/284963.
-  DCHECK_EQ("compatible", params->file_system_id);
+  // TODO(satorux): Handle the file system ID. crbug.com/322305.
+  DCHECK_EQ("compatible", params->volume_id);
 
   if (!dispatcher() || !render_view_host() || !render_view_host()->GetProcess())
     return false;
@@ -555,17 +498,23 @@ void FileBrowserPrivateValidatePathNameLengthFunction::OnFilePathLimitRetrieved(
   SendResponse(true);
 }
 
-bool FileBrowserPrivateFormatDeviceFunction::RunImpl() {
-  using extensions::api::file_browser_private::FormatDevice::Params;
+bool FileBrowserPrivateFormatVolumeFunction::RunImpl() {
+  using extensions::api::file_browser_private::FormatVolume::Params;
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  base::FilePath file_path = file_manager::util::GetLocalPathFromURL(
-      render_view_host(), GetProfile(), GURL(params->mount_path));
-  if (file_path.empty())
+  using file_manager::VolumeManager;
+  using file_manager::VolumeInfo;
+  VolumeManager* volume_manager = VolumeManager::Get(GetProfile());
+  if (!volume_manager)
     return false;
 
-  DiskMountManager::GetInstance()->FormatMountedDevice(file_path.value());
+  VolumeInfo volume_info;
+  if (!volume_manager->FindVolumeInfoById(params->volume_id, &volume_info))
+    return false;
+
+  DiskMountManager::GetInstance()->FormatMountedDevice(
+      volume_info.mount_path.AsUTF8Unsafe());
   SendResponse(true);
   return true;
 }

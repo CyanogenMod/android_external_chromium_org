@@ -587,9 +587,12 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_SAVE" desc="Used on a button to save information you are editing.">
         Save
       </message>
+      <message name="IDS_DISABLE" desc="Used for Disable on buttons">
+        Disable
+      </message>
 
       <!-- content area context menus -->
-      <if expr="is_macosx">
+      <if expr="is_macosx or is_linux">
           <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_MENU" desc="The name of the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
             Writing Direction
           </message>
@@ -2147,10 +2150,16 @@ Even if you have downloaded files from this website before, the website might ha
         <message name="IDS_CREATE_SHORTCUTS" desc="Default installation menu label">
           Create application &amp;shortcuts...
         </message>
+        <message name="IDS_CREATE_HOSTED_APP" desc="Button text for creating a hosted app from the current website">
+          Create app from this website...
+        </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_CREATE_SHORTCUTS" desc="In Title Case: Default installation menu label">
           Create Application &amp;Shortcuts...
+        </message>
+        <message name="IDS_CREATE_HOSTED_APP" desc="In Title Case: Button text for creating a hosted app from the current website">
+          Create App from this Website...
         </message>
       </if>
 
@@ -3243,6 +3252,12 @@ Public Exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS">$3<ex>24</ex></ph> bits):
       <message name="IDS_CERT_MANAGER_SERVER_IMPORT_ERROR_TITLE" desc="The title in the error dialog for Certification Authority file import errors.">
         Server Certificate Import Error
       </message>
+      <message name="IDS_CERT_MANAGER_HARDWARE_BACKED_KEY_FORMAT" desc="A format used to create label for hardware-backed keys.">
+        <ph name="KEY_NAME">$1<ex>John Doe</ex></ph> (<ph name="DEVICE">$2<ex>hardware-backed</ex></ph>)
+      </message>
+      <message name="IDS_CERT_MANAGER_HARDWARE_BACKED" desc="A device name to be used for hardware-backed keys.">
+        hardware-backed
+      </message>
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_CERT_MANAGER_IMPORT_AND_BIND_BUTTON" desc="Label for the button in the certificate manager which allows you to import certificates and bind to your device.">
           Import and Bind to Device...
@@ -3250,14 +3265,8 @@ Public Exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS">$3<ex>24</ex></ph> bits):
         <message name="IDS_CERT_MANAGER_KEY_FORMAT_LONG" desc="A longer format for keys in the wifi / vpn config dialogs.">
           <ph name="ISSUED_BY">$1<ex>Google Inc</ex></ph> [<ph name="ISSUED_TO">$2<ex>John Doe</ex></ph>]
         </message>
-        <message name="IDS_CERT_MANAGER_HARDWARE_BACKED_KEY_FORMAT" desc="A format used to create label for hardware-backed keys.">
-          <ph name="KEY_NAME">$1<ex>John Doe</ex></ph> (<ph name="DEVICE">$2<ex>hardware-backed</ex></ph>)
-        </message>
         <message name="IDS_CERT_MANAGER_HARDWARE_BACKED_KEY_FORMAT_LONG" desc="A longer format for hardware-backed keys in the wifi / vpn config dialogs.">
           <ph name="ISSUED_BY">$1<ex>Google Inc</ex></ph> [<ph name="ISSUED_TO">$2<ex>John Doe</ex></ph>] (<ph name="DEVICE">$3<ex>hardware-backed</ex></ph>)
-        </message>
-        <message name="IDS_CERT_MANAGER_HARDWARE_BACKED" desc="A device name to be used for ChromeOS device backed keys.">
-          hardware-backed
         </message>
       </if>
 
@@ -4336,6 +4345,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_READ_WRITE" desc="Permission string for access to read and write to all of the user's media galleries.">
         Access and change photos, music, and other media from your computer.
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_READ_DELETE" desc="Permission string for access to read and delete all of the user's media galleries.">
+        Access and delete photos, music, and other media from your computer.
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_READ" desc="Permission string for access to read all of the user's media galleries.">
         Access photos, music, and other media from your computer.
       </message>
@@ -4372,6 +4384,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_WEB_CONNECTABLE" desc="Permission string for allowing websites to connect to extensions.">
         Communicate with cooperating websites
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_SCREENLOCK_PRIVATE" desc="Permission string for locking an unlocking the screen.">
+        Lock and unlock the screen
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_ACTIVITY_LOG_PRIVATE" desc="Permission string for the observing other extensions' API calls">
         Monitor the behavior of other extensions, including visited URLs
       </message>
@@ -4391,7 +4406,7 @@ Make sure you do not expose any sensitive information.
         Change your search settings to: <ph name="SEARCH_HOST">$1<ex>url.search.com</ex></ph>
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_HOME_PAGE_SETTING_OVERRIDE" desc="Permission string for home page override.">
-        Change your home page to: <ph name="START_PAGE">$1<ex>home.page.com/home.html</ex></ph>
+        Change your home page to: <ph name="HOME_PAGE">$1<ex>home.page.com/home.html</ex></ph>
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_START_PAGE_SETTING_OVERRIDE" desc="Permission string for start page override.">
         Change your start page to: <ph name="START_PAGE">$1<ex>start.page.com/start.html</ex></ph>
@@ -4553,6 +4568,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_LOAD_OPTIONS_PAGE_FAILED" desc="">
         Could not load options page '<ph name="OPTIONS_PAGE">$1<ex>page.html</ex></ph>'.
+      </message>
+      <message name="IDS_EXTENSION_LOAD_INPUT_VIEW_FAILED" desc="">
+        Could not load input view '<ph name="INPUT_VIEW">$1<ex>page.html</ex></ph>'.
       </message>
       <if expr="is_win">
         <message name="IDS_EXTENSION_UNPACK_FAILED" desc="On windows, it is possible to mount a disk without the root of that disk having a drive letter.  The sandbox does not support this. See crbug/49530 .">
@@ -4916,7 +4934,7 @@ Make sure you do not expose any sensitive information.
         Keyboard shortcuts
       </message>
       <message name="IDS_EXTENSION_COMMANDS_DIALOG_TITLE" desc="Title of extension commands dialog">
-        Keyboard Shortcuts for Extensions
+        Keyboard Shortcuts for Extensions and Apps
       </message>
       <message name="IDS_EXTENSION_COMMANDS_EMPTY" desc="The heading of the extension commands dialog when there are no commands to show.">
         No extensions have keyboard shortcuts assigned.
@@ -5132,6 +5150,39 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Pack
       </message>
 
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_TITLE" desc="In Title Case: Title of the dialog shown when suspicious extensions have been disabled">
+          Suspicious Extensions Disabled
+        </message>
+      </if>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_TITLE" desc="Title of the dialog shown when suspicious extensions have been disabled">
+          Suspicious extensions disabled
+        </message>
+      </if>
+      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_AND_N_MORE" desc="Used for a count of additional items in the IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY dialog shown when suspicious extensions have been disabled, if we could not fit them all in the dialog">
+        and <ph name="NUMBER_ADDITIONAL_DISABLED">$1<ex>5</ex></ph> more
+      </message>
+      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BUTTON" desc="Text of the button on the dialog shown when suspicious extensions have been disabled">
+      OK, got it
+      </message>
+      <message name="IDS_EXTENSIONS_ADDED_WITHOUT_KNOWLEDGE" desc="Text shown in the extensions settings for items that might have been forcefully added to chrome without the user's knowledge">
+        This extension is not listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
+      </message>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_EXTENSIONS_DISABLE_DEVELOPER_MODE_TITLE" desc="In Title Case: Title of a dialog warning users they have development mode extensions running">
+          Disable Developer Mode Extensions
+        </message>
+      </if>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_EXTENSIONS_DISABLE_DEVELOPER_MODE_TITLE" desc="Title of a dialog warning users they have development mode extensions running">
+          Disable developer mode extensions
+        </message>
+      </if>
+      <message name="IDS_EXTENSIONS_DISABLE_DEVELOPER_MODE_BODY" desc="Body of a dialog warning users they have development mode extensions running">
+        Extensions running in developer mode can harm your computer. If you're not a developer, you should disable these extensions running in developer mode to stay safe.
+      </message>
+
       <!-- chrome://settings-frame/options_settings_app.html for the App Launcher Settings App -->
       <if expr="pp_ifdef('enable_settings_app')">
         <message name="IDS_SETTINGS_APP_LAUNCHER_PRODUCT_NAME" desc="Product name to use when referring to applications running in the App Launcher inside the non-browser Settings App">
@@ -5243,293 +5294,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_PLUGINS_PPAPI_UNSANDBOXED" desc="Text that indicates the plugin is an unsandboxed out-of-process PPAPI plugin.">
         PPAPI (unsandboxed)
       </message>
-
-      <!-- policy status messages -->
-      <message name="IDS_POLICY_DM_STATUS_SUCCESS" desc="Message indicating a successful device management server call.">
-        Request succeeded
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_REQUEST_INVALID" desc="Message indicating a bad request to the enterprise server.">
-        Invalid request or request parameters
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_REQUEST_FAILED" desc="Message indicating the request to the enterprise server failed in the network.">
-        Network error
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_TEMPORARY_UNAVAILABLE" desc="Message indicating a temporary problem on the enterprise server.">
-        Temporary server error
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_HTTP_STATUS_ERROR" desc="Message indicating an abnormal response code from the enterprise server.">
-        HTTP error
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_RESPONSE_DECODING_ERROR" desc="Message indicating a problem decoding a response from the enterprise server.">
-        Failed to decode response
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_MANAGEMENT_NOT_SUPPORTED" desc="Message indicating that enterprise management is not applicable to the user/device.">
-        Management not supported
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_DEVICE_NOT_FOUND" desc="Message indicating the enterprise server is missing a device record.">
-        Missing device record
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_MANAGEMENT_TOKEN_INVALID" desc="Message indicating the token used to authenticate to the enterprise server is invalid.">
-        Invalid device management token
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_ACTIVATION_PENDING" desc="Message indicating enterprise management must first be activated for this user/device.">
-        Activation is pending on the server
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_INVALID_SERIAL_NUMBER" desc="Message indicating the provided device serial number is invalid.">
-        Device serial number is invalid
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_DEVICE_ID_CONFLICT" desc="Message indicating the chosen device identifier is already used.">
-        Conflicting device identifier
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_MISSING_LICENSES" desc="Message indicating the enterprise server doesn't have enough licenses to allow management.">
-        Licenses exhausted
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_SERVICE_POLICY_NOT_FOUND" desc="Message indicating that the enterprise server failed to find the policy to be applied to the device.">
-        Policy not found
-      </message>
-      <message name="IDS_POLICY_DM_STATUS_UNKNOWN_ERROR" desc="Message indicating an unknown error from the enterprise server.">
-        Unknown error
-      </message>
-
-      <message name="IDS_POLICY_VALIDATION_OK" desc="Message indicating successful policy validation.">
-        Validation successful
-      </message>
-      <message name="IDS_POLICY_VALIDATION_BAD_INITIAL_SIGNATURE" desc="Message indicating a bad signature on policy validation using the initial key.">
-        Bad intial signature
-      </message>
-      <message name="IDS_POLICY_VALIDATION_BAD_SIGNATURE" desc="Message indicating a bad signature on policy validation.">
-        Bad signature
-      </message>
-      <message name="IDS_POLICY_VALIDATION_ERROR_CODE_PRESENT" desc="Message indicating policy validation failure due to an error code in the policy.">
-        Error code present in the policy response
-      </message>
-      <message name="IDS_POLICY_VALIDATION_PAYLOAD_PARSE_ERROR" desc="Message indicating a policy parse error during policy validation.">
-        Error parsing policy
-      </message>
-      <message name="IDS_POLICY_VALIDATION_WRONG_POLICY_TYPE" desc="Message indicating the policy did not have the expected type.">
-        Wrong policy type
-      </message>
-      <message name="IDS_POLICY_VALIDATION_WRONG_SETTINGS_ENTITY_ID" desc="Message indicating the policy did not have the expected entity identifier.">
-        Wrong entity identifier
-      </message>
-      <message name="IDS_POLICY_VALIDATION_BAD_TIMESTAMP" desc="Message indicating the policy timestamp is bad.">
-        Bad policy timestamp
-      </message>
-      <message name="IDS_POLICY_VALIDATION_WRONG_TOKEN" desc="Message indicating the policy token is different from the one expected.">
-        Returned policy token doesn't match current token
-      </message>
-      <message name="IDS_POLICY_VALIDATION_BAD_USERNAME" desc="Message indicating policy validation failed due to bad username/domain.">
-        Wrong policy subject
-      </message>
-      <message name="IDS_POLICY_VALIDATION_POLICY_PARSE_ERROR" desc="Message indicating a parse error in policy.">
-        Error parsing policy settings
-      </message>
-      <message name="IDS_POLICY_VALIDATION_UNKNOWN_ERROR" desc="Message indicating unknown error in policy validation.">
-        Unknown error
-      </message>
-
-      <message name="IDS_POLICY_STORE_STATUS_OK" desc="Message indicating a healthy policy store.">
-        Policy cache OK
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_LOAD_ERROR" desc="Message indicating a failure to load policy.">
-        Failed to load policy settings
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_STORE_ERROR" desc="Message indicating a failure to store policy.">
-        Failed to store policy settings
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_PARSE_ERROR" desc="Message indicating a parse error on loading policy">
-        Policy parse error
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_SERIALIZE_ERROR" desc="Message indicating an error preparing policy for storage.">
-        Serialization error
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_VALIDATION_ERROR" desc="Message indicating policy validation on store/load failed.">
-        Validation error: <ph name="VALIDATION_ERROR">$1<ex>Bad signature</ex></ph>.
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_BAD_STATE" desc="Message indicating policy cannot be stored/loaded due to the backend being in bad state.">
-        Backing store in bad state
-      </message>
-      <message name="IDS_POLICY_STORE_STATUS_UNKNOWN_ERROR" desc="Message indicating an unknown error with the policy cache.">
-        Unknown error
-      </message>
-
-      <message name="IDS_POLICY_TYPE_ERROR" desc="The text displayed in the status column when a policy value has the wrong type.">
-        Expected <ph name="VALUE_TYPE">$1<ex>boolean</ex></ph> value.
-      </message>
-      <message name="IDS_POLICY_OUT_OF_RANGE_ERROR" desc="The text displayed in the status column when a policy value is out of range.">
-        Value is out of range <ph name="VALUE">$1<ex>10</ex></ph>.
-      </message>
-      <message name="IDS_POLICY_VALUE_FORMAT_ERROR" desc="The text displayed in the status column when a policy value doesn't match the expected format.">
-        Value doesn't match format.
-      </message>
-      <message name="IDS_POLICY_DEFAULT_SEARCH_DISABLED" desc="The text displayed in the status column when a policy value has been ignored because default search has been disabled.">
-        Ignored because default search is disabled by policy.
-      </message>
-      <message name="IDS_POLICY_NOT_SPECIFIED_ERROR" desc="The text displayed in the status column when a policy value should have been specified but wasn't.">
-        Must be specified.
-      </message>
-      <message name="IDS_POLICY_SUBKEY_ERROR" desc="The text displayed in the status column for errors in a subkey of a policy.">
-        Key "<ph name="SUBKEY">$1<ex>ProxyMode</ex></ph>": <ph name="ERROR">$2<ex>Must be specified.</ex></ph>
-      </message>
-      <message name="IDS_POLICY_LIST_ENTRY_ERROR" desc="The text displayed in the status column for errors in list entry in a policy.">
-        List entry "<ph name="ENTRY_INDEX">$1<ex>3</ex></ph>": <ph name="ERROR">$2<ex>Value is out of range.</ex></ph>
-      </message>
-      <message name="IDS_POLICY_INVALID_SEARCH_URL_ERROR" desc="The text displayed in the status column when a the URL given for DefaultSearchProviderSearchURL is invalid.">
-        Invalid search URL.
-      </message>
-      <message name="IDS_POLICY_INVALID_PROXY_MODE_ERROR" desc="The text displayed in the status column when the value for ProxyMode is invalid.">
-        Invalid proxy mode.
-      </message>
-      <message name="IDS_POLICY_PROXY_MODE_DISABLED_ERROR" desc="The text displayed in the status column when use of a proxy is disabled but a proxy configuration is given.">
-        Use of a proxy is disabled but an explicit proxy configuration is specified.
-      </message>
-      <message name="IDS_POLICY_PROXY_MODE_AUTO_DETECT_ERROR" desc="The text displayed in the status column when the proxy is set to auto configured but a proxy configuration is given.">
-        Proxy is set to auto configured.
-      </message>
-      <message name="IDS_POLICY_PROXY_MODE_PAC_URL_ERROR" desc="The text displayed in the status column when the proxy configuration is set to use a .pac script URL but policies only for fixed proxy servers are also specified.">
-        Proxy configuration is set to use a .pac script URL, not fixed proxy servers.
-      </message>
-      <message name="IDS_POLICY_PROXY_MODE_FIXED_SERVERS_ERROR" desc="The text displayed in the status column when the proxy configuration is set to use fixed proxy servers but an alternate configuration is given.">
-        Proxy is set to use fixed proxy servers, not a .pac script URL.
-      </message>
-      <message name="IDS_POLICY_PROXY_MODE_SYSTEM_ERROR" desc="The text displayed in the status column when the proxy configuration is set to use system settings but an alternate configuration is given.">
-        System proxy settings are set to be used but an explicit proxy configuration is also specified.
-      </message>
-      <message name="IDS_POLICY_PROXY_BOTH_SPECIFIED_ERROR" desc="The text displayed in the status column when both fixed proxy servers and .pac url are specified.">
-        Both fixed proxy servers and a .pac script URL are specified.
-      </message>
-      <message name="IDS_POLICY_PROXY_NEITHER_SPECIFIED_ERROR" desc="The text displayed in the status column when neither a fixed proxy servers or a .pac url are specified.">
-        Neither fixed proxy servers nor a .pac script URL are specified.
-      </message>
-      <message name="IDS_POLICY_OVERRIDDEN" desc="The text displayed in the status column when the corresponding policy is being ignored because another policy is overriding it.">
-        Ignored because it was overridden by <ph name="POLICY_NAME">$1<ex>ProxyMode</ex></ph>.
-      </message>
-      <message name="IDS_POLICY_DEPRECATED" desc="The text displayed in the status column when the corresponding policy is deprecated.">
-        This policy has been deprecated.
-      </message>
-      <message name="IDS_POLICY_VALUE_DEPRECATED" desc="The text displayed in the status column when a specific value for a policy is deprecated.">
-        This value is deprecated for this policy.
-      </message>
-      <message name="IDS_POLICY_NETWORK_CONFIG_PARSE_FAILED" desc="The text displayed in the status column when the corresponding network configuration policy failed to parse.">
-        Network configuration failed to be parsed.
-      </message>
-      <message name="IDS_POLICY_NETWORK_CONFIG_IMPORT_PARTIAL" desc="The text displayed in the status column when the corresponding network configuration policy is not standard conform and was imported partially.">
-        The network configuration doesn't comply to the ONC standard. Parts of the configuration may not be imported.
-      </message>
-      <message name="IDS_POLICY_NETWORK_CONFIG_IMPORT_FAILED" desc="The text displayed in the status column when the corresponding network configuration policy is invalid.">
-        The network configuration is invalid and couldn't be imported.
-      </message>
-      <message name="IDS_POLICY_JSON_PARSE_ERROR" desc="The text displayed in the status column when a policy that should have been specified in JSON format could not be parsed.">
-        Failed to parse JSON format: <ph name="JSON_PARSE_ERROR">$1<ex>Unexpected token.</ex></ph>
-      </message>
-      <message name="IDS_POLICY_OK" desc="Text displayed in the status column when a valid value is set for a policy.">
-        OK
-      </message>
-      <message name="IDS_POLICY_UNSET" desc="Text displayed in the status column when no value is set for a policy.">
-        Not set.
-      </message>
-      <message name="IDS_POLICY_UNKNOWN" desc="Text displayed in the status column when a policy name is not recognized.">
-        Unknown policy.
-      </message>
-      <message name="IDS_POLICY_INVALID_BOOKMARK" desc="Text displayed in the status column when an entry of the ManagedBookmarks policy is not a valid bookmark.">
-        Ignored invalid bookmark at index <ph name="ENTRY_INDEX">$1<ex>3</ex></ph>
-      </message>
-
-      <!-- chrome://policy -->
-      <message name="IDS_POLICY_TITLE" desc="Page title and the title of the section that lists policies.">
-        Policies
-      </message>
-      <message name="IDS_POLICY_FILTER_PLACEHOLDER" desc="Placeholder for the input field that lets the user filter policies by name.">
-        Filter policies by name
-      </message>
-      <message name="IDS_POLICY_RELOAD_POLICIES" desc="Label for the button that reloads policies.">
-        Reload policies
-      </message>
-      <message name="IDS_POLICY_STATUS" desc="Title of the status section.">
-        Status
-      </message>
-      <message name="IDS_POLICY_STATUS_DEVICE" desc="Title for the device policy status box.">
-        Device policies
-      </message>
-      <message name="IDS_POLICY_STATUS_USER" desc="Title for the user policy status box.">
-        User policies
-      </message>
-      <message name="IDS_POLICY_LABEL_DOMAIN" desc="Label for the enrollment domain in the device policy status box.">
-        Enrollment domain:
-      </message>
-      <message name="IDS_POLICY_LABEL_USERNAME" desc="Label for the username in the user policy status box.">
-        User:
-      </message>
-      <message name="IDS_POLICY_LABEL_CLIENT_ID" desc="Label for the client IDs in the policy status boxes.">
-        Client ID:
-      </message>
-      <message name="IDS_POLICY_LABEL_TIME_SINCE_LAST_REFRESH" desc="Label for the time since the last refresh in the policy status boxes.">
-        Last fetched:
-      </message>
-      <message name="IDS_POLICY_NEVER_FETCHED" desc="Indicates that a policy fetch was never performed before.">
-        Never
-      </message>
-      <message name="IDS_POLICY_LABEL_REFRESH_INTERVAL" desc="Label for the refresh interval in the policy status boxes.">
-        Fetch interval:
-      </message>
-      <message name="IDS_POLICY_LABEL_STATUS" desc="Label for the actual status in the policy status boxes.">
-        Status:
-      </message>
-      <message name="IDS_POLICY_SHOW_UNSET" desc="Label for the checkbox that determines whether policies whose value has not been set are shown.">
-        Show policies with no value set
-      </message>
-      <message name="IDS_POLICY_NO_POLICIES_SET" desc="Text displayed when none of the policies have been set.">
-        No policies set
-      </message>
-      <message name="IDS_POLICY_HEADER_SCOPE" desc="Table header for the column in the policy table that details whether a policy is a user or a device policy.">
-        Applies to
-      </message>
-      <message name="IDS_POLICY_HEADER_LEVEL" desc="Table header for the column in the policy table that details whether a policy is mandatory or recommended.">
-        Level
-      </message>
-      <message name="IDS_POLICY_HEADER_NAME" desc="Table header for the column in the policy table that contains the policy name.">
-        Policy name
-      </message>
-      <message name="IDS_POLICY_HEADER_VALUE" desc="Table header for the column in the policy table that contains the policy value.">
-        Policy value
-      </message>
-      <message name="IDS_POLICY_HEADER_STATUS" desc="Table header for the column in policy table that contains the policy status.">
-        Status
-      </message>
-      <message name="IDS_POLICY_SHOW_EXPANDED_VALUE" desc="Text for the link that shows the policy value. Used when the policy value is too long to be always visible.">
-        Show value
-      </message>
-      <message name="IDS_POLICY_HIDE_EXPANDED_VALUE" desc="Text for the link that hides the policy value. Used when the policy value is too long to be always visible.">
-        Hide value
-      </message>
-      <message name="IDS_POLICY_SCOPE_USER" desc="Text displayed in the Applies to column when a policy applies to the current user only.">
-        Current user
-      </message>
-      <if expr="not is_android and not pp_ifdef('chromeos')">
-        <message name="IDS_POLICY_SCOPE_DEVICE" desc="Text displayed in the Applies to column when a policy applies to everyone on the machine.">
-          Machine
-        </message>
-      </if>
-      <if expr="pp_ifdef('chromeos') or is_android">
-        <message name="IDS_POLICY_SCOPE_DEVICE" desc="Mobile: Text displayed in the Applies To column when a policy applies to everyone on the device.">
-          Device
-        </message>
-      </if>
-      <message name="IDS_POLICY_LEVEL_RECOMMENDED" desc="Text displayed in the Level column when a policy is recommended.">
-        Recommended
-      </message>
-      <message name="IDS_POLICY_LEVEL_MANDATORY" desc="Text displayed in the Level column when a policy is mandatory.">
-        Mandatory
-      </message>
-
-      <if expr="is_android">
-        <message name="IDS_POLICY_MANAGED_BOOKMARKS" desc="Mobile: name of the managed bookmarks folder">
-          <ph name="DOMAIN">$1<ex>google.com</ex></ph> bookmarks
-        </message>
-        <message name="IDS_POLICY_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="Mobile: name of the managed bookmarks folder when the management domain can't be determined.">
-          Managed bookmarks
-        </message>
-      </if>
 
       <!-- about:flags -->
       <message name="IDS_FLAGS_LONG_TITLE" desc="Long version of the title for the about:flags page.">
@@ -5805,6 +5569,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_DESCRIPTION" desc="Description of the 'Universal accelerated overflow scroll mode' lab.">
         Puts scrolling content in composited layers, even in those cases where promoting the overflow scrolling element to a stacking context and a containing block would have broken stacking or clipping.
       </message>
+      <message name="IDS_FLAGS_LAYER_SQUASHING_NAME" desc="Name of the 'Layer squashing' lab.">
+        Layer squashing
+      </message>
+      <message name="IDS_FLAGS_LAYER_SQUASHING_DESCRIPTION" desc="Description of the 'layer squashing' lab.">
+        Layers that overlap other composited content need to be composited as well, to ensure correct paint order. This feature enables Blink to paint multiple RenderLayer
+        subtrees into one composited layer so that we may be able to avoid unnecessarily large number of composited layers.
+      </message>
       <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_CANVAS_FEATURES_NAME" desc="Name of the 'Enable experimental canvas features' lab.">
         Enable experimental canvas features
       </message>
@@ -5865,12 +5636,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_APP_WINDOW_CONTROLS_DESCRIPTION" desc="Description of the 'Enable 'window-controls' element' lab.">
         Enables using 'window-controls' HTML elements in packaged apps.
       </message>
-      <message name="IDS_FLAGS_DISABLE_BATCHED_SHUTDOWN_DESCRIPTION" desc="Description of the 'Batched shutdown' lab.">
-        Disables delaying closing browser windows during shutdown until shutdown is no longer cancellable.
-      </message>
-      <message name="IDS_FLAGS_DISABLE_BATCHED_SHUTDOWN_NAME" desc="Name of the 'Batched shutdown' lab.">
-        Disable batched browser shutdown
-      </message>
       <message name="IDS_FLAGS_SCRIPT_BADGES_NAME" desc="Name of the 'Script Badges' lab.">
         Script badges
       </message>
@@ -5926,29 +5691,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_NTP_SUGGESTIONS_PAGE_DESCRIPTION" desc="Description of the 'Enable suggestions page' lab.">
         Add 'Suggestions' card to the new tab page, which suggests the pages to be opened.
       </message>
-      <message name="IDS_FLAGS_ENABLE_IME_MODE_INDICATOR" desc="Title for the flag to enable the new indicator for the active keyboard input mode.">
-        Enable the new indicator for the active keyboard input method
+      <message name="IDS_FLAGS_DISABLE_IME_MODE_INDICATOR" desc="Title for the flag to disable the new indicator for the active keyboard input mode.">
+        Disable the new indicator for the active keyboard input method
       </message>
-      <message name="IDS_FLAGS_ENABLE_IME_MODE_INDICATOR_DESCRIPTION" desc="Description for the flag to enable the new indicator for the active keyboard input method.">
-        Shows the active input method near the caret when switching between keyboard input methods.
+      <message name="IDS_FLAGS_DISABLE_IME_MODE_INDICATOR_DESCRIPTION" desc="Description for the flag to disable the new indicator for the active keyboard input method.">
+        Disable the input method indicator shown near the caret when switching between keyboard input methods.
       </message>
       <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API" desc="Title for the flag to enable the Instant extended API.">
         Enable Instant Extended API
       </message>
       <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
         Enables the Instant Extended API which provides a deeper integration with your default search provider, including a renovated New Tab Page, extracting search query terms in the omnibox, a spruced-up omnibox dropdown and Instant previews of search results as you type in the omnibox.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_CACHEABLE_NTP" desc="Title for the flag to enable the cacheable New Tab page for Instant extended.">
-        Cacheable New Tab page for Instant Extended.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_CACHEABLE_NTP_DESCRIPTION" desc="Description for the flag to enable the cacheable New Tab page for Instant extended.">
-        Use the cacheable New Tab page for Instant Extended.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP" desc="Title for the flag to enable the local first load NTP.">
-        Enable local first-load NTP in Instant Extended.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
-        Whether or not the first New Tab Page load of a new window will automatically fall back to the local page when Instant Extended is enabled.
       </message>
       <message name="IDS_FLAGS_ENABLE_NEW_NTP" desc="Title for the flag to enable the new NTP.">
         Enable the new NTP.
@@ -6329,11 +6082,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Enable non-compositing decoding in MediaDrm by default for Encrypted Media Extensions.
         </message>
       </if>
-      <message name="IDS_FLAGS_ENABLE_OPUS_PLAYBACK_NAME" desc="Title for the flag to enable Opus playback in &lt;video&gt; elements.">
-        Enable Opus playback in &lt;video&gt; elements.
+      <message name="IDS_FLAGS_DISABLE_OPUS_PLAYBACK_NAME" desc="Title for the flag to disable Opus playback in &lt;video&gt; elements.">
+        Disable Opus playback in &lt;video&gt; elements.
       </message>
-      <message name="IDS_FLAGS_ENABLE_OPUS_PLAYBACK_DESCRIPTION" desc="Description for the flag to enable Opus playback in &lt;video&gt; elements.">
-        Enable experimental Opus playback in the video element.
+      <message name="IDS_FLAGS_DISABLE_OPUS_PLAYBACK_DESCRIPTION" desc="Description for the flag to disable Opus playback in &lt;video&gt; elements.">
+        Disable experimental Opus playback in the video element.
       </message>
       <message name="IDS_FLAGS_DISABLE_VP8_ALPHA_PLAYBACK_NAME" desc="Title for the flag to disable VP8 Alpha playback in &lt;video&gt; elements.">
         Disable VP8 Alpha playback in &lt;video&gt; elements.
@@ -6389,6 +6142,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE_DESCRIPTION" desc="Title for the full multi profile mode flag.">
         Enable side-by-side multi profile mode in which all browser and app windows share the same workspace.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_MULTI_USER_TRAY" desc="Title for the full multi profile tray flag.">
+        Enable multi profile tray
+      </message>
+      <message name="IDS_FLAGS_ENABLE_MULTI_USER_TRAY_DESCRIPTION" desc="Title for showing/hiding the multi profile icons in the system tray.">
+        Show in the system tray the icons for all logged in users.
       </message>
       <message name="IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME" desc="Title for a flag for audio switching.">
         Audio input/output menu
@@ -6499,11 +6258,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SPELLCHECK_AUTOCORRECT_DESCRIPTION" desc="Description for the flag to force synchronous spellchecking.">
         Turn on autocorrection of text while typing. Synchronous spellchecking is not compatible with this feature.
       </message>
-      <message name="IDS_FLAGS_DOCKED_WINDOWS_NAME" desc="Name for the flag to enable docked windows feature.">
-        Enable docking of windows near screen edges.
+      <message name="IDS_FLAGS_DOCKED_WINDOWS_NAME" desc="Name for the flag to disable docked windows feature.">
+        Disable docking of windows near screen edges.
       </message>
-      <message name="IDS_FLAGS_DOCKED_WINDOWS_DESCRIPTION" desc="Description for the flag to enable docked windows feature.">
-        Turns on docking of windows near screen edges, a feature that provides an easier way to interact with panel and other small windows.
+      <message name="IDS_FLAGS_DOCKED_WINDOWS_DESCRIPTION" desc="Description for the flag to disable docked windows feature.">
+        Turns off docking of windows near screen edges, a feature that provides an easier way to interact with panel and other small windows.
+      </message>
+      <message name="IDS_FLAGS_IMMERSIVE_FULLSCREEN_FOR_ALL_WINDOWS_NAME" desc="Name for the flag to enable immersive fullscreen for all windows.">
+        Enable immersive fullscreen for non browser windows.
+      </message>
+      <message name="IDS_FLAGS_IMMERSIVE_FULLSCREEN_FOR_ALL_WINDOWS_DESCRIPTION" desc="Description for the flag enable immersive fullscreen for all windows.">
+        Sets non-browser windows (apps, task manager) to use immersive fullscreen when fullscreened via the F4 key.
       </message>
       <message name="IDS_FLAGS_SHOW_SHELF_ALIGNMENT_MENU_NAME" desc="Name for the flag to show a menu that lets you change the alignment of the shelf.">
         Show shelf alignment menu.
@@ -6524,7 +6289,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SHOW_TOUCH_HUD_DESCRIPTION" desc="Description for the flag to show a heads-up display for tracking touch-points.">
         Enables a heads-up display at the top-left corner of the screen that lists information about the touch-points on the screen.
       </message>
-
+      <message name="IDS_MULTIPLE_SNAP_WINDOW_WIDTHS_NAME" desc="Name for the flag for allowing side maximizing a window to several widths">
+        Allow a window to be side maximized to several widths.
+      </message>
+      <message name="IDS_MULTIPLE_SNAP_WINDOW_WIDTHS_DESCRIPTION" desc="Description for the flag for allowing side maximizing a window to several widths.">
+        Allow a window to be side maximized to several widths. The width is selected based on how far beyond the edge of the screen a window is dragged.
+      </message>
       <message name="IDS_FLAGS_ALLOW_NACL_SOCKET_API_NAME" desc="Name for the NaCl Socket API feature.">
         NaCl Socket API.
       </message>
@@ -6542,12 +6312,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_PINCH_VIRTUAL_VIEWPORT_DESCRIPTION" desc="Description of the flag to turn on experimental pinch virtual viewport.">
         When zoomed in, fixed-position elements and scaled scrollbars attach to this viewport.
-      </message>
-      <message name="IDS_FLAGS_VIEWS_TEXTFIELD_NAME" desc="Name of the flag to use NativeTextfieldViews or NativeTextfieldWin.">
-        Views Textfield.
-      </message>
-      <message name="IDS_FLAGS_VIEWS_TEXTFIELD_DESCRIPTION" desc="Description of the flag to use NativeTextfieldViews or NativeTextfieldWin.">
-        An experimental textfield for application UI; does not affect web content.
       </message>
       <message name="IDS_FLAGS_ENABLE_CONTACTS_NAME" desc="Name of the 'Enable contacts' lab.">
         Enable contacts integration.
@@ -6568,15 +6332,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_FLAGS_DISABLE_BOOT_ANIMATION_DESCRIPTION" desc="Description for the flag to disable wallpaper boot animation (except for OOBE).">
           Disables wallpaper boot animation (except for OOBE case).
-        </message>
-        <message name="IDS_FLAGS_CAPTIVE_PORTAL_DETECTOR_NAME" desc="Name for the flag to set to enable Chrome Captive Portal detector.">
-          Captive Portal detector.
-        </message>
-        <message name="IDS_FLAGS_CAPTIVE_PORTAL_DETECTOR_DESCRIPTION" desc="Description for the flag to set to enable Chrome's Captive Portal Detector on the sign-in screen.">
-          Change Captive Portal detector.
-        </message>
-        <message name="IDS_FLAGS_SHILL_CAPTIVE_PORTAL_DETECTOR" desc="Description for the option of Captive Portal detector.">
-          Shill Captive Portal detector
         </message>
         <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_NAME" desc="Name for the flag to enable sticky keys.">
           Enable sticky keys.
@@ -6645,12 +6400,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION" desc="Description of the flag for the password manager reauthentication option.">
         Prompt the user for their OS password before revealing passwords on the passwords page.
       </message>
-      <message name="IDS_FLAGS_ENABLE_PEOPLE_SEARCH_NAME" desc="Name of the flag to enable people search.">
-        Enable people search.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_PEOPLE_SEARCH_DESCRIPTION" desc="Description of flag to enable people search.">
-        Enable searching for people directly from the apps list search.
-      </message>
       <message name="IDS_FLAGS_PERFORMANCE_MONITOR_GATHERING_NAME" desc="Name for the flag to enable Performance Monitor.">
         Enable performance monitoring
       </message>
@@ -6662,6 +6411,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_DESCRIPTION" desc="Description for the flag to enable rich notifications.">
         Enable rich templated notifications. Both HTML5 notifications and app notifications will be shown through new Notification Center.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_NOTIFICATION_UI_NAME" desc="Name of the flag to enable experimental UI for notifications.">
+        Enable experimental UI for Notifications
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_NOTIFICATION_UI_DESCRIPTION" desc="Description for the flag to enable experimental UI for notifications.">
+        Used for various Notification Center features under construction/polish that are not yet ready to be shipped.
       </message>
       <message name="IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_NAME" desc="Name of the flag to enable synced notifications.">
         Enable Synced Notifications
@@ -6854,6 +6609,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_APP_LIST_START_PAGE_DESCRIPTION" desc="Description of the flag to enable the start page of app launcher.">
           Enable the app launcher start page. If enabled, app launcher will show a start page in addition to the apps grid.
         </message>
+        <message name="IDS_FLAGS_ENABLE_APP_LIST_FOLDER" desc="Name of the flag to enable app list folder.">
+          Enable the app list folder.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_APP_LIST_FOLDER_DESCRIPTION" desc="Description of the flag to enable the app list folder.">
+          Enable the app list folder. If enabled, user will be able to create app list folder by drag-and-drop.
+        </message>
       </if>
       <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_NAME" desc="Name of the flag to disable sync of user account image.">
         Disable avatar sync.
@@ -6862,11 +6623,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Disables sync of user account image between different ChromeOS devices.
       </message>
       <if expr="pp_ifdef('chromeos')">
-        <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_NAME" desc="Name of the flag to enable new first-run UI.">
-          Enable new first-run UI.
+        <message name="IDS_FLAGS_DISABLE_FIRST_RUN_UI_NAME" desc="Name of the flag to disable new first-run UI.">
+          Disable new first-run UI.
         </message>
-        <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_DESCRIPTION" desc="Description for the flag to enable new first-run UI.">
-          If enabled, overlay tutorial will be shown after first login.
+        <message name="IDS_FLAGS_DISABLE_FIRST_RUN_UI_DESCRIPTION" desc="Description for the flag to disable new first-run UI.">
+          If disabled, overlay tutorial won't be shown after first login.
         </message>
       </if>
       <message name="IDS_FLAGS_HIDPI_NAME" desc="Name of flag to enable/disable HiDPI Support.">
@@ -6899,6 +6660,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_EPHEMERAL_APPS_DESCRIPTION" desc="Description for the flag to enable ephemeral apps.">
         Enables experimentation with ephemeral apps, which are launched without installing in Chrome.
       </message>
+      <message name="IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_NAME" desc="Name of the flag to enable linkable ephemeral apps.">
+        Enable experimental linkable ephemeral apps.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_DESCRIPTION" desc="Description for the flag to enable linkable ephemeral apps.">
+        Enables experimentation with launching ephemeral apps from hyperlinks. For example, links to Chrome Web Store app detail pages in Google search results will launch the app rather than navigate to the detail page.
+      </message>
       <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_NAME" desc="Name of the flag to enable streamlined ServiceWorker.">
         Enable support for ServiceWorker.
       </message>
@@ -6912,12 +6679,36 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_DISABLE_CLICK_DELAY_DESCRIPTION" desc="Description of the flag to disable the click delay.">
           Always send click events immediate upon a tap, even when it's part of a double-tap gesture.  This speeds up navigation and other tap actions by 300ms on most pages, but means links and buttons must be avoided when double tapping to zoom.
         </message>
+        <message name="IDS_FLAGS_LOW_END_DEVICE_MODE_DESCRIPTION" desc="Description of the flag to tweak low end device optimizations.">
+          Overrides low end device optimizations.
+        </message>
+        <message name="IDS_FLAGS_LOW_END_DEVICE_MODE_NAME" desc="Name of the flag to tweak low end device optimizations.">
+          Low end device mode.
+        </message>
       </if>
       <message name="IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_NAME" desc="Name of the flag to enable the new Translate UX.">
         Enable the new Translate UX.
       </message>
       <message name="IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_DESCRIPTION" desc="Description for the flag to enable the new Translate UX.">
         Enable the new Translate bubble UX is offered instead of the infobar.
+      </message>
+    <message name="IDS_FLAGS_DISABLE_VIEWS_RECT_BASED_TARGETING_NAME" desc="Name of about:flags option to disable rect-based targeting in views">
+      Disable rect-based targeting in views
+    </message>
+    <message name="IDS_FLAGS_DISABLE_VIEWS_RECT_BASED_TARGETING_DESCRIPTION" desc="Description of about:flags option to disable rect-based targeting in views">
+      Disables rect-based targeting in views. Rect-based targeting uses a heuristic to determine the most probable target of a gesture, where the touch region is represented by a rectangle.
+    </message>
+      <message name="IDS_FLAGS_ENABLE_APPS_SHOW_ON_FIRST_PAINT_NAME" desc="Name of the flag to enable show-on-first-paint for apps.">
+        Enable show-on-first-paint for apps.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_APPS_SHOW_ON_FIRST_PAINT_DESCRIPTION" desc="Description of flag to enable show-on-first-paint for apps.">
+        Show apps windows after the first paint. Windows will be shown significantly later for heavy apps loading resources synchronously but it will be insignificant for apps that load most of their resources asynchronously.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_ENHANCED_BOOKMARKS_NAME" desc="Name of about:flags option to enable Enhanced Bookmarks extension.">
+        Enable Enhanced Bookmarks
+      </message>
+      <message name="IDS_FLAGS_ENABLE_ENHANCED_BOOKMARKS_DESCRIPTION" desc="Description of about:flags option to enable Enhanced Bookmarks extension.">
+        Provides an off switch for enhanced bookmarks experiment
       </message>
 
       <!-- Crashes -->
@@ -7663,11 +7454,14 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <message name="IDS_PASSWORD_MANAGER_BLACKLIST_BUTTON" desc="Button text for the 'Save Password' infobar's 'Never remember for this site' option">
           Never for this site
         </message>
-        <message name="IDS_PASSWORD_MANAGER_BLACKLIST_DROP_DOWN" desc="Text for the 'Save Password' bubble's 'Never remember passwords for this site' option">
-          Never remember passwords for this site
+        <message name="IDS_PASSWORD_MANAGER_CANCEL_BUTTON" desc="Text for the 'Manage Passwords' bubble's 'Not now' option">
+          Not now
         </message>
-        <message name="IDS_PASSWORD_MANAGER_CANCEL_DROP_DOWN" desc="Text for the 'Save Password' bubble's 'Nope' option">
-          Nope
+        <message name="IDS_PASSWORD_MANAGER_TOOLTIP_SAVE" desc="Text for the 'Manage Passwords' icon's 'password to be saved' state">
+          Save your password
+        </message>
+        <message name="IDS_PASSWORD_MANAGER_TOOLTIP_MANAGE" desc="Text for the 'Manage Passwords' icon's 'saving passwords' state">
+          Manage your passwords
         </message>
       </if>
       <if expr="is_android">
@@ -7812,11 +7606,14 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_FEEDBACK_SCREENSHOT_LABEL" desc="Label for the screenshot field if current screenshots are being shown">
         Include this screenshot:
       </message>
-      <message name="IDS_FEEDBACK_INCLUDE_PERFORMANCE_TRACE_CHECKBOX" desc="Checkbox for including system information on the bug report dialog box">
+      <message name="IDS_FEEDBACK_INCLUDE_PERFORMANCE_TRACE_CHECKBOX" desc="Checkbox for including system performance data on the bug report dialog box">
         Send performance trace data
       </message>
       <message name="IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX" desc="Checkbox for including system information on the bug report dialog box">
         Send system information
+      </message>
+      <message name="IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_AND_METRICS_CHKBOX" desc="Checkbox for including system information and metrics on the bug report dialog box">
+        Send <ph name="BEGIN_LINK1">&lt;a href="#" id="sys-info-url"&gt;</ph>system information<ph name="END_LINK1">&lt;/a&gt;</ph> and <ph name="BEGIN_LINK2">&lt;a href="#" id="histograms-url"&gt;</ph>metrics<ph name="END_LINK2">&lt;/a&gt;</ph>
       </message>
       <message name="IDS_FEEDBACK_ATTACH_FILE_NOTE" desc="Text for describing the maximum size for an attached file">
         The attached file is uploaded to Google servers for debugging.
@@ -8082,6 +7879,12 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_POPUP_BLOCK_RADIO" desc="A radio button in the Content Settings dialog for preventing showing pop-up windows on any sites.">
         Do not allow any site to show pop-ups (recommended)
+      </message>
+      <message name="IDS_POPUPS_BLOCKED_INFOBAR_BUTTON_SHOW" desc="Pop-up Blocking Show Button [CHAR-LIMIT=32]">
+        Always show
+      </message>
+      <message name="IDS_POPUPS_BLOCKED_INFOBAR_TEXT" desc="Pop-up Blocking Title [CHAR-LIMIT=32]">
+        Pop-ups blocked (<ph name="POP_UP_COUNT">$1<ex>3</ex></ph>)
       </message>
       <message name="IDS_PLUGIN_TAB_LABEL" desc="Label for Plug-ins tab on Content Settings dialog">
         Plug-ins
@@ -8648,6 +8451,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_PRINT_PREVIEW_NO_DESTS_PROMO_NOT_NOW_BUTTON_LABEL" desc="Label of button to cancel the Google Cloud Print promotion.">
         Not now
+      </message>
+      <message name="IDS_PRINT_PREVIEW_COULD_NOT_PRINT" desc="Error message when printing fails in the print preview">
+        Printing failed. Please check your printer and try again.
       </message>
 
       <!-- Load State -->
@@ -10074,7 +9880,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS_STARTUP_ADD_LABEL" desc="The text labelling the add row in the custom startup urls list">
         Add a new page
       </message>
-      <message name="IDS_OPTIONS_STARTUP_PAGES_PLACEHOLDER" desc="The placeholder text in the custom startup urls dialog">
+      <message name="IDS_OPTIONS_STARTUP_PAGES_PLACEHOLDER" desc="The placeholder text in the custom startup urls dialog" formatter_data="android_java">
         Enter URL...
       </message>
       <message name="IDS_OPTIONS_STARTUP_PAGES_DIALOG_TITLE" desc="The title of the dialog where the user chooses the set of pages that will be shown at startup">
@@ -10089,7 +9895,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS_HOMEPAGE_NTP" desc="The value displayed on the settings page to indicate that we're using the new tab page as the homepage">
         New Tab page
       </message>
-      <message name="IDS_OPTIONS_HOMEPAGE_TITLE" desc="The title of the home page overlay">
+      <message name="IDS_OPTIONS_HOMEPAGE_TITLE" desc="The title of the home page overlay"  formatter_data="android_java">
         Home page
       </message>
       <message name="IDS_OPTIONS_HOMEPAGE_USE_NEWTAB" desc="The title of the 'Use the New Tab page' for the home page radio">
@@ -10346,6 +10152,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SIGN_IN" desc="This link text is shown when the user is not signed into a GAIA account.">
         Sign in to pay with Google Wallet
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_ADD_ACCOUNT" desc="This text is shown to allow the user to sign into a different GAIA account (for multi-login).">
+        Add account
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CANCEL_SIGN_IN" desc="This link text is shown when the user is signing into a GAIA account as a way to cancel sign in.">
         Back
@@ -11446,7 +11255,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Create, change, or delete profiles.
       </message>
       <message name="IDS_PROFILES_PROFILE_SIGNOUT_BUTTON" desc="Button in the avatar menu bubble view to sign-out the current profile.">
-        Sign out
+        Lock
       </message>
       <message name="IDS_PROFILES_PROFILE_SIGNOUT_BUTTON_TIP" desc="Tool-tip text shown for button in the avatar menu bubble view to sign-out the current profile.">
         Sign-out user <ph name="PROFILE_USERNAME">$1<ex>user@gmail.com</ex></ph>.
@@ -11476,7 +11285,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Manage accounts
       </message>
       <message name="IDS_PROFILES_PROFILE_CHANGE_PHOTO_BUTTON" desc="Button in the avatar menu bubble view used to change the photo for a profile.">
-        Change photo
+        Change
       </message>
       <message name="IDS_PROFILES_SWITCH_TO_PROFILE_ACCESSIBLE_NAME" desc="Description of the switch to profile button. This is used for accessibility.">
         Switch to user: <ph name="PROFILE_NAME">$1<ex>First user</ex></ph>
@@ -12228,9 +12037,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_NEW_WINDOW_BUTTON_LABEL" desc="Label on the 'New window' button.">
         New window
       </message>
-      <message name="IDS_FILE_BROWSER_CHANGE_DEFAULT_APP_BUTTON_LABEL" desc="Label on the 'Change default app...' in the Gear menu to change the default application which handles inserted sd/usb with pictures/videos.">
-        Change default app...
-      </message>
       <message name="IDS_FILE_BROWSER_FILENAME_LABEL" desc="Filename text area label.">
         File name
       </message>
@@ -12510,9 +12316,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Recovered files from Google Drive
       </message>
 
-      <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_TITLE" desc="Title of the conflict dialog shown when a file transfer operation is conflicted.">
-        Conflict
-      </message>
       <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_MESSAGE" desc="Message of the conflict dialog shown when a file transfer operation is conflicted.">
         A file named "<ph name="FILENAME">$1<ex>photo.jpg</ex></ph>" already exists. What do you want to do?
       </message>
@@ -12773,9 +12576,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_DRIVE_SHOW_HOSTED_FILES_OPTION" desc="Option that determines if we will show hosted Google Docs files in file browser.">
         Show Google Docs files
-      </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_CLEAR_LOCAL_CACHE" desc="In the Google Drive settings menu, menu item to clear the local cache of Google Drive">
-        Clean local cache
       </message>
       <message name="IDS_FILE_BROWSER_DRIVE_MENU_HELP" desc="In the Google Drive settings menu, name of the Help item.">
         Help
@@ -13739,7 +13539,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Try again
       </message>
       <message name="IDS_TRANSLATE_BUBBLE_ALWAYS" desc="Text to show for the translate bubble checkbox to always translate from one language to another">
-        Always translate <ph name="original_language">$1<ex>French</ex></ph> to <ph name="target_language">$2<ex>German</ex></ph>
+        Always translate
       </message>
       <message name="IDS_TRANSLATE_BUBBLE_COULD_NOT_TRANSLATE" desc="Text to show for the translate bubble label when the page could not be translated.">
         This page could not be translated.
@@ -14352,6 +14152,18 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_SAVE_PASSWORD" desc="The status text that is used as tooltip text for the save password icon and as status text of the save password bubble when a password can be saved.">
       Would you like to save this password?
     </message>
+    <message name="IDS_MANAGE_PASSWORDS" desc="The title text that is used in the manage passwords bubble when a password is autofilled or after a user has stored a password.">
+      Saved passwords for this site:
+    </message>
+    <message name="IDS_MANAGE_PASSWORDS_NO_PASSWORDS" desc="The text that is used in the manage passwords bubble when all passwords have been deleted.">
+      No passwords saved.
+    </message>
+    <message name="IDS_MANAGE_PASSWORDS_DELETED" desc="The text that is used in the manage passwords bubble when a password is de.">
+    Password deleted
+    </message>
+    <message name="IDS_MANAGE_PASSWORDS_UNDO" desc="The text that is used in the manage passwords bubble when a password is de.">
+    Undo
+    </message>
 
     <!-- Update Recommended dialog -->
     <if expr="not pp_ifdef('chromeos')">
@@ -14525,7 +14337,13 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Restart
       </message>
       <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_PROMPT_TEXT" desc="Prompt shown in the device requisition prompt popup.">
-        You're almost there. Restart the device to continue setup.
+        Use this device requisition when enrolling the device for enterprise management:
+      </message>
+      <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TITLE" desc="Title for the device requisition remora prompt popup.">
+        Set up this device for remora only?
+      </message>
+      <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TEXT" desc="Prompt shown in the device requisition remora prompt popup.">
+        Are you sure you want to continue?
       </message>
 
       <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_REGISTRATION_FAILED" desc="Error message shown on the enrollment screen upon failed device registration.">
@@ -15171,12 +14989,12 @@ Do you accept?
       The Simple Cache for HTTP is a new cache. It relies on the filesystem for disk space allocation.
     </message>
 
-    <!-- Spelling service feedback. -->
-    <message name="IDS_FLAGS_ENABLE_SPELLING_SERVICE_FEEDBACK_NAME" desc="Name of about:flags option to turn on sending feedback to spelling service.">
-      Spelling Service Feedback.
+    <!-- Spelling feedback field trial. -->
+    <message name="IDS_FLAGS_ENABLE_SPELLING_FEEDBACK_FIELD_TRIAL_NAME" desc="Name of about:flags option to enable the field trial for sending feedback to spelling service.">
+      Spelling Feedback Field Trial.
     </message>
-    <message name="IDS_FLAGS_ENABLE_SPELLING_SERVICE_FEEDBACK_DESCRIPTION" desc="Description of about:flags option to turn on sending feedback to spelling service.">
-      Send user feedback to spelling service. For example, if spelling service marks a misspelled word, but the user adds it to the custom dictionary, then Chrome will send a feedback message to spelling service. Spelling service uses this feedback to improve spelling suggestions.
+    <message name="IDS_FLAGS_ENABLE_SPELLING_FEEDBACK_FIELD_TRIAL_DESCRIPTION" desc="Description of about:flags option to enable the field trial for sending feedback to spelling service.">
+      Enable the field trial for sending user feedback to spelling service.
     </message>
 
     <!-- Web MIDI API. -->
@@ -15251,6 +15069,10 @@ Do you accept?
              desc="Modal message box prompt shown to the user after requesting to relaunch in Windows 8 mode while packaged apps are running, which will require all packaged apps to be closed. Dialog is shown with choices: OK, Cancel.">
       Relaunching in Windows 8 mode will close your Chrome apps.
     </message>
+    <message name="IDS_WIN8_PROMPT_TO_CLOSE_APPS_FOR_DESKTOP"
+             desc="Modal message box prompt shown to the user after requesting to relaunch in Desktop mode while packaged apps are running, which will require all packaged apps to be closed. Dialog is shown with choices: OK, Cancel.">
+      Relaunching in Desktop mode will close your Chrome apps.
+    </message>
 
     <!-- Media Galleries. -->
     <message name="IDS_MEDIA_GALLERIES_DIALOG_HEADER" desc="Header for media gallery permissions dialog.">
@@ -15258,6 +15080,9 @@ Do you accept?
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_WRITE" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has read and write access to the listed folders.">
       "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can read and write images, video, and sound files in the checked locations.
+    </message>
+    <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_DELETE" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has read and delete access to the listed folders.">
+      "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can read and delete images, video, and sound files in the checked locations.
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_ONLY" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has read-only access to the listed folders.">
       "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can read images, video, and sound files in the checked locations.
@@ -15320,6 +15145,12 @@ Do you accept?
     </message>
     <message name="IDS_APP_LIST_CONTACT_VIDEO_TOOLTIP" desc="Tooltip text for the 'video' icon displayed next to a contact search result.">
       Start Hangout
+    </message>
+    <message name="IDS_APP_LIST_START_SPEECH_RECOGNITION" desc="Tooltip text for the button to start the speech recognition.">
+      Start speech recognition
+    </message>
+    <message name="IDS_APP_LIST_STOP_SPEECH_RECOGNITION" desc="Tooltip text for the button to stop the speech recognition.">
+      Stop speech recognition
     </message>
     <if expr="not pp_ifdef('use_titlecase')">
       <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of an app list item configured to open in a tab">
@@ -15391,70 +15222,6 @@ Do you accept?
     <message name="IDS_APP_LIST_SIGNIN_SETTINGS_TEXT" desc="App launcher signin settings link text.">
       App Launcher Settings
     </message>
-
-    <!-- chrome://diagnostics strings -->
-    <if expr="pp_ifdef('chromeos')">
-      <message name="IDS_DIAGNOSTICS_DIAGNOSTICS_TITLE" desc="Title for the diagnostics page.">
-        Diagnostics
-      </message>
-      <message name="IDS_DIAGNOSTICS_CONNECTIVITY_TITLE" desc="Title for the connectivity tab.">
-        Connectivity
-      </message>
-      <message name="IDS_DIAGNOSTICS_REFRESH" desc="Title for the refresh button.">
-        Run again
-      </message>
-      <message name="IDS_DIAGNOSTICS_LOADING" desc="Shown while loading the diagnostics page.">
-        Loading...
-      </message>
-      <message name="IDS_DIAGNOSTICS_CHOOSE_ADAPTER" desc="Prompts to choose the network adapter to be tested.">
-        Choose the adapter you would like to use to connect to the internet...
-      </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_WIFI" desc="Adapter name for Wi-Fi interface.">
-        Wi-Fi
-      </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_ETHERNET1" desc="Adapter name for first ethernet interface.">
-        Ethernet 1
-      </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_ETHERNET2" desc="Adapter name for second ethernet interface.">
-        Ethernet 2
-      </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_3G" desc="Adapter name for 3G interface.">
-        3G
-      </message>
-      <message name="IDS_DIAGNOSTICS_TESTING_HARDWARE" desc="Indicates testing network hardware.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>1. <ph name="END_BOLD">&lt;/b&gt;</ph>Testing <ph name="ADAPTER_NAME">$1<ex>Wi-Fi</ex></ph> hardware
-      </message>
-      <message name="IDS_DIAGNOSTICS_TESTING_CONNECTION_TO_ROUTER" desc="Indicates testing connection to router.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>2. <ph name="END_BOLD">&lt;/b&gt;</ph>Testing connection to router
-      </message>
-      <message name="IDS_DIAGNOSTICS_TESTING_CONNECTION_TO_INTERNET" desc="Indicates testing connection to internet.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>3. <ph name="END_BOLD">&lt;/b&gt;</ph>Testing connection to internet
-      </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_DISABLED" desc="Indicates adapter is disabled.">
-        The <ph name="ADAPTER_NAME">$1<ex>Wi-Fi</ex></ph> adapter was not enabled.
-      </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_NO_IP" desc="Indicates adapter does not have an IP address.">
-        The <ph name="ADAPTER_NAME">$1<ex>Wi-Fi</ex></ph> adapter does not have an IP address and cannot connect to the internet.
-      </message>
-      <message name="IDS_DIAGNOSTICS_GATEWAY_NOT_CONNECTED_TO_INTERNET" desc="Indicates gateway is not connected to the internet.">
-        Your gateway is not connected to the internet.
-      </message>
-      <message name="IDS_DIAGNOSTICS_ENABLE_ADAPTER" desc="Recommendation for enabling adapter.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Recommendation: <ph name="END_BOLD">&lt;/b&gt;</ph>Enable <ph name="ADAPTER_NAME">$1<ex>Wi-Fi</ex></ph> adapter.
-      </message>
-      <message name="IDS_DIAGNOSTICS_FIX_NO_IP_WIFI" desc="Recommendation for fixing Wi-Fi adapter without IP address assigned.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Recommendation: <ph name="END_BOLD">&lt;/b&gt;</ph><ph name="BEGIN_ITALIC">&lt;i&gt;</ph>Please ensure that<ph name="END_ITALIC">&lt;/i&gt;</ph><ph name="BR">&lt;br /&gt;</ph>1) you have selected a wireless network.<ph name="BR2">&lt;br /&gt;</ph>2) you have permission to connect to the network you are trying to connect to.<ph name="BR3">&lt;br /&gt;</ph>3) you are using the right authentication method (password, encryption).<ph name="BR4">&lt;br /&gt;</ph>4) your router is configured correctly. Check that the DHCP server is enabled and that the MAC address filtering is configured correctly, if enabled.
-      </message>
-      <message name="IDS_DIAGNOSTICS_FIX_NO_IP_ETHERNET" desc="Recommendation for fixing ethernet adapter without IP address assigned.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Recommendation: <ph name="END_BOLD">&lt;/b&gt;</ph><ph name="BEGIN_ITALIC">&lt;i&gt;</ph>Please ensure that<ph name="END_ITALIC">&lt;/i&gt;</ph><ph name="BR">&lt;br /&gt;</ph>1) the ethernet cable is plugged in.<ph name="BR2">&lt;br /&gt;</ph>2) your router is configured correctly. Check that the DHCP server is enabled and that the MAC address filtering is confiugred correctly, if enabled.
-      </message>
-      <message name="IDS_DIAGNOSTICS_FIX_NO_IP_3G" desc="Recommendation for fixing 3G adapter without IP address assigned.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Recommendation: <ph name="END_BOLD">&lt;/b&gt;</ph><ph name="BEGIN_ITALIC">&lt;i&gt;</ph>Please ensure that<ph name="END_ITALIC">&lt;/i&gt;</ph><ph name="BR">&lt;br /&gt;</ph>1) you are in a location with strong 3G coverage.
-      </message>
-      <message name="IDS_DIAGNOSTICS_FIX_GATEWAY_CONNECTION" desc="Recommendation for fixing gateway connection to the internet.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Recommendation: <ph name="END_BOLD">&lt;/b&gt;</ph>Ensure that you have chosen the right gateway and that your gateway is configured correctly.
-      </message>
-    </if>
 
     <!-- iOS Chrome to Device strings-->
     <if expr="is_ios">
@@ -15805,6 +15572,19 @@ Do you accept?
     </message>
     <message name="IDS_TOOLTIP_TAB_MEDIA_STATE_AUDIO_PLAYING" desc="Extra tool tip text, when the tab is playing audio.">
       This tab is playing audio.
+    </message>
+
+    <!-- ProcessSingleton -->
+    <message name="IDS_PROFILE_IN_USE_LINUX_QUIT" desc="Text of button in profile in use dialog to quit without doing anything.">
+      Quit
+    </message>
+    <message name="IDS_PROFILE_IN_USE_LINUX_RELAUNCH" desc="Text of button in dialog to delete the profile lock file.">
+      Unlock Profile and Relaunch
+    </message>
+
+    <!-- Accessibility alerts -->
+    <message name="IDS_A11Y_ALERT_WINDOW_NEEDED" desc="Alert sent to the accessibility api when the user attempts a keyboard command that requires a window to work.">
+      Command unavailable. Press control-N to open a new window.
     </message>
   </messages>
 

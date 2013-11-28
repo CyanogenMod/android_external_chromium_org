@@ -53,7 +53,7 @@ namespace cc {
 class CompositorFrameAck;
 }
 
-namespace WebKit {
+namespace blink {
 class WebInputEvent;
 }
 
@@ -102,9 +102,9 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   static BrowserPluginGuest* CreateWithOpener(
       int instance_id,
+      bool has_render_view,
       WebContentsImpl* web_contents,
-      BrowserPluginGuest* opener,
-      bool has_render_view);
+      BrowserPluginGuest* opener);
 
   // Called when the embedder WebContents is destroyed to give the
   // BrowserPluginGuest an opportunity to clean up after itself.
@@ -121,20 +121,10 @@ class CONTENT_EXPORT BrowserPluginGuest
   // within an embedder.
   int instance_id() const { return instance_id_; }
 
-  // Overrides factory for testing. Default (NULL) value indicates regular
-  // (non-test) environment.
-  static void set_factory_for_testing(BrowserPluginHostFactory* factory) {
-    BrowserPluginGuest::factory_ = factory;
-  }
-
   bool OnMessageReceivedFromEmbedder(const IPC::Message& message);
 
-  void Initialize(WebContentsImpl* embedder_web_contents,
-                  const BrowserPluginHostMsg_Attach_Params& params);
-
-  void set_guest_hang_timeout_for_testing(const base::TimeDelta& timeout) {
-    guest_hang_timeout_ = timeout;
-  }
+  void Initialize(const BrowserPluginHostMsg_Attach_Params& params,
+                  WebContentsImpl* embedder_web_contents);
 
   WebContentsImpl* embedder_web_contents() const {
     return embedder_web_contents_;
@@ -250,7 +240,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   virtual void SendMessageToEmbedder(IPC::Message* msg);
 
   // Returns whether the guest is attached to an embedder.
-  bool attached() const { return !!embedder_web_contents_; }
+  bool attached() const { return embedder_web_contents_ != NULL; }
 
   // Attaches this BrowserPluginGuest to the provided |embedder_web_contents|
   // and initializes the guest with the provided |params|. Attaching a guest
@@ -282,7 +272,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   gfx::Rect ToGuestRect(const gfx::Rect& rect);
 
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
-      int screen_y, WebKit::WebDragOperation operation);
+      int screen_y, blink::WebDragOperation operation);
 
   void DragSourceMovedTo(int client_x, int client_y,
                          int screen_x, int screen_y);
@@ -297,6 +287,12 @@ class CONTENT_EXPORT BrowserPluginGuest
                                   bool should_allow,
                                   const std::string& user_input);
 
+  // Overrides factory for testing. Default (NULL) value indicates regular
+  // (non-test) environment.
+  static void set_factory_for_testing(BrowserPluginHostFactory* factory) {
+    BrowserPluginGuest::factory_ = factory;
+  }
+
  private:
   class EmbedderWebContentsObserver;
   friend class TestBrowserPluginGuest;
@@ -310,19 +306,35 @@ class CONTENT_EXPORT BrowserPluginGuest
   class PermissionRequest;
   class PointerLockRequest;
 
+  // Tracks the name, and target URL of the new window and whether or not it has
+  // changed since the WebContents has been created and before the new window
+  // has been attached to a BrowserPlugin. Once the first navigation commits, we
+  // no longer track this information.
+  struct NewWindowInfo {
+    bool changed;
+    GURL url;
+    std::string name;
+    NewWindowInfo(const GURL& url, const std::string& name) :
+        changed(false),
+        url(url),
+        name(name) {}
+  };
+
+  // BrowserPluginGuest is a WebContentsObserver of |web_contents| and
+  // |web_contents| has to stay valid for the lifetime of BrowserPluginGuest.
   BrowserPluginGuest(int instance_id,
+                     bool has_render_view,
                      WebContentsImpl* web_contents,
-                     BrowserPluginGuest* opener,
-                     bool has_render_view);
+                     BrowserPluginGuest* opener);
 
   // Destroy unattached new windows that have been opened by this
   // BrowserPluginGuest.
   void DestroyUnattachedWindows();
 
-  void LoadURLWithParams(WebContents* web_contents,
-                         const GURL& url,
+  void LoadURLWithParams(const GURL& url,
                          const Referrer& referrer,
-                         PageTransition transition_type);
+                         PageTransition transition_type,
+                         WebContents* web_contents);
 
   // Bridge IDs correspond to a geolocation request. This method will remove
   // the bookkeeping for a particular geolocation request associated with the
@@ -350,10 +362,10 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
-  void RequestNewWindowPermission(WebContentsImpl* new_contents,
-                                  WindowOpenDisposition disposition,
+  void RequestNewWindowPermission(WindowOpenDisposition disposition,
                                   const gfx::Rect& initial_bounds,
-                                  bool user_gesture);
+                                  bool user_gesture,
+                                  WebContentsImpl* new_contents);
 
   // Message handlers for messages from embedder.
 
@@ -369,17 +381,25 @@ class CONTENT_EXPORT BrowserPluginGuest
   // drag-message to the guest. This routes the drag-message to the guest
   // renderer.
   void OnDragStatusUpdate(int instance_id,
-                          WebKit::WebDragStatus drag_status,
+                          blink::WebDragStatus drag_status,
                           const DropData& drop_data,
-                          WebKit::WebDragOperationsMask drag_mask,
+                          blink::WebDragOperationsMask drag_mask,
                           const gfx::Point& location);
   // Instructs the guest to execute an edit command decoded in the embedder.
   void OnExecuteEditCommand(int instance_id,
                             const std::string& command);
+
+  // Returns compositor resources reclaimed in the embedder to the guest.
+  void OnReclaimCompositorResources(int instance_id,
+                                    int route_id,
+                                    uint32 output_surface_id,
+                                    int renderer_host_id,
+                                    const cc::CompositorFrameAck& ack);
+
   // Overriden in tests.
   virtual void OnHandleInputEvent(int instance_id,
                                   const gfx::Rect& guest_window_rect,
-                                  const WebKit::WebInputEvent* event);
+                                  const blink::WebInputEvent* event);
   void OnLockMouse(bool user_gesture,
                    bool last_unlocked_by_target,
                    bool privileged);
@@ -403,6 +423,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnSetEditCommandsForNextKeyEvent(
       int instance_id,
       const std::vector<EditCommand>& edit_commands);
+  void OnSetContentsOpaque(int instance_id, bool opaque);
   // The guest WebContents is visible if both its embedder is visible and
   // the browser plugin element is visible. If either one is not then the
   // WebContents is marked as hidden. A hidden WebContents will consume
@@ -439,7 +460,7 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   void OnDragStopped();
   void OnHandleInputEventAck(
-      WebKit::WebInputEvent::Type event_type,
+      blink::WebInputEvent::Type event_type,
       InputEventAckState ack_result);
   void OnHasTouchEventHandlers(bool accept);
   void OnSetCursor(const WebCursor& cursor);
@@ -499,25 +520,13 @@ class CONTENT_EXPORT BrowserPluginGuest
   bool mouse_locked_;
   bool pending_lock_request_;
   bool guest_visible_;
+  bool guest_opaque_;
   bool embedder_visible_;
   std::string name_;
   bool auto_size_enabled_;
   gfx::Size max_auto_size_;
   gfx::Size min_auto_size_;
 
-  // Tracks the name, and target URL of the new window and whether or not it has
-  // changed since the WebContents has been created and before the new window
-  // has been attached to a BrowserPlugin. Once the first navigation commits, we
-  // no longer track this information.
-  struct NewWindowInfo {
-    bool changed;
-    GURL url;
-    std::string name;
-    NewWindowInfo(const GURL& url, const std::string& name) :
-        changed(false),
-        url(url),
-        name(name) {}
-  };
   typedef std::map<BrowserPluginGuest*, NewWindowInfo> PendingWindowMap;
   PendingWindowMap pending_new_windows_;
   base::WeakPtr<BrowserPluginGuest> opener_;

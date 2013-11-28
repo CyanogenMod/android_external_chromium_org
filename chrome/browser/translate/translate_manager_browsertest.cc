@@ -24,6 +24,7 @@
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/browser/translate/translate_script.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/translate_ui_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_factory.h"
@@ -213,7 +214,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                        const content::NotificationDetails& details) {
     DCHECK_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED, type);
     removed_infobars_.insert(
-        content::Details<InfoBarRemovedDetails>(details)->first);
+        content::Details<InfoBar::RemovedDetails>(details)->first);
   }
 
   MOCK_METHOD1(OnPreferenceChanged, void(const std::string&));
@@ -372,7 +373,7 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
   static TestRenderViewContextMenu* CreateContextMenu(
       content::WebContents* web_contents) {
     content::ContextMenuParams params;
-    params.media_type = WebKit::WebContextMenuData::MediaTypeNone;
+    params.media_type = blink::WebContextMenuData::MediaTypeNone;
     params.x = 0;
     params.y = 0;
     params.has_image_contents = true;
@@ -385,7 +386,7 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
     params.writing_direction_left_to_right = 0;
     params.writing_direction_right_to_left = 0;
 #endif  // OS_MACOSX
-    params.edit_flags = WebKit::WebContextMenuData::CanTranslate;
+    params.edit_flags = blink::WebContextMenuData::CanTranslate;
     return new TestRenderViewContextMenu(web_contents, params);
   }
 
@@ -475,12 +476,23 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   // infobar is now invalid.
   new_infobar = GetTranslateInfoBar();
   ASSERT_TRUE(new_infobar != NULL);
+  EXPECT_EQ(new_target_lang, new_infobar->target_language_code());
 
-  // Verify reload keeps the same settings.
+  // Reloading should trigger translation iff Always Translate is on.
   ReloadAndWait(true);
   new_infobar = GetTranslateInfoBar();
   ASSERT_TRUE(new_infobar != NULL);
-  ASSERT_EQ(new_target_lang, infobar->target_language_code());
+  infobar = new_infobar;
+  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
+            infobar->infobar_type());
+  infobar->UpdateTargetLanguageIndex(1);
+  infobar->ToggleAlwaysTranslate();
+  ReloadAndWait(true);
+  new_infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(new_infobar != NULL);
+  infobar = new_infobar;
+  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
+  EXPECT_EQ(new_target_lang, infobar->target_language_code());
 }
 
 TEST_F(TranslateManagerBrowserTest, TranslateScriptNotAvailable) {
@@ -1331,7 +1343,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
       static_cast<TestingProfile*>(web_contents()->GetBrowserContext());
   static_cast<extensions::TestExtensionSystem*>(
       extensions::ExtensionSystem::Get(test_profile))->
-      CreateExtensionProcessManager();
+      CreateProcessManager();
   test_profile->ForceIncognito(true);
   for (int i = 0; i < 8; ++i) {
     SCOPED_TRACE(::testing::Message() << "Iteration " << i <<

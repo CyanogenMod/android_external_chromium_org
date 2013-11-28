@@ -210,7 +210,8 @@ void ParamTraits<skia::RefPtr<SkImageFilter> >::Write(
   SkImageFilter* filter = p.get();
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (filter && !command_line.HasSwitch(switches::kDisableFiltersOverIPC)) {
-    skia::RefPtr<SkData> data = skia::AdoptRef(SkSerializeFlattenable(filter));
+    skia::RefPtr<SkData> data =
+        skia::AdoptRef(SkValidatingSerializeFlattenable(filter));
     m->WriteData(static_cast<const char*>(data->data()), data->size());
   } else {
     m->WriteData(0, 0);
@@ -226,7 +227,8 @@ bool ParamTraits<skia::RefPtr<SkImageFilter> >::Read(
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if ((length > 0) &&
       !command_line.HasSwitch(switches::kDisableFiltersOverIPC)) {
-    SkFlattenable* flattenable = SkDeserializeFlattenable(data, length);
+    SkFlattenable* flattenable = SkValidatingDeserializeFlattenable(
+        data, length, SkImageFilter::GetFlattenableType());
     *r = skia::AdoptRef(static_cast<SkImageFilter*>(flattenable));
   } else {
     r->clear();
@@ -291,10 +293,8 @@ void ParamTraits<cc::RenderPass>::Write(
   WriteParam(m, p.shared_quad_state_list.size());
   WriteParam(m, p.quad_list.size());
 
-  for (size_t i = 0; i < p.shared_quad_state_list.size(); ++i)
-    WriteParam(m, *p.shared_quad_state_list[i]);
-
   size_t shared_quad_state_index = 0;
+  size_t last_shared_quad_state_index = kuint32max;
   for (size_t i = 0; i < p.quad_list.size(); ++i) {
     const cc::DrawQuad* quad = p.quad_list[i];
     DCHECK(quad->rect.Contains(quad->visible_rect))
@@ -365,8 +365,11 @@ void ParamTraits<cc::RenderPass>::Write(
       continue;
     }
 
-    DCHECK_LT(shared_quad_state_index, p.shared_quad_state_list.size());
     WriteParam(m, shared_quad_state_index);
+    if (shared_quad_state_index != last_shared_quad_state_index) {
+      WriteParam(m, *sqs_list[shared_quad_state_index]);
+      last_shared_quad_state_index = shared_quad_state_index;
+    }
   }
 }
 
@@ -417,14 +420,7 @@ bool ParamTraits<cc::RenderPass>::Read(
             transform_to_root_target,
             has_transparent_background);
 
-  for (size_t i = 0; i < shared_quad_state_list_size; ++i) {
-    scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
-    if (!ReadParam(m, iter, state.get()))
-      return false;
-    p->shared_quad_state_list.push_back(state.Pass());
-  }
-
-  size_t last_shared_quad_state_index = 0;
+  size_t last_shared_quad_state_index = kuint32max;
   for (size_t i = 0; i < quad_list_size; ++i) {
     cc::DrawQuad::Material material;
     PickleIterator temp_iter = *iter;
@@ -483,17 +479,25 @@ bool ParamTraits<cc::RenderPass>::Read(
     }
 
     size_t shared_quad_state_index;
-    if (!ReadParam(m, iter, &shared_quad_state_index) ||
-        shared_quad_state_index >= p->shared_quad_state_list.size())
+    if (!ReadParam(m, iter, &shared_quad_state_index))
+      return false;
+    if (shared_quad_state_index >= shared_quad_state_list_size)
       return false;
     // SharedQuadState indexes should be in ascending order.
-    if (shared_quad_state_index < last_shared_quad_state_index)
+    if (last_shared_quad_state_index != kuint32max &&
+        shared_quad_state_index < last_shared_quad_state_index)
       return false;
-    last_shared_quad_state_index = shared_quad_state_index;
 
-    draw_quad->shared_quad_state =
-        p->shared_quad_state_list[shared_quad_state_index];
+    // If the quad has a new shared quad state, read it in.
+    if (last_shared_quad_state_index != shared_quad_state_index) {
+      scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
+      if (!ReadParam(m, iter, state.get()))
+        return false;
+      p->shared_quad_state_list.push_back(state.Pass());
+      last_shared_quad_state_index = shared_quad_state_index;
+    }
 
+    draw_quad->shared_quad_state = p->shared_quad_state_list.back();
     p->quad_list.push_back(draw_quad.Pass());
   }
 

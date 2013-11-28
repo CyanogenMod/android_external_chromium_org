@@ -7,22 +7,65 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "base/timer/timer.h"
 #include "ui/views/controls/image_view.h"
+#include "ui/views/mouse_watcher.h"
 
-// A tooltip icon (just an ImageView with a tooltip). Looks like (?).
-class TooltipIcon : public views::ImageView {
+namespace autofill {
+
+class InfoBubble;
+
+// A tooltip icon that shows a bubble on hover. Looks like (?).
+class TooltipIcon : public views::ImageView,
+                    public views::MouseWatcherListener {
  public:
   explicit TooltipIcon(const base::string16& tooltip);
   virtual ~TooltipIcon();
 
-  // views::View implementation
-  virtual bool GetTooltipText(const gfx::Point& p,
-                              base::string16* tooltip) const OVERRIDE;
+  static const char kViewClassName[];
+
+  // views::ImageView:
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnBoundsChanged(const gfx::Rect& prev_bounds) OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
+
+  // views::MouseWatcherListener:
+  virtual void MouseMovedOutOfHost() OVERRIDE;
+
  private:
+  // Changes this view's image to the resource indicated by |idr|.
+  void ChangeImageTo(int idr);
+
+  // Creates and shows |bubble_|. If |bubble_| already exists, just cancels a
+  // potential close timer.
+  void ShowBubble();
+
+  // Hides |bubble_| if necessary.
+  void HideBubble();
+
+  // The text to show in a bubble when hovered.
   base::string16 tooltip_;
+
+  // Whether the mouse is inside this tooltip.
+  bool mouse_inside_;
+
+  // A bubble shown on hover. Weak; owns itself. NULL while hiding.
+  InfoBubble* bubble_;
+
+  // A timer to delay showing |bubble_|.
+  base::OneShotTimer<TooltipIcon> show_timer_;
+
+  // A watcher that keeps |bubble_| open if the user's mouse enters it.
+  scoped_ptr<views::MouseWatcher> mouse_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(TooltipIcon);
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_UI_VIEWS_AUTOFILL_TOOLTIP_ICON_H_

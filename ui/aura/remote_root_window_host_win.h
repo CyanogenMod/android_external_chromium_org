@@ -10,7 +10,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/native_widget_types.h"
@@ -142,6 +142,10 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   // Returns the active ASH root window.
   Window* GetAshWindow();
 
+  // Returns true if the remote window is the foreground window according to the
+  // OS.
+  bool IsForegroundWindow();
+
  private:
   explicit RemoteRootWindowHostWin(const gfx::Rect& bounds);
   virtual ~RemoteRootWindowHostWin();
@@ -181,7 +185,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   void OnDesktopActivated();
 
   // RootWindowHost overrides:
-  virtual void SetDelegate(RootWindowHostDelegate* delegate) OVERRIDE;
   virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -200,7 +203,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   virtual void UnConfineCursor() OVERRIDE;
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
-  virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
@@ -234,7 +236,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   }
 
   HWND remote_window_;
-  RootWindowHostDelegate* delegate_;
   IPC::Sender* host_;
   scoped_ptr<ui::ViewProp> prop_;
 

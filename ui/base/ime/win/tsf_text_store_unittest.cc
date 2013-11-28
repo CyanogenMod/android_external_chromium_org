@@ -49,6 +49,9 @@ class MockTextInputClient : public TextInputClient {
                bool(base::i18n::TextDirection));
   MOCK_METHOD2(ExtendSelectionAndDelete, void(size_t, size_t));
   MOCK_METHOD1(EnsureCaretInRect, void(const gfx::Rect&));
+  MOCK_METHOD0(OnCandidateWindowShown, void());
+  MOCK_METHOD0(OnCandidateWindowUpdated, void());
+  MOCK_METHOD0(OnCandidateWindowHidden, void());
 };
 
 class MockStoreACPSink : public ITextStoreACPSink {
@@ -323,8 +326,10 @@ TEST_F(TSFTextStoreTest, QueryInsertTest) {
   EXPECT_EQ(0, result_end);
   *string_buffer() = L"1234";
   *committed_size() = 1;
-  EXPECT_EQ(E_INVALIDARG,
+  EXPECT_EQ(S_OK,
             text_store_->QueryInsert(0, 1, 0, &result_start, &result_end));
+  EXPECT_EQ(1, result_start);
+  EXPECT_EQ(1, result_end);
   EXPECT_EQ(E_INVALIDARG,
             text_store_->QueryInsert(1, 0, 0, &result_start, &result_end));
   EXPECT_EQ(S_OK,
@@ -341,8 +346,10 @@ TEST_F(TSFTextStoreTest, QueryInsertTest) {
             text_store_->QueryInsert(3, 4, 0, &result_start, &result_end));
   EXPECT_EQ(3, result_start);
   EXPECT_EQ(4, result_end);
-  EXPECT_EQ(E_INVALIDARG,
+  EXPECT_EQ(S_OK,
             text_store_->QueryInsert(3, 5, 0, &result_start, &result_end));
+  EXPECT_EQ(3, result_start);
+  EXPECT_EQ(4, result_end);
 }
 
 class SyncRequestLockTestCallback : public TSFTextStoreTestCallback {

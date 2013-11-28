@@ -9,14 +9,14 @@
 #include "base/stl_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/idle/idle_api_constants.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/idle.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 
 namespace keys = extensions::idle_api_constants;
 namespace idle = extensions::api::idle;
@@ -55,7 +55,7 @@ void DefaultEventDelegate::OnStateChanged(const std::string& extension_id,
   args->Append(IdleManager::CreateIdleValue(new_state));
   scoped_ptr<Event> event(new Event(idle::OnStateChanged::kEventName,
                                     args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
 }

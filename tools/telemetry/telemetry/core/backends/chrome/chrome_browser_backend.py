@@ -47,10 +47,12 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     self._output_profile_path = output_profile_path
     self._extensions_to_load = extensions_to_load
 
-    self.webpagereplay_local_http_port = util.GetAvailableLocalPort()
-    self.webpagereplay_local_https_port = util.GetAvailableLocalPort()
-    self.webpagereplay_remote_http_port = self.webpagereplay_local_http_port
-    self.webpagereplay_remote_https_port = self.webpagereplay_local_https_port
+    if browser_options.netsim:
+      self.wpr_http_port_pair = util.PortPair(80, 80)
+      self.wpr_https_port_pair = util.PortPair(443, 443)
+    else:
+      self.wpr_http_port_pair = util.PortPair(0, 0)
+      self.wpr_https_port_pair = util.PortPair(0, 0)
 
     if (self.browser_options.dont_override_profile and
         not options_for_unittests.AreSet()):
@@ -66,7 +68,10 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
           extension_dict_backend.ExtensionDictBackend(self))
 
   def AddReplayServerOptions(self, extra_wpr_args):
-    extra_wpr_args.append('--no-dns_forwarding')
+    if self.browser_options.netsim:
+      extra_wpr_args.append('--net=%s' % self.browser_options.netsim)
+    else:
+      extra_wpr_args.append('--no-dns_forwarding')
 
   @property
   def misc_web_contents_backend(self):
@@ -86,11 +91,13 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     args.append('--no-first-run')
     args.append('--no-default-browser-check')
     args.append('--no-proxy-server')
-    if self.browser_options.wpr_mode != wpr_modes.WPR_OFF:
+    if self.browser_options.netsim:
+      args.append('--ignore-certificate-errors')
+    elif self.browser_options.wpr_mode != wpr_modes.WPR_OFF:
       args.extend(wpr_server.GetChromeFlags(
           self.WEBPAGEREPLAY_HOST,
-          self.webpagereplay_remote_http_port,
-          self.webpagereplay_remote_https_port))
+          self.wpr_http_port_pair.remote_port,
+          self.wpr_https_port_pair.remote_port))
     args.extend(user_agent.GetChromeUserAgentArgumentFromType(
         self.browser_options.browser_user_agent_type))
 
@@ -256,10 +263,24 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   def StopTracing(self):
     """ Stops tracing and returns the result as TraceResult object. """
+    for (i, debugger_url) in enumerate(self._browser.tabs):
+      tab = self.tab_list_backend.Get(i, None)
+      if tab:
+        success = tab.EvaluateJavaScript(
+            "console.time('" + debugger_url + "');" +
+            "console.timeEnd('" + debugger_url + "');" +
+            "console.time.toString().indexOf('[native code]') != -1;")
+        if not success:
+          raise Exception('Page stomped on console.time')
+        self._tracing_backend.AddTabToMarkerMapping(tab, debugger_url)
     return self._tracing_backend.StopTracing()
 
   def GetProcessName(self, cmd_line):
     """Returns a user-friendly name for the process of the given |cmd_line|."""
+    if not cmd_line:
+      # TODO(tonyg): Eventually we should make all of these known and add an
+      # assertion.
+      return 'unknown'
     if 'nacl_helper_bootstrap' in cmd_line:
       return 'nacl_helper_bootstrap'
     if ':sandboxed_process' in cmd_line:

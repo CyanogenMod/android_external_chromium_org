@@ -8,14 +8,14 @@
 #include <map>
 
 #include "ash/ash_export.h"
-#include "ash/launcher/launcher_model_observer.h"
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_model_observer.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 
 namespace ash {
 class LauncherItemDelegate;
-class LauncherModel;
+class ShelfModel;
 
 namespace test {
 class LauncherItemDelegateManagerTestAPI;
@@ -26,10 +26,9 @@ class LauncherItemDelegateManagerTestAPI;
 // rather it is expected that someone else invokes SetLauncherItemDelegate
 // appropriately. On the other hand, LauncherItemDelegateManager destroys
 // LauncherItemDelegates when the corresponding item from the model is removed.
-class ASH_EXPORT LauncherItemDelegateManager
-    : public ash::LauncherModelObserver {
+class ASH_EXPORT LauncherItemDelegateManager : public ShelfModelObserver {
  public:
-  explicit LauncherItemDelegateManager(ash::LauncherModel* model);
+  explicit LauncherItemDelegateManager(ShelfModel* model);
   virtual ~LauncherItemDelegateManager();
 
   // Set |item_delegate| for |id| and take an ownership.
@@ -40,14 +39,13 @@ class ASH_EXPORT LauncherItemDelegateManager
   // Returns LauncherItemDelegate for |item_type|. Always returns non-NULL.
   LauncherItemDelegate* GetLauncherItemDelegate(ash::LauncherID id);
 
-  // ash::LauncherModelObserver overrides:
-  virtual void LauncherItemAdded(int model_index) OVERRIDE;
-  virtual void LauncherItemRemoved(int index, ash::LauncherID id) OVERRIDE;
-  virtual void LauncherItemMoved(int start_index, int targetindex) OVERRIDE;
-  virtual void LauncherItemChanged(
-      int index,
-      const ash::LauncherItem& old_item) OVERRIDE;
-  virtual void LauncherStatusChanged() OVERRIDE;
+  // ShelfModelObserver overrides:
+  virtual void ShelfItemAdded(int model_index) OVERRIDE;
+  virtual void ShelfItemRemoved(int index, ash::LauncherID id) OVERRIDE;
+  virtual void ShelfItemMoved(int start_index, int targetindex) OVERRIDE;
+  virtual void ShelfItemChanged(int index,
+                                const LauncherItem& old_item) OVERRIDE;
+  virtual void ShelfStatusChanged() OVERRIDE;
 
  private:
   friend class ash::test::LauncherItemDelegateManagerTestAPI;
@@ -58,9 +56,8 @@ class ASH_EXPORT LauncherItemDelegateManager
   // Remove and destroy LauncherItemDelegate for |id|.
   void RemoveLauncherItemDelegate(ash::LauncherID id);
 
-  // Clear all exsiting LauncherItemDelegate for test.
-  // Not owned by LauncherItemDelegate.
-  ash::LauncherModel* model_;
+  // Owned by Shell.
+  ShelfModel* model_;
 
   LauncherIDToItemDelegateMap id_to_item_delegate_map_;
 

@@ -12,13 +12,13 @@
 #include "chrome/browser/extensions/api/idle/idle_api_constants.h"
 #include "chrome/browser/extensions/api/idle/idle_manager.h"
 #include "chrome/browser/extensions/api/idle/idle_manager_factory.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/common/extensions/api/idle.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -109,13 +109,15 @@ ScopedListen::ScopedListen(IdleManager* idle_manager,
     : idle_manager_(idle_manager),
       extension_id_(extension_id) {
   const EventListenerInfo details(idle::OnStateChanged::kEventName,
-                                  extension_id_);
+                                  extension_id_,
+                                  NULL);
   idle_manager_->OnListenerAdded(details);
 }
 
 ScopedListen::~ScopedListen() {
   const EventListenerInfo details(idle::OnStateChanged::kEventName,
-                                  extension_id_);
+                                  extension_id_,
+                                  NULL);
   idle_manager_->OnListenerRemoved(details);
 }
 

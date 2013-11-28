@@ -14,6 +14,7 @@ class FakeLayerTreeHostImplClient : public LayerTreeHostImplClient {
  public:
   // LayerTreeHostImplClient implementation.
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
+  virtual void DidSwapBuffersOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void BeginImplFrame(const BeginFrameArgs& args)
       OVERRIDE {}
@@ -36,6 +37,7 @@ class FakeLayerTreeHostImplClient : public LayerTreeHostImplClient {
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta)
       OVERRIDE {}
   virtual void DidActivatePendingTree() OVERRIDE {}
+  virtual void DidManageTiles() OVERRIDE {}
 };
 
 }  // namespace cc

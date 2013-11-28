@@ -17,7 +17,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_child_gyp)/webkit_glue_glue_child_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp)/webkit_child_webkit_child_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 	content/child/appcache/appcache_frontend_impl.cc \
 	content/child/appcache/web_application_cache_host_impl.cc \
 	content/child/child_histogram_message_filter.cc \
+	content/child/child_message_filter.cc \
 	content/child/child_process.cc \
 	content/child/child_resource_message_filter.cc \
 	content/child/child_thread.cc \
@@ -52,10 +53,6 @@ LOCAL_SRC_FILES := \
 	content/child/indexed_db/proxy_webidbcursor_impl.cc \
 	content/child/indexed_db/proxy_webidbdatabase_impl.cc \
 	content/child/indexed_db/proxy_webidbfactory_impl.cc \
-	content/child/service_worker/service_worker_dispatcher.cc \
-	content/child/service_worker/service_worker_message_filter.cc \
-	content/child/service_worker/web_service_worker_impl.cc \
-	content/child/service_worker/web_service_worker_provider_impl.cc \
 	content/child/npapi/np_channel_base.cc \
 	content/child/npapi/npobject_proxy.cc \
 	content/child/npapi/npobject_stub.cc \
@@ -69,6 +66,11 @@ LOCAL_SRC_FILES := \
 	content/child/request_extra_data.cc \
 	content/child/resource_dispatcher.cc \
 	content/child/runtime_features.cc \
+	content/child/scoped_child_process_reference.cc \
+	content/child/service_worker/service_worker_dispatcher.cc \
+	content/child/service_worker/service_worker_message_filter.cc \
+	content/child/service_worker/web_service_worker_impl.cc \
+	content/child/service_worker/web_service_worker_provider_impl.cc \
 	content/child/site_isolation_policy.cc \
 	content/child/socket_stream_dispatcher.cc \
 	content/child/thread_safe_sender.cc \
@@ -77,7 +79,8 @@ LOCAL_SRC_FILES := \
 	content/child/webkitplatformsupport_impl.cc \
 	content/child/webmessageportchannel_impl.cc \
 	content/child/websocket_bridge.cc \
-	content/child/websocket_dispatcher.cc
+	content/child/websocket_dispatcher.cc \
+	content/child/worker_thread_task_runner.cc
 
 
 # Flags passed to both C and C++ files.
@@ -128,17 +131,19 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -157,6 +162,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -170,7 +176,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
@@ -243,17 +248,19 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -273,6 +280,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -286,7 +294,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
@@ -360,7 +367,7 @@ LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	skia_skia_library_gyp \
 	ui_ui_gyp \
-	webkit_glue_glue_child_gyp
+	webkit_child_webkit_child_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

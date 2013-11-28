@@ -30,7 +30,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 LOCAL_SRC_FILES := \
 	skia/ext/analysis_canvas.cc \
 	skia/ext/benchmarking_canvas.cc \
-	skia/ext/bitmap_platform_device_android.cc \
+	skia/ext/bitmap_platform_device_skia.cc \
 	skia/ext/convolver.cc \
 	skia/ext/google_logging.cc \
 	skia/ext/image_operations.cc \
@@ -96,12 +96,15 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -198,12 +201,15 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

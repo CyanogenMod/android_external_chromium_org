@@ -11,10 +11,10 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -228,15 +228,25 @@ bool ComponentExtensionIMEManagerImpl::ReadExtensionInfo(
                           &out->description))
     return false;
   std::string url_string;
-  if (!manifest.GetString(extensions::manifest_keys::kOptionsPage, &url_string))
-    return true;  // It's okay to return true on no option page case.
-
-  GURL url = extensions::Extension::GetResourceURL(
-      extensions::Extension::GetBaseURLFromExtensionId(extension_id),
-      url_string);
-  if (!url.is_valid())
-    return false;
-  out->options_page_url = url;
+  if (manifest.GetString(extensions::manifest_keys::kOptionsPage,
+                         &url_string)) {
+    GURL url = extensions::Extension::GetResourceURL(
+        extensions::Extension::GetBaseURLFromExtensionId(extension_id),
+        url_string);
+    if (!url.is_valid())
+      return false;
+    out->options_page_url = url;
+  }
+  if (manifest.GetString(extensions::manifest_keys::kInputView,
+                         &url_string)) {
+    GURL url = extensions::Extension::GetResourceURL(
+        extensions::Extension::GetBaseURLFromExtensionId(extension_id),
+        url_string);
+    if (!url.is_valid())
+      return false;
+    out->input_view_url = url;
+  }
+  // It's okay to return true on no option page and/or input view page case.
   return true;
 }
 

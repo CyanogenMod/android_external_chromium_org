@@ -10,15 +10,15 @@
 #include "chrome/browser/extensions/api/system_storage/storage_api_test_util.h"
 #include "chrome/browser/extensions/api/system_storage/storage_info_provider.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
 
 namespace {
 

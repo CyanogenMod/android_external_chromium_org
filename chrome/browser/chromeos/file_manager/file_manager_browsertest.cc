@@ -34,11 +34,11 @@
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/extension.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 
@@ -285,7 +285,7 @@ class DriveTestVolume {
     // Obtain the parent entry.
     drive::FileError error = drive::FILE_ERROR_OK;
     scoped_ptr<drive::ResourceEntry> parent_entry(new drive::ResourceEntry);
-    integration_service_->file_system()->GetResourceEntryByPath(
+    integration_service_->file_system()->GetResourceEntry(
         drive::util::GetDriveMyDriveRootPath().Append(path).DirName(),
         google_apis::test_util::CreateCopyResultCallback(
             &error, &parent_entry));
@@ -418,7 +418,7 @@ class FileManagerTestListener : public content::NotificationObserver {
   struct Message {
     int type;
     std::string message;
-    extensions::TestSendMessageFunction* function;
+    scoped_refptr<extensions::TestSendMessageFunction> function;
   };
 
   FileManagerTestListener() {
@@ -634,6 +634,7 @@ INSTANTIATE_TEST_CASE_P(
                                     "galleryOpenDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "galleryOpenDrive")));
 
+/* http://crbug.com/316918 Tests are flaky.
 INSTANTIATE_TEST_CASE_P(
     KeyboardOperations,
     FileManagerBrowserTest,
@@ -644,6 +645,7 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(IN_GUEST_MODE, "keyboardCopyDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "keyboardCopyDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "keyboardCopyDrive")));
+*/
 
 INSTANTIATE_TEST_CASE_P(
     DriveSpecific,
@@ -695,7 +697,7 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE, "shareDirectory")));
 
 INSTANTIATE_TEST_CASE_P(
-    restoreGeometry,
+    RestoreGeometry,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "restoreGeometry"),
                       TestParameter(IN_GUEST_MODE, "restoreGeometry")));
@@ -713,6 +715,12 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "suggestAppDialog")));
 
 INSTANTIATE_TEST_CASE_P(
+    FileTask,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "executeDefaultTask"),
+                      TestParameter(IN_GUEST_MODE, "executeDefaultTask")));
+
+INSTANTIATE_TEST_CASE_P(
     NavigationList,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
@@ -721,8 +729,13 @@ INSTANTIATE_TEST_CASE_P(
 INSTANTIATE_TEST_CASE_P(
     TabIndex,
     FileManagerBrowserTest,
-    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
-                                    "searchBoxFocus")));
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "searchBoxFocus")));
+
+INSTANTIATE_TEST_CASE_P(
+    Thumbnails,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "thumbnailsDownloads"),
+                      TestParameter(IN_GUEST_MODE, "thumbnailsDownloads")));
 
 }  // namespace
 }  // namespace file_manager

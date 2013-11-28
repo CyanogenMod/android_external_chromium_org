@@ -7,10 +7,35 @@
 #include <string.h>
 
 #include "base/logging.h"
+#include "mojo/system/dispatcher.h"
 #include "mojo/system/message_in_transit.h"
 
 namespace mojo {
 namespace system {
+
+LocalMessagePipeEndpoint::MessageQueueEntry::MessageQueueEntry()
+    : message(NULL) {
+}
+
+// See comment in header file.
+LocalMessagePipeEndpoint::MessageQueueEntry::MessageQueueEntry(
+    const MessageQueueEntry& other)
+    : message(NULL) {
+  DCHECK(!other.message);
+  DCHECK(other.dispatchers.empty());
+}
+
+LocalMessagePipeEndpoint::MessageQueueEntry::~MessageQueueEntry() {
+  if (message)
+    message->Destroy();
+  // Close all the dispatchers.
+  for (size_t i = 0; i < dispatchers.size(); i++) {
+    // Note: Taking the |Dispatcher| locks is okay, since no one else should
+    // have a reference to the dispatchers (and the locks shouldn't be held).
+    DCHECK(dispatchers[i]->HasOneRef());
+    dispatchers[i]->Close();
+  }
+}
 
 LocalMessagePipeEndpoint::LocalMessagePipeEndpoint()
     : is_open_(true),
@@ -21,7 +46,13 @@ LocalMessagePipeEndpoint::~LocalMessagePipeEndpoint() {
   DCHECK(!is_open_);
 }
 
-void LocalMessagePipeEndpoint::OnPeerClose() {
+void LocalMessagePipeEndpoint::Close() {
+  DCHECK(is_open_);
+  is_open_ = false;
+  message_queue_.clear();
+}
+
+bool LocalMessagePipeEndpoint::OnPeerClose() {
   DCHECK(is_open_);
   DCHECK(is_peer_open_);
 
@@ -36,27 +67,40 @@ void LocalMessagePipeEndpoint::OnPeerClose() {
     waiter_list_.AwakeWaitersForStateChange(new_satisfied_flags,
                                             new_satisfiable_flags);
   }
+
+  return true;
 }
 
-MojoResult LocalMessagePipeEndpoint::EnqueueMessage(
-    const void* bytes, uint32_t num_bytes,
-    const MojoHandle* handles, uint32_t num_handles,
-    MojoWriteMessageFlags /*flags*/) {
+MojoResult LocalMessagePipeEndpoint::CanEnqueueMessage(
+    const MessageInTransit* /*message*/,
+    const std::vector<Dispatcher*>* /*dispatchers*/) {
+  return MOJO_RESULT_OK;
+}
+
+void LocalMessagePipeEndpoint::EnqueueMessage(
+    MessageInTransit* message,
+    std::vector<scoped_refptr<Dispatcher> >* dispatchers) {
   DCHECK(is_open_);
   DCHECK(is_peer_open_);
 
   bool was_empty = message_queue_.empty();
-
-  // TODO(vtl): Eventually (with C++11), this should be an |emplace_back()|.
-  message_queue_.push_back(MessageInTransit::Create(bytes, num_bytes));
-  // TODO(vtl): Support sending handles.
-
+  message_queue_.push_back(MessageQueueEntry());
+  message_queue_.back().message = message;
+  if (dispatchers) {
+#ifndef NDEBUG
+    // It's important that we're taking "ownership" of the dispatchers. In
+    // particular, they must not be in the global handle table (i.e., have live
+    // handles referring to them). If we need to destroy any queued messages, we
+    // need to know that any handles in them should be closed.
+    for (size_t i = 0; i < dispatchers->size(); i++)
+      DCHECK((*dispatchers)[i]->HasOneRef());
+#endif
+    message_queue_.back().dispatchers.swap(*dispatchers);
+  }
   if (was_empty) {
     waiter_list_.AwakeWaitersForStateChange(SatisfiedFlags(),
                                             SatisfiableFlags());
   }
-
-  return MOJO_RESULT_OK;
 }
 
 void LocalMessagePipeEndpoint::CancelAllWaiters() {
@@ -64,48 +108,50 @@ void LocalMessagePipeEndpoint::CancelAllWaiters() {
   waiter_list_.CancelAllWaiters();
 }
 
-void LocalMessagePipeEndpoint::Close() {
-  DCHECK(is_open_);
-  is_open_ = false;
-  for (std::deque<MessageInTransit*>::iterator it = message_queue_.begin();
-       it != message_queue_.end();
-       ++it) {
-    (*it)->Destroy();
-  }
-  message_queue_.clear();
-}
-
 MojoResult LocalMessagePipeEndpoint::ReadMessage(
     void* bytes, uint32_t* num_bytes,
-    MojoHandle* handles, uint32_t* num_handles,
+    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
+    uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   DCHECK(is_open_);
+  DCHECK(!dispatchers || dispatchers->empty());
 
   const uint32_t max_bytes = num_bytes ? *num_bytes : 0;
-  // TODO(vtl): We'll need this later:
-  //  const uint32_t max_handles = num_handles ? *num_handles : 0;
+  const uint32_t max_num_dispatchers = num_dispatchers ? *num_dispatchers : 0;
 
-  if (message_queue_.empty())
-    return MOJO_RESULT_NOT_FOUND;
+  if (message_queue_.empty()) {
+    return is_peer_open_ ? MOJO_RESULT_NOT_FOUND :
+                           MOJO_RESULT_FAILED_PRECONDITION;
+  }
 
   // TODO(vtl): If |flags & MOJO_READ_MESSAGE_FLAG_MAY_DISCARD|, we could pop
   // and release the lock immediately.
-  bool not_enough_space = false;
-  MessageInTransit* const message = message_queue_.front();
+  bool enough_space = true;
+  const MessageInTransit* queued_message = message_queue_.front().message;
   if (num_bytes)
-    *num_bytes = message->data_size();
-  if (message->data_size() <= max_bytes)
-    memcpy(bytes, message->data(), message->data_size());
+    *num_bytes = queued_message->data_size();
+  if (queued_message->data_size() <= max_bytes)
+    memcpy(bytes, queued_message->data(), queued_message->data_size());
   else
-    not_enough_space = true;
+    enough_space = false;
 
-  // TODO(vtl): Support receiving handles.
-  if (num_handles)
-    *num_handles = 0;
+  std::vector<scoped_refptr<Dispatcher> >* queued_dispatchers =
+      &message_queue_.front().dispatchers;
+  if (num_dispatchers)
+    *num_dispatchers = static_cast<uint32_t>(queued_dispatchers->size());
+  if (enough_space) {
+    if (queued_dispatchers->empty()) {
+      // Nothing to do.
+    } else if (queued_dispatchers->size() <= max_num_dispatchers) {
+      DCHECK(dispatchers);
+      dispatchers->swap(*queued_dispatchers);
+    } else {
+      enough_space = false;
+    }
+  }
 
-  if (!not_enough_space || (flags & MOJO_READ_MESSAGE_FLAG_MAY_DISCARD)) {
+  if (enough_space || (flags & MOJO_READ_MESSAGE_FLAG_MAY_DISCARD)) {
     message_queue_.pop_front();
-    message->Destroy();
 
     // Now it's empty, thus no longer readable.
     if (message_queue_.empty()) {
@@ -116,7 +162,7 @@ MojoResult LocalMessagePipeEndpoint::ReadMessage(
     }
   }
 
-  if (not_enough_space)
+  if (!enough_space)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   return MOJO_RESULT_OK;
@@ -161,4 +207,3 @@ MojoWaitFlags LocalMessagePipeEndpoint::SatisfiableFlags() {
 
 }  // namespace system
 }  // namespace mojo
-

@@ -16,6 +16,11 @@
          ['exclude', '_android\\.(cc|cpp)$'],
       ],
     }],
+    [ 'OS == "android"', {
+      'defines': [
+        'SK_FONTHOST_DOES_NOT_USE_FONTMGR',
+      ],
+    }],
     [ 'OS != "ios"', {
       'sources/': [
          ['exclude', '_ios\\.(cc|cpp|mm?)$'],
@@ -29,12 +34,18 @@
     [ 'OS != "win"', {
       'sources/': [ ['exclude', '_win\\.(cc|cpp)$'] ],
     }],
-    [ 'use_glib == 0', {
+    [ 'desktop_linux == 0 and chromeos == 0', {
       'sources/': [ ['exclude', '_linux\\.(cc|cpp)$'] ],
+    }],
+    [ 'use_cairo == 0', {
+      'sources/': [ ['exclude', '_cairo\\.(cc|cpp)$'] ],
     }],
   ],
 
-  'direct_dependent_settings': {
+  # We would prefer this to be direct_dependent_settings,
+  # however we currently have no means to enforce that direct dependents
+  # re-export if they include Skia headers in their public headers.
+  'all_dependent_settings': {
     'include_dirs': [
       '..',
       'config',

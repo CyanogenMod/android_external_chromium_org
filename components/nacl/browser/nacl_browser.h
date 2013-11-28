@@ -14,8 +14,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "base/time/time.h"
+#include "components/nacl/browser/nacl_browser_delegate.h"
 #include "components/nacl/browser/nacl_validation_cache.h"
-#include "components/nacl/common/nacl_browser_delegate.h"
 
 class URLPattern;
 class GURL;
@@ -24,8 +24,7 @@ namespace nacl {
 
 // Open an immutable executable file that can be mmapped.
 // This function should only be called on a thread that can perform file IO.
-void OpenNaClExecutableImpl(const base::FilePath& file_path,
-                            base::PlatformFile* file);
+base::PlatformFile OpenNaClExecutableImpl(const base::FilePath& file_path);
 
 // Represents shared state for all NaClProcessHost objects in the browser.
 class NaClBrowser {

@@ -13,6 +13,8 @@
 #include "components/user_prefs/pref_registry_syncable.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -58,6 +60,7 @@ ProfilePolicyConnectorFactory::ProfilePolicyConnectorFactory()
         "ProfilePolicyConnector",
         BrowserContextDependencyManager::GetInstance()) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  DependsOn(SchemaRegistryServiceFactory::GetInstance());
 #if defined(OS_CHROMEOS)
   DependsOn(UserCloudPolicyManagerFactoryChromeOS::GetInstance());
 #else
@@ -85,7 +88,13 @@ ProfilePolicyConnectorFactory::CreateForProfileInternal(
     Profile* profile,
     bool force_immediate_load) {
   DCHECK(connectors_.find(profile) == connectors_.end());
+
+  SchemaRegistry* schema_registry = NULL;
+  CloudPolicyManager* user_cloud_policy_manager = NULL;
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  schema_registry = SchemaRegistryServiceFactory::GetForContext(profile);
+
 #if defined(OS_CHROMEOS)
   chromeos::User* user = NULL;
   if (!chromeos::ProfileHelper::IsSigninProfile(profile)) {
@@ -93,20 +102,20 @@ ProfilePolicyConnectorFactory::CreateForProfileInternal(
     user = user_manager->GetUserByProfile(profile);
     CHECK(user);
   }
-  CloudPolicyManager* user_cloud_policy_manager =
+  user_cloud_policy_manager =
       UserCloudPolicyManagerFactoryChromeOS::GetForProfile(profile);
 #else
-  CloudPolicyManager* user_cloud_policy_manager =
-      UserCloudPolicyManagerFactory::GetForProfile(profile);
-#endif
-#else
-  CloudPolicyManager* user_cloud_policy_manager = NULL;
-#endif
-  ProfilePolicyConnector* connector = new ProfilePolicyConnector(profile);
+  user_cloud_policy_manager =
+      UserCloudPolicyManagerFactory::GetForBrowserContext(profile);
+#endif  // defined(OS_CHROMEOS)
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
+
+  ProfilePolicyConnector* connector = new ProfilePolicyConnector();
   connector->Init(force_immediate_load,
 #if defined(ENABLE_CONFIGURATION_POLICY) && defined(OS_CHROMEOS)
                   user,
 #endif
+                  schema_registry,
                   user_cloud_policy_manager);
   connectors_[profile] = connector;
   return make_scoped_ptr(connector);
@@ -132,12 +141,6 @@ void ProfilePolicyConnectorFactory::BrowserContextDestroyed(
 
 void ProfilePolicyConnectorFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-#if defined(OS_CHROMEOS)
-  registry->RegisterBooleanPref(
-      prefs::kUsedPolicyCertificatesOnce,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#endif
 #if defined(OS_ANDROID)
   registry->RegisterListPref(
       prefs::kManagedBookmarks,

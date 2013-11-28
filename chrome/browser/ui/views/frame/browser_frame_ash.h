@@ -30,7 +30,6 @@ class BrowserFrameAsh : public views::NativeWidgetAura,
 
  protected:
   // Overridden from views::NativeWidgetAura:
-  virtual void OnWindowDestroying() OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
 
   // Overridden from NativeBrowserFrame:
@@ -38,20 +37,17 @@ class BrowserFrameAsh : public views::NativeWidgetAura,
   virtual const views::NativeWidget* AsNativeWidget() const OVERRIDE;
   virtual bool UsesNativeSystemMenu() const OVERRIDE;
   virtual int GetMinimizeButtonOffset() const OVERRIDE;
-  virtual void TabStripDisplayModeChanged() OVERRIDE;
+
+  virtual ~BrowserFrameAsh();
 
  private:
   class WindowPropertyWatcher;
-
-  virtual ~BrowserFrameAsh();
 
   // Set the window into the auto managed mode.
   void SetWindowAutoManaged();
 
   // The BrowserView is our ClientView. This is a pointer to it.
   BrowserView* browser_view_;
-
-  scoped_ptr<WindowPropertyWatcher> window_property_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserFrameAsh);
 };

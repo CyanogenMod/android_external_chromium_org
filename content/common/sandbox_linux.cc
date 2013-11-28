@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -16,11 +17,13 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "content/common/sandbox_linux.h"
 #include "content/common/sandbox_seccomp_bpf_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_linux.h"
+#include "sandbox/linux/services/credentials.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 
 namespace {
@@ -142,6 +145,10 @@ bool LinuxSandbox::InitializeSandbox() {
     LOG(ERROR) << error_message;
     return false;
   }
+
+  DCHECK(!linux_sandbox->HasOpenDirectories()) <<
+      "InitializeSandbox() called after unexpected directories have been " <<
+      "opened. This breaks the security of the setuid sandbox.";
 
   // Attempt to limit the future size of the address space of the process.
   linux_sandbox->LimitAddressSpace(process_type);
@@ -274,6 +281,10 @@ bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
 #else
   return false;
 #endif  // !defined(ADDRESS_SANITIZER)
+}
+
+bool LinuxSandbox::HasOpenDirectories() {
+  return sandbox::Credentials().HasOpenDirectory(proc_fd_);
 }
 
 void LinuxSandbox::SealSandbox() {

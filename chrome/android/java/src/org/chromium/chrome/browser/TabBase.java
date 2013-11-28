@@ -5,14 +5,12 @@
 package org.chromium.chrome.browser;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.view.View;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
-import org.chromium.chrome.browser.RepostFormWarningDialog;
 import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.chrome.browser.infobar.InfoBarContainer;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -24,9 +22,8 @@ import org.chromium.content.browser.NavigationClient;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageInfo;
 import org.chromium.content.browser.WebContentsObserverAndroid;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
-import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -46,7 +43,7 @@ public abstract class TabBase implements NavigationClient {
     /** Used for automatically generating tab ids. */
     private static final AtomicInteger sIdCounter = new AtomicInteger();
 
-    private int mNativeTabAndroid;
+    private long mNativeTabAndroid;
 
     /** Unique id of this tab (within its container). */
     private final int mId;
@@ -127,7 +124,7 @@ public abstract class TabBase implements NavigationClient {
                             contentViewCore.continuePendingReload();
                         }
                     });
-            Activity activity = (Activity)mContext;
+            Activity activity = (Activity) mContext;
             warningDialog.show(activity.getFragmentManager(), null);
         }
 
@@ -312,7 +309,6 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
-     *
      * @return The infobar container.
      */
     public final InfoBarContainer getInfoBarContainer() {
@@ -326,11 +322,29 @@ public abstract class TabBase implements NavigationClient {
     protected abstract AutoLoginProcessor createAutoLoginProcessor();
 
     /**
+     * Prints the current page.
+     *
+     * @return Whether the printing process is started successfully.
+     **/
+    public boolean print() {
+        assert mNativeTabAndroid != 0;
+        return nativePrint(mNativeTabAndroid);
+    }
+
+    /**
      * Reloads the current page content if it is a {@link ContentView}.
      */
     public void reload() {
         // TODO(dtrainor): Should we try to rebuild the ContentView if it's frozen?
-        if (mContentViewCore != null) mContentViewCore.reload();
+        if (mContentViewCore != null) mContentViewCore.reload(true);
+    }
+
+    /**
+     * Reloads the current page content if it is a {@link ContentView}.
+     * This version ignores the cache and reloads from the network.
+     */
+    public void reloadIgnoringCache() {
+        if (mContentViewCore != null) mContentViewCore.reloadIgnoringCache(true);
     }
 
     /** Stop the current navigation. */
@@ -497,10 +511,11 @@ public abstract class TabBase implements NavigationClient {
      */
     protected void showNativePage(NativePage nativePage) {
         if (mNativePage == nativePage) return;
-        destroyNativePageInternal();
+        NativePage previousNativePage = mNativePage;
         mNativePage = nativePage;
         pushNativePageStateToNavigationEntry();
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
+        destroyNativePageInternal(previousNativePage);
     }
 
     /**
@@ -508,8 +523,10 @@ public abstract class TabBase implements NavigationClient {
      */
     protected void showRenderedPage() {
         if (mNativePage == null) return;
-        destroyNativePageInternal();
+        NativePage previousNativePage = mNativePage;
+        mNativePage = null;
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
+        destroyNativePageInternal(previousNativePage);
     }
 
     /**
@@ -534,8 +551,10 @@ public abstract class TabBase implements NavigationClient {
      *
      * @param nativeWebContents The native web contents pointer.
      */
-    protected void initContentView(int nativeWebContents) {
-        destroyNativePageInternal();
+    protected void initContentView(long nativeWebContents) {
+        NativePage previousNativePage = mNativePage;
+        mNativePage = null;
+        destroyNativePageInternal(previousNativePage);
 
         mContentView = ContentView.newInstance(mContext, nativeWebContents, getWindowAndroid());
 
@@ -570,7 +589,9 @@ public abstract class TabBase implements NavigationClient {
     public void destroy() {
         for (TabObserver observer : mObservers) observer.onDestroyed(this);
 
-        destroyNativePageInternal();
+        NativePage currentNativePage = mNativePage;
+        mNativePage = null;
+        destroyNativePageInternal(currentNativePage);
         destroyContentView(true);
         if (mInfoBarContainer != null) {
             mInfoBarContainer.destroy();
@@ -603,11 +624,11 @@ public abstract class TabBase implements NavigationClient {
         return false;
     }
 
-    private void destroyNativePageInternal() {
-        if (mNativePage == null) return;
+    private void destroyNativePageInternal(NativePage nativePage) {
+        if (nativePage == null) return;
+        assert getPageInfo() != nativePage : "Attempting to destroy active page.";
 
-        mNativePage.destroy();
-        mNativePage = null;
+        nativePage.destroy();
     }
 
     /**
@@ -665,22 +686,6 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
-     * Launches all currently blocked popups that were spawned by the content of this tab.
-     */
-    protected void launchBlockedPopups() {
-        assert mContentViewCore != null;
-
-        nativeLaunchBlockedPopups(mNativeTabAndroid);
-    }
-
-    /**
-     * Called when the number of blocked popups has changed.
-     * @param numPopups The current number of blocked popups.
-     */
-    @CalledByNative
-    protected void onBlockedPopupsStateChanged(int numPopups) { }
-
-    /**
      * Called when the favicon of the content this tab represents changes.
      */
     @CalledByNative
@@ -692,18 +697,22 @@ public abstract class TabBase implements NavigationClient {
      * @return The native pointer representing the native side of this {@link TabBase} object.
      */
     @CalledByNative
-    protected int getNativePtr() {
+    protected long getNativePtr() {
         return mNativeTabAndroid;
     }
 
     /** This is currently called when committing a pre-rendered page. */
     @CalledByNative
-    private void swapWebContents(final int newWebContents) {
+    private void swapWebContents(final long newWebContents) {
+        if (mContentViewCore != null) mContentViewCore.onHide();
         destroyContentView(false);
+        NativePage previousNativePage = mNativePage;
+        mNativePage = null;
         initContentView(newWebContents);
         mContentViewCore.onShow();
         mContentViewCore.attachImeAdapter();
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
+        destroyNativePageInternal(previousNativePage);
     }
 
     @CalledByNative
@@ -713,13 +722,13 @@ public abstract class TabBase implements NavigationClient {
     }
 
     @CalledByNative
-    private void setNativePtr(int nativePtr) {
+    private void setNativePtr(long nativePtr) {
         assert mNativeTabAndroid == 0;
         mNativeTabAndroid = nativePtr;
     }
 
     @CalledByNative
-    private int getNativeInfoBarContainer() {
+    private long getNativeInfoBarContainer() {
         return getInfoBarContainer().getNative();
     }
 
@@ -765,12 +774,12 @@ public abstract class TabBase implements NavigationClient {
         sIdCounter.addAndGet(diff);
     }
 
-    private native void nativeInitWebContents(int nativeTabAndroid, boolean incognito,
+    private native void nativeInitWebContents(long nativeTabAndroid, boolean incognito,
             ContentViewCore contentViewCore, ChromeWebContentsDelegateAndroid delegate);
-    private native void nativeDestroyWebContents(int nativeTabAndroid, boolean deleteNative);
-    private native Profile nativeGetProfileAndroid(int nativeTabAndroid);
-    private native void nativeLaunchBlockedPopups(int nativeTabAndroid);
-    private native int nativeGetSecurityLevel(int nativeTabAndroid);
-    private native void nativeSetActiveNavigationEntryTitleForUrl(int nativeTabAndroid, String url,
+    private native void nativeDestroyWebContents(long nativeTabAndroid, boolean deleteNative);
+    private native Profile nativeGetProfileAndroid(long nativeTabAndroid);
+    private native int nativeGetSecurityLevel(long nativeTabAndroid);
+    private native void nativeSetActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url,
             String title);
+    private native boolean nativePrint(long nativeTabAndroid);
 }

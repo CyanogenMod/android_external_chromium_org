@@ -248,7 +248,7 @@ void MediaSourcePlayer::Release() {
   pending_event_ &= (SEEK_EVENT_PENDING | CONFIG_CHANGE_EVENT_PENDING);
 
   audio_decoder_job_.reset();
-  video_decoder_job_.reset();
+  ResetVideoDecoderJob();
 
   // Prevent job re-creation attempts in OnDemuxerConfigsAvailable()
   reconfig_audio_decoder_ = false;
@@ -404,8 +404,8 @@ void MediaSourcePlayer::SetDrmBridge(MediaDrmBridge* drm_bridge) {
   // TODO(qinmin): support DRM change after playback has started.
   // http://crbug.com/253792.
   if (GetCurrentTime() > base::TimeDelta()) {
-    LOG(INFO) << "Setting DRM bridge after playback has started. "
-              << "This is not well supported!";
+    VLOG(0) << "Setting DRM bridge after playback has started. "
+            << "This is not well supported!";
   }
 
   drm_bridge_ = drm_bridge;
@@ -518,13 +518,13 @@ void MediaSourcePlayer::ProcessPendingEvents() {
   if (IsEventPending(SURFACE_CHANGE_EVENT_PENDING)) {
     DVLOG(1) << __FUNCTION__ << " : Handling SURFACE_CHANGE_EVENT.";
     // Setting a new surface will require a new MediaCodec to be created.
-    video_decoder_job_.reset();
+    ResetVideoDecoderJob();
     ConfigureVideoDecoderJob();
 
     // Return early if we can't successfully configure a new video decoder job
     // yet, except continue processing other pending events if |surface_| is
     // empty.
-    if (!video_decoder_job_ && !surface_.IsEmpty())
+    if (HasVideo() && !video_decoder_job_ && !surface_.IsEmpty())
       return;
   }
 
@@ -655,7 +655,16 @@ void MediaSourcePlayer::DecodeMoreAudio() {
 
   // Failed to start the next decode.
   // Wait for demuxer ready message.
+  DCHECK(!reconfig_audio_decoder_);
   reconfig_audio_decoder_ = true;
+
+  // Config change may have just been detected on the other stream. If so,
+  // don't send a duplicate demuxer config request.
+  if (IsEventPending(CONFIG_CHANGE_EVENT_PENDING)) {
+    DCHECK(reconfig_video_decoder_);
+    return;
+  }
+
   SetPendingEvent(CONFIG_CHANGE_EVENT_PENDING);
   ProcessPendingEvents();
 }
@@ -675,11 +684,20 @@ void MediaSourcePlayer::DecodeMoreVideo() {
 
   // Failed to start the next decode.
   // Wait for demuxer ready message.
-  reconfig_video_decoder_ = true;
 
   // After this detection of video config change, next video data received
   // will begin with I-frame.
   next_video_data_is_iframe_ = true;
+
+  DCHECK(!reconfig_video_decoder_);
+  reconfig_video_decoder_ = true;
+
+  // Config change may have just been detected on the other stream. If so,
+  // don't send a duplicate demuxer config request.
+  if (IsEventPending(CONFIG_CHANGE_EVENT_PENDING)) {
+    DCHECK(reconfig_audio_decoder_);
+    return;
+  }
 
   SetPendingEvent(CONFIG_CHANGE_EVENT_PENDING);
   ProcessPendingEvents();
@@ -748,17 +766,27 @@ void MediaSourcePlayer::ConfigureAudioDecoderJob() {
   }
 }
 
+void MediaSourcePlayer::ResetVideoDecoderJob() {
+  video_decoder_job_.reset();
+
+  // Any eventual video decoder job re-creation will use the current |surface_|.
+  if (IsEventPending(SURFACE_CHANGE_EVENT_PENDING))
+    ClearPendingEvent(SURFACE_CHANGE_EVENT_PENDING);
+}
+
 void MediaSourcePlayer::ConfigureVideoDecoderJob() {
   if (!HasVideo() || surface_.IsEmpty()) {
-    video_decoder_job_.reset();
-    if (IsEventPending(SURFACE_CHANGE_EVENT_PENDING))
-      ClearPendingEvent(SURFACE_CHANGE_EVENT_PENDING);
+    ResetVideoDecoderJob();
     return;
   }
 
   // Create video decoder job only if config changes or we don't have a job.
-  if (video_decoder_job_ && !reconfig_video_decoder_)
+  if (video_decoder_job_ && !reconfig_video_decoder_) {
+    DCHECK(!IsEventPending(SURFACE_CHANGE_EVENT_PENDING));
     return;
+  }
+
+  DCHECK(!video_decoder_job_ || !video_decoder_job_->is_decoding());
 
   if (reconfig_video_decoder_) {
     // No hack browser seek should be required. I-Frame must be next.
@@ -769,6 +797,8 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
   // If uncertain that video I-frame data is next and there is no seek already
   // in process, request browser demuxer seek so the new decoder will decode
   // an I-frame first. Otherwise, the new MediaCodec might crash. See b/8950387.
+  // Eventual OnDemuxerSeekDone() will trigger ProcessPendingEvents() and
+  // continue from here.
   // TODO(wolenetz): Instead of doing hack browser seek, replay cached data
   // since last keyframe. See http://crbug.com/304234.
   if (!next_video_data_is_iframe_ && !IsEventPending(SEEK_EVENT_PENDING)) {
@@ -776,17 +806,16 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
     return;
   }
 
+  // Release the old VideoDecoderJob first so the surface can get released.
+  // Android does not allow 2 MediaCodec instances use the same surface.
+  ResetVideoDecoderJob();
+
   base::android::ScopedJavaLocalRef<jobject> media_crypto = GetMediaCrypto();
   if (is_video_encrypted_ && media_crypto.is_null())
     return;
 
-  DCHECK(!video_decoder_job_ || !video_decoder_job_->is_decoding());
-
   DVLOG(1) << __FUNCTION__ << " : creating new video decoder job";
 
-  // Release the old VideoDecoderJob first so the surface can get released.
-  // Android does not allow 2 MediaCodec instances use the same surface.
-  video_decoder_job_.reset();
   // Create the new VideoDecoderJob.
   bool is_secure = IsProtectedSurfaceRequired();
   video_decoder_job_.reset(
@@ -798,13 +827,11 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
                               base::Bind(&DemuxerAndroid::RequestDemuxerData,
                                          base::Unretained(demuxer_.get()),
                                          DemuxerStream::VIDEO)));
-  if (video_decoder_job_) {
-    video_decoder_job_->BeginPrerolling(preroll_timestamp_);
-    reconfig_video_decoder_ = false;
-  }
+  if (!video_decoder_job_)
+    return;
 
-  if (IsEventPending(SURFACE_CHANGE_EVENT_PENDING))
-    ClearPendingEvent(SURFACE_CHANGE_EVENT_PENDING);
+  video_decoder_job_->BeginPrerolling(preroll_timestamp_);
+  reconfig_video_decoder_ = false;
 
   // Inform the fullscreen view the player is ready.
   // TODO(qinmin): refactor MediaPlayerBridge so that we have a better way

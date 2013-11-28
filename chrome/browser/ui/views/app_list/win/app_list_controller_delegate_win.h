@@ -24,6 +24,7 @@ class AppListControllerDelegateWin : public AppListControllerDelegateImpl {
   virtual ~AppListControllerDelegateWin();
 
   // AppListControllerDelegate overrides:
+  virtual bool ForceNativeDesktop() const OVERRIDE;
   virtual void ViewClosing() OVERRIDE;
   virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
   virtual void OnShowExtensionPrompt() OVERRIDE;
@@ -31,6 +32,9 @@ class AppListControllerDelegateWin : public AppListControllerDelegateImpl {
   virtual bool CanDoCreateShortcutsFlow() OVERRIDE;
 
  private:
+  // AppListcontrollerDelegateImpl:
+  virtual void FillLaunchParams(AppLaunchParams* params) OVERRIDE;
+
   AppListServiceWin* service_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListControllerDelegateWin);

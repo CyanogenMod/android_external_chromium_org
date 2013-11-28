@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/app_list/win/app_list_win.h"
 
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_list/app_list_positioner.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
@@ -12,6 +13,14 @@
 namespace {
 
 static const wchar_t kTrayClassName[] = L"Shell_TrayWnd";
+
+// If the mouse cursor is less than this distance, in pixels, away from the
+// taskbar, it is considered to be in the taskbar for the purpose of anchoring.
+static const int kSnapDistance = 50;
+
+// The minimum distance, in pixels, to position the app list from the taskbar or
+// edge of screen.
+static const int kMinDistanceFromEdge = 3;
 
 // Utility methods for showing the app list.
 // Attempts to find the bounds of the Windows taskbar. Returns true on success.
@@ -31,90 +40,43 @@ bool GetTaskbarRect(gfx::Rect* rect) {
   return true;
 }
 
-gfx::Point FindReferencePoint(const gfx::Display& display,
-                              const gfx::Point& cursor) {
-  const int kSnapDistance = 50;
-
-  // If we can't find the taskbar, snap to the bottom left.
-  // If the display size is the same as the work area, and does not contain the
-  // taskbar, either the taskbar is hidden or on another monitor, so just snap
-  // to the bottom left.
-  gfx::Rect taskbar_rect;
-  if (!GetTaskbarRect(&taskbar_rect) ||
-      (display.work_area() == display.bounds() &&
-          !display.work_area().Contains(taskbar_rect))) {
-    return display.work_area().bottom_left();
-  }
-
-  // Snap to the taskbar edge. If the cursor is greater than kSnapDistance away,
-  // also move to the left (for horizontal taskbars) or top (for vertical).
-  const gfx::Rect& screen_rect = display.bounds();
-  // First handle taskbar on bottom.
-  // Note on Windows 8 the work area won't include split windows on the left or
-  // right, and neither will |taskbar_rect|.
-  if (taskbar_rect.width() == display.work_area().width()) {
-    if (taskbar_rect.bottom() == screen_rect.bottom()) {
-      if (taskbar_rect.y() - cursor.y() > kSnapDistance)
-        return gfx::Point(screen_rect.x(), taskbar_rect.y());
-
-      return gfx::Point(cursor.x(), taskbar_rect.y());
-    }
-
-    // Now try on the top.
-    if (cursor.y() - taskbar_rect.bottom() > kSnapDistance)
-      return gfx::Point(screen_rect.x(), taskbar_rect.bottom());
-
-    return gfx::Point(cursor.x(), taskbar_rect.bottom());
-  }
-
-  // Now try the left.
-  if (taskbar_rect.x() == screen_rect.x()) {
-    if (cursor.x() - taskbar_rect.right() > kSnapDistance)
-      return gfx::Point(taskbar_rect.right(), screen_rect.y());
-
-    return gfx::Point(taskbar_rect.right(), cursor.y());
-  }
-
-  // Finally, try the right.
-  if (taskbar_rect.x() - cursor.x() > kSnapDistance)
-    return gfx::Point(taskbar_rect.x(), screen_rect.y());
-
-  return gfx::Point(taskbar_rect.x(), cursor.y());
-}
-
-gfx::Point FindAnchorPoint(
-    const gfx::Size view_size,
-    const gfx::Display& display,
-    const gfx::Point& cursor) {
-  const int kSnapOffset = 3;
-
-  gfx::Rect bounds_rect(display.work_area());
-  // Always subtract the taskbar area since work_area() will not subtract it
-  // if the taskbar is set to auto-hide, and the app list should never overlap
-  // the taskbar.
-  gfx::Rect taskbar_rect;
-  if (GetTaskbarRect(&taskbar_rect))
-    bounds_rect.Subtract(taskbar_rect);
-
-  bounds_rect.Inset(view_size.width() / 2 + kSnapOffset,
-                    view_size.height() / 2 + kSnapOffset);
-
-  gfx::Point anchor = FindReferencePoint(display, cursor);
-  anchor.SetToMax(bounds_rect.origin());
-  anchor.SetToMin(bounds_rect.bottom_right());
-  return anchor;
-}
-
 }  // namespace
 
 AppListWin::AppListWin(app_list::AppListView* view,
                        const base::Closure& on_should_dismiss)
-  : view_(view),
-    activation_tracker_(view, on_should_dismiss),
-    window_icon_updated_(false) {
-}
+    : view_(view),
+      activation_tracker_(view, on_should_dismiss),
+      window_icon_updated_(false) {}
 
-AppListWin::~AppListWin() {
+AppListWin::~AppListWin() {}
+
+gfx::Point AppListWin::FindAnchorPoint(const gfx::Size view_size,
+                                       const gfx::Display& display,
+                                       const gfx::Point& cursor,
+                                       const gfx::Rect& taskbar_rect) {
+  AppListPositioner positioner(display, view_size, kMinDistanceFromEdge);
+
+  // Subtract the taskbar area since the display's default work_area will not
+  // subtract it if the taskbar is set to auto-hide, and the app list should
+  // never overlap the taskbar.
+  positioner.WorkAreaSubtract(taskbar_rect);
+
+  // Find which edge of the screen the taskbar is attached to.
+  AppListPositioner::ScreenEdge edge = positioner.GetShelfEdge(taskbar_rect);
+
+  // Snap to the taskbar edge. If the cursor is greater than kSnapDistance away,
+  // anchor to the corner. Otherwise, anchor to the cursor position.
+  gfx::Point anchor;
+  if (edge == AppListPositioner::SCREEN_EDGE_UNKNOWN) {
+    // If we can't find the taskbar, snap to the bottom left.
+    return positioner.GetAnchorPointForScreenCorner(
+        AppListPositioner::SCREEN_CORNER_BOTTOM_LEFT);
+  } else if (positioner.GetCursorDistanceFromShelf(edge, cursor) >
+             kSnapDistance) {
+    return positioner.GetAnchorPointForShelfCorner(edge);
+  } else {
+    return positioner.GetAnchorPointForShelfCursor(edge, cursor);
+  }
 }
 
 void AppListWin::Show() {
@@ -138,8 +100,10 @@ void AppListWin::MoveNearCursor() {
   gfx::Display display = screen->GetDisplayNearestPoint(cursor);
 
   view_->SetBubbleArrow(views::BubbleBorder::FLOAT);
-  view_->SetAnchorPoint(FindAnchorPoint(
-      view_->GetPreferredSize(), display, cursor));
+  gfx::Rect taskbar_rect;
+  GetTaskbarRect(&taskbar_rect);
+  view_->SetAnchorPoint(FindAnchorPoint(view_->GetPreferredSize(), display,
+                                        cursor, taskbar_rect));
 }
 
 bool AppListWin::IsVisible() {
@@ -150,8 +114,8 @@ void AppListWin::Prerender() {
   view_->Prerender();
 }
 
-void AppListWin::RegainNextLostFocus() {
-  activation_tracker_.RegainNextLostFocus();
+void AppListWin::ReactivateOnNextFocusLoss() {
+  activation_tracker_.ReactivateOnNextFocusLoss();
 }
 
 gfx::NativeWindow AppListWin::GetWindow() {

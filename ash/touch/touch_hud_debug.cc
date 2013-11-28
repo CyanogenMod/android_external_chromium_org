@@ -329,7 +329,7 @@ class TouchHudCanvas : public views::View {
   DISALLOW_COPY_AND_ASSIGN(TouchHudCanvas);
 };
 
-TouchHudDebug::TouchHudDebug(aura::RootWindow* initial_root)
+TouchHudDebug::TouchHudDebug(aura::Window* initial_root)
     : TouchObserverHUD(initial_root),
       mode_(FULLSCREEN),
       touch_log_(new TouchLog()),
@@ -371,8 +371,8 @@ TouchHudDebug::~TouchHudDebug() {
 // static
 scoped_ptr<DictionaryValue> TouchHudDebug::GetAllAsDictionary() {
   scoped_ptr<DictionaryValue> value(new DictionaryValue());
-  Shell::RootWindowList roots = Shell::GetInstance()->GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = roots.begin();
+  aura::Window::Windows roots = Shell::GetInstance()->GetAllRootWindows();
+  for (aura::Window::Windows::iterator iter = roots.begin();
       iter != roots.end(); ++iter) {
     internal::RootWindowController* controller = GetRootWindowController(*iter);
     internal::TouchHudDebug* hud = controller->touch_hud_debug();

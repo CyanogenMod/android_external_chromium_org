@@ -13,7 +13,6 @@
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/open_with_browser.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -21,13 +20,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
-#include "chrome/common/extensions/background_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/browser/lazy_background_task_queue.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "net/base/escape.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -50,7 +50,7 @@ int ExtractProcessFromExtensionId(Profile* profile,
                                   const std::string& extension_id) {
   GURL extension_url =
       Extension::GetBaseURLFromExtensionId(extension_id);
-  ExtensionProcessManager* manager =
+  extensions::ProcessManager* manager =
     extensions::ExtensionSystem::Get(profile)->process_manager();
 
   SiteInstance* site_instance = manager->GetSiteInstanceForURL(extension_url);
@@ -408,7 +408,7 @@ void FileBrowserHandlerExecutor::SetupPermissionsAndDispatchEvent(
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
       "fileBrowserHandler.onExecute", event_args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   event_router->DispatchEventToExtension(extension_->id(), event.Pass());
 
   ExecuteDoneOnUIThread(true);

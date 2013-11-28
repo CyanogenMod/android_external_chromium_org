@@ -10,6 +10,7 @@
 #include "base/time/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
+#include "content/browser/loader/detachable_resource_handler.h"
 #include "content/browser/loader/resource_loader_delegate.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/ssl/ssl_client_auth_handler.h"
@@ -18,12 +19,10 @@
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/resource_dispatcher_host_login_delegate.h"
-#include "content/public/browser/site_instance.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/resource_response.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
@@ -438,8 +437,15 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   // WebKit will send us a cancel for downloads since it no longer handles
   // them.  In this case, ignore the cancel since we handle downloads in the
   // browser.
-  if (from_renderer && (info->is_download() || info->is_stream()))
+  if (from_renderer && (info->IsDownload() || info->is_stream()))
     return;
+
+  if (from_renderer && info->detachable_handler()) {
+    // TODO(davidben): Fix Blink handling of prefetches so they are not
+    // cancelled on navigate away and end up in the local cache.
+    info->detachable_handler()->Detach();
+    return;
+  }
 
   // TODO(darin): Perhaps we should really be looking to see if the status is
   // IO_PENDING?
@@ -472,34 +478,6 @@ void ResourceLoader::CompleteResponseStarted() {
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
   PopulateResourceResponse(request_.get(), response.get());
-
-  // The --site-per-process flag enables an out-of-process iframes
-  // prototype. It works by changing the MIME type of cross-site subframe
-  // responses to a Chrome specific one. This new type causes the subframe
-  // to be replaced by a <webview> tag with the same URL, which results in
-  // using a renderer in a different process.
-  //
-  // For prototyping purposes, we will use a small hack to ensure same site
-  // iframes are not changed. We can compare the URL for the subframe
-  // request with the referrer. If the two don't match, then it should be a
-  // cross-site iframe.
-  // Also, we don't do the MIME type change for chrome:// URLs, as those
-  // require different privileges and are not allowed in regular renderers.
-  //
-  // The usage of SiteInstance::IsSameWebSite is safe on the IO thread,
-  // if the browser_context parameter is NULL. This does not work for hosted
-  // apps, but should be fine for prototyping.
-  // TODO(nasko): Once the SiteInstance check is fixed, ensure we do the
-  // right thing here. http://crbug.com/160576
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSitePerProcess) &&
-      GetRequestInfo()->GetResourceType() == ResourceType::SUB_FRAME &&
-      response->head.mime_type == "text/html" &&
-      !request_->url().SchemeIs(chrome::kChromeUIScheme) &&
-      !SiteInstance::IsSameWebSite(NULL, request_->url(),
-                                   GURL(request_->referrer()))) {
-    response->head.mime_type = "application/browser-plugin";
-  }
 
   if (request_->ssl_info().cert.get()) {
     int cert_id = CertStore::GetInstance()->StoreCert(
@@ -617,14 +595,16 @@ void ResourceLoader::ResponseCompleted() {
         ssl_info.connection_status);
   }
 
-  if (handler_->OnResponseCompleted(info->GetRequestID(), request_->status(),
-                                    security_info)) {
-    // This will result in our destruction.
-    CallDidFinishLoading();
-  } else {
+  bool defer = false;
+  handler_->OnResponseCompleted(info->GetRequestID(), request_->status(),
+                                security_info, &defer);
+  if (defer) {
     // The handler is not ready to die yet.  We will call DidFinishLoading when
     // we resume.
     deferred_stage_ = DEFERRED_FINISH;
+  } else {
+    // This will result in our destruction.
+    CallDidFinishLoading();
   }
 }
 

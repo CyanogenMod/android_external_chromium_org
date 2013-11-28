@@ -44,7 +44,7 @@ using base::TimeTicks;
 using ui::Compositor;
 using ui::Layer;
 using ui::LayerDelegate;
-using WebKit::WebGraphicsContext3D;
+using blink::WebGraphicsContext3D;
 
 namespace {
 
@@ -210,7 +210,7 @@ class WebGLBench : public BenchCompositorObserver {
 
     context_provider_ =
         ui::ContextFactory::GetInstance()->SharedMainThreadContextProvider();
-    WebKit::WebGraphicsContext3D* context = context_provider_->Context3d();
+    blink::WebGraphicsContext3D* context = context_provider_->Context3d();
     context->makeContextCurrent();
     texture_ = new WebGLTexture(context, bounds.size());
     fbo_ = context->createFramebuffer();
@@ -235,7 +235,7 @@ class WebGLBench : public BenchCompositorObserver {
 
   virtual void Draw() OVERRIDE {
     if (do_draw_) {
-      WebKit::WebGraphicsContext3D* context = context_provider_->Context3d();
+      blink::WebGraphicsContext3D* context = context_provider_->Context3d();
       context->makeContextCurrent();
       context->clearColor((frames() % kFrames)*1.0/kFrames, 1.f, 0.f, 1.f);
       context->clear(GL_COLOR_BUFFER_BIT);
@@ -316,17 +316,17 @@ int main(int argc, char** argv) {
   scoped_ptr<aura::RootWindow> root_window(
       test_screen->CreateRootWindowForPrimaryDisplay());
   aura::client::SetCaptureClient(
-      root_window.get(),
-      new aura::client::DefaultCaptureClient(root_window.get()));
+      root_window->window(),
+      new aura::client::DefaultCaptureClient(root_window->window()));
 
   scoped_ptr<aura::client::FocusClient> focus_client(
       new aura::test::TestFocusClient);
-  aura::client::SetFocusClient(root_window.get(), focus_client.get());
+  aura::client::SetFocusClient(root_window->window(), focus_client.get());
 
   // add layers
   ColoredLayer background(SK_ColorRED);
-  background.SetBounds(root_window->bounds());
-  root_window->layer()->Add(&background);
+  background.SetBounds(root_window->window()->bounds());
+  root_window->window()->layer()->Add(&background);
 
   ColoredLayer window(SK_ColorBLUE);
   window.SetBounds(gfx::Rect(background.bounds().size()));
@@ -360,10 +360,10 @@ int main(int argc, char** argv) {
   }
 
 #ifndef NDEBUG
-  ui::PrintLayerHierarchy(root_window->layer(), gfx::Point(100, 100));
+  ui::PrintLayerHierarchy(root_window->window()->layer(), gfx::Point(100, 100));
 #endif
 
-  root_window->ShowRootWindow();
+  root_window->host()->Show();
   base::MessageLoopForUI::current()->Run();
   focus_client.reset();
   root_window.reset();

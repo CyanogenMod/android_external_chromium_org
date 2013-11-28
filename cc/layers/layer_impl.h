@@ -42,6 +42,7 @@ namespace cc {
 
 class LayerTreeHostImpl;
 class LayerTreeImpl;
+class MicroBenchmarkImpl;
 class QuadSink;
 class Renderer;
 class ScrollbarAnimationController;
@@ -75,6 +76,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
+  virtual void OnAnimationWaitingForDeletion() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
 
   // Tree structure.
@@ -210,6 +212,17 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   float opacity() const { return opacity_; }
   bool OpacityIsAnimating() const;
   bool OpacityIsAnimatingOnImplOnly() const;
+
+  void SetBlendMode(SkXfermode::Mode);
+  SkXfermode::Mode blend_mode() const { return blend_mode_; }
+  bool uses_default_blend_mode() const {
+    return blend_mode_ == SkXfermode::kSrcOver_Mode;
+  }
+
+  void SetIsRootForIsolatedGroup(bool root);
+  bool is_root_for_isolated_group() const {
+    return is_root_for_isolated_group_;
+  }
 
   void SetPosition(gfx::PointF position);
   gfx::PointF position() const { return position_; }
@@ -490,6 +503,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   bool needs_push_properties() const { return true; }
   bool descendant_needs_push_properties() const { return true; }
 
+  virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark);
+
  protected:
   LayerImpl(LayerTreeImpl* layer_impl, int id);
 
@@ -567,6 +582,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   bool masks_to_bounds_;
   bool contents_opaque_;
   float opacity_;
+  SkXfermode::Mode blend_mode_;
+  bool is_root_for_isolated_group_;
   gfx::PointF position_;
   bool preserves_3d_;
   bool use_parent_backface_visibility_;

@@ -47,20 +47,6 @@ class EVENTS_EXPORT Event {
     DISALLOW_COPY_AND_ASSIGN(DispatcherApi);
   };
 
-  // For testing.
-  class TestApi {
-   public:
-    explicit TestApi(Event* event) : event_(event) {}
-
-    void set_time_stamp(base::TimeDelta time_stamp) {
-      event_->time_stamp_ = time_stamp;
-    }
-
-   private:
-    TestApi();
-    Event* event_;
-  };
-
   const base::NativeEvent& native_event() const { return native_event_; }
   EventType type() const { return type_; }
   const std::string& name() const { return name_; }
@@ -75,9 +61,6 @@ class EVENTS_EXPORT Event {
   EventTarget* target() const { return target_; }
   EventPhase phase() const { return phase_; }
   EventResult result() const { return result_; }
-  bool dispatch_to_hidden_targets() const {
-    return dispatch_to_hidden_targets_;
-  }
 
   LatencyInfo* latency() { return &latency_; }
   const LatencyInfo* latency() const { return &latency_; }
@@ -141,6 +124,8 @@ class EVENTS_EXPORT Event {
       case ET_GESTURE_LONG_TAP:
       case ET_GESTURE_MULTIFINGER_SWIPE:
       case ET_GESTURE_SHOW_PRESS:
+        // When adding a gesture event which is paired with an event which
+        // occurs earlier, add the event to |IsEndingEvent|.
         return true;
 
       case ET_SCROLL_FLING_CANCEL:
@@ -153,6 +138,21 @@ class EVENTS_EXPORT Event {
         break;
     }
     return false;
+  }
+
+  // An ending event is paired with the event which started it. Setting capture
+  // should not prevent ending events from getting to their initial target.
+  bool IsEndingEvent() const {
+    switch(type_) {
+      case ui::ET_TOUCH_CANCELLED:
+      case ui::ET_GESTURE_TAP_CANCEL:
+      case ui::ET_GESTURE_END:
+      case ui::ET_GESTURE_SCROLL_END:
+      case ui::ET_GESTURE_PINCH_END:
+        return true;
+      default:
+        return false;
+    }
   }
 
   bool IsScrollEvent() const {
@@ -206,9 +206,6 @@ class EVENTS_EXPORT Event {
     delete_native_event_ = delete_native_event;
   }
   void set_cancelable(bool cancelable) { cancelable_ = cancelable; }
-  void set_dispatch_to_hidden_targets(bool dispatch_to_hidden_targets) {
-    dispatch_to_hidden_targets_ = dispatch_to_hidden_targets;
-  }
 
   void set_time_stamp(const base::TimeDelta& time_stamp) {
     time_stamp_ = time_stamp;
@@ -219,6 +216,8 @@ class EVENTS_EXPORT Event {
   void InitLatencyInfo();
 
  private:
+  friend class EventTestApi;
+
   // Safely initializes the native event members of this class.
   void Init();
   void InitWithNativeEvent(const base::NativeEvent& native_event);
@@ -228,7 +227,6 @@ class EVENTS_EXPORT Event {
   base::TimeDelta time_stamp_;
   LatencyInfo latency_;
   int flags_;
-  bool dispatch_to_hidden_targets_;
   base::NativeEvent native_event_;
   bool delete_native_event_;
   bool cancelable_;
@@ -245,22 +243,6 @@ class EVENTS_EXPORT CancelModeEvent : public Event {
 
 class EVENTS_EXPORT LocatedEvent : public Event {
  public:
-  // For testing.
-  class TestApi : public Event::TestApi {
-   public:
-    explicit TestApi(LocatedEvent* located_event)
-        : Event::TestApi(located_event),
-          located_event_(located_event) {}
-
-    void set_location(const gfx::Point& location) {
-      located_event_->location_ = location;
-    }
-
-   private:
-    TestApi();
-    LocatedEvent* located_event_;
-  };
-
   virtual ~LocatedEvent();
 
   int x() const { return location_.x(); }
@@ -283,6 +265,7 @@ class EVENTS_EXPORT LocatedEvent : public Event {
   }
 
  protected:
+  friend class LocatedEventTestApi;
   explicit LocatedEvent(const base::NativeEvent& native_event);
 
   // Create a new LocatedEvent which is identical to the provided model.

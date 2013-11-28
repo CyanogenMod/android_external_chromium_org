@@ -14,8 +14,6 @@
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/api/notifications/notifications_api.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
@@ -38,6 +36,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/show_desktop_notification_params.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -58,8 +58,7 @@ using content::BrowserThread;
 using content::RenderViewHost;
 using content::WebContents;
 using message_center::NotifierId;
-using WebKit::WebNotificationPresenter;
-using WebKit::WebTextDirection;
+using blink::WebTextDirection;
 
 
 // NotificationPermissionInfoBarDelegate --------------------------------------
@@ -226,7 +225,7 @@ string16 DesktopNotificationService::CreateDataUrl(
     subst.push_back(net::EscapeForHTML(UTF16ToUTF8(title)));
     subst.push_back(net::EscapeForHTML(UTF16ToUTF8(body)));
     // icon float position
-    subst.push_back(dir == WebKit::WebTextDirectionRightToLeft ?
+    subst.push_back(dir == blink::WebTextDirectionRightToLeft ?
                     "right" : "left");
   } else if (title.empty() || body.empty()) {
     resource = IDR_NOTIFICATION_1LINE_HTML;
@@ -242,7 +241,7 @@ string16 DesktopNotificationService::CreateDataUrl(
     subst.push_back(net::EscapeForHTML(UTF16ToUTF8(body)));
   }
   // body text direction
-  subst.push_back(dir == WebKit::WebTextDirectionRightToLeft ?
+  subst.push_back(dir == blink::WebTextDirectionRightToLeft ?
                   "rtl" : "ltr");
 
   return CreateDataUrl(resource, subst);
@@ -277,7 +276,7 @@ std::string DesktopNotificationService::AddNotification(
   if (message_center::IsRichNotificationEnabled()) {
     // For message center create a non-HTML notification with |icon_url|.
     Notification notification(origin_url, icon_url, title, message,
-                              WebKit::WebTextDirectionDefault,
+                              blink::WebTextDirectionDefault,
                               string16(), replace_id, delegate);
     g_browser_process->notification_ui_manager()->Add(notification, profile);
     return notification.notification_id();
@@ -285,7 +284,7 @@ std::string DesktopNotificationService::AddNotification(
 
   // Generate a data URL embedding the icon URL, title, and message.
   GURL content_url(CreateDataUrl(
-      icon_url, title, message, WebKit::WebTextDirectionDefault));
+      icon_url, title, message, blink::WebTextDirectionDefault));
   Notification notification(
       GURL(), content_url, string16(), replace_id, delegate);
   g_browser_process->notification_ui_manager()->Add(notification, profile);
@@ -304,7 +303,7 @@ std::string DesktopNotificationService::AddIconNotification(
   if (message_center::IsRichNotificationEnabled()) {
     // For message center create a non-HTML notification with |icon|.
     Notification notification(origin_url, icon, title, message,
-                              WebKit::WebTextDirectionDefault,
+                              blink::WebTextDirectionDefault,
                               string16(), replace_id, delegate);
     g_browser_process->notification_ui_manager()->Add(notification, profile);
     return notification.notification_id();
@@ -516,7 +515,7 @@ string16 DesktopNotificationService::DisplayNameForOriginInProcessId(
   // is allowed by an extension.
   if (NotificationUIManager::DelegatesToMessageCenter() ||
       origin.SchemeIs(extensions::kExtensionScheme)) {
-    ExtensionInfoMap* extension_info_map =
+    extensions::InfoMap* extension_info_map =
         extensions::ExtensionSystem::Get(profile_)->info_map();
     if (extension_info_map) {
       ExtensionSet extensions;
@@ -650,27 +649,6 @@ void DesktopNotificationService::OnStringListPrefChanged(
   }
 }
 
-WebKit::WebNotificationPresenter::Permission
-    DesktopNotificationService::HasPermission(const GURL& origin) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  HostContentSettingsMap* host_content_settings_map =
-      profile_->GetHostContentSettingsMap();
-  ContentSetting setting = host_content_settings_map->GetContentSetting(
-      origin,
-      origin,
-      CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
-      NO_RESOURCE_IDENTIFIER);
-
-  if (setting == CONTENT_SETTING_ALLOW)
-    return WebKit::WebNotificationPresenter::PermissionAllowed;
-  if (setting == CONTENT_SETTING_BLOCK)
-    return WebKit::WebNotificationPresenter::PermissionDenied;
-  if (setting == CONTENT_SETTING_ASK)
-    return WebKit::WebNotificationPresenter::PermissionNotAllowed;
-  NOTREACHED() << "Invalid notifications settings value: " << setting;
-  return WebKit::WebNotificationPresenter::PermissionNotAllowed;
-}
-
 void DesktopNotificationService::Observe(
     int type,
     const content::NotificationSource& source,
@@ -700,4 +678,14 @@ void DesktopNotificationService::FirePermissionLevelChangedEvent(
       args.Pass()));
   extensions::ExtensionSystem::Get(profile_)->event_router()->
       DispatchEventToExtension(notifier_id.id, event.Pass());
+
+  // Tell the IO thread that this extension's permission for notifications
+  // has changed.
+  extensions::InfoMap* extension_info_map =
+      extensions::ExtensionSystem::Get(profile_)->info_map();
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&extensions::InfoMap::SetNotificationsDisabled,
+                 extension_info_map, notifier_id.id, !enabled));
+
 }

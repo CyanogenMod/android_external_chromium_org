@@ -103,6 +103,14 @@ def BuildAndTest(options):
   nacl_dir = os.path.join(src_dir, 'native_client')
 
   # Decide platform specifics.
+  if options.browser_path:
+    chrome_filename = options.browser_path
+  else:
+    chrome_filename = find_chrome.FindChrome(src_dir, [options.mode])
+    if chrome_filename is None:
+      raise Exception('Cannot find a chome binary - specify one with '
+                      '--browser_path?')
+
   env = dict(os.environ)
   if sys.platform in ['win32', 'cygwin']:
     if options.bits == 64:
@@ -127,7 +135,18 @@ def BuildAndTest(options):
     env['PATH'] += ';' + msvs_path
     scons = [python, 'scons.py']
   elif sys.platform == 'darwin':
-    bits = 32
+    if options.bits == 64:
+      bits = 64
+    elif options.bits == 32:
+      bits = 32
+    else:
+      p = subprocess.Popen(['file', chrome_filename], stdout=subprocess.PIPE)
+      (p_stdout, _) = p.communicate()
+      assert p.returncode == 0
+      if p_stdout.find('executable x86_64') >= 0:
+        bits = 64
+      else:
+        bits = 32
     scons = [python, 'scons.py']
   else:
     p = subprocess.Popen(
@@ -146,15 +165,14 @@ def BuildAndTest(options):
       bits = 32
     # xvfb-run has a 2-second overhead per invocation, so it is cheaper to wrap
     # the entire build step rather than each test (browser_headless=1).
-    scons = ['xvfb-run', '--auto-servernum', python, 'scons.py']
-
-  if options.browser_path:
-    chrome_filename = options.browser_path
-  else:
-    chrome_filename = find_chrome.FindChrome(src_dir, [options.mode])
-    if chrome_filename is None:
-      raise Exception('Cannot find a chome binary - specify one with '
-                      '--browser_path?')
+    # We also need to make sure that there are at least 24 bits per pixel.
+    # https://code.google.com/p/chromium/issues/detail?id=316687
+    scons = [
+        'xvfb-run',
+        '--auto-servernum',
+        '--server-args', '-screen 0 1024x768x24',
+        python, 'scons.py',
+    ]
 
   if options.jobs > 1:
     scons.append('-j%d' % options.jobs)
@@ -198,6 +216,14 @@ def BuildAndTest(options):
     cmd.append('disable_flaky_tests=1')
   cmd.append('chrome_browser_tests')
 
+  # Propagate path to JSON output if present.
+  # Note that RunCommand calls sys.exit on errors, so potential errors
+  # from one command won't be overwritten by another one. Overwriting
+  # a successful results file with either success or failure is fine.
+  if options.json_build_results_output_file:
+    cmd.append('json_build_results_output_file=%s' %
+               options.json_build_results_output_file)
+
   # Download the toolchain(s).
   RunCommand([python,
               os.path.join(nacl_dir, 'build', 'download_toolchains.py'),
@@ -224,6 +250,9 @@ def MakeCommandLineParser():
                     type='int', help='Run newlib tests?')
   parser.add_option('--enable_glibc', dest='enable_glibc', default=-1,
                     type='int', help='Run glibc tests?')
+
+  parser.add_option('--json_build_results_output_file',
+                    help='Path to a JSON file for machine-readable output.')
 
   # Deprecated, but passed to us by a script in the Chrome repo.
   # Replaced by --enable_glibc=0

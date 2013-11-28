@@ -56,6 +56,8 @@
         'test/null_transaction_observer.cc',
         'test/null_transaction_observer.h',
         'test/sessions/test_scoped_session_event_listener.h',
+        'test/sessions/mock_debug_info_getter.h',
+        'test/sessions/mock_debug_info_getter.cc',
         'test/test_directory_backing_store.cc',
         'test/test_directory_backing_store.h',
         'test/test_transaction_observer.cc',
@@ -119,8 +121,10 @@
         'notifier/fake_invalidator.h',
         'notifier/invalidator_test_template.cc',
         'notifier/invalidator_test_template.h',
-        'notifier/mock_ack_handler.cc',
-        'notifier/mock_ack_handler.h',
+        'notifier/unacked_invalidation_set_test_util.cc',
+        'notifier/unacked_invalidation_set_test_util.h',
+        'internal_api/public/base/object_id_invalidation_map_test_util.h',
+        'internal_api/public/base/object_id_invalidation_map_test_util.cc',
       ],
     },
 
@@ -149,8 +153,6 @@
       'sources': [
         'internal_api/public/base/invalidation_test_util.cc',
         'internal_api/public/base/invalidation_test_util.h',
-        'internal_api/public/base/object_id_invalidation_map_test_util.cc',
-        'internal_api/public/base/object_id_invalidation_map_test_util.h',
         'internal_api/public/test/fake_sync_manager.h',
         'internal_api/public/test/sync_manager_factory_for_profile_sync_test.h',
         'internal_api/public/test/test_entry_factory.h',
@@ -273,20 +275,6 @@
           'util/nigori_unittest.cc',
           'util/protobuf_unittest.cc',
         ],
-        'conditions': [
-          ['OS == "ios" and coverage != 0', {
-            'sources!': [
-              # These sources can't be built with coverage due to a toolchain
-              # bug: http://openradar.appspot.com/radar?id=1499403
-              'engine/syncer_unittest.cc',
-
-              # These tests crash when run with coverage turned on due to an
-              # issue with llvm_gcda_increment_indirect_counter:
-              # http://crbug.com/156058
-              'syncable/directory_backing_store_unittest.cc',
-            ],
-          }],
-        ],
       },
     },
 
@@ -330,7 +318,6 @@
         'conditions': [
           ['OS != "android"', {
             'sources': [
-              'notifier/ack_tracker_unittest.cc',
               'notifier/fake_invalidator_unittest.cc',
               'notifier/invalidation_notifier_unittest.cc',
               'notifier/invalidator_registrar_unittest.cc',

@@ -5,16 +5,22 @@
 #include "ui/aura/root_window_host_ozone.h"
 
 #include "ui/aura/root_window.h"
+#include "ui/events/ozone/event_factory_ozone.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
 #include "ui/ozone/ozone_platform.h"
 
 namespace aura {
 
 RootWindowHostOzone::RootWindowHostOzone(const gfx::Rect& bounds)
-    : delegate_(NULL), widget_(0), bounds_(bounds) {
+    : widget_(0),
+      bounds_(bounds) {
   ui::OzonePlatform::Initialize();
-  factory_.reset(ui::EventFactoryOzone::GetInstance());
-  factory_->StartProcessingEvents();
+
+  // EventFactoryOzone creates converters that obtain input events from the
+  // underlying input system and dispatch them as |ui::Event| instances into
+  // Aura.
+  ui::EventFactoryOzone::GetInstance()->StartProcessingEvents();
+
   gfx::SurfaceFactoryOzone* surface_factory =
       gfx::SurfaceFactoryOzone::GetInstance();
   widget_ = surface_factory->GetAcceleratedWidget();
@@ -41,10 +47,6 @@ bool RootWindowHostOzone::Dispatch(const base::NativeEvent& ne) {
     delegate_->OnHostMouseEvent(mouseev);
   }
   return true;
-}
-
-void RootWindowHostOzone::SetDelegate(RootWindowHostDelegate* delegate) {
-  delegate_ = delegate;
 }
 
 RootWindow* RootWindowHostOzone::GetRootWindow() {
@@ -102,10 +104,6 @@ void RootWindowHostOzone::OnCursorVisibilityChanged(bool show) {
 }
 
 void RootWindowHostOzone::MoveCursorTo(const gfx::Point& location) {
-  NOTIMPLEMENTED();
-}
-
-void RootWindowHostOzone::SetFocusWhenShown(bool focus_when_shown) {
   NOTIMPLEMENTED();
 }
 

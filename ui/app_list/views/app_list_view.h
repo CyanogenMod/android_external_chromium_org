@@ -5,7 +5,6 @@
 #ifndef UI_APP_LIST_VIEWS_APP_LIST_VIEW_H_
 #define UI_APP_LIST_VIEWS_APP_LIST_VIEW_H_
 
-#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "ui/app_list/app_list_export.h"
@@ -97,13 +96,12 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   void RemoveObserver(Observer* observer);
 
   // Set a callback to be called the next time any app list paints.
-  static void SetNextPaintCallback(const base::Closure& callback);
+  static void SetNextPaintCallback(void (*callback)());
 
 #if defined(OS_WIN)
   HWND GetHWND() const;
 #endif
 
-  AppListModel* model() { return model_.get(); }
   AppListMainView* app_list_main_view() { return app_list_main_view_; }
 
  private:
@@ -112,6 +110,11 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
                             views::BubbleBorder::Arrow arrow,
                             bool border_accepts_events,
                             const gfx::Vector2d& anchor_offset);
+
+  // Overridden from views::BubbleDelegateView:
+  virtual void OnBeforeBubbleWidgetInit(
+      views::Widget::InitParams* params,
+      views::Widget* widget) const OVERRIDE;
 
   // Overridden from views::WidgetDelegateView:
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
@@ -132,14 +135,12 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
 
   // Overridden from AppListModelObserver:
   virtual void OnAppListModelSigninStatusChanged() OVERRIDE;
-  virtual void OnAppListModelUsersChanged() OVERRIDE;
 
   SigninDelegate* GetSigninDelegate();
 
-  scoped_ptr<AppListModel> model_;
   scoped_ptr<AppListViewDelegate> delegate_;
 
-  AppListMainView*  app_list_main_view_;
+  AppListMainView* app_list_main_view_;
   SigninView* signin_view_;
 
   ObserverList<Observer> observers_;

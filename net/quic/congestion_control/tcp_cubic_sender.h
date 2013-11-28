@@ -35,23 +35,24 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
                  QuicTcpCongestionWindow max_tcp_congestion_window);
   virtual ~TcpCubicSender();
 
-  virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
-
   // Start implementation of SendAlgorithmInterface.
+  virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
+  virtual void SetMaxPacketSize(QuicByteCount max_packet_size) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& feedback,
       QuicTime feedback_receive_time,
       const SentPacketsMap& sent_packets) OVERRIDE;
-  virtual void OnIncomingAck(QuicPacketSequenceNumber acked_sequence_number,
+  virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
                              QuicByteCount acked_bytes,
                              QuicTime::Delta rtt) OVERRIDE;
-  virtual void OnIncomingLoss(QuicTime ack_receive_time) OVERRIDE;
-  virtual bool OnPacketSent(
-      QuicTime sent_time,
-      QuicPacketSequenceNumber sequence_number,
-      QuicByteCount bytes,
-      TransmissionType transmission_type,
-      HasRetransmittableData is_retransmittable) OVERRIDE;
+  virtual void OnPacketLost(QuicPacketSequenceNumber largest_loss,
+                            QuicTime ack_receive_time) OVERRIDE;
+  virtual bool OnPacketSent(QuicTime sent_time,
+                            QuicPacketSequenceNumber sequence_number,
+                            QuicByteCount bytes,
+                            TransmissionType transmission_type,
+                            HasRetransmittableData is_retransmittable) OVERRIDE;
+  virtual void OnRetransmissionTimeout() OVERRIDE;
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
                                  QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
@@ -59,10 +60,10 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
       TransmissionType transmission_type,
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) OVERRIDE;
-  virtual QuicBandwidth BandwidthEstimate() OVERRIDE;
-  virtual QuicTime::Delta SmoothedRtt() OVERRIDE;
-  virtual QuicTime::Delta RetransmissionDelay() OVERRIDE;
-  virtual QuicByteCount GetCongestionWindow() OVERRIDE;
+  virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
+  virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
+  virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
   virtual void SetCongestionWindow(QuicByteCount window) OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
@@ -98,6 +99,15 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   // We need to keep track of the end sequence number of each RTT "burst".
   bool update_end_sequence_number_;
   QuicPacketSequenceNumber end_sequence_number_;
+
+  // Track the largest packet that has been sent.
+  QuicPacketSequenceNumber largest_sent_sequence_number_;
+
+  // Track the largest packet that has been acked.
+  QuicPacketSequenceNumber largest_acked_sequence_number_;
+
+  // Track the largest sequence number outstanding when a CWND cutback occurs.
+  QuicPacketSequenceNumber largest_sent_at_last_cutback_;
 
   // Congestion window in packets.
   QuicTcpCongestionWindow congestion_window_;

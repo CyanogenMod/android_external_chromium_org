@@ -12,21 +12,22 @@
 #include "content/child/indexed_db/proxy_webidbcursor_impl.h"
 #include "content/child/indexed_db/proxy_webidbdatabase_impl.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/common/indexed_db/indexed_db_constants.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "ipc/ipc_channel.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseError.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 
-using WebKit::WebData;
-using WebKit::WebIDBCallbacks;
-using WebKit::WebIDBDatabase;
-using WebKit::WebIDBDatabaseCallbacks;
-using WebKit::WebIDBDatabaseError;
-using WebKit::WebIDBKey;
-using WebKit::WebIDBMetadata;
-using WebKit::WebString;
-using WebKit::WebVector;
+using blink::WebData;
+using blink::WebIDBCallbacks;
+using blink::WebIDBDatabase;
+using blink::WebIDBDatabaseCallbacks;
+using blink::WebIDBDatabaseError;
+using blink::WebIDBKey;
+using blink::WebIDBMetadata;
+using blink::WebString;
+using blink::WebVector;
 using base::ThreadLocalPointer;
 using webkit_glue::WorkerTaskRunner;
 
@@ -39,9 +40,6 @@ namespace {
 IndexedDBDispatcher* const kHasBeenDeleted =
     reinterpret_cast<IndexedDBDispatcher*>(0x1);
 
-int32 CurrentWorkerId() {
-  return WorkerTaskRunner::Instance()->CurrentWorkerId();
-}
 }  // unnamed namespace
 
 const size_t kMaxIDBValueSizeInBytes = 64 * 1024 * 1024;
@@ -183,6 +181,7 @@ void IndexedDBDispatcher::RequestIDBCursorAdvance(
 
 void IndexedDBDispatcher::RequestIDBCursorContinue(
     const IndexedDBKey& key,
+    const IndexedDBKey& primary_key,
     WebIDBCallbacks* callbacks_ptr,
     int32 ipc_cursor_id) {
   // Reset all cursor prefetch caches except for this cursor.
@@ -192,7 +191,7 @@ void IndexedDBDispatcher::RequestIDBCursorContinue(
 
   int32 ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   Send(new IndexedDBHostMsg_CursorContinue(
-      ipc_cursor_id, CurrentWorkerId(), ipc_callbacks_id, key));
+      ipc_cursor_id, CurrentWorkerId(), ipc_callbacks_id, key, primary_key));
 }
 
 void IndexedDBDispatcher::RequestIDBCursorPrefetch(
@@ -331,7 +330,7 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
 
   if (value.size() > kMaxIDBValueSizeInBytes) {
     callbacks->onError(WebIDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         WebString::fromUTF8(base::StringPrintf(
             "The serialized value is too large"
             " (size=%" PRIuS " bytes, max=%" PRIuS " bytes).",
@@ -460,11 +459,17 @@ void IndexedDBDispatcher::OnSuccessIDBDatabase(
     return;
   WebIDBMetadata metadata(ConvertMetadata(idb_metadata));
   // If an upgrade was performed, count will be non-zero.
-  if (!databases_.count(ipc_object_id))
-    databases_[ipc_object_id] = new RendererWebIDBDatabaseImpl(
+  WebIDBDatabase* database = NULL;
+
+  // Back-end will send kNoDatabase if it was already sent in OnUpgradeNeeded.
+  // May already be deleted and removed from the table, but do not recreate..
+  if (ipc_object_id != kNoDatabase) {
+    DCHECK(!databases_.count(ipc_object_id));
+    database = databases_[ipc_object_id] = new RendererWebIDBDatabaseImpl(
         ipc_object_id, ipc_database_callbacks_id, thread_safe_sender_.get());
-  DCHECK_EQ(databases_.count(ipc_object_id), 1u);
-  callbacks->onSuccess(databases_[ipc_object_id], metadata);
+  }
+
+  callbacks->onSuccess(database, metadata);
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
 
@@ -640,7 +645,7 @@ void IndexedDBDispatcher::OnUpgradeNeeded(
       p.old_version,
       databases_[p.ipc_database_id],
       metadata,
-      static_cast<WebIDBCallbacks::DataLoss>(p.data_loss),
+      static_cast<blink::WebIDBDataLoss>(p.data_loss),
       WebString::fromUTF8(p.data_loss_message));
 }
 

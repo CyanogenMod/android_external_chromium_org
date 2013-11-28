@@ -56,9 +56,9 @@ int _fstat32(int fd, struct _stat32* buf);
 int _fstat64(int fd, struct _stat64* buf);
 int _fstat32i64(int fd, struct _stat32i64* buf);
 int _fstat64i32(int fd, struct _stat64i32* buf);
-#else
+#elif !defined(__linux__)
 struct stat;
-int fstat(int fd, struct stat* buf) NOTHROW;
+extern int fstat(int fd, struct stat* buf) NOTHROW;
 #endif
 int fsync(int fd);
 int ftruncate(int fd, off_t length) NOTHROW;
@@ -90,13 +90,12 @@ int _stat32(const char* path, struct _stat32* buf);
 int _stat64(const char* path, struct _stat64* buf);
 int _stat32i64(const char* path, struct _stat32i64* buf);
 int _stat64i32(const char* path, struct _stat64i32* buf);
-#else
-int stat(const char* path, struct stat* buf) NOTHROW;
+#elif !defined(__linux__)
+extern int stat(const char* path, struct stat* buf) NOTHROW;
 #endif
 int symlink(const char* oldpath, const char* newpath) NOTHROW;
 int umount(const char* path) NOTHROW;
 int NAME(unlink)(const char* path) NOTHROW;
-uint64_t usec_since_epoch();
 int utime(const char* filename, const struct utimbuf* times);
 read_ssize_t NAME(write)(int fd, const void* buf, size_t nbyte);
 

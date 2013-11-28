@@ -15,8 +15,8 @@
 #include "chrome/browser/policy/async_policy_provider.h"
 #include "chrome/browser/policy/config_dir_policy_loader.h"
 #include "chrome/browser/policy/configuration_policy_provider_test.h"
-#include "chrome/browser/policy/policy_bundle.h"
-#include "chrome/browser/policy/policy_map.h"
+#include "components/policy/core/common/policy_bundle.h"
+#include "components/policy/core/common/policy_map.h"
 
 namespace policy {
 
@@ -33,8 +33,8 @@ class TestHarness : public PolicyProviderTestHarness {
   virtual void SetUp() OVERRIDE;
 
   virtual ConfigurationPolicyProvider* CreateProvider(
-      scoped_refptr<base::SequencedTaskRunner> task_runner,
-      const PolicyDefinitionList* policy_definition_list) OVERRIDE;
+      SchemaRegistry* registry,
+      scoped_refptr<base::SequencedTaskRunner> task_runner) OVERRIDE;
 
   virtual void InstallEmptyPolicy() OVERRIDE;
   virtual void InstallStringPolicy(const std::string& policy_name,
@@ -82,11 +82,11 @@ void TestHarness::SetUp() {
 }
 
 ConfigurationPolicyProvider* TestHarness::CreateProvider(
-    scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const PolicyDefinitionList* policy_definition_list) {
+    SchemaRegistry* registry,
+    scoped_refptr<base::SequencedTaskRunner> task_runner) {
   scoped_ptr<AsyncPolicyLoader> loader(new ConfigDirPolicyLoader(
       task_runner, test_dir(), POLICY_SCOPE_MACHINE));
-  return new AsyncPolicyProvider(loader.Pass());
+  return new AsyncPolicyProvider(registry, loader.Pass());
 }
 
 void TestHarness::InstallEmptyPolicy() {

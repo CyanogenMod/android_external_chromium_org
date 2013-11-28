@@ -6,6 +6,7 @@
 """End to end tests for ChromeDriver."""
 
 import base64
+import json
 import optparse
 import subprocess
 import os
@@ -15,6 +16,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib2
 
 _THIS_DIR = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(1, os.path.join(_THIS_DIR, os.pardir))
@@ -34,6 +36,7 @@ _TEST_DATA_DIR = os.path.join(chrome_paths.GetTestData(), 'chromedriver')
 if util.IsLinux():
   sys.path.insert(0, os.path.join(chrome_paths.GetSrc(), 'build', 'android'))
   from pylib import android_commands
+  from pylib import constants
   from pylib import forwarder
   from pylib import valgrind_tools
 
@@ -47,12 +50,7 @@ _NEGATIVE_FILTER = [
 ]
 
 _VERSION_SPECIFIC_FILTER = {}
-_VERSION_SPECIFIC_FILTER['HEAD'] = [
-    # These tests rely on the reference chromedriver which is currently broken.
-    # Re-enable once we have uploaded a new reference chromedriver (see
-    # https://code.google.com/p/chromedriver/issues/detail?id=602).
-    'PerfTest.*',
-]
+_VERSION_SPECIFIC_FILTER['HEAD'] = []
 
 _OS_SPECIFIC_FILTER = {}
 _OS_SPECIFIC_FILTER['win'] = [
@@ -78,12 +76,13 @@ _DESKTOP_NEGATIVE_FILTER = [
     'ChromeDriverTest.testSingleTapElement',
     'ChromeDriverTest.testTouchDownUpElement',
     'ChromeDriverTest.testTouchMovedElement',
+    'ChromeDriverTest.testLatestAndroidAppInstalled',
 ]
 
 
 def _GetDesktopNegativeFilter(version_name):
   filter = _NEGATIVE_FILTER + _DESKTOP_NEGATIVE_FILTER
-  os = util.GetPlatformName();
+  os = util.GetPlatformName()
   if os in _OS_SPECIFIC_FILTER:
     filter += _OS_SPECIFIC_FILTER[os]
   if version_name in _VERSION_SPECIFIC_FILTER:
@@ -91,7 +90,7 @@ def _GetDesktopNegativeFilter(version_name):
   return filter
 
 _ANDROID_NEGATIVE_FILTER = {}
-_ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
+_ANDROID_NEGATIVE_FILTER['chrome'] = (
     _NEGATIVE_FILTER + [
         # TODO(chrisgao): fix hang of tab crash test on android.
         'ChromeDriverTest.testTabCrash',
@@ -116,18 +115,20 @@ _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
         'ChromeDriverTest.testShouldHandleNewWindowLoadingProperly',
     ]
 )
-_ANDROID_NEGATIVE_FILTER['com.android.chrome'] = (
-    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'])
-_ANDROID_NEGATIVE_FILTER['com.chrome.beta'] = (
-    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'])
-_ANDROID_NEGATIVE_FILTER['org.chromium.chrome.testshell'] = (
-    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] + [
+_ANDROID_NEGATIVE_FILTER['chrome_stable'] = (
+    _ANDROID_NEGATIVE_FILTER['chrome'])
+_ANDROID_NEGATIVE_FILTER['chrome_beta'] = (
+    _ANDROID_NEGATIVE_FILTER['chrome'])
+_ANDROID_NEGATIVE_FILTER['chromium_test_shell'] = (
+    _ANDROID_NEGATIVE_FILTER['chrome'] + [
         # ChromiumTestShell doesn't support multiple tabs.
         'ChromeDriverTest.testGetWindowHandles',
         'ChromeDriverTest.testSwitchToWindow',
         'ChromeDriverTest.testShouldHandleNewWindowLoadingProperly',
     ]
 )
+_ANDROID_NEGATIVE_FILTER['chromedriver_webview_shell'] = (
+    _ANDROID_NEGATIVE_FILTER['chromium_test_shell'])
 
 
 class ChromeDriverBaseTest(unittest.TestCase):
@@ -147,9 +148,21 @@ class ChromeDriverBaseTest(unittest.TestCase):
   def CreateDriver(self, server_url=None, **kwargs):
     if server_url is None:
       server_url = _CHROMEDRIVER_SERVER_URL
+
+    android_package = None
+    android_activity = None
+    android_process = None
+    if _ANDROID_PACKAGE_KEY:
+      android_package = constants.PACKAGE_INFO[_ANDROID_PACKAGE_KEY].package
+      if _ANDROID_PACKAGE_KEY == 'chromedriver_webview_shell':
+        android_activity = constants.PACKAGE_INFO[_ANDROID_PACKAGE_KEY].activity
+        android_process = '%s:main' % android_package
+
     driver = chromedriver.ChromeDriver(server_url,
                                        chrome_binary=_CHROME_BINARY,
-                                       android_package=_ANDROID_PACKAGE,
+                                       android_package=android_package,
+                                       android_activity=android_activity,
+                                       android_process=android_process,
                                        **kwargs)
     self._drivers += [driver]
     return driver
@@ -163,7 +176,7 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     ChromeDriverTest._http_server = webserver.WebServer(
         chrome_paths.GetTestData())
     ChromeDriverTest._sync_server = webserver.SyncWebServer()
-    if _ANDROID_PACKAGE:
+    if _ANDROID_PACKAGE_KEY:
       ChromeDriverTest._adb = android_commands.AndroidCommands()
       http_host_port = ChromeDriverTest._http_server._server.server_port
       sync_host_port = ChromeDriverTest._sync_server._server.server_port
@@ -173,7 +186,7 @@ class ChromeDriverTest(ChromeDriverBaseTest):
 
   @staticmethod
   def GlobalTearDown():
-    if _ANDROID_PACKAGE:
+    if _ANDROID_PACKAGE_KEY:
       forwarder.Forwarder.UnmapAllDevicePorts(ChromeDriverTest._adb)
     ChromeDriverTest._http_server.Shutdown()
 
@@ -641,6 +654,28 @@ class ChromeDriverTest(ChromeDriverBaseTest):
   def testDoesntHangOnDebugger(self):
     self._driver.ExecuteScript('debugger;')
 
+  def testLatestAndroidAppInstalled(self):
+    assert _ANDROID_PACKAGE_KEY
+    if ('stable' not in _ANDROID_PACKAGE_KEY and
+        'beta' not in _ANDROID_PACKAGE_KEY):
+      return
+
+    try:
+      omaha_list = json.loads(
+          urllib2.urlopen('http://omahaproxy.appspot.com/all.json').read())
+      for l in omaha_list:
+        if l['os'] != 'android':
+          continue
+        for v in l['versions']:
+          if (('stable' in v['channel'] and 'stable' in _ANDROID_PACKAGE_KEY) or
+              ('beta' in v['channel'] and 'beta' in _ANDROID_PACKAGE_KEY)):
+            self.assertEquals(v['version'],
+                              self._driver.capabilities['version'])
+            return
+      raise RuntimeError('Malformed omaha JSON')
+    except urllib2.URLError as e:
+      print 'Unable to fetch current version info from omahaproxy (%s)' % e
+
 
 class ChromeSwitchesCapabilityTest(ChromeDriverBaseTest):
   """Tests that chromedriver properly processes chromeOptions.args capabilities.
@@ -833,12 +868,18 @@ if __name__ == '__main__':
       help=('Filter for specifying what tests to run, "*" will run all. E.g., '
             '*testStartStop'))
   parser.add_option(
-      '', '--android-package', help='Android package name')
+      '', '--android-package',
+      help=('Android package key. Possible values: ' +
+            str(_ANDROID_NEGATIVE_FILTER.keys())))
   options, args = parser.parse_args()
 
   if not options.chromedriver or not os.path.exists(options.chromedriver):
     parser.error('chromedriver is required or the given path is invalid.' +
                  'Please run "%s --help" for help' % __file__)
+
+  if (options.android_package and
+      options.android_package not in _ANDROID_NEGATIVE_FILTER):
+    parser.error('Invalid --android-package')
 
   chromedriver_server = server.Server(os.path.abspath(options.chromedriver),
                                       options.log_path)
@@ -854,12 +895,12 @@ if __name__ == '__main__':
   else:
     _CHROME_BINARY = None
 
-  global _ANDROID_PACKAGE
-  _ANDROID_PACKAGE = options.android_package
+  global _ANDROID_PACKAGE_KEY
+  _ANDROID_PACKAGE_KEY = options.android_package
 
   if options.filter == '*':
-    if _ANDROID_PACKAGE:
-      negative_filter = _ANDROID_NEGATIVE_FILTER[_ANDROID_PACKAGE]
+    if _ANDROID_PACKAGE_KEY:
+      negative_filter = _ANDROID_NEGATIVE_FILTER[_ANDROID_PACKAGE_KEY]
     else:
       negative_filter = _GetDesktopNegativeFilter(options.chrome_version)
     options.filter = '*-' + ':__main__.'.join([''] + negative_filter)

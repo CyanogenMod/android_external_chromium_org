@@ -69,7 +69,8 @@ class LocalFileSystem(FileSystem):
 
   @staticmethod
   def Create():
-    return LocalFileSystem(os.path.join(sys.path[0], os.pardir, os.pardir))
+    return LocalFileSystem(
+        os.path.join(sys.path[0], '..', '..', '..', '..', '..'))
 
   def Read(self, paths, binary=False):
     result = {}
@@ -81,6 +82,9 @@ class LocalFileSystem(FileSystem):
       else:
         result[path] = _ReadFile(full_path, binary)
     return Future(value=result)
+
+  def Refresh(self):
+    return Future(value=())
 
   def Stat(self, path):
     full_path = os.path.join(self._base_path,

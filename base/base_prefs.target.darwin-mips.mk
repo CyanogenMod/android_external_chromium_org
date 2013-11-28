@@ -32,7 +32,7 @@ LOCAL_SRC_FILES := \
 	base/prefs/pref_registry.cc \
 	base/prefs/pref_registry_simple.cc \
 	base/prefs/pref_service.cc \
-	base/prefs/pref_service_builder.cc \
+	base/prefs/pref_service_factory.cc \
 	base/prefs/pref_store.cc \
 	base/prefs/pref_value_map.cc \
 	base/prefs/pref_value_store.cc \
@@ -86,6 +86,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DBASE_PREFS_IMPLEMENTATION' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -166,6 +167,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DBASE_PREFS_IMPLEMENTATION' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

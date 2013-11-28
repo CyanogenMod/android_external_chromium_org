@@ -8,12 +8,13 @@
 
 namespace policy {
 
-ProfilePolicyConnector::ProfilePolicyConnector(Profile* profile) {}
+ProfilePolicyConnector::ProfilePolicyConnector() {}
 
 ProfilePolicyConnector::~ProfilePolicyConnector() {}
 
 void ProfilePolicyConnector::Init(
     bool force_immediate_load,
+    SchemaRegistry* schema_registry,
     CloudPolicyManager* user_cloud_policy_manager) {
   policy_service_.reset(new PolicyServiceStub());
 }
@@ -23,9 +24,5 @@ void ProfilePolicyConnector::InitForTesting(scoped_ptr<PolicyService> service) {
 }
 
 void ProfilePolicyConnector::Shutdown() {}
-
-bool ProfilePolicyConnector::UsedPolicyCertificates() {
-  return false;
-}
 
 }  // namespace policy

@@ -14,7 +14,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/timer/timer.h"
-#include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -23,7 +22,7 @@ typedef unsigned int SkColor;
 class CommandLine;
 
 namespace aura {
-class RootWindow;
+class Window;
 }
 
 namespace ash {
@@ -97,7 +96,7 @@ class ASH_EXPORT DesktopBackgroundController
   WallpaperLayout GetWallpaperLayout() const;
 
   // Initialize root window's background.
-  void OnRootWindowAdded(aura::RootWindow* root_window);
+  void OnRootWindowAdded(aura::Window* root_window);
 
   // Loads builtin wallpaper asynchronously and sets to current wallpaper
   // after loaded. Returns true if the controller started loading the
@@ -160,7 +159,7 @@ class ASH_EXPORT DesktopBackgroundController
 
   // Creates and adds component for current mode (either Widget or Layer) to
   // |root_window|.
-  void InstallDesktopController(aura::RootWindow* root_window);
+  void InstallDesktopController(aura::Window* root_window);
 
   // Creates and adds component for current mode (either Widget or Layer) to
   // all root windows.

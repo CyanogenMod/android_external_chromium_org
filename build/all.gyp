@@ -25,6 +25,7 @@
         '../third_party/libxml/libxml.gyp:*',
         '../third_party/sqlite/sqlite.gyp:*',
         '../third_party/zlib/zlib.gyp:*',
+        '../ui/accessibility/accessibility.gyp:*',
         '../ui/snapshot/snapshot.gyp:*',
         '../ui/ui.gyp:*',
         '../url/url.gyp:*',
@@ -38,6 +39,7 @@
             '../device/bluetooth/bluetooth.gyp:*',
             '../device/device_tests.gyp:*',
             '../device/usb/usb.gyp:*',
+            '../gin/gin.gyp:*',
             '../gpu/gpu.gyp:*',
             '../gpu/tools/tools.gyp:*',
             '../ipc/ipc.gyp:*',
@@ -219,7 +221,6 @@
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_unittests',
-        '../chrome/chrome.gyp:unit_tests',
         '../crypto/crypto.gyp:crypto_unittests',
         '../net/net.gyp:net_unittests',
         '../sql/sql.gyp:sql_unittests',
@@ -234,28 +235,30 @@
             '../chrome/chrome.gyp:chromedriver_tests',
             '../chrome/chrome.gyp:chromedriver_unittests',
             # TODO(kkania): Remove these after infra no longer depends on them.
-            '../chrome/chrome.gyp:chromedriver2_tests',
             '../chrome/chrome.gyp:chromedriver2_unittests',
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:sync_integration_tests',
+            '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
             '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
+            '../gin/gin.gyp:gin_unittests',
             '../google_apis/google_apis.gyp:google_apis_unittests',
             '../gpu/gles2_conform_support/gles2_conform_support.gyp:gles2_conform_support',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
+            '../mojo/mojo.gyp:mojo',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
-            '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/WebKit/public/all.gyp:all_blink',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
@@ -350,6 +353,28 @@
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
           ],
         }],
+        ['enable_printing!=0', {
+          'dependencies': [
+            '../printing/printing.gyp:printing_unittests',
+          ],
+        }],
+        ['use_aura==1', {
+          'dependencies': [
+            '../ui/aura/aura.gyp:aura_unittests',
+            '../ui/compositor/compositor.gyp:compositor_unittests',
+            '../ui/keyboard/keyboard.gyp:keyboard_unittests',
+          ],
+        }],
+        ['use_aura==1 or toolkit_views==1', {
+          'dependencies': [
+            '../ui/events/events.gyp:events_unittests',
+          ],
+        }],
+        ['use_ash==1', {
+          'dependencies': [
+            '../ash/ash.gyp:ash_unittests',
+          ],
+        }],
       ],
     }, # target_name: chromium_builder_tests
     {
@@ -364,7 +389,7 @@
     ['OS!="ios"', {
       'targets': [
         {
-          'target_name': 'all_webkit',
+          'target_name': 'blink_tests',
           'type': 'none',
           'dependencies': [
             '../third_party/WebKit/public/all.gyp:all_blink',
@@ -377,10 +402,28 @@
               ],
             }, {  # OS!="win"
               'dependencies': [
-                '../breakpad/breakpad.gyp:dump_syms',
                 '../breakpad/breakpad.gyp:minidump_stackwalk',
               ],
             }],
+            ['OS=="mac"', {
+              'dependencies': [
+                '../breakpad/breakpad.gyp:dump_syms#host',
+              ],
+            }],
+            ['OS=="linux"', {
+              'dependencies': [
+                '../breakpad/breakpad.gyp:dump_syms',
+              ],
+            }],
+          ],
+        }, # target_name: blink_tests
+        {
+          # TODO(jochen): Eventually remove this target after everybody and
+          # the bots started to use blink_tests only.
+          'target_name': 'all_webkit',
+          'type': 'none',
+          'dependencies': [
+            'blink_tests',
           ],
         }, # target_name: all_webkit
         {
@@ -400,6 +443,7 @@
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_performance_tests',
+            '../media/media.gyp:media_perftests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
           ],
           'conditions': [
@@ -425,6 +469,7 @@
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_gl_tests',
             '../gpu/gpu.gyp:gl_tests',
+            '../gpu/gpu.gyp:angle_unittests',
           ],
           'conditions': [
             ['internal_gles2_conform_tests', {
@@ -462,6 +507,7 @@
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_gl_tests',
             '../gpu/gpu.gyp:gl_tests',
+            '../gpu/gpu.gyp:angle_unittests',
           ],
           'conditions': [
             ['internal_gles2_conform_tests', {
@@ -527,7 +573,7 @@
           'target_name': 'chromium_builder_perf_av',
           'type': 'none',
           'dependencies': [
-            'all_webkit', # to run layout tests
+            'blink_tests', # to run layout tests
             'chromium_builder_qa',  # needed for perf pyauto tests
           ],
         },  # target_name: chromium_builder_perf_av
@@ -569,17 +615,22 @@
           'dependencies': [
             '../chrome/chrome.gyp:chrome',
 
-            # We refer to content_shell directly rather than all_webkit
+            # We refer to content_shell directly rather than blink_tests
             # because we don't want the _unittests binaries.
             '../content/content_shell_and_tests.gyp:content_shell',
           ],
           'conditions': [
             ['OS!="win"', {
               'dependencies': [
-                '../content/content_shell_and_tests.gyp:content_browsertests',
                 '../net/net.gyp:dns_fuzz_stub',
+                '../skia/skia.gyp:filter_fuzz_stub',
               ],
             }],
+            ['internal_filter_fuzzer==1', {
+              'dependencies': [
+                '../skia/tools/clusterfuzz-data/fuzzers/filter_fuzzer/filter_fuzzer.gyp:filter_fuzzer',
+              ],
+            }], # internal_filter_fuzzer
             ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
               'dependencies': [
                 '../chrome/chrome_syzygy.gyp:chrome_dll_syzygy',
@@ -637,6 +688,7 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
             '../ui/ui_unittests.gyp:ui_unittests',
@@ -670,6 +722,7 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
             '../ui/ui_unittests.gyp:ui_unittests',
@@ -691,6 +744,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -724,6 +778,7 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
@@ -770,8 +825,10 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
+            '../ui/events/events.gyp:events_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
             '../ui/views/views.gyp:views_unittests',
             '../url/url.gyp:url_unittests',
@@ -830,6 +887,7 @@
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -855,6 +913,7 @@
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -863,7 +922,7 @@
           'target_name': 'webkit_builder_win',
           'type': 'none',
           'dependencies': [
-            'all_webkit',
+            'blink_tests',
           ],
         },
       ],  # targets
@@ -936,6 +995,7 @@
             '../ui/app_list/app_list.gyp:*',
             '../ui/aura/aura.gyp:*',
             '../ui/compositor/compositor.gyp:*',
+            '../ui/events/events.gyp:*',
             '../ui/message_center/message_center.gyp:*',
             '../ui/ui_unittests.gyp:ui_unittests',
             '../ui/snapshot/snapshot.gyp:snapshot_unittests',
@@ -944,7 +1004,7 @@
             '../ui/views/views.gyp:views_unittests',
             '../ui/keyboard/keyboard.gyp:*',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
-            'all_webkit',
+            'blink_tests',
           ],
           'conditions': [
             ['OS=="win"', {
@@ -988,15 +1048,6 @@
                 '../ipc/ipc.gyp:ipc_tests',
                 '../sql/sql.gyp:sql_unittests',
                 '../sync/sync.gyp:sync_unit_tests',
-              ],
-            }],
-            ['OS=="mac"', {
-              # Exclude dependencies that are not currently implemented.
-              'dependencies!': [
-                '../chrome/chrome.gyp:chrome',
-                '../chrome/chrome.gyp:unit_tests',
-                '../device/device_tests.gyp:device_unittests',
-                '../ui/views/views.gyp:views_unittests',
               ],
             }],
             ['chromeos==1', {

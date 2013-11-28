@@ -19,6 +19,7 @@ namespace cast {
 
 static const int64 kStartMillisecond = GG_INT64_C(12345678900000);
 
+namespace {
 class TestAudioEncoderCallback :
     public base::RefCountedThreadSafe<TestAudioEncoderCallback>  {
  public:
@@ -39,7 +40,7 @@ class TestAudioEncoderCallback :
     num_called_++;
   }
 
-  int number_times_called() { return num_called_;}
+  int number_times_called() const { return num_called_;}
 
  protected:
   virtual ~TestAudioEncoderCallback() {}
@@ -51,6 +52,7 @@ class TestAudioEncoderCallback :
   uint8 expected_frame_id_;
   base::TimeTicks expected_playout_time_;
 };
+}  // namespace
 
 class PeerAudioReceiver : public AudioReceiver {
  public:
@@ -71,11 +73,13 @@ class AudioReceiverTest : public ::testing::Test {
     audio_config_.channels = 1;
     audio_config_.codec = kPcm16;
     audio_config_.use_external_decoder = false;
+    audio_config_.feedback_ssrc = 1234;
     testing_clock_.Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
     task_runner_ = new test::FakeTaskRunner(&testing_clock_);
     cast_environment_ = new CastEnvironment(&testing_clock_, task_runner_,
-        task_runner_, task_runner_, task_runner_, task_runner_);
+        task_runner_, task_runner_, task_runner_, task_runner_,
+        GetDefaultCastLoggingConfig());
     test_audio_encoder_callback_ = new TestAudioEncoderCallback();
   }
 

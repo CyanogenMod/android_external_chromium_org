@@ -22,12 +22,12 @@
         'media_use_libvpx%': 1,
       }],
       # ALSA usage.
-      ['OS=="linux" or OS=="freebsd" or OS=="solaris"', {
+      ['(OS=="linux" or OS=="freebsd" or OS=="solaris") and embedded!=1', {
         'use_alsa%': 1,
       }, {
         'use_alsa%': 0,
       }],
-      ['os_posix==1 and OS!="mac" and OS!="android" and chromeos!=1', {
+      ['os_posix==1 and OS!="mac" and OS!="android" and chromeos!=1 and embedded!=1', {
         'use_pulseaudio%': 1,
       }, {
         'use_pulseaudio%': 0,
@@ -49,7 +49,7 @@
         '../gpu/gpu.gyp:command_buffer_common',
         '../skia/skia.gyp:skia',
         '../third_party/opus/opus.gyp:opus',
-        '../ui/events/events.gyp:events',
+        '../ui/events/events.gyp:events_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../url/url.gyp:url_lib',
         'shared_memory_support',
@@ -62,6 +62,16 @@
       ],
       'sources': [
         'audio/agc_audio_stream.h',
+        'audio/alsa/alsa_input.cc',
+        'audio/alsa/alsa_input.h',
+        'audio/alsa/alsa_output.cc',
+        'audio/alsa/alsa_output.h',
+        'audio/alsa/alsa_util.cc',
+        'audio/alsa/alsa_util.h',
+        'audio/alsa/alsa_wrapper.cc',
+        'audio/alsa/alsa_wrapper.h',
+        'audio/alsa/audio_manager_alsa.cc',
+        'audio/alsa/audio_manager_alsa.h',
         'audio/android/audio_manager_android.cc',
         'audio/android/audio_manager_android.h',
         'audio/android/opensles_input.cc',
@@ -115,18 +125,11 @@
         'audio/fake_audio_consumer.h',
         'audio/fake_audio_input_stream.cc',
         'audio/fake_audio_input_stream.h',
+        'audio/fake_audio_manager.cc',
+        'audio/fake_audio_manager.h',
         'audio/fake_audio_output_stream.cc',
         'audio/fake_audio_output_stream.h',
-        'audio/linux/alsa_input.cc',
-        'audio/linux/alsa_input.h',
-        'audio/linux/alsa_output.cc',
-        'audio/linux/alsa_output.h',
-        'audio/linux/alsa_util.cc',
-        'audio/linux/alsa_util.h',
-        'audio/linux/alsa_wrapper.cc',
-        'audio/linux/alsa_wrapper.h',
         'audio/linux/audio_manager_linux.cc',
-        'audio/linux/audio_manager_linux.h',
         'audio/mac/aggregate_device_manager.cc',
         'audio/mac/aggregate_device_manager.h',
         'audio/mac/audio_auhal_mac.cc',
@@ -283,7 +286,6 @@
         'base/multi_channel_resampler.h',
         'base/pipeline.cc',
         'base/pipeline.h',
-        'base/pipeline_status.cc',
         'base/pipeline_status.h',
         'base/ranges.cc',
         'base/ranges.h',
@@ -308,7 +310,13 @@
         'base/stream_parser.h',
         'base/stream_parser_buffer.cc',
         'base/stream_parser_buffer.h',
+        'base/text_cue.cc',
+        'base/text_cue.h',
+        'base/text_renderer.cc',
+        'base/text_renderer.h',
         'base/text_track.h',
+        'base/text_track_config.cc',
+        'base/text_track_config.h',
         'base/user_input_monitor.cc',
         'base/user_input_monitor.h',
         'base/user_input_monitor_linux.cc',
@@ -328,6 +336,10 @@
         'base/yuv_convert.h',
         'cdm/aes_decryptor.cc',
         'cdm/aes_decryptor.h',
+        'cdm/json_web_key.cc',
+        'cdm/json_web_key.h',
+        'cdm/key_system_names.cc',
+        'cdm/key_system_names.h',
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
         'filters/audio_decoder_selector.cc',
@@ -380,10 +392,11 @@
         'filters/video_decoder_selector.h',
         'filters/video_frame_stream.cc',
         'filters/video_frame_stream.h',
-        'filters/video_renderer_base.cc',
-        'filters/video_renderer_base.h',
+        'filters/video_renderer_impl.cc',
+        'filters/video_renderer_impl.h',
         'filters/vpx_video_decoder.cc',
         'filters/vpx_video_decoder.h',
+        'filters/webvtt_util.h',
         'filters/wsola_internals.cc',
         'filters/wsola_internals.h',
         'midi/midi_manager.cc',
@@ -398,7 +411,13 @@
         'video/capture/fake_video_capture_device.h',
         'video/capture/linux/video_capture_device_linux.cc',
         'video/capture/linux/video_capture_device_linux.h',
+        'video/capture/mac/avfoundation_glue.h',
+        'video/capture/mac/avfoundation_glue.mm',
+        'video/capture/mac/coremedia_glue.h',
+        'video/capture/mac/coremedia_glue.mm',
         'video/capture/mac/platform_video_capturing_mac.h',
+        'video/capture/mac/video_capture_device_avfoundation_mac.h',
+        'video/capture/mac/video_capture_device_avfoundation_mac.mm',
         'video/capture/mac/video_capture_device_mac.h',
         'video/capture/mac/video_capture_device_mac.mm',
         'video/capture/mac/video_capture_device_qtkit_mac.h',
@@ -557,9 +576,11 @@
               '-lasound',
             ],
           },
+          'defines': [
+            'USE_ALSA',
+          ],
         }, { # use_alsa==0
-          'sources/': [ ['exclude', '/alsa_'],
-                      ['exclude', '/audio_manager_linux'] ],
+          'sources/': [ ['exclude', '(^|/)alsa/'], ],
         }],
         ['OS!="openbsd"', {
           'sources!': [
@@ -859,6 +880,7 @@
       ],
       'sources': [
         'audio/android/audio_android_unittest.cc',
+        'audio/alsa/alsa_output_unittest.cc',
         'audio/audio_input_controller_unittest.cc',
         'audio/audio_input_unittest.cc',
         'audio/audio_input_volume_unittest.cc',
@@ -870,7 +892,6 @@
         'audio/audio_parameters_unittest.cc',
         'audio/audio_power_monitor_unittest.cc',
         'audio/fake_audio_consumer_unittest.cc',
-        'audio/linux/alsa_output_unittest.cc',
         'audio/mac/audio_auhal_mac_unittest.cc',
         'audio/mac/audio_device_listener_mac_unittest.cc',
         'audio/mac/audio_low_latency_input_mac_unittest.cc',
@@ -925,6 +946,7 @@
         'base/sinc_resampler_unittest.cc',
         'base/test_data_util.cc',
         'base/test_data_util.h',
+        'base/text_renderer_unittest.cc',
         'base/user_input_monitor_unittest.cc',
         'base/vector_math_testing.h',
         'base/vector_math_unittest.cc',
@@ -932,6 +954,7 @@
         'base/video_util_unittest.cc',
         'base/yuv_convert_unittest.cc',
         'cdm/aes_decryptor_unittest.cc',
+        'cdm/json_web_key_unittest.cc',
         'ffmpeg/ffmpeg_common_unittest.cc',
         'filters/audio_decoder_selector_unittest.cc',
         'filters/audio_file_reader_unittest.cc',
@@ -961,7 +984,7 @@
         'filters/source_buffer_stream_unittest.cc',
         'filters/video_decoder_selector_unittest.cc',
         'filters/video_frame_stream_unittest.cc',
-        'filters/video_renderer_base_unittest.cc',
+        'filters/video_renderer_impl_unittest.cc',
         'video/capture/video_capture_device_unittest.cc',
         'webm/cluster_builder.cc',
         'webm/cluster_builder.h',
@@ -1046,7 +1069,7 @@
         }],
         ['use_alsa==0', {
           'sources!': [
-            'audio/linux/alsa_output_unittest.cc',
+            'audio/alsa/alsa_output_unittest.cc',
             'audio/audio_low_latency_input_output_unittest.cc',
           ],
         }],
@@ -1086,6 +1109,9 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../testing/perf/perf_test.gyp:perf_test',
+        '../ui/gfx/gfx.gyp:gfx',
+        '../ui/ui.gyp:ui',
+        '../ui/gl/gl.gyp:gl',
       ],
       'sources': [
         'base/audio_bus_perftest.cc',
@@ -1097,6 +1123,33 @@
         'base/vector_math_perftest.cc',
         'filters/pipeline_integration_perftest.cc',
         'filters/pipeline_integration_test_base.cc',
+      ],
+      'conditions': [
+        ['arm_neon==1', {
+          'defines': [
+            'USE_NEON'
+          ],
+        }],
+        ['OS=="android"', {
+          'conditions': [
+            ['gtest_target_type=="shared_library"', {
+              'dependencies': [
+                '../testing/android/native_test.gyp:native_test_native_code',
+              ],
+            }],
+          ],
+        }],
+        ['media_use_ffmpeg==1', {
+          'dependencies': [
+            '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
+          ],
+        }, {  # media_use_ffmpeg==0
+          'sources!': [
+            'base/demuxer_perftest.cc',
+            'filters/pipeline_integration_perftest.cc',
+            'filters/pipeline_integration_test_base.cc',
+          ],
+        }],
       ],
     },
     {
@@ -1119,6 +1172,8 @@
         'base/fake_audio_render_callback.h',
         'base/fake_audio_renderer_sink.cc',
         'base/fake_audio_renderer_sink.h',
+        'base/fake_text_track_stream.cc',
+        'base/fake_text_track_stream.h',
         'base/gmock_callback_support.h',
         'base/mock_audio_renderer_sink.cc',
         'base/mock_audio_renderer_sink.h',
@@ -1385,6 +1440,19 @@
           },
           'includes': ['../build/apk_test.gypi'],
         },
+        {
+          'target_name': 'media_perftests_apk',
+          'type': 'none',
+          'dependencies': [
+            'media_java',
+            'media_perftests',
+          ],
+          'variables': {
+            'test_suite_name': 'media_perftests',
+            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)media_perftests<(SHARED_LIB_SUFFIX)',
+          },
+          'includes': ['../build/apk_test.gypi'],
+        },
       ],
     }],
     ['OS=="android"', {
@@ -1402,6 +1470,7 @@
           ],
           'variables': {
             'jni_gen_package': 'media',
+            'jni_generator_ptr_type': 'long',
           },
           'includes': ['../build/jni_generator.gypi'],
         },
@@ -1413,6 +1482,7 @@
           ],
           'variables': {
             'jni_gen_package': 'media',
+            'jni_generator_ptr_type': 'long',
           },
           'includes': ['../build/jni_generator.gypi'],
         },

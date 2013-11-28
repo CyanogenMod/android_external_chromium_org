@@ -22,8 +22,6 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/activity_log_private/activity_log_private_api.h"
 #include "chrome/browser/extensions/api/messaging/message_service.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
@@ -39,6 +37,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
 
 #if defined(USE_TCMALLOC)
@@ -47,7 +47,7 @@
 
 using content::BrowserThread;
 using extensions::APIPermission;
-using WebKit::WebCache;
+using blink::WebCache;
 
 namespace {
 
@@ -87,6 +87,7 @@ ChromeRenderMessageFilter::ChromeRenderMessageFilter(
     : render_process_id_(render_process_id),
       profile_(profile),
       off_the_record_(profile_->IsOffTheRecord()),
+      predictor_(profile_->GetNetworkPredictor()),
       request_context_(request_context),
       extension_info_map_(
           extensions::ExtensionSystem::Get(profile)->info_map()),
@@ -202,13 +203,13 @@ net::HostResolver* ChromeRenderMessageFilter::GetHostResolver() {
 
 void ChromeRenderMessageFilter::OnDnsPrefetch(
     const std::vector<std::string>& hostnames) {
-  if (profile_->GetNetworkPredictor())
-    profile_->GetNetworkPredictor()->DnsPrefetchList(hostnames);
+  if (predictor_)
+    predictor_->DnsPrefetchList(hostnames);
 }
 
 void ChromeRenderMessageFilter::OnPreconnect(const GURL& url) {
-  if (profile_->GetNetworkPredictor())
-    profile_->GetNetworkPredictor()->PreconnectUrl(
+  if (predictor_)
+    predictor_->PreconnectUrl(
         url, GURL(), chrome_browser_net::UrlInfo::MOUSE_OVER_MOTIVATED, 1);
 }
 

@@ -58,6 +58,10 @@ std::string GetHistogramName(Origin origin, uint8 experiment_id,
       return ComposeHistogramName("webcross", name);
     case ORIGIN_LOCAL_PREDICTOR:
       return ComposeHistogramName("localpredictor", name);
+    case ORIGIN_EXTERNAL_REQUEST:
+        return ComposeHistogramName("externalrequest", name);
+    case ORIGIN_INSTANT:
+      return ComposeHistogramName("Instant", name);
     case ORIGIN_GWS_PRERENDER:  // Handled above.
     default:
       NOTREACHED();
@@ -116,6 +120,10 @@ bool OriginIsOmnibox(Origin origin) {
   } else if (origin == ORIGIN_LINK_REL_PRERENDER_CROSSDOMAIN) { \
     HISTOGRAM; \
   } else if (origin == ORIGIN_LOCAL_PREDICTOR) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_EXTERNAL_REQUEST) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_INSTANT) { \
     HISTOGRAM; \
   } else if (experiment != kNoExperiment) { \
     HISTOGRAM; \
@@ -377,6 +385,11 @@ void PrerenderHistograms::RecordFinalStatus(
         "FinalStatusMatchComplete", origin, experiment_id,
         UMA_HISTOGRAM_ENUMERATION(name, final_status, FINAL_STATUS_MAX));
   }
+}
+
+void PrerenderHistograms::RecordEvent(PrerenderEvent event) const {
+  DCHECK_LT(event, PRERENDER_EVENT_MAX);
+  UMA_HISTOGRAM_ENUMERATION("Prerender.Event", event, PRERENDER_EVENT_MAX);
 }
 
 uint8 PrerenderHistograms::GetCurrentExperimentId() const {

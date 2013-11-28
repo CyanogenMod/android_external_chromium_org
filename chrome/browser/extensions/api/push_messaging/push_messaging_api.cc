@@ -13,7 +13,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
@@ -26,11 +25,12 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/extensions/api/push_messaging.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "url/gurl.h"
@@ -75,7 +75,7 @@ void PushMessagingEventRouter::OnMessage(const std::string& extension_id,
   scoped_ptr<base::ListValue> args(glue::OnMessage::Create(message));
   scoped_ptr<extensions::Event> event(new extensions::Event(
       glue::OnMessage::kEventName, args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
 }

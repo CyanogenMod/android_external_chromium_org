@@ -12,16 +12,16 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/features/feature.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image.h"
@@ -334,7 +334,7 @@ bool NotificationsApiFunction::CreateNotification(
                             title,
                             message,
                             icon,
-                            WebKit::WebTextDirectionDefault,
+                            blink::WebTextDirectionDefault,
                             message_center::NotifierId(
                                 message_center::NotifierId::APPLICATION,
                                 extension_->id()),
@@ -366,7 +366,6 @@ bool NotificationsApiFunction::UpdateNotification(
     notification->set_icon(icon);
   }
 
-  message_center::RichNotificationData optional_fields;
   if (message_center::IsRichNotificationEnabled()) {
     if (options->priority)
       notification->set_priority(*options->priority);
@@ -379,13 +378,15 @@ bool NotificationsApiFunction::UpdateNotification(
       size_t number_of_buttons = options->buttons->size();
       number_of_buttons = number_of_buttons > 2 ? 2 : number_of_buttons;
 
+      std::vector<message_center::ButtonInfo> buttons;
       for (size_t i = 0; i < number_of_buttons; i++) {
-        message_center::ButtonInfo info(
+        message_center::ButtonInfo button(
             UTF8ToUTF16((*options->buttons)[i]->title));
         NotificationBitmapToGfxImage((*options->buttons)[i]->icon_bitmap.get(),
-                                     &info.icon);
-        optional_fields.buttons.push_back(info);
+                                     &button.icon);
+        buttons.push_back(button);
       }
+      notification->set_buttons(buttons);
     }
 
     if (options->context_message)
@@ -424,7 +425,7 @@ bool NotificationsApiFunction::UpdateNotification(
       if (notification->type() != message_center::NOTIFICATION_TYPE_MULTIPLE)
         return false;
 
-      std::vector< message_center::NotificationItem> items;
+      std::vector<message_center::NotificationItem> items;
       using api::notifications::NotificationItem;
       std::vector<linked_ptr<NotificationItem> >::iterator i;
       for (i = options->items->begin(); i != options->items->end(); ++i) {

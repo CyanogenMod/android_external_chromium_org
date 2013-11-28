@@ -16,33 +16,50 @@
 #include "tools/gn/err.h"
 #include "tools/gn/gyp_helper.h"
 #include "tools/gn/gyp_target_writer.h"
-#include "tools/gn/item_node.h"
 #include "tools/gn/location.h"
+#include "tools/gn/parser.h"
 #include "tools/gn/setup.h"
 #include "tools/gn/source_file.h"
 #include "tools/gn/standard_out.h"
 #include "tools/gn/target.h"
+#include "tools/gn/tokenizer.h"
 
 namespace commands {
 
 namespace {
+
+static const char kSwitchGypVars[] = "gyp_vars";
 
 typedef GypTargetWriter::TargetGroup TargetGroup;
 typedef std::map<Label, TargetGroup> CorrelatedTargetsMap;
 typedef std::map<SourceFile, std::vector<TargetGroup> > GroupedTargetsMap;
 typedef std::map<std::string, std::string> StringStringMap;
 
+std::vector<const BuilderRecord*> GetAllResolvedTargetRecords(
+    const Builder* builder) {
+  std::vector<const BuilderRecord*> all = builder->GetAllRecords();
+  std::vector<const BuilderRecord*> result;
+  result.reserve(all.size());
+  for (size_t i = 0; i < all.size(); i++) {
+    if (all[i]->type() == BuilderRecord::ITEM_TARGET &&
+        all[i]->should_generate() &&
+        all[i]->item())
+      result.push_back(all[i]);
+  }
+  return result;
+}
+
 // Groups targets sharing the same label between debug and release.
-void CorrelateTargets(const std::vector<const Target*>& debug_targets,
-                      const std::vector<const Target*>& release_targets,
+void CorrelateTargets(const std::vector<const BuilderRecord*>& debug_targets,
+                      const std::vector<const BuilderRecord*>& release_targets,
                       CorrelatedTargetsMap* correlated) {
   for (size_t i = 0; i < debug_targets.size(); i++) {
-    const Target* target = debug_targets[i];
-    (*correlated)[target->label()].debug = target;
+    const BuilderRecord* record = debug_targets[i];
+    (*correlated)[record->label()].debug = record;
   }
   for (size_t i = 0; i < release_targets.size(); i++) {
-    const Target* target = release_targets[i];
-    (*correlated)[target->label()].release = target;
+    const BuilderRecord* record = release_targets[i];
+    (*correlated)[record->label()].release = record;
   }
 }
 
@@ -51,18 +68,21 @@ void CorrelateTargets(const std::vector<const Target*>& debug_targets,
 bool EnsureTargetsMatch(const TargetGroup& group, Err* err) {
   // Check that both debug and release made this target.
   if (!group.debug || !group.release) {
-    const Target* non_null_one = group.debug ? group.debug : group.release;
+    const BuilderRecord* non_null_one =
+        group.debug ? group.debug : group.release;
     *err = Err(Location(), "The debug and release builds did not both generate "
         "a target with the name\n" +
         non_null_one->label().GetUserVisibleName(true));
     return false;
   }
 
+  const Target* debug_target = group.debug->item()->AsTarget();
+  const Target* release_target = group.release->item()->AsTarget();
+
   // Check the flags that determine if and where we write the GYP file.
-  if (group.debug->item_node()->should_generate() !=
-          group.release->item_node()->should_generate() ||
-      group.debug->external() != group.release->external() ||
-      group.debug->gyp_file() != group.release->gyp_file()) {
+  if (group.debug->should_generate() != group.release->should_generate() ||
+      debug_target->external() != release_target->external() ||
+      debug_target->gyp_file() != release_target->gyp_file()) {
     *err = Err(Location(), "The metadata for the target\n" +
         group.debug->label().GetUserVisibleName(true) +
         "\ndoesn't match between the debug and release builds.");
@@ -70,158 +90,124 @@ bool EnsureTargetsMatch(const TargetGroup& group, Err* err) {
   }
 
   // Check that the sources match.
-  if (group.debug->sources().size() != group.release->sources().size()) {
+  if (debug_target->sources().size() != release_target->sources().size()) {
     *err = Err(Location(), "The source file count for the target\n" +
         group.debug->label().GetUserVisibleName(true) +
         "\ndoesn't have the same number of files between the debug and "
         "release builds.");
     return false;
   }
-  for (size_t i = 0; i < group.debug->sources().size(); i++) {
-    if (group.debug->sources()[i] != group.release->sources()[i]) {
+  for (size_t i = 0; i < debug_target->sources().size(); i++) {
+    if (debug_target->sources()[i] != release_target->sources()[i]) {
       *err = Err(Location(), "The debug and release version of the target \n" +
           group.debug->label().GetUserVisibleName(true) +
           "\ndon't agree on the file\n" +
-          group.debug->sources()[i].value());
+          debug_target->sources()[i].value());
       return false;
     }
   }
 
   // Check that the deps match.
-  if (group.debug->deps().size() != group.release->deps().size()) {
+  if (debug_target->deps().size() != release_target->deps().size()) {
     *err = Err(Location(), "The source file count for the target\n" +
         group.debug->label().GetUserVisibleName(true) +
         "\ndoesn't have the same number of deps between the debug and "
         "release builds.");
     return false;
   }
-  for (size_t i = 0; i < group.debug->deps().size(); i++) {
-    if (group.debug->deps()[i].label != group.release->deps()[i].label) {
+  for (size_t i = 0; i < debug_target->deps().size(); i++) {
+    if (debug_target->deps()[i].label != release_target->deps()[i].label) {
       *err = Err(Location(), "The debug and release version of the target \n" +
           group.debug->label().GetUserVisibleName(true) +
           "\ndon't agree on the dep\n" +
-          group.debug->deps()[i].label.GetUserVisibleName(true));
+          debug_target->deps()[i].label.GetUserVisibleName(true));
       return false;
     }
   }
-
   return true;
 }
 
-// Python uses shlex.split, which we partially emulate here.
-//
-// Advances to the next "word" in a GYP_DEFINES entry. This is something
-// separated by whitespace or '='. We allow backslash escaping and quoting.
-// The return value will be the index into the array immediately following the
-// word, and the contents of the word will be placed into |*word|.
-size_t GetNextGypDefinesWord(const std::string& defines,
-                             size_t cur,
-                             std::string* word) {
-  size_t i = cur;
-  bool is_quoted = false;
-  if (cur < defines.size() && defines[cur] == '"') {
-    i++;
-    is_quoted = true;
-  }
-
-  for (; i < defines.size(); i++) {
-    // Handle certain escape sequences: \\, \", \<space>.
-    if (defines[i] == '\\' && i < defines.size() - 1 &&
-        (defines[i + 1] == '\\' ||
-         defines[i + 1] == ' ' ||
-         defines[i + 1] == '=' ||
-         defines[i + 1] == '"')) {
-      i++;
-      word->push_back(defines[i]);
-      continue;
-    }
-    if (is_quoted && defines[i] == '"') {
-      // Got to the end of the quoted sequence.
-      return i + 1;
-    }
-    if (!is_quoted && (defines[i] == ' ' || defines[i] == '=')) {
-      return i;
-    }
-    word->push_back(defines[i]);
-  }
-  return i;
+bool IsStringValueEqualTo(const Value& v, const char* cmp) {
+  if (v.type() != Value::STRING)
+    return false;
+  return v.string_value() == cmp;
 }
 
-// Advances to the beginning of the next word, or the size of the string if
-// the end was encountered.
-size_t AdvanceToNextGypDefinesWord(const std::string& defines, size_t cur) {
-  while (cur < defines.size() && defines[cur] == ' ')
-    cur++;
-  return cur;
-}
+bool GetGypVars(Scope::KeyValueMap* values) {
+  const CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  std::string args = cmdline->GetSwitchValueASCII(kSwitchGypVars);
+  if (args.empty())
+    return true;  // Nothing to set.
 
-// The GYP defines looks like:
-//   component=shared_library
-//   component=shared_library foo=1
-//   component=shared_library foo=1 windows_sdk_dir="C:\Program Files\..."
-StringStringMap GetGypDefines() {
-  StringStringMap result;
+  SourceFile empty_source_file;
+  InputFile vars_input_file(empty_source_file);
+  vars_input_file.SetContents(args);
+  vars_input_file.set_friendly_name("the command-line \"--gyp_vars\"");
 
-  scoped_ptr<base::Environment> env(base::Environment::Create());
-  std::string defines;
-  if (!env->GetVar("GYP_DEFINES", &defines) || defines.empty())
-    return result;
-
-  size_t cur = 0;
-  while (cur < defines.size()) {
-    std::string key;
-    cur = AdvanceToNextGypDefinesWord(defines, cur);
-    cur = GetNextGypDefinesWord(defines, cur, &key);
-
-    // The words should be separated by an equals.
-    cur = AdvanceToNextGypDefinesWord(defines, cur);
-    if (cur == defines.size())
-      break;
-    if (defines[cur] != '=')
-      continue;
-    cur++;  // Skip over '='.
-
-    std::string value;
-    cur = AdvanceToNextGypDefinesWord(defines, cur);
-    cur = GetNextGypDefinesWord(defines, cur, &value);
-
-    result[key] = value;
+  Err err;
+  std::vector<Token> vars_tokens = Tokenizer::Tokenize(&vars_input_file, &err);
+  if (err.has_error()) {
+    err.PrintToStdout();
+    return false;
   }
 
-  return result;
+  scoped_ptr<ParseNode> vars_root(Parser::Parse(vars_tokens, &err));
+  if (err.has_error()) {
+    err.PrintToStdout();
+    return false;
+  }
+
+  BuildSettings empty_build_settings;
+  Settings empty_settings(&empty_build_settings, std::string());
+  Scope vars_scope(&empty_settings);
+  vars_root->AsBlock()->ExecuteBlockInScope(&vars_scope, &err);
+  if (err.has_error()) {
+    err.PrintToStdout();
+    return false;
+  }
+
+  // Since our InputFile and parsing structure is going away, we need to
+  // break the dependency on those.
+  vars_scope.GetCurrentScopeValues(values);
+  for (Scope::KeyValueMap::iterator i = values->begin();
+       i != values->end(); ++i)
+    i->second.RecursivelySetOrigin(NULL);
+  return true;
 }
 
 // Returns a set of args from known GYP define values.
-Scope::KeyValueMap GetArgsFromGypDefines() {
-  StringStringMap gyp_defines = GetGypDefines();
-
-  Scope::KeyValueMap result;
+bool GetArgsFromGypDefines(Scope::KeyValueMap* args) {
+  Scope::KeyValueMap gyp_defines;
+  if (!GetGypVars(&gyp_defines))
+    return false;
 
   static const char kIsComponentBuild[] = "is_component_build";
-  if (gyp_defines["component"] == "shared_library") {
-    result[kIsComponentBuild] = Value(NULL, true);
+  Value component = gyp_defines["component"];
+  if (IsStringValueEqualTo(component, "shared_library")) {
+    (*args)[kIsComponentBuild] = Value(NULL, true);
   } else {
-    result[kIsComponentBuild] = Value(NULL, false);
+    (*args)[kIsComponentBuild] = Value(NULL, false);
   }
 
   // Windows SDK path. GYP and the GN build use the same name.
   static const char kWinSdkPath[] = "windows_sdk_path";
-  if (!gyp_defines[kWinSdkPath].empty())
-    result[kWinSdkPath] = Value(NULL, gyp_defines[kWinSdkPath]);
+  Value win_sdk_path = gyp_defines[kWinSdkPath];
+  if (win_sdk_path.type() == Value::STRING &&
+      !win_sdk_path.string_value().empty())
+    (*args)[kWinSdkPath] = win_sdk_path;
 
-  return result;
+  return true;
 }
 
-// Returns the number of targets, number of GYP files.
-std::pair<int, int> WriteGypFiles(
-    const BuildSettings& debug_settings,
-    const BuildSettings& release_settings,
-    Err* err) {
+// Returns the (number of targets, number of GYP files).
+std::pair<int, int> WriteGypFiles(CommonSetup* debug_setup,
+                                  CommonSetup* release_setup,
+                                  Err* err) {
   // Group all targets by output GYP file name.
-  std::vector<const Target*> debug_targets;
-  std::vector<const Target*> release_targets;
-  debug_settings.target_manager().GetAllTargets(&debug_targets);
-  release_settings.target_manager().GetAllTargets(&release_targets);
+  std::vector<const BuilderRecord*> debug_targets =
+      GetAllResolvedTargetRecords(debug_setup->builder());
+  std::vector<const BuilderRecord*> release_targets =
+      GetAllResolvedTargetRecords(release_setup->builder());
 
   // Match up the debug and release version of each target by label.
   CorrelatedTargetsMap correlated;
@@ -233,19 +219,20 @@ std::pair<int, int> WriteGypFiles(
   for (CorrelatedTargetsMap::iterator i = correlated.begin();
        i != correlated.end(); ++i) {
     const TargetGroup& group = i->second;
-    if (!group.debug->item_node()->should_generate())
+    if (!group.debug->should_generate())
       continue;  // Skip non-generated ones.
-    if (group.debug->external())
+    if (group.debug->item()->AsTarget()->external())
       continue;  // Skip external ones.
-    if (group.debug->gyp_file().is_null())
+    if (group.debug->item()->AsTarget()->gyp_file().is_null())
       continue;  // Skip ones without GYP files.
 
     if (!EnsureTargetsMatch(group, err))
       return std::make_pair(0, 0);
 
     target_count++;
-    grouped_targets[helper.GetGypFileForTarget(group.debug, err)].push_back(
-        group);
+    grouped_targets[
+            helper.GetGypFileForTarget(group.debug->item()->AsTarget(), err)]
+        .push_back(group);
     if (err->has_error())
       return std::make_pair(0, 0);
   }
@@ -308,6 +295,12 @@ const char kGyp_Help[] =
     "    of the current directory, so \"//foo/bar:baz\" would be\n"
     "    \"<(DEPTH)/foo/bar/bar.gyp:baz\".\n"
     "\n"
+    "Switches\n"
+    "  --gyp_vars\n"
+    "      The GYP variables converted to a GN-style string lookup.\n"
+    "      For example:\n"
+    "      --gyp_vars=\"component=\\\"shared_library\\\" use_aura=\\\"1\\\"\"\n"
+    "\n"
     "Example:\n"
     "  # This target is assumed to be in the GYP build in the file\n"
     "  # \"foo/foo.gyp\". This declaration tells GN where to find the GYP\n"
@@ -336,8 +329,11 @@ int RunGyp(const std::vector<std::string>& args) {
   if (!setup_debug->DoSetup())
     return 1;
   const char kIsDebug[] = "is_debug";
-  setup_debug->build_settings().build_args().AddArgOverrides(
-      GetArgsFromGypDefines());
+
+  Scope::KeyValueMap gyp_defines_args;
+  if (!GetArgsFromGypDefines(&gyp_defines_args))
+    return 1;
+  setup_debug->build_settings().build_args().AddArgOverrides(gyp_defines_args);
   setup_debug->build_settings().build_args().AddArgOverride(
       kIsDebug, Value(NULL, true));
 
@@ -358,9 +354,7 @@ int RunGyp(const std::vector<std::string>& args) {
     return 1;
 
   Err err;
-  std::pair<int, int> counts = WriteGypFiles(setup_debug->build_settings(),
-                                             setup_release->build_settings(),
-                                             &err);
+  std::pair<int, int> counts = WriteGypFiles(setup_debug, setup_release, &err);
   if (err.has_error()) {
     err.PrintToStdout();
     return 1;

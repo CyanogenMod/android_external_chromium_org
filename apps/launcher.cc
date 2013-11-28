@@ -15,21 +15,21 @@
 #include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_runtime.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/manifest_handlers/kiosk_mode_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/browser/lazy_background_task_queue.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/kiosk_mode_info.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "url/gurl.h"
@@ -203,7 +203,7 @@ class PlatformAppPathLauncher
       return;
     }
 
-    file_system->GetFileByPath(
+    file_system->GetFile(
         drive::util::ExtractDrivePath(file_path_),
         base::Bind(&PlatformAppPathLauncher::OnGotDriveFile, this));
   }
@@ -270,7 +270,7 @@ class PlatformAppPathLauncher
       return;
     }
 
-    ExtensionProcessManager* process_manager =
+    extensions::ProcessManager* process_manager =
         ExtensionSystem::Get(profile_)->process_manager();
     ExtensionHost* host =
         process_manager->GetBackgroundHostForExtension(extension_->id());

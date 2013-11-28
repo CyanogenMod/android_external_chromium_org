@@ -22,6 +22,7 @@
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -37,9 +38,9 @@
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -502,9 +503,8 @@ BrowserActionsToolbarGtk::BrowserActionsToolbarGtk(Browser* browser)
       desired_width_(0),
       start_width_(0),
       weak_factory_(this) {
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  if (!extension_service)
+  model_ = ExtensionToolbarModel::Get(profile_);
+  if (!model_)
     return;
 
   overflow_button_.reset(new CustomDrawButton(
@@ -559,7 +559,6 @@ BrowserActionsToolbarGtk::BrowserActionsToolbarGtk(Browser* browser)
   gtk_box_pack_start(GTK_BOX(hbox_.get()), overflow_area_.get(), FALSE, FALSE,
                      0);
 
-  model_ = extension_service->toolbar_model();
   model_->AddObserver(this);
   SetupDrags();
 

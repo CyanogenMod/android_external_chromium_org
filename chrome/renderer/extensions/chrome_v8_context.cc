@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
@@ -16,6 +15,7 @@
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_api.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
@@ -27,7 +27,7 @@ using content::V8ValueConverter;
 namespace extensions {
 
 ChromeV8Context::ChromeV8Context(v8::Handle<v8::Context> v8_context,
-                                 WebKit::WebFrame* web_frame,
+                                 blink::WebFrame* web_frame,
                                  const Extension* extension,
                                  Feature::Context context_type)
     : v8_context_(v8_context),
@@ -80,7 +80,7 @@ v8::Local<v8::Value> ChromeV8Context::CallFunction(
   v8::HandleScope handle_scope(isolate());
   v8::Context::Scope scope(v8_context());
 
-  WebKit::WebScopedMicrotaskSuppression suppression;
+  blink::WebScopedMicrotaskSuppression suppression;
   if (!is_valid())
     return handle_scope.Close(v8::Undefined());
 

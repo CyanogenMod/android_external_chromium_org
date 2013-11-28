@@ -11,8 +11,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "url/gurl.h"
 
 using content::WebContents;
@@ -47,7 +47,6 @@ WebstoreStandaloneInstaller::WebstoreStandaloneInstaller(
       show_user_count_(true),
       average_rating_(0.0),
       rating_count_(0) {
-  CHECK(!callback_.is_null());
 }
 
 WebstoreStandaloneInstaller::~WebstoreStandaloneInstaller() {}
@@ -78,9 +77,29 @@ void WebstoreStandaloneInstaller::BeginInstall() {
   webstore_data_fetcher_->Start();
 }
 
+bool WebstoreStandaloneInstaller::CheckInstallValid(
+    const base::DictionaryValue& manifest,
+    std::string* error) {
+  return true;
+}
+
 scoped_ptr<ExtensionInstallPrompt>
 WebstoreStandaloneInstaller::CreateInstallUI() {
   return make_scoped_ptr(new ExtensionInstallPrompt(GetWebContents()));
+}
+
+scoped_ptr<WebstoreInstaller::Approval>
+WebstoreStandaloneInstaller::CreateApproval() const {
+  scoped_ptr<WebstoreInstaller::Approval> approval(
+      WebstoreInstaller::Approval::CreateWithNoInstallPrompt(
+          profile_,
+          id_,
+          scoped_ptr<base::DictionaryValue>(manifest_.get()->DeepCopy()),
+          true));
+  approval->skip_post_install_ui = !ShouldShowPostInstallUI();
+  approval->use_app_installed_bubble = ShouldShowAppInstalledBubble();
+  approval->installing_icon = gfx::ImageSkia::CreateFrom1xBitmap(icon_);
+  return approval.Pass();
 }
 
 void WebstoreStandaloneInstaller::OnWebstoreRequestFailure() {
@@ -88,7 +107,7 @@ void WebstoreStandaloneInstaller::OnWebstoreRequestFailure() {
 }
 
 void WebstoreStandaloneInstaller::OnWebstoreResponseParseSuccess(
-    DictionaryValue* webstore_data) {
+    scoped_ptr<DictionaryValue> webstore_data) {
   if (!CheckRequestorAlive()) {
     CompleteInstall(std::string());
     return;
@@ -153,7 +172,7 @@ void WebstoreStandaloneInstaller::OnWebstoreResponseParseSuccess(
   }
 
   // Assume ownership of webstore_data.
-  webstore_data_.reset(webstore_data);
+  webstore_data_ = webstore_data.Pass();
 
   scoped_refptr<WebstoreInstallHelper> helper =
       new WebstoreInstallHelper(this,
@@ -186,6 +205,13 @@ void WebstoreStandaloneInstaller::OnWebstoreParseSuccess(
   manifest_.reset(manifest);
   icon_ = icon;
 
+  std::string error;
+  if (!CheckInstallValid(*manifest, &error)) {
+    DCHECK(!error.empty());
+    CompleteInstall(error);
+    return;
+  }
+
   install_prompt_ = CreateInstallPrompt();
   if (install_prompt_) {
     ShowInstallUI();
@@ -211,15 +237,7 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
     return;
   }
 
-  scoped_ptr<WebstoreInstaller::Approval> approval(
-      WebstoreInstaller::Approval::CreateWithNoInstallPrompt(
-          profile_,
-          id_,
-          scoped_ptr<base::DictionaryValue>(manifest_.get()->DeepCopy()),
-          true));
-  approval->skip_post_install_ui = !ShouldShowPostInstallUI();
-  approval->use_app_installed_bubble = ShouldShowAppInstalledBubble();
-  approval->installing_icon = gfx::ImageSkia::CreateFrom1xBitmap(icon_);
+  scoped_ptr<WebstoreInstaller::Approval> approval = CreateApproval();
 
   scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
       profile_,

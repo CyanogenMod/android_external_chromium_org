@@ -5,9 +5,10 @@
 #ifndef CHROME_BROWSER_POLICY_MOCK_CONFIGURATION_POLICY_PROVIDER_H_
 #define CHROME_BROWSER_POLICY_MOCK_CONFIGURATION_POLICY_PROVIDER_H_
 
+#include "base/basictypes.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_domain_descriptor.h"
-#include "chrome/browser/policy/policy_map.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/schema_registry.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace policy {
@@ -25,15 +26,30 @@ class MockConfigurationPolicyProvider : public ConfigurationPolicyProvider {
   MOCK_CONST_METHOD1(IsInitializationComplete, bool(PolicyDomain domain));
   MOCK_METHOD0(RefreshPolicies, void());
 
-  MOCK_METHOD1(RegisterPolicyDomain,
-               void(scoped_refptr<const PolicyDomainDescriptor>));
-
   // Make public for tests.
   using ConfigurationPolicyProvider::UpdatePolicy;
 
   // Utility method that invokes UpdatePolicy() with a PolicyBundle that maps
   // the Chrome namespace to a copy of |policy|.
   void UpdateChromePolicy(const PolicyMap& policy);
+
+  // Convenience method so that tests don't need to create a registry to create
+  // this mock.
+  using ConfigurationPolicyProvider::Init;
+  void Init() {
+    ConfigurationPolicyProvider::Init(&registry_);
+  }
+
+  // Convenience method that installs an expectation on RefreshPolicies that
+  // just notifies the observers and serves the same policies.
+  void SetAutoRefresh();
+
+ private:
+  void RefreshWithSamePolicies();
+
+  SchemaRegistry registry_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockConfigurationPolicyProvider);
 };
 
 class MockConfigurationPolicyObserver

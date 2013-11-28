@@ -12,7 +12,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/policy/policy_types.h"
+#include "components/policy/core/common/policy_types.h"
+#include "components/policy/core/common/schema.h"
+#include "components/policy/core/common/schema_registry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -25,23 +27,16 @@ class Value;
 namespace policy {
 
 class ConfigurationPolicyProvider;
-struct PolicyDefinitionList;
 
-// A stripped-down policy definition list that contains entries for the
-// different policy setting types supported.
-namespace test_policy_definitions {
+namespace test_keys {
 
-// String policy keys.
 extern const char kKeyString[];
 extern const char kKeyBoolean[];
 extern const char kKeyInteger[];
 extern const char kKeyStringList[];
 extern const char kKeyDictionary[];
 
-// Policy definition list that contains entries for the keys above.
-extern const PolicyDefinitionList kList;
-
-}  // namespace test_policy_definitions
+}  // namespace test_keys
 
 class PolicyTestBase : public testing::Test {
  public:
@@ -49,9 +44,13 @@ class PolicyTestBase : public testing::Test {
   virtual ~PolicyTestBase();
 
   // testing::Test:
+  virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
  protected:
+  Schema chrome_schema_;
+  SchemaRegistry schema_registry_;
+
   // Create an actual IO loop (needed by FilePathWatcher).
   base::MessageLoopForIO loop_;
 
@@ -74,8 +73,8 @@ class PolicyProviderTestHarness {
 
   // Create a new policy provider.
   virtual ConfigurationPolicyProvider* CreateProvider(
-      scoped_refptr<base::SequencedTaskRunner> task_runner,
-      const PolicyDefinitionList* policy_definition_list) = 0;
+      SchemaRegistry* registry,
+      scoped_refptr<base::SequencedTaskRunner> task_runner) = 0;
 
   // Returns the policy level and scope set by the policy provider.
   PolicyLevel policy_level() const;

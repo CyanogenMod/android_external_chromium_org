@@ -12,12 +12,12 @@
 #include "chrome/browser/safe_browsing/download_feedback_service.h"
 #include "chrome/browser/safe_browsing/download_protection_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -79,6 +79,7 @@ bool DownloadShelfContextMenu::IsCommandIdEnabled(int command_id) const {
     case SHOW_IN_FOLDER:
       return download_item_->CanShowInFolder();
     case OPEN_WHEN_COMPLETE:
+    case PLATFORM_OPEN:
       return download_item_->CanOpenDownload() &&
           !download_crx_util::IsExtensionDownload(*download_item_);
     case ALWAYS_OPEN_TYPE:
@@ -138,6 +139,9 @@ void DownloadShelfContextMenu::ExecuteCommand(int command_id, int event_flags) {
         prefs->DisableAutoOpenBasedOnExtension(path);
       break;
     }
+    case PLATFORM_OPEN:
+      DownloadItemModel(download_item_).OpenUsingPlatformHandler();
+      break;
     case CANCEL:
       download_item_->Cancel(true /* Cancelled by user */);
       break;
@@ -221,6 +225,8 @@ string16 DownloadShelfContextMenu::GetLabelForCommandId(int command_id) const {
       return l10n_util::GetStringUTF16(IDS_DOWNLOAD_MENU_OPEN);
     case ALWAYS_OPEN_TYPE:
       return l10n_util::GetStringUTF16(IDS_DOWNLOAD_MENU_ALWAYS_OPEN_TYPE);
+    case PLATFORM_OPEN:
+      return l10n_util::GetStringUTF16(IDS_DOWNLOAD_MENU_PLATFORM_OPEN);
     case CANCEL:
       return l10n_util::GetStringUTF16(IDS_DOWNLOAD_MENU_CANCEL);
     case TOGGLE_PAUSE:
@@ -290,6 +296,9 @@ ui::SimpleMenuModel* DownloadShelfContextMenu::GetFinishedMenuModel() {
       OPEN_WHEN_COMPLETE, IDS_DOWNLOAD_MENU_OPEN);
   finished_download_menu_model_->AddCheckItemWithStringId(
       ALWAYS_OPEN_TYPE, IDS_DOWNLOAD_MENU_ALWAYS_OPEN_TYPE);
+  if (DownloadItemModel(download_item_).ShouldPreferOpeningInBrowser())
+    finished_download_menu_model_->AddItemWithStringId(
+        PLATFORM_OPEN, IDS_DOWNLOAD_MENU_PLATFORM_OPEN);
   finished_download_menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
   finished_download_menu_model_->AddItemWithStringId(
       SHOW_IN_FOLDER, IDS_DOWNLOAD_MENU_SHOW);

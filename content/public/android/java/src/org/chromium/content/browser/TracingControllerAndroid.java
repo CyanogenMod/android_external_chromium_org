@@ -15,15 +15,14 @@ import android.widget.Toast;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
-import org.chromium.content.app.LibraryLoader;
-import org.chromium.content.common.TraceEvent;
 import org.chromium.content.R;
+import org.chromium.content.common.TraceEvent;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
-import java.text.SimpleDateFormat;
 
 /**
  * Controller for Chrome's tracing feature.
@@ -263,11 +262,11 @@ public class TracingControllerAndroid {
         }
     }
 
-    private int mNativeTracingControllerAndroid;
-    private native int nativeInit();
-    private native void nativeDestroy(int nativeTracingControllerAndroid);
-    private native boolean nativeStartTracing(int nativeTracingControllerAndroid, String filename,
+    private long mNativeTracingControllerAndroid;
+    private native long nativeInit();
+    private native void nativeDestroy(long nativeTracingControllerAndroid);
+    private native boolean nativeStartTracing(long nativeTracingControllerAndroid, String filename,
             String categories, boolean recordContinuously);
-    private native void nativeStopTracing(int nativeTracingControllerAndroid);
+    private native void nativeStopTracing(long nativeTracingControllerAndroid);
     private native String nativeGetDefaultCategories();
 }

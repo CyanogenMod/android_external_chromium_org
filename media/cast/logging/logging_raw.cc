@@ -4,7 +4,6 @@
 
 #include "media/cast/logging/logging_raw.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
@@ -23,13 +22,13 @@ LoggingRaw::~LoggingRaw() {}
 
 void LoggingRaw::InsertFrameEvent(CastLoggingEvent event,
                                   uint32 rtp_timestamp,
-                                  uint8 frame_id) {
+                                  uint32 frame_id) {
   InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
 }
 
 void LoggingRaw::InsertFrameEventWithSize(CastLoggingEvent event,
                                           uint32 rtp_timestamp,
-                                          uint8 frame_id,
+                                          uint32 frame_id,
                                           int size) {
   InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
   // Now insert size.
@@ -40,7 +39,7 @@ void LoggingRaw::InsertFrameEventWithSize(CastLoggingEvent event,
 
 void LoggingRaw::InsertFrameEventWithDelay(CastLoggingEvent event,
                                            uint32 rtp_timestamp,
-                                           uint8 frame_id,
+                                           uint32 frame_id,
                                            base::TimeDelta delay) {
   InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
   // Now insert delay.
@@ -49,10 +48,10 @@ void LoggingRaw::InsertFrameEventWithDelay(CastLoggingEvent event,
   it->second.delay_delta = delay;
 }
 void LoggingRaw::InsertBaseFrameEvent(CastLoggingEvent event,
-                                      uint8 frame_id,
+                                      uint32 frame_id,
                                       uint32 rtp_timestamp) {
   // Is this a new event?
-  FrameRawMap::iterator it = frame_map_.find(event);
+  FrameRawMap::iterator it = frame_map_.find(rtp_timestamp);
   if (it == frame_map_.end()) {
     // Create a new map entry.
     FrameEvent info;
@@ -64,15 +63,19 @@ void LoggingRaw::InsertBaseFrameEvent(CastLoggingEvent event,
     // Insert to an existing entry.
     it->second.timestamp.push_back(clock_->NowTicks());
     it->second.type.push_back(event);
+    // Do we have a valid frame_id?
+    // Not all events have a valid frame id.
+    if (it->second.frame_id == kFrameIdUnknown && frame_id != kFrameIdUnknown)
+      it->second.frame_id = frame_id;
   }
 }
 
 void LoggingRaw::InsertPacketEvent(CastLoggingEvent event,
                                    uint32 rtp_timestamp,
-                                   uint8 frame_id,
+                                   uint32 frame_id,
                                    uint16 packet_id,
                                    uint16 max_packet_id,
-                                   int size) {
+                                   size_t size) {
   // Is this packet belonging to a new frame?
   PacketRawMap::iterator it = packet_map_.find(rtp_timestamp);
   if (it == packet_map_.end()) {

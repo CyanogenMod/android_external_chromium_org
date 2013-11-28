@@ -188,8 +188,11 @@ BrowserProcessImpl::BrowserProcessImpl(
   apps::AppsClient::Set(ChromeAppsClient::GetInstance());
   extensions::ExtensionsClient::Set(
       extensions::ChromeExtensionsClient::GetInstance());
-  extensions::ExtensionsBrowserClient::Set(
-      extensions::ChromeExtensionsBrowserClient::GetInstance());
+
+  extensions_browser_client_.reset(
+      new extensions::ChromeExtensionsBrowserClient);
+  extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
   ExtensionRendererState::GetInstance()->Init();
 
@@ -283,6 +286,10 @@ void BrowserProcessImpl::StartTearDown() {
 #endif
 
   platform_part()->StartTearDown();
+
+#if defined(ENABLE_WEBRTC)
+  webrtc_log_uploader_.reset();
+#endif
 }
 
 void BrowserProcessImpl::PostDestroyThreads() {
@@ -860,12 +867,12 @@ void BrowserProcessImpl::CreateLocalState() {
   // Register local state preferences.
   chrome::RegisterLocalState(pref_registry.get());
 
-  local_state_.reset(
+  local_state_ =
       chrome_prefs::CreateLocalState(local_state_path,
                                      local_state_task_runner_.get(),
                                      policy_service(),
                                      pref_registry,
-                                     false));
+                                     false).Pass();
 
   pref_change_registrar_.Init(local_state_.get());
 
@@ -874,6 +881,16 @@ void BrowserProcessImpl::CreateLocalState() {
       prefs::kDefaultBrowserSettingEnabled,
       base::Bind(&BrowserProcessImpl::ApplyDefaultBrowserPolicy,
                  base::Unretained(this)));
+
+  // This preference must be kept in sync with external values; update them
+  // whenever the preference or its controlling policy changes.
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+  pref_change_registrar_.Add(
+      prefs::kMetricsReportingEnabled,
+      base::Bind(&BrowserProcessImpl::ApplyMetricsReportingPolicy,
+                 base::Unretained(this)));
+  ApplyMetricsReportingPolicy();
+#endif
 
   int max_per_proxy = local_state_->GetInteger(prefs::kMaxConnectionsPerProxy);
   net::ClientSocketPoolManager::set_max_sockets_per_proxy_server(
@@ -1023,6 +1040,16 @@ void BrowserProcessImpl::ApplyDefaultBrowserPolicy() {
 void BrowserProcessImpl::ApplyAllowCrossOriginAuthPromptPolicy() {
   bool value = local_state()->GetBoolean(prefs::kAllowCrossOriginAuthPrompt);
   ResourceDispatcherHost::Get()->SetAllowCrossOriginAuthPrompt(value);
+}
+
+void BrowserProcessImpl::ApplyMetricsReportingPolicy() {
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(&GoogleUpdateSettings::SetCollectStatsConsent),
+          local_state()->GetBoolean(prefs::kMetricsReportingEnabled)));
+#endif
 }
 
 // Mac is currently not supported.

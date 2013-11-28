@@ -11,13 +11,13 @@ import android.util.Pair;
 
 import junit.framework.Assert;
 
+import org.chromium.base.CommandLine;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.AdvancedMockContext;
 import org.chromium.chrome.browser.sync.ProfileSyncService;
 import org.chromium.chrome.test.util.TestHttpServerClient;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
-import org.chromium.content.common.CommandLine;
 import org.chromium.sync.signin.AccountManagerHelper;
 import org.chromium.sync.signin.ChromeSigninController;
 import org.chromium.sync.test.util.AccountHolder;
@@ -54,7 +54,7 @@ public final class SyncTestUtil {
             newPair("Summary", "Summary");
     protected static final String UNINITIALIZED = "Uninitialized";
     protected static final Pair<String, String> USERNAME_STAT =
-            newPair("Credentials", "Username");
+            newPair("Identity", "Username");
 
     // Override the default server used for profile sync.
     // Native switch - chrome_switches::kSyncServiceURL

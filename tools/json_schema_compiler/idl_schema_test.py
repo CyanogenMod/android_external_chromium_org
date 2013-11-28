@@ -18,6 +18,11 @@ def getParams(schema, name):
   return function['parameters']
 
 
+def getReturns(schema, name):
+  function = getFunction(schema, name)
+  return function['returns']
+
+
 def getType(schema, id):
   for item in schema['types']:
     if item['id'] == id:
@@ -110,6 +115,23 @@ class IdlSchemaTest(unittest.TestCase):
     self.assertTrue(idl_basics['internal'])
     self.assertFalse(idl_basics['nodoc'])
 
+  def testReturnTypes(self):
+    schema = self.idl_basics
+    self.assertEquals({'name': 'function19', 'type': 'integer'},
+                      getReturns(schema, 'function19'))
+    self.assertEquals({'name': 'function20', '$ref': 'MyType1',
+                       'optional': True},
+                      getReturns(schema, 'function20'))
+    self.assertEquals({'name': 'function21', 'type': 'array',
+                       'items': {'$ref': 'MyType1'}},
+                      getReturns(schema, 'function21'))
+    self.assertEquals({'name': 'function22', '$ref': 'EnumType',
+                       'optional': True},
+                      getReturns(schema, 'function22'))
+    self.assertEquals({'name': 'function23', 'type': 'array',
+                       'items': {'$ref': 'EnumType'}},
+                      getReturns(schema, 'function23'))
+
   def testChromeOSPlatformsNamespace(self):
     schema = idl_schema.Load('test/idl_namespace_chromeos.idl')[0]
     self.assertEquals('idl_namespace_chromeos', schema['namespace'])
@@ -128,6 +150,24 @@ class IdlSchemaTest(unittest.TestCase):
                       schema['namespace'])
     expected = None
     self.assertEquals(expected, schema['platforms'])
+
+  def testSpecificImplementNamespace(self):
+    schema = idl_schema.Load('test/idl_namespace_specific_implement.idl')[0]
+    self.assertEquals('idl_namespace_specific_implement',
+                      schema['namespace'])
+    expected = 'idl_namespace_specific_implement.idl'
+    self.assertEquals(expected, schema['compiler_options']['implemented_in'])
+
+  def testSpecificImplementOnChromeOSNamespace(self):
+    schema = idl_schema.Load(
+        'test/idl_namespace_specific_implement_chromeos.idl')[0]
+    self.assertEquals('idl_namespace_specific_implement_chromeos',
+                      schema['namespace'])
+    expected_implemented_path = 'idl_namespace_specific_implement_chromeos.idl'
+    expected_platform = ['chromeos']
+    self.assertEquals(expected_implemented_path,
+                      schema['compiler_options']['implemented_in'])
+    self.assertEquals(expected_platform, schema['platforms'])
 
   def testCallbackComment(self):
     schema = self.idl_basics

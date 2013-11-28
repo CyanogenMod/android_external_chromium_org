@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
+#include "chrome/browser/ui/crypto_module_password_dialog.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -150,9 +151,7 @@ void SSLClientCertificateSelector::Init() {
       web_contents_modal_dialog_manager->delegate();
   DCHECK(modal_delegate);
   window_ = views::Widget::CreateWindowAsFramelessChild(
-      this,
-      web_contents_->GetView()->GetNativeView(),
-      modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
+      this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
 
   // Select the first row automatically.  This must be done after the dialog has
@@ -211,11 +210,25 @@ bool SSLClientCertificateSelector::Cancel() {
 
 bool SSLClientCertificateSelector::Accept() {
   DVLOG(1) << __FUNCTION__;
-  net::X509Certificate* cert = GetSelectedCert();
+  scoped_refptr<net::X509Certificate> cert = GetSelectedCert();
   if (cert) {
+    // Remove the observer before we try unlocking, otherwise we might act on a
+    // notification while waiting for the unlock dialog, causing us to delete
+    // ourself before the Unlocked callback gets called.
     StopObserving();
-    CertificateSelected(cert);
-    return true;
+#if defined(USE_NSS)
+    chrome::UnlockCertSlotIfNecessary(
+        cert,
+        chrome::kCryptoModulePasswordClientAuth,
+        cert_request_info()->host_and_port,
+        window_->GetNativeView(),
+        base::Bind(&SSLClientCertificateSelector::Unlocked,
+                   base::Unretained(this),
+                   cert));
+#else
+    Unlocked(cert);
+#endif
+    return false;  // Unlocked() will close the dialog.
   }
 
   return false;
@@ -287,6 +300,12 @@ void SSLClientCertificateSelector::CreateCertTable() {
                                 views::TEXT_ONLY,
                                 true /* single_selection */);
   table_->SetObserver(this);
+}
+
+void SSLClientCertificateSelector::Unlocked(net::X509Certificate* cert) {
+  DVLOG(1) << __FUNCTION__;
+  CertificateSelected(cert);
+  window_->Close();
 }
 
 namespace chrome {

@@ -15,13 +15,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/download_test_observer.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
@@ -378,8 +378,15 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, HiDpiThemeTest) {
   EXPECT_FALSE(service->GetExtensionById(extension_id, false));
 }
 
+// See http://crbug.com/315299.
+#if defined(OS_WIN)
+#define MAYBE_InstallDelayedUntilNextUpdate \
+        DISABLED_InstallDelayedUntilNextUpdate
+#else
+#define MAYBE_InstallDelayedUntilNextUpdate InstallDelayedUntilNextUpdate
+#endif  // defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
-                       InstallDelayedUntilNextUpdate) {
+                       MAYBE_InstallDelayedUntilNextUpdate) {
   const std::string extension_id("ldnnhddmnhbkjipkidpdiheffobcpfmf");
   base::FilePath crx_path = test_data_dir_.AppendASCII("delayed_install");
   ExtensionSystem* extension_system = extensions::ExtensionSystem::Get(
@@ -442,6 +449,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
   ASSERT_EQ("3.0", extension->version()->GetString());
 }
 
+#if defined(FULL_SAFE_BROWSING)
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, Blacklist) {
   scoped_refptr<FakeSafeBrowsingDatabaseManager> blacklist_db(
       new FakeSafeBrowsingDatabaseManager(true));
@@ -453,6 +461,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, Blacklist) {
                                           .AppendASCII("theme_hidpi.crx");
   EXPECT_FALSE(InstallExtension(crx_path, 0));
 }
+#endif
 
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, NonStrictManifestCheck) {
   scoped_refptr<MockPromptProxy> mock_prompt =

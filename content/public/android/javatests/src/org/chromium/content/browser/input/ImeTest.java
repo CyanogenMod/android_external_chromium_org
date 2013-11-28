@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Rect;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.text.TextUtils;
@@ -28,14 +29,15 @@ import org.chromium.content_shell_apk.ContentShellTestBase;
 
 import java.util.ArrayList;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeoutException;
 
 public class ImeTest extends ContentShellTestBase {
 
     private static final String DATA_URL = UrlUtils.encodeHtmlDataUri(
             "<html><head><meta name=\"viewport\"" +
-            "content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0\" /></head>" +
+            "content=\"width=device-width, initial-scale=2.0, maximum-scale=2.0\" /></head>" +
             "<body><form action=\"about:blank\">" +
-            "<input id=\"input_text\" type=\"text\" />" +
+            "<input id=\"input_text\" type=\"text\" /><br/>" +
             "<input id=\"input_radio\" type=\"radio\" style=\"width:50px;height:50px\" />" +
             "<br/><textarea id=\"textarea\" rows=\"4\" cols=\"20\"></textarea>" +
             "</form></body></html>");
@@ -62,7 +64,9 @@ public class ImeTest extends ContentShellTestBase {
         mContentView = getActivity().getActiveContentView();
         mCallbackContainer = new TestCallbackHelperContainer(mContentView);
         // TODO(aurimas) remove this wait once crbug.com/179511 is fixed.
-        assertWaitForPageScaleFactorMatch(1);
+        assertWaitForPageScaleFactorMatch(2);
+        assertWaitForNonZeroNodeBounds("input_text");
+
         DOMUtils.clickNode(this, mContentView, mCallbackContainer, "input_text");
         assertWaitForKeyboardStatus(true);
 
@@ -336,6 +340,26 @@ public class ImeTest extends ContentShellTestBase {
                                 && TextUtils.equals(clip.getItemAt(0).getText(), expectedContents);
                     }
                 });
+            }
+        }));
+    }
+
+    private void assertWaitForNonZeroNodeBounds(final String nodeName) throws InterruptedException {
+        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                Rect nodeBounds = new Rect();
+                try {
+                    nodeBounds =
+                            DOMUtils.getNodeBounds(mContentView, mCallbackContainer, nodeName);
+                } catch (InterruptedException e) {
+                    // Intentionally do nothing
+                    return false;
+                } catch (TimeoutException e) {
+                    // Intentionally do nothing
+                    return false;
+                }
+                return !nodeBounds.isEmpty();
             }
         }));
     }

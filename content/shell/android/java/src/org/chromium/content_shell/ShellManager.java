@@ -13,7 +13,7 @@ import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewRenderView;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * Container and generator of ShellViews.
@@ -37,7 +37,15 @@ public class ShellManager extends FrameLayout {
     public ShellManager(Context context, AttributeSet attrs) {
         super(context, attrs);
         nativeInit(this);
-        mContentViewRenderView = new ContentViewRenderView(context) {
+    }
+
+    /**
+     * @param window The window used to generate all shells.
+     */
+    public void setWindow(WindowAndroid window) {
+        assert window != null;
+        mWindow = window;
+        mContentViewRenderView = new ContentViewRenderView(getContext(), window) {
             @Override
             protected void onReadyToRender() {
                 if (sStartup) {
@@ -46,13 +54,6 @@ public class ShellManager extends FrameLayout {
                 }
             }
         };
-    }
-
-    /**
-     * @param window The window used to generate all shells.
-     */
-    public void setWindow(WindowAndroid window) {
-        mWindow = window;
     }
 
     /**
@@ -87,6 +88,7 @@ public class ShellManager extends FrameLayout {
     @SuppressWarnings("unused")
     @CalledByNative
     private Object createShell() {
+        assert mContentViewRenderView != null;
         LayoutInflater inflater =
                 (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         Shell shellView = (Shell) inflater.inflate(R.layout.shell_view, null);

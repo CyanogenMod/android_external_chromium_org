@@ -39,12 +39,6 @@ const char kDriveConnectionReasonNotReady[] = "not_ready";
 const char kDriveConnectionReasonNoNetwork[] = "no_network";
 const char kDriveConnectionReasonNoService[] = "no_service";
 
-// Does nothing with a bool parameter. Used as a placeholder for calling
-// ClearCacheAndRemountFileSystem(). TODO(yoshiki): Handle an error from
-// ClearCacheAndRemountFileSystem() properly: http://crbug.com/140511.
-void DoNothingWithBool(bool /* success */) {
-}
-
 // Copies properties from |entry_proto| to |properties|.
 void FillDriveEntryPropertiesValue(
     const drive::ResourceEntry& entry_proto,
@@ -112,7 +106,7 @@ bool FileBrowserPrivateGetDriveEntryPropertiesFunction::RunImpl() {
     return true;
   }
 
-  file_system->GetResourceEntryByPath(
+  file_system->GetResourceEntry(
       file_path_,
       base::Bind(&FileBrowserPrivateGetDriveEntryPropertiesFunction::
                      OnGetFileInfo, this));
@@ -179,7 +173,7 @@ void FileBrowserPrivateGetDriveEntryPropertiesFunction::OnGetFileInfo(
     }
   }
 
-  file_system->GetCacheEntryByPath(
+  file_system->GetCacheEntry(
       file_path_,
       base::Bind(&FileBrowserPrivateGetDriveEntryPropertiesFunction::
                      CacheStateReceived, this));
@@ -289,7 +283,7 @@ void FileBrowserPrivateGetDriveFilesFunction::GetFileOrSendResponse() {
     return;
   }
 
-  file_system->GetFileByPath(
+  file_system->GetFile(
       drive_path,
       base::Bind(&FileBrowserPrivateGetDriveFilesFunction::OnFileReady, this));
 }
@@ -513,21 +507,6 @@ void FileBrowserPrivateSearchDriveMetadataFunction::OnSearchMetadata(
 
   SetResult(results_list);
   SendResponse(true);
-}
-
-bool FileBrowserPrivateClearDriveCacheFunction::RunImpl() {
-  drive::DriveIntegrationService* integration_service =
-      drive::DriveIntegrationServiceFactory::FindForProfile(GetProfile());
-  if (!integration_service || !integration_service->IsMounted())
-    return false;
-
-  // TODO(yoshiki): Receive a callback from JS-side and pass it to
-  // ClearCacheAndRemountFileSystem(). http://crbug.com/140511
-  integration_service->ClearCacheAndRemountFileSystem(
-      base::Bind(&DoNothingWithBool));
-
-  SendResponse(true);
-  return true;
 }
 
 bool FileBrowserPrivateGetDriveConnectionStateFunction::RunImpl() {

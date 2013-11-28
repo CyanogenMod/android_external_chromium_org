@@ -44,6 +44,8 @@ LOCAL_SRC_FILES := \
 	base/android/activity_status.cc \
 	base/android/base_jni_registrar.cc \
 	base/android/build_info.cc \
+	base/android/command_line_android.cc \
+	base/android/content_uri_utils.cc \
 	base/android/cpu_features.cc \
 	base/android/fifo_utils.cc \
 	base/android/important_file_writer_android.cc \
@@ -285,6 +287,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
@@ -368,6 +371,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \

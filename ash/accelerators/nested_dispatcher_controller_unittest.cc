@@ -20,7 +20,7 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
-#include "ui/events/x/events_x_utils.h"
+#include "ui/events/test/events_test_utils_x11.h"
 #endif  // USE_X11
 
 namespace ash {
@@ -79,27 +79,22 @@ void DispatchKeyReleaseA() {
   // ShouldHandle() in ui/base/accelerators/accelerator_manager.cc for details.
 #if defined(OS_WIN)
   MSG native_event_down = { NULL, WM_KEYDOWN, ui::VKEY_A, 0 };
-  ash::Shell::GetPrimaryRootWindow()->PostNativeEvent(native_event_down);
+  ash::Shell::GetPrimaryRootWindow()->host()->PostNativeEvent(
+      native_event_down);
   MSG native_event_up = { NULL, WM_KEYUP, ui::VKEY_A, 0 };
-  ash::Shell::GetPrimaryRootWindow()->PostNativeEvent(native_event_up);
+  ash::Shell::GetPrimaryRootWindow()->host()->PostNativeEvent(native_event_up);
 #elif defined(USE_X11)
-  XEvent native_event;
-  ui::InitXKeyEventForTesting(ui::ET_KEY_PRESSED,
-                              ui::VKEY_A,
-                              0,
-                              &native_event);
+  ui::ScopedXI2Event native_event;
+  native_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
   aura::WindowEventDispatcher* dispatcher =
       ash::Shell::GetPrimaryRootWindow()->GetDispatcher();
-  dispatcher->PostNativeEvent(&native_event);
-  ui::InitXKeyEventForTesting(ui::ET_KEY_RELEASED,
-                              ui::VKEY_A,
-                              0,
-                              &native_event);
-  dispatcher->PostNativeEvent(&native_event);
+  dispatcher->host()->PostNativeEvent(native_event);
+  native_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
+  dispatcher->host()->PostNativeEvent(native_event);
 #endif
 
   // Send noop event to signal dispatcher to exit.
-  dispatcher->PostNativeEvent(ui::CreateNoopEvent());
+  dispatcher->host()->PostNativeEvent(ui::CreateNoopEvent());
 }
 
 }  // namespace

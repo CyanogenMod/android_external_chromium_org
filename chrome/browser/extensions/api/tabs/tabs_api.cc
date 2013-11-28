@@ -54,14 +54,11 @@
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "chrome/common/extensions/api/windows.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/message_bundle.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
@@ -79,7 +76,10 @@
 #include "extensions/browser/file_reader.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
@@ -464,13 +464,12 @@ bool WindowsCreateFunction::RunImpl() {
 #endif
         if (use_panels) {
           create_panel = true;
-#if !defined(OS_CHROMEOS)
-          // Non-ChromeOS has both docked and detached panel types.
-          if (create_data->type ==
+          // Non-ash supports both docked and detached panel types.
+          if (chrome::GetActiveDesktop() != chrome::HOST_DESKTOP_TYPE_ASH &&
+              create_data->type ==
               windows::Create::Params::CreateData::TYPE_DETACHED_PANEL) {
             panel_create_mode = PanelManager::CREATE_AS_DETACHED;
           }
-#endif
         } else {
           window_type = Browser::TYPE_POPUP;
         }
@@ -531,8 +530,8 @@ bool WindowsCreateFunction::RunImpl() {
     if (urls.empty())
       urls.push_back(GURL(chrome::kChromeUINewTabURL));
 
-#if defined(OS_CHROMEOS)
-    if (PanelManager::ShouldUsePanels(extension_id)) {
+#if defined(USE_ASH)
+    if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH) {
       ShellWindow::CreateParams create_params;
       create_params.window_type = ShellWindow::WINDOW_TYPE_V1_PANEL;
       create_params.bounds = window_bounds;
@@ -546,7 +545,7 @@ bool WindowsCreateFunction::RunImpl() {
                 CreateWindowValueWithTabs(GetExtension()));
       return true;
     }
-#else
+#endif
     std::string title =
         web_app::GenerateApplicationNameFromExtensionId(extension_id);
     // Note: Panels ignore all but the first url provided.
@@ -563,7 +562,6 @@ bool WindowsCreateFunction::RunImpl() {
         panel->extension_window_controller()->CreateWindowValueWithTabs(
             GetExtension()));
     return true;
-#endif
   }
 
   // Create a new BrowserWindow.
@@ -625,8 +623,10 @@ bool WindowsCreateFunction::RunImpl() {
   else
     new_window->window()->ShowInactive();
 
-  if (new_window->profile()->IsOffTheRecord() && !include_incognito()) {
-    // Don't expose incognito windows if the extension isn't allowed.
+  if (new_window->profile()->IsOffTheRecord() &&
+      !GetProfile()->IsOffTheRecord() && !include_incognito()) {
+    // Don't expose incognito windows if extension itself works in non-incognito
+    // profile and CanCrossIncognito isn't allowed.
     SetResult(Value::CreateNullValue());
   } else {
     SetResult(

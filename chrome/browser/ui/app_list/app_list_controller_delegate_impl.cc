@@ -12,8 +12,8 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "extensions/common/extension.h"
 #include "net/base/url_util.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -101,7 +101,6 @@ void AppListControllerDelegateImpl::LaunchApp(
   AppListServiceImpl::RecordAppListAppLaunch();
 
   AppLaunchParams params(profile, extension, NEW_FOREGROUND_TAB);
-  params.desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
 
   if (source != LAUNCH_FROM_UNKNOWN &&
       extension->id() == extension_misc::kWebStoreAppId) {
@@ -113,6 +112,7 @@ void AppListControllerDelegateImpl::LaunchApp(
         AppListSourceToString(source));
   }
 
+  FillLaunchParams(&params);
   OpenApplication(params);
 }
 
@@ -125,3 +125,5 @@ void AppListControllerDelegateImpl::ShowForProfileByPath(
 bool AppListControllerDelegateImpl::ShouldShowUserIcon() {
   return g_browser_process->profile_manager()->GetNumberOfProfiles() > 1;
 }
+
+void AppListControllerDelegateImpl::FillLaunchParams(AppLaunchParams* params) {}

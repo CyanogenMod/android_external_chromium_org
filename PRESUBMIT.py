@@ -45,6 +45,8 @@ _TEST_CODE_EXCLUDED_PATHS = (
     r'content[/\\]shell[/\\].*',
     # At request of folks maintaining this folder.
     r'chrome[/\\]browser[/\\]automation[/\\].*',
+    # Non-production example code.
+    r'mojo[/\\]examples[/\\].*',
 )
 
 _TEST_ONLY_WARNING = (
@@ -296,7 +298,7 @@ def _CheckNoUNIT_TESTInSourceFiles(input_api, output_api):
       continue
 
     for line_num, line in f.ChangedContents():
-      if 'UNIT_TEST' in line:
+      if 'UNIT_TEST ' in line or line.endswith('UNIT_TEST'):
         problems.append('    %s:%d' % (f.LocalPath(), line_num))
 
   if not problems:
@@ -746,7 +748,8 @@ def _CheckNoAbbreviationInPngFileName(input_api, output_api):
 def _DepsFilesToCheck(re, changed_lines):
   """Helper method for _CheckAddedDepsHaveTargetApprovals. Returns
   a set of DEPS entries that we should look up."""
-  results = set()
+  # We ignore deps entries on auto-generated directories.
+  AUTO_GENERATED_DIRS = ['grit', 'jni']
 
   # This pattern grabs the path without basename in the first
   # parentheses, and the basename (if present) in the second. It
@@ -754,11 +757,12 @@ def _DepsFilesToCheck(re, changed_lines):
   # be a header file ending in ".h".
   pattern = re.compile(
       r"""['"]\+([^'"]+?)(/[a-zA-Z0-9_]+\.h)?['"].*""")
+  results = set()
   for changed_line in changed_lines:
     m = pattern.match(changed_line)
     if m:
       path = m.group(1)
-      if not (path.startswith('grit/') or path == 'grit'):
+      if path.split('/')[0] not in AUTO_GENERATED_DIRS:
         results.add('%s/DEPS' % m.group(1))
   return results
 
@@ -825,6 +829,41 @@ def _CheckAddedDepsHaveTargetApprovals(input_api, output_api):
   return []
 
 
+def _CheckSpamLogging(input_api, output_api):
+  file_inclusion_pattern = r'.+%s' % _IMPLEMENTATION_EXTENSIONS
+  black_list = (_EXCLUDED_PATHS +
+                _TEST_CODE_EXCLUDED_PATHS +
+                input_api.DEFAULT_BLACK_LIST +
+                (r"^base[\\\/]logging\.h$",
+                 r"^remoting[\\\/]base[\\\/]logging\.h$",
+                 r"^sandbox[\\\/]linux[\\\/].*",))
+  source_file_filter = lambda x: input_api.FilterSourceFile(
+      x, white_list=(file_inclusion_pattern,), black_list=black_list)
+
+  log_info = []
+  printf = []
+
+  for f in input_api.AffectedSourceFiles(source_file_filter):
+    contents = input_api.ReadFile(f, 'rb')
+    if re.search(r"\bD?LOG\s*\(\s*INFO\s*\)", contents):
+      log_info.append(f.LocalPath())
+    if re.search(r"\bD?LOG_IF\s*\(\s*INFO\s*,", contents):
+      log_info.append(f.LocalPath())
+    if re.search(r"\bf?printf\((stdout|stderr)", contents):
+      printf.append(f.LocalPath())
+
+  if log_info:
+    return [output_api.PresubmitError(
+      'These files spam the console log with LOG(INFO):',
+      items=log_info)]
+  if printf:
+    return [output_api.PresubmitError(
+      'These files spam the console log with printf/fprintf:',
+      items=printf)]
+  return []
+
+
+
 def _CommonChecks(input_api, output_api):
   """Checks common to both upload and commit."""
   results = []
@@ -855,6 +894,7 @@ def _CommonChecks(input_api, output_api):
           input_api,
           output_api,
           source_file_filter=lambda x: x.LocalPath().endswith('.grd')))
+  results.extend(_CheckSpamLogging(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -1036,7 +1076,7 @@ def GetPreferredTrySlaves(project, change):
   if all(re.search('\.(m|mm)$|(^|[/_])mac[/_.]', f) for f in files):
     return ['mac_rel', 'mac:compile']
   if all(re.search('(^|[/_])win[/_.]', f) for f in files):
-    return ['win_rel', 'win7_aura', 'win:compile']
+    return ['win_rel', 'win:compile']
   if all(re.search('(^|[/_])android[/_.]', f) for f in files):
     return ['android_aosp', 'android_dbg', 'android_clang_dbg']
   if all(re.search('^native_client_sdk', f) for f in files):
@@ -1056,7 +1096,6 @@ def GetPreferredTrySlaves(project, change):
       'linux_rel',
       'mac_rel',
       'mac:compile',
-      'win7_aura',
       'win_rel',
       'win:compile',
       'win_x64_rel:base_unittests',

@@ -23,7 +23,9 @@
 
 #include <vector>
 
+#include "base/cpu.h"
 #include "base/debug/alias.h"
+#include "base/debug/stack_trace.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -34,6 +36,7 @@
 #include "base/metrics/histogram.h"
 #include "base/native_library.h"
 #include "base/strings/stringprintf.h"
+#include "base/threading/thread_checker.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 
@@ -108,18 +111,6 @@ base::FilePath GetInitialConfigDirectory() {
 // This callback for NSS forwards all requests to a caller-specified
 // CryptoModuleBlockingPasswordDelegate object.
 char* PKCS11PasswordFunc(PK11SlotInfo* slot, PRBool retry, void* arg) {
-#if defined(OS_CHROMEOS)
-  // If we get asked for a password for the TPM, then return the
-  // well known password we use, as long as the TPM slot has been
-  // initialized.
-  if (crypto::IsTPMTokenReady()) {
-    std::string token_name;
-    std::string user_pin;
-    crypto::GetTPMTokenInfo(&token_name, &user_pin);
-    if (PK11_GetTokenName(slot) == token_name)
-      return PORT_Strdup(user_pin.c_str());
-  }
-#endif
   crypto::CryptoModuleBlockingPasswordDelegate* delegate =
       reinterpret_cast<crypto::CryptoModuleBlockingPasswordDelegate*>(arg);
   if (delegate) {
@@ -217,6 +208,8 @@ class NSSInitSingleton {
  public:
 #if defined(OS_CHROMEOS)
   void OpenPersistentNSSDB() {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
     if (!chromeos_user_logged_in_) {
       // GetDefaultConfigDirectory causes us to do blocking IO on UI thread.
       // Temporarily allow it until we fix http://crbug.com/70119
@@ -233,15 +226,17 @@ class NSSInitSingleton {
   }
 
   void EnableTPMTokenForNSS() {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
     // If this gets set, then we'll use the TPM for certs with
     // private keys, otherwise we'll fall back to the software
     // implementation.
     tpm_token_enabled_for_nss_ = true;
   }
 
-  bool InitializeTPMToken(const std::string& token_name,
-                          int token_slot_id,
-                          const std::string& user_pin) {
+  bool InitializeTPMToken(int token_slot_id) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
     // If EnableTPMTokenForNSS hasn't been called, return false.
     if (!tpm_token_enabled_for_nss_)
       return false;
@@ -249,9 +244,6 @@ class NSSInitSingleton {
     // If everything is already initialized, then return true.
     if (chaps_module_ && tpm_slot_)
       return true;
-
-    tpm_token_name_ = token_name;
-    tpm_user_pin_ = user_pin;
 
     // This tries to load the Chaps module so NSS can talk to the hardware
     // TPM.
@@ -280,18 +272,13 @@ class NSSInitSingleton {
     return false;
   }
 
-  void GetTPMTokenInfo(std::string* token_name, std::string* user_pin) {
-    if (!tpm_token_enabled_for_nss_) {
-      LOG(ERROR) << "GetTPMTokenInfo called before TPM Token is ready.";
-      return;
-    }
-    if (token_name)
-      *token_name = tpm_token_name_;
-    if (user_pin)
-      *user_pin = tpm_user_pin_;
-  }
-
   bool IsTPMTokenReady() {
+    // TODO(mattm): Change to DCHECK when callers have been fixed.
+    if (!thread_checker_.CalledOnValidThread()) {
+      DVLOG(1) << "Called on wrong thread.\n"
+               << base::debug::StackTrace().ToString();
+    }
+
     return tpm_slot_ != NULL;
   }
 
@@ -299,6 +286,8 @@ class NSSInitSingleton {
   // id as an int. This should be safe since this is only used with chaps, which
   // we also control.
   PK11SlotInfo* GetTPMSlotForId(CK_SLOT_ID slot_id) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
     if (!chaps_module_)
       return NULL;
 
@@ -316,6 +305,8 @@ class NSSInitSingleton {
 
 
   bool OpenTestNSSDB() {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
     if (test_slot_)
       return true;
     if (!g_test_nss_db_dir.Get().CreateUniqueTempDir())
@@ -325,6 +316,8 @@ class NSSInitSingleton {
   }
 
   void CloseTestNSSDB() {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
     if (!test_slot_)
       return;
     SECStatus status = SECMOD_CloseUserDB(test_slot_);
@@ -336,6 +329,12 @@ class NSSInitSingleton {
   }
 
   PK11SlotInfo* GetPublicNSSKeySlot() {
+    // TODO(mattm): Change to DCHECK when callers have been fixed.
+    if (!thread_checker_.CalledOnValidThread()) {
+      DVLOG(1) << "Called on wrong thread.\n"
+               << base::debug::StackTrace().ToString();
+    }
+
     if (test_slot_)
       return PK11_ReferenceSlot(test_slot_);
     if (software_slot_)
@@ -344,6 +343,12 @@ class NSSInitSingleton {
   }
 
   PK11SlotInfo* GetPrivateNSSKeySlot() {
+    // TODO(mattm): Change to DCHECK when callers have been fixed.
+    if (!thread_checker_.CalledOnValidThread()) {
+      DVLOG(1) << "Called on wrong thread.\n"
+               << base::debug::StackTrace().ToString();
+    }
+
     if (test_slot_)
       return PK11_ReferenceSlot(test_slot_);
 
@@ -389,6 +394,13 @@ class NSSInitSingleton {
         root_(NULL),
         chromeos_user_logged_in_(false) {
     base::TimeTicks start_time = base::TimeTicks::Now();
+
+    // It's safe to construct on any thread, since LazyInstance will prevent any
+    // other threads from accessing until the constructor is done.
+    thread_checker_.DetachFromThread();
+
+    DisableAESNIIfNeeded();
+
     EnsureNSPRInit();
 
     // We *must* have NSS >= 3.14.3.
@@ -581,12 +593,25 @@ class NSSInitSingleton {
     return db_slot;
   }
 
+  static void DisableAESNIIfNeeded() {
+    if (NSS_VersionCheck("3.15") && !NSS_VersionCheck("3.15.4")) {
+      // Some versions of NSS have a bug that causes AVX instructions to be
+      // used without testing whether XSAVE is enabled by the operating system.
+      // In order to work around this, we disable AES-NI in NSS when we find
+      // that |has_avx()| is false (which includes the XSAVE test). See
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=940794
+      base::CPU cpu;
+
+      if (cpu.has_avx_hardware() && !cpu.has_avx()) {
+        base::Environment::Create()->SetVar("NSS_DISABLE_HW_AES", "1");
+      }
+    }
+  }
+
   // If this is set to true NSS is forced to be initialized without a DB.
   static bool force_nodb_init_;
 
   bool tpm_token_enabled_for_nss_;
-  std::string tpm_token_name_;
-  std::string tpm_user_pin_;
   SECMODModule* chaps_module_;
   PK11SlotInfo* software_slot_;
   PK11SlotInfo* test_slot_;
@@ -598,6 +623,8 @@ class NSSInitSingleton {
   // is fixed, we will no longer need the lock.
   base::Lock write_lock_;
 #endif  // defined(USE_NSS)
+
+  base::ThreadChecker thread_checker_;
 };
 
 // static
@@ -754,19 +781,12 @@ void EnableTPMTokenForNSS() {
   g_nss_singleton.Get().EnableTPMTokenForNSS();
 }
 
-void GetTPMTokenInfo(std::string* token_name, std::string* user_pin) {
-  g_nss_singleton.Get().GetTPMTokenInfo(token_name, user_pin);
-}
-
 bool IsTPMTokenReady() {
   return g_nss_singleton.Get().IsTPMTokenReady();
 }
 
-bool InitializeTPMToken(const std::string& token_name,
-                        int token_slot_id,
-                        const std::string& user_pin) {
-  return g_nss_singleton.Get().InitializeTPMToken(
-      token_name, token_slot_id, user_pin);
+bool InitializeTPMToken(int token_slot_id) {
+  return g_nss_singleton.Get().InitializeTPMToken(token_slot_id);
 }
 #endif  // defined(OS_CHROMEOS)
 

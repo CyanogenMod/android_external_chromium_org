@@ -73,12 +73,15 @@ ConfigurationParams::ConfigurationParams(
     const sync_pb::GetUpdatesCallerInfo::GetUpdatesSource& source,
     ModelTypeSet types_to_download,
     const ModelSafeRoutingInfo& routing_info,
-    const base::Closure& ready_task)
+    const base::Closure& ready_task,
+    const base::Closure& retry_task)
     : source(source),
       types_to_download(types_to_download),
       routing_info(routing_info),
-      ready_task(ready_task) {
+      ready_task(ready_task),
+      retry_task(retry_task) {
   DCHECK(!ready_task.is_null());
+  DCHECK(!retry_task.is_null());
 }
 ConfigurationParams::~ConfigurationParams() {}
 
@@ -234,7 +237,7 @@ void SyncSchedulerImpl::Start(Mode mode) {
       CanRunNudgeJobNow(NORMAL_PRIORITY)) {
     // We just got back to normal mode.  Let's try to run the work that was
     // queued up while we were configuring.
-    DoNudgeSyncSessionJob(NORMAL_PRIORITY);
+    TrySyncSessionJob(NORMAL_PRIORITY);
   }
 }
 
@@ -274,7 +277,7 @@ void BuildModelSafeParams(
 
 }  // namespace.
 
-bool SyncSchedulerImpl::ScheduleConfiguration(
+void SyncSchedulerImpl::ScheduleConfiguration(
     const ConfigurationParams& params) {
   DCHECK(CalledOnValidThread());
   DCHECK(IsConfigRelatedUpdateSourceValue(params.source));
@@ -296,22 +299,11 @@ bool SyncSchedulerImpl::ScheduleConfiguration(
   // Only reconfigure if we have types to download.
   if (!params.types_to_download.Empty()) {
     pending_configure_params_.reset(new ConfigurationParams(params));
-    bool succeeded = DoConfigurationSyncSessionJob(NORMAL_PRIORITY);
-
-    // If we failed, the job would have been saved as the pending configure
-    // job and a wait interval would have been set.
-    if (!succeeded) {
-      DCHECK(pending_configure_params_);
-    } else {
-      DCHECK(!pending_configure_params_);
-    }
-    return succeeded;
+    TrySyncSessionJob(NORMAL_PRIORITY);
   } else {
     SDVLOG(2) << "No change in routing info, calling ready task directly.";
     params.ready_task.Run();
   }
-
-  return true;
 }
 
 bool SyncSchedulerImpl::CanRunJobNow(JobPriority priority) {
@@ -497,13 +489,18 @@ void SyncSchedulerImpl::DoNudgeSyncSessionJob(JobPriority priority) {
   }
 }
 
-bool SyncSchedulerImpl::DoConfigurationSyncSessionJob(JobPriority priority) {
+void SyncSchedulerImpl::DoConfigurationSyncSessionJob(JobPriority priority) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(mode_, CONFIGURATION_MODE);
+  DCHECK(pending_configure_params_ != NULL);
 
   if (!CanRunJobNow(priority)) {
     SDVLOG(2) << "Unable to run configure job right now.";
-    return false;
+    if (!pending_configure_params_->retry_task.is_null()) {
+      pending_configure_params_->retry_task.Run();
+      pending_configure_params_->retry_task.Reset();
+    }
+    return;
   }
 
   SDVLOG(2) << "Will run configure SyncShare with routes "
@@ -529,10 +526,14 @@ bool SyncSchedulerImpl::DoConfigurationSyncSessionJob(JobPriority priority) {
     // If we're here, then we successfully reached the server.  End all backoff.
     wait_interval_.reset();
     NotifyRetryTime(base::Time());
-    return true;
   } else {
     HandleFailure(session->status_controller().model_neutral_state());
-    return false;
+    // Sync cycle might receive response from server that causes scheduler to
+    // stop and draws pending_configure_params_ invalid.
+    if (started_ && !pending_configure_params_->retry_task.is_null()) {
+      pending_configure_params_->retry_task.Run();
+      pending_configure_params_->retry_task.Reset();
+    }
   }
 }
 
@@ -573,7 +574,7 @@ void SyncSchedulerImpl::DoPollSyncSessionJob() {
       GetEnabledAndUnthrottledTypes(),
       session.get());
 
-  AdjustPolling(UPDATE_INTERVAL);
+  AdjustPolling(FORCE_RESET);
 
   if (IsCurrentlyThrottled()) {
     SDVLOG(2) << "Poll request got us throttled.";
@@ -600,18 +601,25 @@ void SyncSchedulerImpl::UpdateNudgeTimeRecords(ModelTypeSet types) {
   }
 }
 
+TimeDelta SyncSchedulerImpl::GetPollInterval() {
+  return (!session_context_->notifications_enabled() ||
+          !session_context_->ShouldFetchUpdatesBeforeCommit()) ?
+      syncer_short_poll_interval_seconds_ :
+      syncer_long_poll_interval_seconds_;
+}
+
 void SyncSchedulerImpl::AdjustPolling(PollAdjustType type) {
   DCHECK(CalledOnValidThread());
 
-  TimeDelta poll  = (!session_context_->notifications_enabled() ||
-                     !session_context_->ShouldFetchUpdatesBeforeCommit()) ?
-      syncer_short_poll_interval_seconds_ :
-      syncer_long_poll_interval_seconds_;
+  TimeDelta poll = GetPollInterval();
   bool rate_changed = !poll_timer_.IsRunning() ||
                        poll != poll_timer_.GetCurrentDelay();
 
-  if (type == FORCE_RESET && !rate_changed)
-    poll_timer_.Reset();
+  if (type == FORCE_RESET) {
+    last_poll_reset_ = base::TimeTicks::Now();
+    if (!rate_changed)
+      poll_timer_.Reset();
+  }
 
   if (!rate_changed)
     return;
@@ -661,25 +669,28 @@ void SyncSchedulerImpl::Stop() {
 // This is the only place where we invoke DoSyncSessionJob with canary
 // privileges.  Everyone else should use NORMAL_PRIORITY.
 void SyncSchedulerImpl::TryCanaryJob() {
-  DCHECK(CalledOnValidThread());
-
-  if (mode_ == CONFIGURATION_MODE && pending_configure_params_) {
-    SDVLOG(2) << "Found pending configure job; will run as canary";
-    DoConfigurationSyncSessionJob(CANARY_PRIORITY);
-  } else if (mode_ == NORMAL_MODE && nudge_tracker_.IsSyncRequired() &&
-             CanRunNudgeJobNow(CANARY_PRIORITY)) {
-    SDVLOG(2) << "Found pending nudge job; will run as canary";
-    DoNudgeSyncSessionJob(CANARY_PRIORITY);
-  } else if (mode_ == NORMAL_MODE && CanRunJobNow(CANARY_PRIORITY) &&
-             do_poll_after_credentials_updated_) {
-    // Retry poll if poll timer recently fired and ProfileSyncService received
-    // fresh access token.
-    DoPollSyncSessionJob();
-  } else {
-    SDVLOG(2) << "Found no work to do; will not run a canary";
-  }
+  TrySyncSessionJob(CANARY_PRIORITY);
   // Don't run poll job till the next time poll timer fires.
   do_poll_after_credentials_updated_ = false;
+}
+
+void SyncSchedulerImpl::TrySyncSessionJob(JobPriority priority) {
+  DCHECK(CalledOnValidThread());
+  if (mode_ == CONFIGURATION_MODE) {
+    if (pending_configure_params_) {
+      SDVLOG(2) << "Found pending configure job";
+      DoConfigurationSyncSessionJob(priority);
+    }
+  } else {
+    DCHECK(mode_ == NORMAL_MODE);
+    if (nudge_tracker_.IsSyncRequired() && CanRunNudgeJobNow(priority)) {
+      SDVLOG(2) << "Found pending nudge job";
+      DoNudgeSyncSessionJob(priority);
+    } else if (do_poll_after_credentials_updated_ ||
+        ((base::TimeTicks::Now() - last_poll_reset_) >= GetPollInterval())) {
+      DoPollSyncSessionJob();
+    }
+  }
 }
 
 void SyncSchedulerImpl::PollTimerCallback() {
@@ -695,7 +706,7 @@ void SyncSchedulerImpl::PollTimerCallback() {
     return;
   }
 
-  DoPollSyncSessionJob();
+  TrySyncSessionJob(NORMAL_PRIORITY);
   // Poll timer fires infrequently. Usually by this time access token is already
   // expired and poll job will fail with auth error. Set flag to retry poll once
   // ProfileSyncService gets new access token, TryCanaryJob will be called in
@@ -740,14 +751,14 @@ void SyncSchedulerImpl::TypeUnthrottle(base::TimeTicks unthrottle_time) {
 
   // Maybe this is a good time to run a nudge job.  Let's try it.
   if (nudge_tracker_.IsSyncRequired() && CanRunNudgeJobNow(NORMAL_PRIORITY))
-    DoNudgeSyncSessionJob(NORMAL_PRIORITY);
+    TrySyncSessionJob(NORMAL_PRIORITY);
 }
 
 void SyncSchedulerImpl::PerformDelayedNudge() {
   // Circumstances may have changed since we scheduled this delayed nudge.
   // We must check to see if it's OK to run the job before we do so.
   if (CanRunNudgeJobNow(NORMAL_PRIORITY))
-    DoNudgeSyncSessionJob(NORMAL_PRIORITY);
+    TrySyncSessionJob(NORMAL_PRIORITY);
 
   // We're not responsible for setting up any retries here.  The functions that
   // first put us into a state that prevents successful sync cycles (eg. global
@@ -848,13 +859,6 @@ void SyncSchedulerImpl::OnReceivedClientInvalidationHintBufferSize(int size) {
     nudge_tracker_.SetHintBufferSize(size);
   else
     NOTREACHED() << "Hint buffer size should be > 0.";
-}
-
-void SyncSchedulerImpl::OnShouldStopSyncingPermanently() {
-  DCHECK(CalledOnValidThread());
-  SDVLOG(2) << "OnShouldStopSyncingPermanently";
-  Stop();
-  Notify(SyncEngineEvent::STOP_SYNCING_PERMANENTLY);
 }
 
 void SyncSchedulerImpl::OnActionableError(

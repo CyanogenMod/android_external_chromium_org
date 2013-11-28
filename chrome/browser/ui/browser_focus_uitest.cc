@@ -378,7 +378,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
       new Browser(Browser::CreateParams(browser()->profile(),
                                         browser()->host_desktop_type()));
   ASSERT_TRUE(browser2);
-  chrome::AddBlankTabAt(browser2, -1, true);
+  chrome::AddTabAt(browser2, GURL(), -1, true);
   browser2->window()->Show();
 
   Browser* focused_browser = NULL;
@@ -919,7 +919,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
   chrome::FocusLocationBar(browser());
 
   OmniboxEditController* controller =
-      browser()->window()->GetLocationBar()->GetLocationEntry()->model()->
+      browser()->window()->GetLocationBar()->GetOmniboxView()->model()->
           controller();
 
   // Simulate an alt-enter.
@@ -938,14 +938,16 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
   EXPECT_FALSE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
 }
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-// TODO(erg): http://crbug.com/163931
-#define MAYBE_FocusOnNavigate DISABLED_FocusOnNavigate
-#else
-#define MAYBE_FocusOnNavigate FocusOnNavigate
-#endif
+// This functionality is currently broken. http://crbug.com/304865.
+//
+//#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+//// TODO(erg): http://crbug.com/163931
+//#define MAYBE_FocusOnNavigate DISABLED_FocusOnNavigate
+//#else
+//#define MAYBE_FocusOnNavigate FocusOnNavigate
+//#endif
 
-IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusOnNavigate) {
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_FocusOnNavigate) {
   // Needed on Mac.
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   // Load the NTP.

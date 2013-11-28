@@ -7,17 +7,17 @@
 #include "apps/shell_window_geometry_cache.h"
 #include "apps/shell_window_registry.h"
 #include "apps/ui/native_app_window.h"
+#include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -30,8 +30,11 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/media_stream_request.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/screen.h"
 
@@ -138,8 +141,10 @@ ShellWindow::ShellWindow(Profile* profile,
       window_type_(WINDOW_TYPE_DEFAULT),
       delegate_(delegate),
       image_loader_ptr_factory_(this),
-      fullscreen_for_window_api_(false),
-      fullscreen_for_tab_(false) {
+      fullscreen_types_(FULLSCREEN_TYPE_NONE),
+      show_on_first_paint_(false),
+      first_paint_complete_(false),
+      cached_always_on_top_(false) {
 }
 
 void ShellWindow::Init(const GURL& url,
@@ -149,6 +154,10 @@ void ShellWindow::Init(const GURL& url,
   shell_window_contents_.reset(shell_window_contents);
   shell_window_contents_->Initialize(profile(), url);
   WebContents* web_contents = shell_window_contents_->GetWebContents();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableAppsShowOnFirstPaint)) {
+    content::WebContentsObserver::Observe(web_contents);
+  }
   delegate_->InitWebContents(web_contents);
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
   extensions::ExtensionWebContentsObserver::CreateForWebContents(web_contents);
@@ -164,13 +173,17 @@ void ShellWindow::Init(const GURL& url,
   window_key_ = new_params.window_key;
   size_constraints_ = SizeConstraints(new_params.minimum_size,
                                       new_params.maximum_size);
+
+  // Windows cannot be always-on-top in fullscreen mode for security reasons.
+  cached_always_on_top_ = new_params.always_on_top;
+  if (new_params.state == ui::SHOW_STATE_FULLSCREEN)
+    new_params.always_on_top = false;
+
   native_app_window_.reset(delegate_->CreateNativeAppWindow(this, new_params));
 
   if (!new_params.hidden) {
-    if (window_type_is_panel())
-      GetBaseWindow()->ShowInactive();  // Panels are not activated by default.
-    else
-      GetBaseWindow()->Show();
+    // Panels are not activated by default.
+    Show(window_type_is_panel() ? SHOW_INACTIVE : SHOW_ACTIVE);
   }
 
   if (new_params.state == ui::SHOW_STATE_FULLSCREEN)
@@ -193,6 +206,15 @@ void ShellWindow::Init(const GURL& url,
                  content::NotificationService::AllSources());
 
   shell_window_contents_->LoadContents(new_params.creator_process_id);
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableAppsShowOnFirstPaint)) {
+    // We want to show the window only when the content has been painted. For
+    // that to happen, we need to define a size for the content, otherwise the
+    // layout will happen in a 0x0 area.
+    // Note: WebContents::GetView() is guaranteed to be non-null.
+    web_contents->GetView()->SizeContents(new_params.bounds.size());
+  }
 
   // Prevent the browser process from shutting down while this window is open.
   chrome::StartKeepAlive();
@@ -267,9 +289,39 @@ void ShellWindow::AddNewContents(WebContents* source,
                             initial_pos, user_gesture, was_blocked);
 }
 
+bool ShellWindow::PreHandleKeyboardEvent(
+    content::WebContents* source,
+    const content::NativeWebKeyboardEvent& event,
+    bool* is_keyboard_shortcut) {
+  // Here, we can handle a key event before the content gets it. When we are
+  // fullscreen, we want to allow the user to leave when ESC is pressed.
+  // However, if the application has the "overrideEscFullscreen" permission, we
+  // should let it override that behavior.
+  // ::HandleKeyboardEvent() will only be called if the KeyEvent's default
+  // action is not prevented.
+  // Thus, we should handle the KeyEvent here only if the permission is not set.
+  if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
+      (fullscreen_types_ != FULLSCREEN_TYPE_NONE) &&
+      !extension_->HasAPIPermission(APIPermission::kOverrideEscFullscreen)) {
+    Restore();
+    return true;
+  }
+
+  return false;
+}
+
 void ShellWindow::HandleKeyboardEvent(
     WebContents* source,
     const content::NativeWebKeyboardEvent& event) {
+  // If the window is currently fullscreen, ESC should leave fullscreen.
+  // If this code is being called for ESC, that means that the KeyEvent's
+  // default behavior was not prevented by the content.
+  if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
+      (fullscreen_types_ != FULLSCREEN_TYPE_NONE)) {
+    Restore();
+    return;
+  }
+
   native_app_window_->HandleKeyboardEvent(event);
 }
 
@@ -282,6 +334,15 @@ void ShellWindow::RequestToLockMouse(WebContents* web_contents,
       web_contents->GetRenderViewHost());
 
   web_contents->GotResponseToLockMouseRequest(has_permission);
+}
+
+void ShellWindow::DidFirstVisuallyNonEmptyPaint(int32 page_id) {
+  first_paint_complete_ = true;
+  if (show_on_first_paint_) {
+    DCHECK(delayed_show_type_ == SHOW_ACTIVE ||
+           delayed_show_type_ == SHOW_INACTIVE);
+    Show(delayed_show_type_);
+  }
 }
 
 void ShellWindow::OnNativeClose() {
@@ -356,8 +417,8 @@ void ShellWindow::SetAppIconUrl(const GURL& url) {
                  image_loader_ptr_factory_.GetWeakPtr()));
 }
 
-void ShellWindow::UpdateInputRegion(scoped_ptr<SkRegion> region) {
-  native_app_window_->UpdateInputRegion(region.Pass());
+void ShellWindow::UpdateShape(scoped_ptr<SkRegion> region) {
+  native_app_window_->UpdateShape(region.Pass());
 }
 
 void ShellWindow::UpdateDraggableRegions(
@@ -379,8 +440,8 @@ void ShellWindow::Fullscreen() {
   if (!profile()->GetPrefs()->GetBoolean(prefs::kAppFullscreenAllowed))
     return;
 #endif
-  fullscreen_for_window_api_ = true;
-  GetBaseWindow()->SetFullscreen(true);
+  fullscreen_types_ |= FULLSCREEN_TYPE_WINDOW_API;
+  SetNativeWindowFullscreen(fullscreen_types_);
 }
 
 void ShellWindow::Maximize() {
@@ -392,13 +453,22 @@ void ShellWindow::Minimize() {
 }
 
 void ShellWindow::Restore() {
-  fullscreen_for_window_api_ = false;
-  fullscreen_for_tab_ = false;
-  if (GetBaseWindow()->IsFullscreenOrPending()) {
-    GetBaseWindow()->SetFullscreen(false);
+  if (fullscreen_types_ != FULLSCREEN_TYPE_NONE) {
+    fullscreen_types_ = FULLSCREEN_TYPE_NONE;
+    SetNativeWindowFullscreen(fullscreen_types_);
   } else {
     GetBaseWindow()->Restore();
   }
+}
+
+void ShellWindow::OSFullscreen() {
+#if !defined(OS_MACOSX)
+  // Do not enter fullscreen mode if disallowed by pref.
+  if (!profile()->GetPrefs()->GetBoolean(prefs::kAppFullscreenAllowed))
+    return;
+#endif
+  fullscreen_types_ |= FULLSCREEN_TYPE_OS;
+  SetNativeWindowFullscreen(fullscreen_types_);
 }
 
 void ShellWindow::SetMinimumSize(const gfx::Size& min_size) {
@@ -409,6 +479,55 @@ void ShellWindow::SetMinimumSize(const gfx::Size& min_size) {
 void ShellWindow::SetMaximumSize(const gfx::Size& max_size) {
   size_constraints_.set_maximum_size(max_size);
   OnSizeConstraintsChanged();
+}
+
+void ShellWindow::Show(ShowType show_type) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableAppsShowOnFirstPaint)) {
+    show_on_first_paint_ = true;
+
+    if (!first_paint_complete_) {
+      delayed_show_type_ = show_type;
+      return;
+    }
+  }
+
+  switch (show_type) {
+    case SHOW_ACTIVE:
+      GetBaseWindow()->Show();
+      break;
+    case SHOW_INACTIVE:
+      GetBaseWindow()->ShowInactive();
+      break;
+  }
+}
+
+void ShellWindow::Hide() {
+  // This is there to prevent race conditions with Hide() being called before
+  // there was a non-empty paint. It should have no effect in a non-racy
+  // scenario where the application is hiding then showing a window: the second
+  // show will not be delayed.
+  show_on_first_paint_ = false;
+  GetBaseWindow()->Hide();
+}
+
+void ShellWindow::SetAlwaysOnTop(bool always_on_top) {
+  if (cached_always_on_top_ == always_on_top)
+    return;
+
+  cached_always_on_top_ = always_on_top;
+
+  // As a security measure, do not allow fullscreen windows to be on top.
+  // The property will be applied when the window exits fullscreen.
+  bool fullscreen = (fullscreen_types_ != FULLSCREEN_TYPE_NONE);
+  if (!fullscreen)
+    native_app_window_->SetAlwaysOnTop(always_on_top);
+
+  OnNativeWindowChanged();
+}
+
+bool ShellWindow::IsAlwaysOnTop() const {
+  return cached_always_on_top_;
 }
 
 //------------------------------------------------------------------------------
@@ -467,6 +586,23 @@ void ShellWindow::OnSizeConstraintsChanged() {
     native_app_window_->SetBounds(bounds);
   }
   OnNativeWindowChanged();
+}
+
+void ShellWindow::SetNativeWindowFullscreen(int fullscreen_types) {
+  native_app_window_->SetFullscreen(fullscreen_types);
+
+  if (!cached_always_on_top_)
+    return;
+
+  bool is_on_top = native_app_window_->IsAlwaysOnTop();
+  bool fullscreen = (fullscreen_types != FULLSCREEN_TYPE_NONE);
+  if (fullscreen && is_on_top) {
+    // When entering fullscreen, ensure windows are not always-on-top.
+    native_app_window_->SetAlwaysOnTop(false);
+  } else if (!fullscreen && !is_on_top) {
+    // When exiting fullscreen, reinstate always-on-top.
+    native_app_window_->SetAlwaysOnTop(true);
+  }
 }
 
 void ShellWindow::CloseContents(WebContents* contents) {
@@ -530,18 +666,16 @@ void ShellWindow::ToggleFullscreenModeForTab(content::WebContents* source,
     return;
   }
 
-  fullscreen_for_tab_ = enter_fullscreen;
-
-  if (enter_fullscreen) {
-    native_app_window_->SetFullscreen(true);
-  } else if (!fullscreen_for_window_api_) {
-    native_app_window_->SetFullscreen(false);
-  }
+  if (enter_fullscreen)
+    fullscreen_types_ |= FULLSCREEN_TYPE_HTML_API;
+  else
+    fullscreen_types_ &= ~FULLSCREEN_TYPE_HTML_API;
+  SetNativeWindowFullscreen(fullscreen_types_);
 }
 
 bool ShellWindow::IsFullscreenForTabOrPending(
     const content::WebContents* source) const {
-  return fullscreen_for_tab_;
+  return ((fullscreen_types_ & FULLSCREEN_TYPE_HTML_API) != 0);
 }
 
 void ShellWindow::Observe(int type,

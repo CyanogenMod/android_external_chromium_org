@@ -30,7 +30,6 @@ LOCAL_SRC_FILES := \
 	sdch/open-vcdiff/src/encodetable.cc \
 	sdch/open-vcdiff/src/headerparser.cc \
 	sdch/open-vcdiff/src/instruction_map.cc \
-	sdch/open-vcdiff/src/logging.cc \
 	sdch/open-vcdiff/src/varint_bigendian.cc \
 	sdch/open-vcdiff/src/vcdecoder.cc \
 	sdch/open-vcdiff/src/vcdiffengine.cc
@@ -48,6 +47,8 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-include \
+	./sdch/logging_forward.h \
 	-m32 \
 	-mmmx \
 	-march=pentium4 \
@@ -85,6 +86,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -99,8 +101,10 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
 	$(LOCAL_PATH)/sdch/linux \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
@@ -130,6 +134,8 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-include \
+	./sdch/logging_forward.h \
 	-m32 \
 	-mmmx \
 	-march=pentium4 \
@@ -169,6 +175,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -184,8 +191,10 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
 	$(LOCAL_PATH)/sdch/linux \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \

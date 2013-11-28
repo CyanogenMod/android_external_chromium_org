@@ -11,12 +11,14 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/media/media_player_messages_android.h"
+#include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/content_switches.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_bridge.h"
 #include "media/base/android/media_source_player.h"
@@ -64,7 +66,21 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
     case MEDIA_PLAYER_TYPE_URL: {
       MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
           player_id, url, first_party_for_cookies, hide_url_log, manager);
-      media_player_bridge->Initialize();
+      BrowserMediaPlayerManager* browser_media_player_manager =
+          static_cast<BrowserMediaPlayerManager*>(manager);
+      ContentViewCoreImpl* content_view_core_impl =
+          static_cast<ContentViewCoreImpl*>(ContentViewCore::FromWebContents(
+              browser_media_player_manager->web_contents_));
+      if (!content_view_core_impl) {
+        // May reach here due to prerendering. Don't extract the metadata
+        // since it is expensive.
+        // TODO(qinmin): extract the metadata once the user decided to load
+        // the page.
+        browser_media_player_manager->OnMediaMetadataChanged(
+            player_id, base::TimeDelta(), 0, 0, false);
+      } else if (!content_view_core_impl->ShouldBlockMediaRequest(url)) {
+        media_player_bridge->Initialize();
+      }
       return media_player_bridge;
     }
 
@@ -84,6 +100,7 @@ BrowserMediaPlayerManager::BrowserMediaPlayerManager(
     : WebContentsObserver(WebContents::FromRenderViewHost(render_view_host)),
       fullscreen_player_id_(-1),
       pending_fullscreen_player_id_(-1),
+      fullscreen_player_is_released_(false),
       web_contents_(WebContents::FromRenderViewHost(render_view_host)),
       weak_ptr_factory_(this) {
 }
@@ -123,6 +140,10 @@ bool BrowserMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
 void BrowserMediaPlayerManager::FullscreenPlayerPlay() {
   MediaPlayerAndroid* player = GetFullscreenPlayer();
   if (player) {
+    if (fullscreen_player_is_released_) {
+      video_view_->OpenVideo();
+      fullscreen_player_is_released_ = false;
+    }
     player->Start();
     Send(new MediaPlayerMsg_DidMediaPlayerPlay(
         routing_id(), fullscreen_player_id_));
@@ -141,6 +162,9 @@ void BrowserMediaPlayerManager::FullscreenPlayerPause() {
 void BrowserMediaPlayerManager::FullscreenPlayerSeek(int msec) {
   MediaPlayerAndroid* player = GetFullscreenPlayer();
   if (player) {
+    // TODO(kbalazs): if |fullscreen_player_is_released_| is true
+    // at this point, player->GetCurrentTime() will be wrong until
+    // FullscreenPlayerPlay (http://crbug.com/322798).
     OnSeekRequest(fullscreen_player_id_,
                   base::TimeDelta::FromMilliseconds(msec));
   }
@@ -181,13 +205,13 @@ void BrowserMediaPlayerManager::OnMediaMetadataChanged(
     bool success) {
   Send(new MediaPlayerMsg_MediaMetadataChanged(
       routing_id(), player_id, duration, width, height, success));
-  if (fullscreen_player_id_ != -1)
+  if (fullscreen_player_id_ == player_id)
     video_view_->UpdateMediaMetadata();
 }
 
 void BrowserMediaPlayerManager::OnPlaybackComplete(int player_id) {
   Send(new MediaPlayerMsg_MediaPlaybackCompleted(routing_id(), player_id));
-  if (fullscreen_player_id_ != -1)
+  if (fullscreen_player_id_ == player_id)
     video_view_->OnPlaybackComplete();
 }
 
@@ -201,7 +225,7 @@ void BrowserMediaPlayerManager::OnBufferingUpdate(
     int player_id, int percentage) {
   Send(new MediaPlayerMsg_MediaBufferingUpdate(
       routing_id(), player_id, percentage));
-  if (fullscreen_player_id_ != -1)
+  if (fullscreen_player_id_ == player_id)
     video_view_->OnBufferingUpdate(percentage);
 }
 
@@ -219,7 +243,7 @@ void BrowserMediaPlayerManager::OnSeekComplete(
 
 void BrowserMediaPlayerManager::OnError(int player_id, int error) {
   Send(new MediaPlayerMsg_MediaError(routing_id(), player_id, error));
-  if (fullscreen_player_id_ != -1)
+  if (fullscreen_player_id_ == player_id)
     video_view_->OnMediaPlayerError(error);
 }
 
@@ -227,7 +251,7 @@ void BrowserMediaPlayerManager::OnVideoSizeChanged(
     int player_id, int width, int height) {
   Send(new MediaPlayerMsg_MediaVideoSizeChanged(routing_id(), player_id,
       width, height));
-  if (fullscreen_player_id_ != -1)
+  if (fullscreen_player_id_ == player_id)
     video_view_->OnVideoSizeChanged(width, height);
 }
 
@@ -325,30 +349,48 @@ void BrowserMediaPlayerManager::OnProtectedSurfaceRequested(int player_id) {
     return;
   }
 
-  OnEnterFullscreen(player_id);
+  // Send an IPC to the render process to request the video element to enter
+  // fullscreen. OnEnterFullscreen() will be called later on success.
+  // This guarantees the fullscreen video will be rendered correctly.
+  // During the process, DisableFullscreenEncryptedMediaPlayback() may get
+  // called before or after OnEnterFullscreen(). If it is called before
+  // OnEnterFullscreen(), the player will not enter fullscreen. And it will
+  // retry the process once the GenerateKeyRequest is allowed to proceed
+  // TODO(qinmin): make this flag default on android.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableGestureRequirementForMediaFullscreen)) {
+    Send(new MediaPlayerMsg_RequestFullscreen(routing_id(), player_id));
+  }
 }
 
 void BrowserMediaPlayerManager::OnKeyAdded(int media_keys_id,
-                                           const std::string& session_id) {
-  Send(new MediaKeysMsg_KeyAdded(routing_id(), media_keys_id, session_id));
+                                           uint32 reference_id) {
+  Send(new MediaKeysMsg_KeyAdded(routing_id(), media_keys_id, reference_id));
 }
 
 void BrowserMediaPlayerManager::OnKeyError(
     int media_keys_id,
-    const std::string& session_id,
+    uint32 reference_id,
     media::MediaKeys::KeyError error_code,
     int system_code) {
   Send(new MediaKeysMsg_KeyError(routing_id(), media_keys_id,
-                                 session_id, error_code, system_code));
+                                 reference_id, error_code, system_code));
 }
 
 void BrowserMediaPlayerManager::OnKeyMessage(
     int media_keys_id,
-    const std::string& session_id,
+    uint32 reference_id,
     const std::vector<uint8>& message,
     const std::string& destination_url) {
   Send(new MediaKeysMsg_KeyMessage(routing_id(), media_keys_id,
-                                   session_id, message, destination_url));
+                                   reference_id, message, destination_url));
+}
+
+void BrowserMediaPlayerManager::OnSetSessionId(int media_keys_id,
+                                               uint32 reference_id,
+                                               const std::string& session_id) {
+  Send(new MediaKeysMsg_SetSessionId(
+      routing_id(), media_keys_id, reference_id, session_id));
 }
 
 #if defined(GOOGLE_TV)
@@ -395,6 +437,10 @@ void BrowserMediaPlayerManager::DisableFullscreenEncryptedMediaPlayback() {
 
 void BrowserMediaPlayerManager::OnEnterFullscreen(int player_id) {
   DCHECK_EQ(fullscreen_player_id_, -1);
+  if (media_keys_ids_pending_approval_.find(player_id) !=
+      media_keys_ids_pending_approval_.end()) {
+    return;
+  }
 
   if (video_view_.get()) {
     fullscreen_player_id_ = player_id;
@@ -469,11 +515,10 @@ void BrowserMediaPlayerManager::OnSetVolume(int player_id, double volume) {
 
 void BrowserMediaPlayerManager::OnReleaseResources(int player_id) {
   MediaPlayerAndroid* player = GetPlayer(player_id);
-  // Don't release the fullscreen player when tab visibility changes,
-  // it will be released when user hit the back/home button or when
-  // OnDestroyPlayer is called.
-  if (player && player_id != fullscreen_player_id_)
+  if (player)
     player->Release();
+  if (player_id == fullscreen_player_id_)
+    fullscreen_player_is_released_ = true;
 
 #if defined(GOOGLE_TV)
   WebContentsViewAndroid* view =
@@ -501,18 +546,19 @@ void BrowserMediaPlayerManager::OnInitializeCDM(
 
 void BrowserMediaPlayerManager::OnGenerateKeyRequest(
     int media_keys_id,
+    uint32 reference_id,
     const std::string& type,
     const std::vector<uint8>& init_data) {
   if (CommandLine::ForCurrentProcess()
       ->HasSwitch(switches::kDisableInfobarForProtectedMediaIdentifier)) {
-    GenerateKeyIfAllowed(media_keys_id, type, init_data, true);
+    GenerateKeyIfAllowed(media_keys_id, reference_id, type, init_data, true);
     return;
   }
 
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
   if (!drm_bridge) {
     DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnKeyError(media_keys_id, "", media::MediaKeys::kUnknownError, 0);
+    OnKeyError(media_keys_id, reference_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
@@ -526,23 +572,25 @@ void BrowserMediaPlayerManager::OnGenerateKeyRequest(
       base::Bind(&BrowserMediaPlayerManager::GenerateKeyIfAllowed,
                  weak_ptr_factory_.GetWeakPtr(),
                  media_keys_id,
+                 reference_id,
                  type,
                  init_data));
 }
 
 void BrowserMediaPlayerManager::OnAddKey(int media_keys_id,
+                                         uint32 reference_id,
                                          const std::vector<uint8>& key,
-                                         const std::vector<uint8>& init_data,
-                                         const std::string& session_id) {
+                                         const std::vector<uint8>& init_data) {
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
   if (!drm_bridge) {
     DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnKeyError(media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    OnKeyError(media_keys_id, reference_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  drm_bridge->AddKey(&key[0], key.size(), &init_data[0], init_data.size(),
-                     session_id);
+  drm_bridge->AddKey(reference_id,
+                     &key[0], key.size(),
+                     &init_data[0], init_data.size());
   // In EME v0.1b MediaKeys lives in the media element. So the |media_keys_id|
   // is the same as the |player_id|.
   // TODO(xhwang): Separate |media_keys_id| and |player_id|.
@@ -553,15 +601,15 @@ void BrowserMediaPlayerManager::OnAddKey(int media_keys_id,
 
 void BrowserMediaPlayerManager::OnCancelKeyRequest(
     int media_keys_id,
-    const std::string& session_id) {
+    uint32 reference_id) {
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
   if (!drm_bridge) {
     DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnKeyError(media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    OnKeyError(media_keys_id, reference_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  drm_bridge->CancelKeyRequest(session_id);
+  drm_bridge->CancelKeyRequest(reference_id);
 }
 
 void BrowserMediaPlayerManager::AddPlayer(MediaPlayerAndroid* player) {
@@ -624,8 +672,9 @@ void BrowserMediaPlayerManager::AddDrmBridge(int media_keys_id,
   scoped_ptr<MediaDrmBridge> drm_bridge(MediaDrmBridge::Create(
       media_keys_id, uuid, frame_url, security_level, this));
   if (!drm_bridge) {
+    // This failure will be discovered and reported by OnGenerateKeyRequest()
+    // as GetDrmBridge() will return null.
     DVLOG(1) << "failed to create drm bridge.";
-    OnKeyError(media_keys_id, "", media::MediaKeys::kUnknownError, 0);
     return;
   }
 
@@ -657,6 +706,7 @@ void BrowserMediaPlayerManager::OnSetMediaKeys(int player_id,
 
 void BrowserMediaPlayerManager::GenerateKeyIfAllowed(
     int media_keys_id,
+    uint32 reference_id,
     const std::string& type,
     const std::vector<uint8>& init_data,
     bool allowed) {
@@ -666,12 +716,13 @@ void BrowserMediaPlayerManager::GenerateKeyIfAllowed(
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
   if (!drm_bridge) {
     DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnKeyError(media_keys_id, "", media::MediaKeys::kUnknownError, 0);
+    OnKeyError(media_keys_id, reference_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
   media_keys_ids_pending_approval_.erase(media_keys_id);
   media_keys_ids_approved_.insert(media_keys_id);
-  drm_bridge->GenerateKeyRequest(type, &init_data[0], init_data.size());
+  drm_bridge->GenerateKeyRequest(
+      reference_id, type, &init_data[0], init_data.size());
 
   // TODO(qinmin): currently |media_keys_id| and player ID are identical.
   // This might not be true in the future.

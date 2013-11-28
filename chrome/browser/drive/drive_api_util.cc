@@ -7,7 +7,10 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/files/scoped_platform_file_closer.h"
 #include "base/logging.h"
+#include "base/md5.h"
+#include "base/platform_file.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -445,10 +448,10 @@ ConvertFileResourceToResourceEntry(
   // entry->authors_
   // entry->links_.
   ScopedVector<google_apis::Link> links;
-  if (!file_resource.parents().empty()) {
+  for (size_t i = 0; i < file_resource.parents().size(); ++i) {
     google_apis::Link* link = new google_apis::Link;
     link->set_type(google_apis::Link::LINK_PARENT);
-    link->set_href(file_resource.parents()[0]->parent_link());
+    link->set_href(file_resource.parents()[i]->parent_link());
     links.push_back(link);
   }
   if (!file_resource.self_link().is_empty()) {
@@ -548,6 +551,46 @@ ConvertChangeListToResourceList(const google_apis::ChangeList& change_list) {
   feed->set_links(links.Pass());
 
   return feed.Pass();
+}
+
+std::string GetMd5Digest(const base::FilePath& file_path) {
+  const int kBufferSize = 512 * 1024;  // 512kB.
+
+  base::PlatformFile file = base::CreatePlatformFile(
+      file_path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
+      NULL, NULL);
+  if (file == base::kInvalidPlatformFileValue)
+    return std::string();
+  base::ScopedPlatformFileCloser file_closer(&file);
+
+  base::MD5Context context;
+  base::MD5Init(&context);
+
+  int64 offset = 0;
+  scoped_ptr<char[]> buffer(new char[kBufferSize]);
+  while (true) {
+    // Avoid using ReadPlatformFileCurPosNoBestEffort for now.
+    // http://crbug.com/145873
+    int result = base::ReadPlatformFileNoBestEffort(
+        file, offset, buffer.get(), kBufferSize);
+
+    if (result < 0) {
+      // Found an error.
+      return std::string();
+    }
+
+    if (result == 0) {
+      // End of file.
+      break;
+    }
+
+    offset += result;
+    base::MD5Update(&context, base::StringPiece(buffer.get(), result));
+  }
+
+  base::MD5Digest digest;
+  base::MD5Final(&digest, &context);
+  return MD5DigestToBase16(digest);
 }
 
 const char kWapiRootDirectoryResourceId[] = "folder:root";

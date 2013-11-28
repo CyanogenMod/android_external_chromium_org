@@ -49,7 +49,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
           'Content shell does not support extensions.')
 
     self._browser_directory = browser_directory
-    self._port = util.GetAvailableLocalPort()
+    self._port = None
     self._profile_dir = None
     self._supports_net_benchmarking = True
     self._tmp_minidump_dir = tempfile.mkdtemp()
@@ -82,6 +82,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     env = os.environ.copy()
     env['CHROME_HEADLESS'] = '1'  # Don't upload minidumps.
     env['BREAKPAD_DUMP_LOCATION'] = self._tmp_minidump_dir
+    logging.debug('Starting Chrome %s', args)
     if not self.browser_options.show_stdout:
       self._tmp_output_file = tempfile.NamedTemporaryFile('w', 0)
       self._proc = subprocess.Popen(
@@ -98,6 +99,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def GetBrowserStartupArgs(self):
     args = super(DesktopBrowserBackend, self).GetBrowserStartupArgs()
+    self._port = util.GetUnreservedAvailableLocalPort()
     args.append('--remote-debugging-port=%i' % self._port)
     args.append('--enable-crash-reporter-for-testing')
     if not self.is_content_shell:
@@ -171,17 +173,17 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       return self.GetStandardOutput()
     most_recent_dump = heapq.nlargest(1, dumps, os.path.getmtime)[0]
     if os.path.getmtime(most_recent_dump) < (time.time() - (5 * 60)):
-      logging.warn('Crash dump is older than 5 minutes. May not be correct.')
+      logging.warning('Crash dump is older than 5 minutes. May not be correct.')
+
+    symbols = glob.glob(os.path.join(self._browser_directory, '*.breakpad*'))
+    if not symbols:
+      logging.warning('No breakpad symbols found. Returning browser stdout.')
+      return self.GetStandardOutput()
 
     minidump = most_recent_dump + '.stripped'
     with open(most_recent_dump, 'rb') as infile:
       with open(minidump, 'wb') as outfile:
         outfile.write(''.join(infile.read().partition('MDMP')[1:]))
-
-    symbols = glob.glob(os.path.join(os.path.dirname(stackwalk), '*.breakpad*'))
-    if not symbols:
-      logging.warning('No breakpad symbols found. Returning browser stdout.')
-      return self.GetStandardOutput()
 
     symbols_path = os.path.join(self._tmp_minidump_dir, 'symbols')
     for symbol in sorted(symbols, key=os.path.getmtime, reverse=True):
@@ -218,22 +220,23 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         return self._proc.poll() != None
 
       # Try to politely shutdown, first.
-      self._proc.terminate()
-      try:
-        util.WaitFor(IsClosed, timeout=1)
-        self._proc = None
-      except util.TimeoutException:
-        pass
+      if not IsClosed():
+        self._proc.terminate()
+        try:
+          util.WaitFor(IsClosed, timeout=5)
+          self._proc = None
+        except util.TimeoutException:
+          logging.warning('Failed to gracefully shutdown. Proceeding to kill.')
 
       # Kill it.
       if not IsClosed():
         self._proc.kill()
         try:
-          util.WaitFor(IsClosed, timeout=5)
-          self._proc = None
+          util.WaitFor(IsClosed, timeout=10)
         except util.TimeoutException:
-          self._proc = None
           raise Exception('Could not shutdown the browser.')
+        finally:
+          self._proc = None
 
     if self._output_profile_path:
       # If we need the output then double check that it exists.

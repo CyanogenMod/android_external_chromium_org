@@ -40,6 +40,18 @@ class RulesCacheDelegate;
 class RulesRegistry : public base::RefCountedThreadSafe<RulesRegistry> {
  public:
   typedef extensions::api::events::Rule Rule;
+  struct WebViewKey {
+    int embedder_process_id;
+    int webview_instance_id;
+    WebViewKey(int embedder_process_id, int webview_instance_id)
+        : embedder_process_id(embedder_process_id),
+          webview_instance_id(webview_instance_id) {}
+    bool operator<(const WebViewKey& other) const {
+      return embedder_process_id < other.embedder_process_id ||
+          ((embedder_process_id == other.embedder_process_id) &&
+           (webview_instance_id < other.webview_instance_id));
+    }
+  };
 
   enum Defaults { DEFAULT_PRIORITY = 100 };
   // After the RulesCacheDelegate object (the part of the registry which runs on
@@ -50,7 +62,8 @@ class RulesRegistry : public base::RefCountedThreadSafe<RulesRegistry> {
   RulesRegistry(Profile* profile,
                 const std::string& event_name,
                 content::BrowserThread::ID owner_thread,
-                RulesCacheDelegate* cache_delegate);
+                RulesCacheDelegate* cache_delegate,
+                const WebViewKey& webview_key);
 
   const OneShotEvent& ready() const {
     return ready_;
@@ -99,26 +112,28 @@ class RulesRegistry : public base::RefCountedThreadSafe<RulesRegistry> {
   // are unknown are ignored.
   //
   // The returned rules are stored in |out|. Ownership is passed to the caller.
-  //
-  // Returns an empty string if the function is successful or an error
-  // message otherwise.
-  std::string GetRules(
-      const std::string& extension_id,
-      const std::vector<std::string>& rule_identifiers,
-      std::vector<linked_ptr<RulesRegistry::Rule> >* out);
+  void GetRules(const std::string& extension_id,
+                const std::vector<std::string>& rule_identifiers,
+                std::vector<linked_ptr<RulesRegistry::Rule> >* out);
 
   // Same as GetRules but returns all rules owned by |extension_id|.
-  std::string GetAllRules(
-      const std::string& extension_id,
-      std::vector<linked_ptr<RulesRegistry::Rule> >* out);
+  void GetAllRules(const std::string& extension_id,
+                   std::vector<linked_ptr<RulesRegistry::Rule> >* out);
 
-  // Called to notify the RulesRegistry that an extension has been unloaded
-  // and all rules of this extension need to be removed.
+  // Called to notify the RulesRegistry that the extension availability has
+  // changed, so that the registry can update which rules are active.
   void OnExtensionUnloaded(const std::string& extension_id);
+  void OnExtensionUninstalled(const std::string& extension_id);
+  void OnExtensionLoaded(const std::string& extension_id);
 
   // Returns the number of entries in used_rule_identifiers_ for leak detection.
   // Every ExtensionId counts as one entry, even if it contains no rules.
   size_t GetNumberOfUsedRuleIdentifiersForTesting() const;
+
+  // Returns the RulesCacheDelegate. This is used for testing.
+  RulesCacheDelegate* rules_cache_delegate_for_testing() const {
+    return cache_delegate_.get();
+  }
 
   // Returns the profile where the rules registry lives.
   Profile* profile() const { return profile_; }
@@ -130,8 +145,25 @@ class RulesRegistry : public base::RefCountedThreadSafe<RulesRegistry> {
   // The name of the event with which rules are registered.
   const std::string& event_name() const { return event_name_; }
 
+  // The key that identifies the webview (or tabs) in which these rules apply.
+  // If the rules apply to the main browser, then this returns the tuple (0, 0).
+  const WebViewKey& webview_key() const {
+    return webview_key_;
+  }
+
  protected:
   virtual ~RulesRegistry();
+
+  // The precondition for calling this method is that all rules have unique IDs.
+  // AddRules establishes this precondition and calls into this method.
+  // Stored rules already meet this precondition and so they avoid calling
+  // CheckAndFillInOptionalRules for improved performance.
+  //
+  // Returns an empty string if the function is successful or an error
+  // message otherwise.
+  std::string AddRulesNoFill(
+      const std::string& extension_id,
+      const std::vector<linked_ptr<RulesRegistry::Rule> >& rules);
 
   // These functions need to apply the rules to the browser, while the base
   // class will handle defaulting empty fields before calling *Impl, and will
@@ -191,6 +223,9 @@ class RulesRegistry : public base::RefCountedThreadSafe<RulesRegistry> {
 
   // The name of the event with which rules are registered.
   const std::string event_name_;
+
+  // The key that identifies the context in which these rules apply.
+  WebViewKey webview_key_;
 
   RulesDictionary rules_;
 

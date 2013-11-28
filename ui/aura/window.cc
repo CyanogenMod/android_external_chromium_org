@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/capture_client.h"
+#include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/event_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/screen_position_client.h"
@@ -24,6 +25,7 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/animation/multi_animation.h"
@@ -32,6 +34,47 @@
 #include "ui/gfx/screen.h"
 
 namespace aura {
+
+class ScopedCursorHider {
+ public:
+  explicit ScopedCursorHider(Window* window)
+      : window_(window),
+        hid_cursor_(false) {
+    if (!window_->HasDispatcher())
+      return;
+    const bool cursor_is_in_bounds = window_->GetBoundsInScreen().Contains(
+        Env::GetInstance()->last_mouse_location());
+    client::CursorClient* cursor_client = client::GetCursorClient(window_);
+    if (cursor_is_in_bounds && cursor_client &&
+        cursor_client->IsCursorVisible()) {
+      cursor_client->HideCursor();
+      hid_cursor_ = true;
+    }
+  }
+  ~ScopedCursorHider() {
+    if (!window_->HasDispatcher())
+      return;
+
+    // Update the device scale factor of the cursor client only when the last
+    // mouse location is on this root window.
+    if (hid_cursor_) {
+      client::CursorClient* cursor_client = client::GetCursorClient(window_);
+      if (cursor_client) {
+        const gfx::Display& display =
+            gfx::Screen::GetScreenFor(window_)->GetDisplayNearestWindow(
+                window_);
+        cursor_client->SetDisplay(display);
+        cursor_client->ShowCursor();
+      }
+    }
+  }
+
+ private:
+  Window* window_;
+  bool hid_cursor_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedCursorHider);
+};
 
 Window::Window(WindowDelegate* delegate)
     : dispatcher_(NULL),
@@ -183,7 +226,7 @@ Window* Window::GetRootWindow() {
 }
 
 const Window* Window::GetRootWindow() const {
-  return parent_ ? parent_->GetRootWindow() : NULL;
+  return dispatcher_ ? this : parent_ ? parent_->GetRootWindow() : NULL;
 }
 
 WindowEventDispatcher* Window::GetDispatcher() {
@@ -536,6 +579,9 @@ bool Window::HasFocus() const {
 }
 
 bool Window::CanFocus() const {
+  if (dispatcher_)
+    return IsVisible();
+
   // NOTE: as part of focusing the window the ActivationClient may make the
   // window visible (by way of making a hidden ancestor visible). For this
   // reason we can't check visibility here and assume the client is doing it.
@@ -552,6 +598,9 @@ bool Window::CanFocus() const {
 }
 
 bool Window::CanReceiveEvents() const {
+  if (dispatcher_)
+    return IsVisible();
+
   // The client may forbid certain windows from receiving events at a given
   // point in time.
   client::EventClient* client = client::GetEventClient(GetRootWindow());
@@ -602,6 +651,9 @@ void* Window::GetNativeWindowProperty(const char* key) const {
 }
 
 void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
+  ScopedCursorHider hider(this);
+  if (dispatcher_)
+    dispatcher_->host()->OnDeviceScaleFactorChanged(device_scale_factor);
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
 }
@@ -618,7 +670,8 @@ std::string Window::GetDebugInfo() const {
 }
 
 void Window::PrintWindowHierarchy(int depth) const {
-  printf("%*s%s\n", depth * 2, "", GetDebugInfo().c_str());
+  VLOG(0) << base::StringPrintf(
+      "%*s%s", depth * 2, "", GetDebugInfo().c_str());
   for (Windows::const_iterator it = children_.begin();
        it != children_.end(); ++it) {
     Window* child = *it;
@@ -893,18 +946,16 @@ void Window::StackChildRelativeTo(Window* child,
   // See tests WindowTest.StackingMadrigal and StackOverClosingTransient
   // for an explanation of this.
   while (final_target_i > 0 &&
-         children_[final_target_i]->layer()->delegate() == NULL) {
+         children_[direction == STACK_ABOVE ? final_target_i :
+                                              final_target_i - 1]->layer()
+             ->delegate() == NULL) {
     --final_target_i;
   }
-
-  // Allow stacking immediately below a window with a NULL layer.
-  if (direction == STACK_BELOW && target_i != final_target_i)
-    direction = STACK_ABOVE;
 
   Window* final_target = children_[final_target_i];
 
   // If we couldn't find a valid target position, don't move anything.
-  if (final_target->layer()->delegate() == NULL)
+  if (direction == STACK_ABOVE && final_target->layer()->delegate() == NULL)
     return;
 
   // Don't try to stack a child above itself.
@@ -1120,11 +1171,31 @@ bool Window::CanAcceptEvent(const ui::Event& event) {
   if (client && !client->CanProcessEventsWithinSubtree(this))
     return false;
 
-  bool visible = event.dispatch_to_hidden_targets() || IsVisible();
-  return visible && (!parent_ || parent_->CanAcceptEvent(event));
+  // We need to make sure that a touch cancel event and any gesture events it
+  // creates can always reach the window. This ensures that we receive a valid
+  // touch / gesture stream.
+  if (event.IsEndingEvent())
+    return true;
+
+  if (!IsVisible())
+    return false;
+
+  // The top-most window can always process an event.
+  if (!parent_)
+    return true;
+
+  // For located events (i.e. mouse, touch etc.), an assumption is made that
+  // windows that don't have a delegate cannot process the event (see more in
+  // GetWindowForPoint()). This assumption is not made for key events.
+  return event.IsKeyEvent() || delegate_;
 }
 
 ui::EventTarget* Window::GetParentTarget() {
+  if (dispatcher_) {
+    return client::GetEventClient(this) ?
+        client::GetEventClient(this)->GetToplevelEventTarget() :
+            Env::GetInstance();
+  }
   return parent_;
 }
 

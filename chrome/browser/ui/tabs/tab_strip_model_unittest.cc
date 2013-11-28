@@ -24,7 +24,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_order_controller.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
@@ -34,6 +33,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::SiteInstance;
@@ -1701,8 +1701,8 @@ TEST_F(TabStripModelTest, NavigationForgettingDoesntAffectNewTab) {
 }
 
 // This fails on Linux when run with the rest of unit_tests (crbug.com/302156)
-// and fails consistently on Mac.
-#if defined(OS_LINUX) || defined(OS_MACOSX)
+// and fails consistently on Mac and Windows.
+#if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_WIN)
 #define MAYBE_FastShutdown \
     DISABLED_FastShutdown
 #else

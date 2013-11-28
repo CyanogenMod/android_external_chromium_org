@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -35,10 +36,12 @@
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/content_setting_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/ev_bubble_decoration.h"
+#import "chrome/browser/ui/cocoa/location_bar/generated_credit_card_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/keyword_hint_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_icon_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/mic_search_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/page_action_decoration.h"
+#import "chrome/browser/ui/cocoa/location_bar/search_button_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/selected_keyword_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/star_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/zoom_decoration.h"
@@ -48,13 +51,14 @@
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #import "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
@@ -93,6 +97,9 @@ LocationBarViewMac::LocationBarViewMac(
       zoom_decoration_(new ZoomDecoration(this)),
       keyword_hint_decoration_(new KeywordHintDecoration()),
       mic_search_decoration_(new MicSearchDecoration(command_updater)),
+      generated_credit_card_decoration_(
+          new GeneratedCreditCardDecoration(this)),
+      search_button_decoration_(new SearchButtonDecoration(this)),
       profile_(profile),
       browser_(browser),
       weak_ptr_factory_(this) {
@@ -167,7 +174,6 @@ void LocationBarViewMac::FocusSearch() {
 void LocationBarViewMac::UpdateContentSettingsIcons() {
   if (RefreshContentSettingsDecorations())
     OnDecorationsChanged();
-  PopUpContentSettingIfNeeded();
 }
 
 void LocationBarViewMac::UpdatePageActions() {
@@ -199,8 +205,7 @@ void LocationBarViewMac::UpdateOpenPDFInReaderPrompt() {
 }
 
 void LocationBarViewMac::UpdateGeneratedCreditCardView() {
-  // TODO(dbeam): encourage groby@ to implement via prodding or chocolate.
-  NOTIMPLEMENTED();
+  generated_credit_card_decoration_->Update();
 }
 
 void LocationBarViewMac::SaveStateToContents(WebContents* contents) {
@@ -212,11 +217,11 @@ void LocationBarViewMac::Revert() {
   omnibox_view_->RevertAll();
 }
 
-const OmniboxView* LocationBarViewMac::GetLocationEntry() const {
+const OmniboxView* LocationBarViewMac::GetOmniboxView() const {
   return omnibox_view_.get();
 }
 
-OmniboxView* LocationBarViewMac::GetLocationEntry() {
+OmniboxView* LocationBarViewMac::GetOmniboxView() {
   return omnibox_view_.get();
 }
 
@@ -322,6 +327,16 @@ NSPoint LocationBarViewMac::GetPageInfoBubblePoint() const {
   }
 }
 
+NSPoint LocationBarViewMac::GetGeneratedCreditCardBubblePoint() const {
+  AutocompleteTextFieldCell* cell = [field_ cell];
+  const NSRect frame =
+      [cell frameForDecoration:generated_credit_card_decoration_.get()
+                       inFrame:[field_ bounds]];
+  const NSPoint point =
+      generated_credit_card_decoration_->GetBubblePointInFrame(frame);
+  return [field_ convertPoint:point toView:nil];
+}
+
 void LocationBarViewMac::OnDecorationsChanged() {
   // TODO(shess): The field-editor frame and cursor rects should not
   // change, here.
@@ -343,16 +358,16 @@ void LocationBarViewMac::Layout() {
   [cell addLeftDecoration:location_icon_decoration_.get()];
   [cell addLeftDecoration:selected_keyword_decoration_.get()];
   [cell addLeftDecoration:ev_bubble_decoration_.get()];
+  [cell addRightDecoration:search_button_decoration_.get()];
   [cell addRightDecoration:star_decoration_.get()];
   [cell addRightDecoration:zoom_decoration_.get()];
+  [cell addRightDecoration:generated_credit_card_decoration_.get()];
 
   // Note that display order is right to left.
   for (size_t i = 0; i < page_action_decorations_.size(); ++i) {
     [cell addRightDecoration:page_action_decorations_[i]];
   }
 
-  // Iterate through |content_setting_decorations_| in reverse order so that
-  // the order in which the decorations are drawn matches the Views code.
   for (ScopedVector<ContentSettingDecoration>::iterator i =
        content_setting_decorations_.begin();
        i != content_setting_decorations_.end(); ++i) {
@@ -469,6 +484,7 @@ void LocationBarViewMac::Update(const WebContents* contents) {
   RefreshPageActionDecorations();
   RefreshContentSettingsDecorations();
   UpdateMicSearchDecorationVisibility();
+  UpdateGeneratedCreditCardView();
   if (contents)
     omnibox_view_->OnTabChanged(contents);
   else
@@ -482,6 +498,22 @@ void LocationBarViewMac::OnChanged() {
   NSImage* image = OmniboxViewMac::ImageForResource(resource_id);
   location_icon_decoration_->SetImage(image);
   ev_bubble_decoration_->SetImage(image);
+
+  ToolbarModel* toolbar_model = GetToolbarModel();
+  const chrome::DisplaySearchButtonConditions conditions =
+      chrome::GetDisplaySearchButtonConditions();
+  const bool meets_conditions =
+      (conditions == chrome::DISPLAY_SEARCH_BUTTON_ALWAYS) ||
+      ((conditions != chrome::DISPLAY_SEARCH_BUTTON_NEVER) &&
+       (toolbar_model->WouldPerformSearchTermReplacement(true) ||
+        ((conditions == chrome::DISPLAY_SEARCH_BUTTON_FOR_STR_OR_IIP) &&
+         toolbar_model->input_in_progress())));
+  search_button_decoration_->SetVisible(
+      ![[field_ cell] isPopupMode] && meets_conditions);
+  search_button_decoration_->SetIcon(
+      (resource_id == IDR_OMNIBOX_SEARCH) ?
+          IDR_OMNIBOX_SEARCH_BUTTON_LOUPE : IDR_OMNIBOX_SEARCH_BUTTON_ARROW);
+
   Layout();
 
   if (browser_->instant_controller()) {
@@ -576,16 +608,6 @@ PageActionDecoration* LocationBarViewMac::GetPageActionDecoration(
   return NULL;
 }
 
-void LocationBarViewMac::PopUpContentSettingIfNeeded() {
-  AutocompleteTextFieldCell* cell = [field_ cell];
-  const NSRect bounds = [field_ bounds];
-  for (size_t i = 0; i < content_setting_decorations_.size(); ++i) {
-    const NSRect frame =
-        [cell frameForDecoration:content_setting_decorations_[i]
-                         inFrame:bounds];
-    content_setting_decorations_[i]->PopUpIfNeeded(frame);
-  }
-}
 
 void LocationBarViewMac::DeletePageActionDecorations() {
   // TODO(shess): Deleting these decorations could result in the cell

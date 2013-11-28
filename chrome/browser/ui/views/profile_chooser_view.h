@@ -10,10 +10,16 @@
 
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/avatar_menu_observer.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
+#include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/controls/link_listener.h"
 #include "ui/views/controls/styled_label_listener.h"
+#include "ui/views/controls/textfield/textfield_controller.h"
+
+class EditableProfilePhoto;
+class EditableProfileName;
 
 namespace gfx {
 class Image;
@@ -26,14 +32,16 @@ class LabelButton;
 }
 
 class Browser;
-class ProfileItemView;
 
 // This bubble view is displayed when the user clicks on the avatar button.
 // It displays a list of profiles and allows users to switch between profiles.
 class ProfileChooserView : public views::BubbleDelegateView,
                            public views::ButtonListener,
                            public views::LinkListener,
-                           public AvatarMenuObserver {
+                           public views::MenuButtonListener,
+                           public views::TextfieldController,
+                           public AvatarMenuObserver,
+                           public OAuth2TokenService::Observer {
  public:
   // Shows the bubble if one is not already showing.  This allows us to easily
   // make a button toggle the bubble on and off when clicked: we unconditionally
@@ -51,8 +59,8 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // We normally close the bubble any time it becomes inactive but this can lead
   // to flaky tests where unexpected UI events are triggering this behavior.
   // Tests should call this with "false" for more consistent operation.
-  static void set_close_on_deactivate(bool close) {
-    close_on_deactivate_ = close;
+  static void clear_close_on_deactivate_for_testing() {
+    close_on_deactivate_for_testing_ = false;
   }
 
  private:
@@ -61,6 +69,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
 
   typedef std::vector<size_t> Indexes;
   typedef std::map<views::Button*, int> ButtonIndexes;
+  typedef std::map<views::View*, std::string> AccountButtonIndexes;
 
   // Different views that can be displayed in the bubble.
   enum BubbleViewMode {
@@ -76,24 +85,35 @@ class ProfileChooserView : public views::BubbleDelegateView,
                      Browser* browser);
   virtual ~ProfileChooserView();
 
-  // BubbleDelegateView:
+  // views::BubbleDelegateView:
   virtual void Init() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
 
-  // ButtonListener:
+  // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  // LinkListener:
+  // views::LinkListener:
   virtual void LinkClicked(views::Link* sender, int event_flags) OVERRIDE;
+
+  // views::MenuButtonListener:
+  virtual void OnMenuButtonClicked(views::View* source,
+                                   const gfx::Point& point) OVERRIDE;
+  // views::TextfieldController:
+  virtual bool HandleKeyEvent(views::Textfield* sender,
+                              const ui::KeyEvent& key_event) OVERRIDE;
 
   // AvatarMenuObserver:
   virtual void OnAvatarMenuChanged(AvatarMenu* avatar_menu) OVERRIDE;
 
-  static ProfileChooserView* profile_bubble_;
-  static bool close_on_deactivate_;
+  // OAuth2TokenService::Observer overrides.
+  virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
+  virtual void OnRefreshTokenRevoked(const std::string& account_id) OVERRIDE;
 
-  void ResetLinksAndButtons();
+  static ProfileChooserView* profile_bubble_;
+  static bool close_on_deactivate_for_testing_;
+
+  void ResetView();
 
   // Shows either the profile chooser or the account management views.
   void ShowView(BubbleViewMode view_to_display,
@@ -121,11 +141,18 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // Other profiles used in the "fast profile switcher" view.
   ButtonIndexes open_other_profile_indexes_map_;
 
+  // Accounts associated with the current profile.
+  AccountButtonIndexes current_profile_accounts_map_;
+
   // Links displayed in the active profile card.
   views::Link* manage_accounts_link_;
   views::Link* signout_current_profile_link_;
   views::Link* signin_current_profile_link_;
-  views::Link* change_photo_link_;
+
+  // The profile name and photo in the active profile card. Owned by the
+  // views hierarchy.
+  EditableProfilePhoto* current_profile_photo_;
+  EditableProfileName* current_profile_name_;
 
   // Action buttons.
   views::TextButton* guest_button_;
@@ -133,6 +160,9 @@ class ProfileChooserView : public views::BubbleDelegateView,
   views::TextButton* add_user_button_;
   views::TextButton* users_button_;
   views::LabelButton* add_account_button_;
+
+  // Active view mode.
+  BubbleViewMode view_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileChooserView);
 };

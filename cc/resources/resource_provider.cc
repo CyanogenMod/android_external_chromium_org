@@ -26,9 +26,30 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
 
-using WebKit::WebGraphicsContext3D;
+using blink::WebGraphicsContext3D;
 
 namespace cc {
+
+class IdAllocator {
+ public:
+  virtual ~IdAllocator() {}
+
+  virtual unsigned NextId() = 0;
+
+ protected:
+  IdAllocator(WebGraphicsContext3D* context3d, size_t id_allocation_chunk_size)
+      : context3d_(context3d),
+        id_allocation_chunk_size_(id_allocation_chunk_size),
+        ids_(new blink::WebGLId[id_allocation_chunk_size]),
+        next_id_index_(id_allocation_chunk_size) {
+    DCHECK(id_allocation_chunk_size_);
+  }
+
+  WebGraphicsContext3D* context3d_;
+  const size_t id_allocation_chunk_size_;
+  scoped_ptr<blink::WebGLId[]> ids_;
+  size_t next_id_index_;
+};
 
 namespace {
 
@@ -88,6 +109,56 @@ class ScopedSetActiveTexture {
  private:
   WebGraphicsContext3D* context3d_;
   GLenum unit_;
+};
+
+class TextureIdAllocator : public IdAllocator {
+ public:
+  TextureIdAllocator(WebGraphicsContext3D* context3d,
+                     size_t texture_id_allocation_chunk_size)
+      : IdAllocator(context3d, texture_id_allocation_chunk_size) {
+  }
+  virtual ~TextureIdAllocator() {
+    context3d_->deleteTextures(id_allocation_chunk_size_ - next_id_index_,
+                               ids_.get() + next_id_index_);
+  }
+
+  // Overridden from IdAllocator:
+  virtual unsigned NextId() OVERRIDE {
+    if (next_id_index_ == id_allocation_chunk_size_) {
+      context3d_->genTextures(id_allocation_chunk_size_, ids_.get());
+      next_id_index_ = 0;
+    }
+
+    return ids_[next_id_index_++];
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TextureIdAllocator);
+};
+
+class BufferIdAllocator : public IdAllocator {
+ public:
+  BufferIdAllocator(WebGraphicsContext3D* context3d,
+                    size_t buffer_id_allocation_chunk_size)
+      : IdAllocator(context3d, buffer_id_allocation_chunk_size) {
+  }
+  virtual ~BufferIdAllocator() {
+    context3d_->deleteBuffers(id_allocation_chunk_size_ - next_id_index_,
+                              ids_.get() + next_id_index_);
+  }
+
+  // Overridden from IdAllocator:
+  virtual unsigned NextId() OVERRIDE {
+    if (next_id_index_ == id_allocation_chunk_size_) {
+      context3d_->genBuffers(id_allocation_chunk_size_, ids_.get());
+      next_id_index_ = 0;
+    }
+
+    return ids_[next_id_index_++];
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BufferIdAllocator);
 };
 
 }  // namespace
@@ -208,7 +279,7 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
 }
 
-ResourceProvider::Child::Child() {}
+ResourceProvider::Child::Child() : marked_for_deletion(false) {}
 
 ResourceProvider::Child::~Child() {}
 
@@ -217,13 +288,13 @@ scoped_ptr<ResourceProvider> ResourceProvider::Create(
     SharedBitmapManager* shared_bitmap_manager,
     int highp_threshold_min,
     bool use_rgba_4444_texture_format,
-    size_t texture_id_allocation_chunk_size) {
+    size_t id_allocation_chunk_size) {
   scoped_ptr<ResourceProvider> resource_provider(
       new ResourceProvider(output_surface,
                            shared_bitmap_manager,
                            highp_threshold_min,
                            use_rgba_4444_texture_format,
-                           texture_id_allocation_chunk_size));
+                           id_allocation_chunk_size));
 
   bool success = false;
   if (resource_provider->Context3d()) {
@@ -242,7 +313,7 @@ scoped_ptr<ResourceProvider> ResourceProvider::Create(
 
 ResourceProvider::~ResourceProvider() {
   while (!children_.empty())
-    DestroyChild(children_.begin()->first);
+    DestroyChildInternal(children_.begin(), ForShutdown);
   while (!resources_.empty())
     DeleteResourceInternal(resources_.begin(), ForShutdown);
 
@@ -268,11 +339,15 @@ ResourceProvider::ResourceId ResourceProvider::CreateResource(
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
     case GLTexture:
-      return CreateGLTexture(
-          size, GL_TEXTURE_POOL_UNMANAGED_CHROMIUM, wrap_mode, hint, format);
+      return CreateGLTexture(size,
+                             GL_TEXTURE_2D,
+                             GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
+                             wrap_mode,
+                             hint,
+                             format);
     case Bitmap:
       DCHECK_EQ(RGBA_8888, format);
-      return CreateBitmap(size);
+      return CreateBitmap(size, wrap_mode);
     case InvalidType:
       break;
   }
@@ -283,17 +358,22 @@ ResourceProvider::ResourceId ResourceProvider::CreateResource(
 
 ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
     gfx::Size size,
+    GLenum target,
     GLint wrap_mode,
     TextureUsageHint hint,
     ResourceFormat format) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
     case GLTexture:
-      return CreateGLTexture(
-          size, GL_TEXTURE_POOL_MANAGED_CHROMIUM, wrap_mode, hint, format);
+      return CreateGLTexture(size,
+                             target,
+                             GL_TEXTURE_POOL_MANAGED_CHROMIUM,
+                             wrap_mode,
+                             hint,
+                             format);
     case Bitmap:
       DCHECK_EQ(RGBA_8888, format);
-      return CreateBitmap(size);
+      return CreateBitmap(size, wrap_mode);
     case InvalidType:
       break;
   }
@@ -304,6 +384,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
 
 ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
     gfx::Size size,
+    GLenum target,
     GLenum texture_pool,
     GLint wrap_mode,
     TextureUsageHint hint,
@@ -314,13 +395,14 @@ ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
 
   ResourceId id = next_id_++;
   Resource resource(
-      0, size, GL_TEXTURE_2D, GL_LINEAR, texture_pool, wrap_mode, hint, format);
+      0, size, target, GL_LINEAR, texture_pool, wrap_mode, hint, format);
   resource.allocated = false;
   resources_[id] = resource;
   return id;
 }
 
-ResourceProvider::ResourceId ResourceProvider::CreateBitmap(gfx::Size size) {
+ResourceProvider::ResourceId ResourceProvider::CreateBitmap(
+    gfx::Size size, GLint wrap_mode) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   scoped_ptr<SharedBitmap> bitmap;
@@ -335,7 +417,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(gfx::Size size) {
 
   ResourceId id = next_id_++;
   Resource resource(
-      pixels, bitmap.release(), size, GL_LINEAR, GL_CLAMP_TO_EDGE);
+      pixels, bitmap.release(), size, GL_LINEAR, wrap_mode);
   resource.allocated = true;
   resources_[id] = resource;
   return id;
@@ -649,7 +731,7 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
             context3d->waitSyncPoint(resource->mailbox.sync_point()));
         resource->mailbox.ResetSyncPoint();
       }
-      resource->gl_id = NextTextureId();
+      resource->gl_id = texture_id_allocator_->NextId();
       GLC(context3d, context3d->bindTexture(resource->target, resource->gl_id));
       GLC(context3d,
           context3d->consumeTextureCHROMIUM(resource->target,
@@ -717,24 +799,20 @@ ResourceProvider::ScopedReadLockGL::~ScopedReadLockGL() {
 ResourceProvider::ScopedSamplerGL::ScopedSamplerGL(
     ResourceProvider* resource_provider,
     ResourceProvider::ResourceId resource_id,
-    GLenum target,
     GLenum filter)
     : ScopedReadLockGL(resource_provider, resource_id),
-      target_(target),
-      unit_(GL_TEXTURE0) {
-  resource_provider->BindForSampling(resource_id, target, unit_, filter);
+      unit_(GL_TEXTURE0),
+      target_(resource_provider->BindForSampling(resource_id, unit_, filter)) {
 }
 
 ResourceProvider::ScopedSamplerGL::ScopedSamplerGL(
     ResourceProvider* resource_provider,
     ResourceProvider::ResourceId resource_id,
-    GLenum target,
     GLenum unit,
     GLenum filter)
     : ScopedReadLockGL(resource_provider, resource_id),
-      target_(target),
-      unit_(unit) {
-  resource_provider->BindForSampling(resource_id, target, unit, filter);
+      unit_(unit),
+      target_(resource_provider->BindForSampling(resource_id, unit_, filter)) {
 }
 
 ResourceProvider::ScopedSamplerGL::~ScopedSamplerGL() {
@@ -768,8 +846,9 @@ ResourceProvider::ScopedReadLockSoftware::ScopedReadLockSoftware(
     ResourceProvider::ResourceId resource_id)
     : resource_provider_(resource_provider),
       resource_id_(resource_id) {
-  ResourceProvider::PopulateSkBitmapWithResource(
-      &sk_bitmap_, resource_provider->LockForRead(resource_id));
+  const Resource* resource = resource_provider->LockForRead(resource_id);
+  wrap_mode_ = resource->wrap_mode;
+  ResourceProvider::PopulateSkBitmapWithResource(&sk_bitmap_, resource);
 }
 
 ResourceProvider::ScopedReadLockSoftware::~ScopedReadLockSoftware() {
@@ -794,7 +873,7 @@ ResourceProvider::ResourceProvider(OutputSurface* output_surface,
                                    SharedBitmapManager* shared_bitmap_manager,
                                    int highp_threshold_min,
                                    bool use_rgba_4444_texture_format,
-                                   size_t texture_id_allocation_chunk_size)
+                                   size_t id_allocation_chunk_size)
     : output_surface_(output_surface),
       shared_bitmap_manager_(shared_bitmap_manager),
       lost_output_surface_(false),
@@ -805,12 +884,13 @@ ResourceProvider::ResourceProvider(OutputSurface* output_surface,
       use_texture_storage_ext_(false),
       use_texture_usage_hint_(false),
       use_shallow_flush_(false),
+      use_compressed_texture_etc1_(false),
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
-      texture_id_allocation_chunk_size_(texture_id_allocation_chunk_size) {
+      id_allocation_chunk_size_(id_allocation_chunk_size) {
   DCHECK(output_surface_->HasClient());
-  DCHECK(texture_id_allocation_chunk_size_);
+  DCHECK(id_allocation_chunk_size_);
 }
 
 void ResourceProvider::InitializeSoftware() {
@@ -828,6 +908,8 @@ bool ResourceProvider::InitializeGL() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!texture_uploader_);
   DCHECK_NE(GLTexture, default_resource_type_);
+  DCHECK(!texture_id_allocator_);
+  DCHECK(!buffer_id_allocator_);
 
   WebGraphicsContext3D* context3d = Context3d();
   DCHECK(context3d);
@@ -853,6 +935,11 @@ bool ResourceProvider::InitializeGL() {
                                         &max_texture_size_));
   best_texture_format_ = PlatformColor::BestTextureFormat(use_bgra);
 
+  texture_id_allocator_.reset(
+      new TextureIdAllocator(context3d, id_allocation_chunk_size_));
+  buffer_id_allocator_.reset(
+      new BufferIdAllocator(context3d, id_allocation_chunk_size_));
+
   return true;
 }
 
@@ -868,14 +955,8 @@ void ResourceProvider::CleanUpGLIfNeeded() {
   DCHECK(context3d);
   context3d->makeContextCurrent();
   texture_uploader_.reset();
-  if (!unused_texture_ids_.empty()) {
-    size_t size = unused_texture_ids_.size();
-    scoped_ptr<WebKit::WebGLId[]> ids(new WebKit::WebGLId[size]);
-    for (size_t i = 0; i < size; ++i)
-      ids[i] = unused_texture_ids_[i];
-    GLC(context3d, context3d->deleteTextures(size, ids.get()));
-    unused_texture_ids_.clear();
-  }
+  texture_id_allocator_.reset();
+  buffer_id_allocator_.reset();
   Finish();
 }
 
@@ -891,11 +972,17 @@ int ResourceProvider::CreateChild(const ReturnCallback& return_callback) {
 }
 
 void ResourceProvider::DestroyChild(int child_id) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
   ChildMap::iterator it = children_.find(child_id);
   DCHECK(it != children_.end());
+  DestroyChildInternal(it, Normal);
+}
+
+void ResourceProvider::DestroyChildInternal(ChildMap::iterator it,
+                                            DeleteStyle style) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
   Child& child = it->second;
+  DCHECK(style == ForShutdown || !child.marked_for_deletion);
 
   ResourceIdArray resources_for_child;
 
@@ -908,11 +995,9 @@ void ResourceProvider::DestroyChild(int child_id) {
 
   // If the child is going away, don't consider any resources in use.
   child.in_use_resources.clear();
+  child.marked_for_deletion = true;
 
-  DeleteAndReturnUnusedResourcesToChild(
-      &child, ForShutdown, resources_for_child);
-
-  children_.erase(it);
+  DeleteAndReturnUnusedResourcesToChild(it, style, resources_for_child);
 }
 
 const ResourceProvider::ResourceIdMap& ResourceProvider::GetChildToParentMap(
@@ -920,6 +1005,7 @@ const ResourceProvider::ResourceIdMap& ResourceProvider::GetChildToParentMap(
   DCHECK(thread_checker_.CalledOnValidThread());
   ChildMap::const_iterator it = children_.find(child);
   DCHECK(it != children_.end());
+  DCHECK(!it->second.marked_for_deletion);
   return it->second.child_to_parent_map;
 }
 
@@ -958,6 +1044,7 @@ void ResourceProvider::ReceiveFromChild(
   if (context3d)
     context3d->makeContextCurrent();
   Child& child_info = children_.find(child)->second;
+  DCHECK(!child_info.marked_for_deletion);
   for (TransferableResourceArray::const_iterator it = resources.begin();
        it != resources.end();
        ++it) {
@@ -1001,7 +1088,7 @@ void ResourceProvider::ReceiveFromChild(
       // (and is simpler) to wait.
       if (it->sync_point)
         GLC(context3d, context3d->waitSyncPoint(it->sync_point));
-      texture_id = NextTextureId();
+      texture_id = texture_id_allocator_->NextId();
       GLC(context3d, context3d->bindTexture(it->target, texture_id));
       GLC(context3d,
           context3d->consumeTextureCHROMIUM(it->target, it->mailbox.name));
@@ -1029,7 +1116,10 @@ void ResourceProvider::DeclareUsedResourcesFromChild(
     const ResourceIdArray& resources_from_child) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  Child& child_info = children_.find(child)->second;
+  ChildMap::iterator child_it = children_.find(child);
+  DCHECK(child_it != children_.end());
+  Child& child_info = child_it->second;
+  DCHECK(!child_info.marked_for_deletion);
   child_info.in_use_resources.clear();
 
   for (size_t i = 0; i < resources_from_child.size(); ++i) {
@@ -1050,7 +1140,7 @@ void ResourceProvider::DeclareUsedResourcesFromChild(
     if (!resource_is_in_use)
       unused.push_back(local_id);
   }
-  DeleteAndReturnUnusedResourcesToChild(&child_info, Normal, unused);
+  DeleteAndReturnUnusedResourcesToChild(child_it, Normal, unused);
 }
 
 // static
@@ -1072,7 +1162,6 @@ void ResourceProvider::ReceiveReturnsFromParent(
     context3d->makeContextCurrent();
 
   int child_id = 0;
-  Child* child_info = NULL;
   ResourceIdArray resources_for_child;
 
   std::vector<std::pair<ReturnedResource, ResourceMap::iterator> >
@@ -1097,6 +1186,7 @@ void ResourceProvider::ReceiveReturnsFromParent(
             sorted_resources.end(),
             CompareResourceMapIteratorsByChildId);
 
+  ChildMap::iterator child_it = children_.end();
   for (size_t i = 0; i < sorted_resources.size(); ++i) {
     ReturnedResource& returned = sorted_resources[i].first;
     ResourceMap::iterator& map_iterator = sorted_resources[i].second;
@@ -1128,17 +1218,16 @@ void ResourceProvider::ReceiveReturnsFromParent(
 
     // Delete the resource and return it to the child it came from one.
     if (resource->child_id != child_id) {
-      ChildMap::iterator child_it = children_.find(resource->child_id);
-      DCHECK(child_it != children_.end());
-
       if (child_id) {
         DCHECK_NE(resources_for_child.size(), 0u);
+        DCHECK(child_it != children_.end());
         DeleteAndReturnUnusedResourcesToChild(
-            child_info, Normal, resources_for_child);
+            child_it, Normal, resources_for_child);
         resources_for_child.clear();
       }
 
-      child_info = &child_it->second;
+      child_it = children_.find(resource->child_id);
+      DCHECK(child_it != children_.end());
       child_id = resource->child_id;
     }
     resources_for_child.push_back(local_id);
@@ -1146,8 +1235,9 @@ void ResourceProvider::ReceiveReturnsFromParent(
 
   if (child_id) {
     DCHECK_NE(resources_for_child.size(), 0u);
+    DCHECK(child_it != children_.end());
     DeleteAndReturnUnusedResourcesToChild(
-        child_info, Normal, resources_for_child);
+        child_it, Normal, resources_for_child);
   }
 }
 
@@ -1159,6 +1249,7 @@ void ResourceProvider::TransferResource(WebGraphicsContext3D* context,
   DCHECK(!source->lock_for_read_count);
   DCHECK(!source->external || (source->external && source->mailbox.IsValid()));
   DCHECK(source->allocated);
+  DCHECK_EQ(source->wrap_mode, GL_CLAMP_TO_EDGE);
   resource->id = id;
   resource->format = source->format;
   resource->target = source->target;
@@ -1189,13 +1280,14 @@ void ResourceProvider::TransferResource(WebGraphicsContext3D* context,
 }
 
 void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
-    Child* child_info,
+    ChildMap::iterator child_it,
     DeleteStyle style,
     const ResourceIdArray& unused) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(child_info);
+  DCHECK(child_it != children_.end());
+  Child* child_info = &child_it->second;
 
-  if (unused.empty())
+  if (unused.empty() && !child_info->marked_for_deletion)
     return;
 
   WebGraphicsContext3D* context3d = Context3d();
@@ -1273,6 +1365,12 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
 
   if (!to_return.empty())
     child_info->return_callback.Run(to_return);
+
+  if (child_info->marked_for_deletion &&
+      child_info->parent_to_child_map.empty()) {
+    DCHECK(child_info->child_to_parent_map.empty());
+    children_.erase(child_it);
+  }
 }
 
 void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
@@ -1286,7 +1384,7 @@ void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
     WebGraphicsContext3D* context3d = Context3d();
     DCHECK(context3d);
     if (!resource->gl_pixel_buffer_id)
-      resource->gl_pixel_buffer_id = context3d->createBuffer();
+      resource->gl_pixel_buffer_id = buffer_id_allocator_->NextId();
     context3d->bindBuffer(
         GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
         resource->gl_pixel_buffer_id);
@@ -1396,10 +1494,10 @@ void ResourceProvider::UnmapPixelBuffer(ResourceId id) {
   }
 }
 
-void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
-                                       GLenum target,
-                                       GLenum unit,
-                                       GLenum filter) {
+GLenum ResourceProvider::BindForSampling(
+    ResourceProvider::ResourceId resource_id,
+    GLenum unit,
+    GLenum filter) {
   DCHECK(thread_checker_.CalledOnValidThread());
   WebGraphicsContext3D* context3d = Context3d();
   ResourceMap::iterator it = resources_.find(resource_id);
@@ -1409,9 +1507,9 @@ void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
   DCHECK(!resource->locked_for_write || resource->set_pixels_completion_forced);
 
   ScopedSetActiveTexture scoped_active_tex(context3d, unit);
+  GLenum target = resource->target;
   GLC(context3d, context3d->bindTexture(target, resource->gl_id));
   if (filter != resource->filter) {
-    DCHECK_EQ(resource->target, target);
     GLC(context3d,
         context3d->texParameteri(target, GL_TEXTURE_MIN_FILTER, filter));
     GLC(context3d,
@@ -1427,6 +1525,8 @@ void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
     resource->bound_image_id = resource->image_id;
     resource->dirty_image = false;
   }
+
+  return target;
 }
 
 void ResourceProvider::BeginSetPixels(ResourceId id) {
@@ -1541,11 +1641,6 @@ void ResourceProvider::CreateForTesting(ResourceId id) {
   LazyCreate(GetResource(id));
 }
 
-GLint ResourceProvider::WrapModeForTesting(ResourceId id) {
-  Resource* resource = GetResource(id);
-  return resource->wrap_mode;
-}
-
 GLenum ResourceProvider::TargetForTesting(ResourceId id) {
   Resource* resource = GetResource(id);
   return resource->target;
@@ -1559,7 +1654,7 @@ void ResourceProvider::LazyCreate(Resource* resource) {
   if (resource->texture_pool == 0)
     return;
 
-  resource->gl_id = NextTextureId();
+  resource->gl_id = texture_id_allocator_->NextId();
 
   WebGraphicsContext3D* context3d = Context3d();
   DCHECK(context3d);
@@ -1606,7 +1701,8 @@ void ResourceProvider::LazyAllocate(Resource* resource) {
   DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
   ResourceFormat format = resource->format;
   GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, resource->gl_id));
-  if (use_texture_storage_ext_ && IsFormatSupportedForStorage(format)) {
+  if (use_texture_storage_ext_ && IsFormatSupportedForStorage(format) &&
+      resource->hint != TextureUsageFramebuffer) {
     GLenum storage_format = TextureToStorageFormat(format);
     GLC(context3d, context3d->texStorage2DEXT(GL_TEXTURE_2D,
                                               1,
@@ -1650,9 +1746,10 @@ void ResourceProvider::AcquireImage(ResourceId id) {
   resource->allocated = true;
   WebGraphicsContext3D* context3d = Context3d();
   DCHECK(context3d);
-  DCHECK_EQ(RGBA_8888, resource->format);
   resource->image_id = context3d->createImageCHROMIUM(
-      resource->size.width(), resource->size.height(), GL_RGBA8_OES);
+      resource->size.width(),
+      resource->size.height(),
+      TextureToStorageFormat(resource->format));
   DCHECK(resource->image_id);
 }
 
@@ -1738,25 +1835,9 @@ GLint ResourceProvider::GetActiveTextureUnit(WebGraphicsContext3D* context) {
   return active_unit;
 }
 
-WebKit::WebGraphicsContext3D* ResourceProvider::Context3d() const {
+blink::WebGraphicsContext3D* ResourceProvider::Context3d() const {
   ContextProvider* context_provider = output_surface_->context_provider();
   return context_provider ? context_provider->Context3d() : NULL;
-}
-
-unsigned ResourceProvider::NextTextureId() {
-  if (unused_texture_ids_.empty()) {
-    size_t size = texture_id_allocation_chunk_size_;
-    scoped_ptr<WebKit::WebGLId[]> ids(new WebKit::WebGLId[size]);
-    WebGraphicsContext3D* context3d = Context3d();
-    DCHECK(context3d);
-    GLC(context3d, context3d->genTextures(size, ids.get()));
-    unused_texture_ids_.assign(ids.get(), ids.get() + size);
-  }
-
-  unsigned gl_id = unused_texture_ids_.front();
-  unused_texture_ids_.pop_front();
-
-  return gl_id;
 }
 
 }  // namespace cc

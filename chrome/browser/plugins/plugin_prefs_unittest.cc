@@ -31,6 +31,7 @@ void CanEnablePluginCallback(const base::Closure& quit_closure,
   quit_closure.Run();
 }
 
+#if !(defined(OS_LINUX) && defined(USE_AURA))
 base::FilePath GetComponentUpdatedPepperFlashPath(
     const base::FilePath::StringType& version) {
   base::FilePath path;
@@ -46,6 +47,7 @@ base::FilePath GetBundledPepperFlashPath() {
   EXPECT_TRUE(PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &path));
   return path;
 }
+#endif  // !(defined(OS_LINUX) && defined(USE_AURA))
 
 void GotPlugins(const base::Closure& quit_closure,
                 const std::vector<content::WebPluginInfo>& plugins) {
@@ -78,6 +80,22 @@ class PluginPrefsTest : public ::testing::Test {
         base::Bind(&CanEnablePluginCallback, run_loop.QuitClosure(),
                    expected_can_change));
     run_loop.Run();
+  }
+
+  void RefreshPluginsSynchronously() {
+    PluginService::GetInstance()->RefreshPlugins();
+#if !defined(OS_WIN)
+    // Can't go out of process in unit tests.
+    content::RenderProcessHost::SetRunRendererInProcess(true);
+#endif
+    scoped_refptr<content::MessageLoopRunner> runner =
+        new content::MessageLoopRunner;
+    PluginService::GetInstance()->GetPlugins(
+        base::Bind(&GotPlugins, runner->QuitClosure()));
+    runner->Run();
+#if !defined(OS_WIN)
+    content::RenderProcessHost::SetRunRendererInProcess(false);
+#endif
   }
 
   scoped_refptr<PluginPrefs> plugin_prefs_;
@@ -217,18 +235,7 @@ TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
       component_updated_plugin_2, false);
   PluginService::GetInstance()->RegisterInternalPlugin(bundled_plugin, false);
 
-#if !defined(OS_WIN)
-    // Can't go out of process in unit tests.
-    content::RenderProcessHost::SetRunRendererInProcess(true);
-#endif
-  scoped_refptr<content::MessageLoopRunner> runner =
-      new content::MessageLoopRunner;
-  PluginService::GetInstance()->GetPlugins(
-      base::Bind(&GotPlugins, runner->QuitClosure()));
-  runner->Run();
-#if !defined(OS_WIN)
-    content::RenderProcessHost::SetRunRendererInProcess(false);
-#endif
+  RefreshPluginsSynchronously();
 
   // Set the state of any of the three plugins will affect the others.
   EnablePluginSynchronously(true, component_updated_plugin_1.path, true);

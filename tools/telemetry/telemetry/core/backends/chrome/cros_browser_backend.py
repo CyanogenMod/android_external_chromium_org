@@ -33,11 +33,16 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._cri = cri
     self._is_guest = is_guest
 
+    self.wpr_http_port_pair.remote_port = self._cri.GetRemotePort()
+    self.wpr_https_port_pair.remote_port = self._cri.GetRemotePort()
     self._remote_debugging_port = self._cri.GetRemotePort()
     self._port = self._remote_debugging_port
     self._forwarder = None
 
     self._SetBranchNumber(self._GetChromeVersion())
+
+    self._username = 'test@test.test'
+    self._password = ''
 
     self._login_ext_dir = None
     if not self._use_oobe_login_for_testing:
@@ -45,14 +50,13 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                                          'chromeos_login_ext')
 
       # Push a dummy login extension to the device.
-      # This extension automatically logs in as test@test.test
+      # This extension automatically logs in test user self._username.
       # Note that we also perform this copy locally to ensure that
       # the owner of the extensions is set to chronos.
       logging.info('Copying dummy login extension to the device')
       cri.PushFile(self._login_ext_dir, '/tmp/')
       self._login_ext_dir = '/tmp/chromeos_login_ext'
-      cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos',
-                          self._login_ext_dir])
+      cri.Chown(self._login_ext_dir)
 
     # Copy extensions to temp directories on the device.
     # Note that we also perform this copy locally to ensure that
@@ -61,30 +65,25 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       output = cri.RunCmdOnDevice(['mktemp', '-d', '/tmp/extension_XXXXX'])
       extension_dir = output[0].rstrip()
       cri.PushFile(e.path, extension_dir)
-      cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos', extension_dir])
+      cri.Chown(extension_dir)
       e.local_path = os.path.join(extension_dir, os.path.basename(e.path))
 
     # Ensure the UI is running and logged out.
     self._RestartUI()
     util.WaitFor(self.IsBrowserRunning, 20)
 
-    # Delete test@test.test's cryptohome vault (user data directory).
+    # Delete test user's cryptohome vault (user data directory).
     if not self.browser_options.dont_override_profile:
-      logging.info('Deleting user\'s cryptohome vault (the user data dir)')
-      self._cri.RunCmdOnDevice(
-          ['cryptohome', '--action=remove', '--force', '--user=test@test.test'])
+      self._cri.RunCmdOnDevice(['cryptohome', '--action=remove', '--force',
+                                '--user=%s' % self._username])
     if self.browser_options.profile_dir:
-      profile_dir = '/home/chronos/Default'
-      cri.RunCmdOnDevice(['rm', '-rf', profile_dir])
-      cri.PushFile(self.browser_options.profile_dir + '/Default', profile_dir)
-      cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos', profile_dir])
+      cri.RmRF(self.profile_directory)
+      cri.PushFile(self.browser_options.profile_dir + '/Default',
+                   self.profile_directory)
+      cri.Chown(self.profile_directory)
 
   def GetBrowserStartupArgs(self):
-    self.webpagereplay_remote_http_port = self._cri.GetRemotePort()
-    self.webpagereplay_remote_https_port = self._cri.GetRemotePort()
-
     args = super(CrOSBrowserBackend, self).GetBrowserStartupArgs()
-
     args.extend([
             '--enable-smooth-scrolling',
             '--enable-threaded-compositing',
@@ -99,9 +98,11 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             '--remote-debugging-port=%i' % self._remote_debugging_port,
             # Open a maximized window.
             '--start-maximized',
+            # Workaround for crbug.com/308224. TODO(achuith): Remove this flag.
+            '--multi-profiles',
             # Debug logging for login flake (crbug.com/263527).
             '--vmodule=*/browser/automation/*=2,*/chromeos/net/*=2,' +
-                '*/chromeos/login/*=2'])
+                '*/chromeos/login/*=2,*/extensions/*=2'])
 
     if self._is_guest:
       args.extend([
@@ -148,7 +149,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         continue
       for path in self.CHROME_PATHS:
         if process.startswith(path):
-          return {'pid': pid, 'path': path}
+          return {'pid': pid, 'path': path, 'args': process}
     return None
 
   def _GetChromeVersion(self):
@@ -208,16 +209,15 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     if not self._cri.local:
       # Find a free local port.
-      self._port = util.GetAvailableLocalPort()
+      self._port = util.GetUnreservedAvailableLocalPort()
 
       # Forward the remote debugging port.
-      logging.info('Forwarding remote debugging port')
+      logging.info('Forwarding remote debugging port %d to local port %d',
+                   self._remote_debugging_port, self._port)
       self._forwarder = SSHForwarder(
         self._cri, 'L',
         util.PortPair(self._port, self._remote_debugging_port))
 
-    # Wait for the browser to come up.
-    logging.info('Waiting for browser to be ready')
     try:
       self._WaitForBrowserToComeUp(wait_for_extensions=False)
       self._PostBrowserStartupInitialization()
@@ -308,10 +308,16 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       }
     ''')
 
+  def _CryptohomePath(self, user):
+    (path, _) = self._cri.RunCmdOnDevice(['cryptohome-path', 'user',
+                                          "'%s'" % user])
+    return path
+
   def _IsCryptohomeMounted(self):
-    """Returns True if a cryptohome vault is mounted at /home/chronos/user."""
-    return self._cri.FilesystemMountedAt('/home/chronos/user').startswith(
-        '/home/.shadow/')
+    """Returns True if a cryptohome vault at the user mount point."""
+    profile_path = self._CryptohomePath(self._username)
+    mount = self._cri.FilesystemMountedAt(profile_path)
+    return mount and mount.startswith('/home/.shadow/')
 
   def _HandleUserImageSelectionScreen(self):
     """If we're stuck on the user image selection screen, we click the ok
@@ -372,8 +378,9 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       pass
 
   def _WaitForGuestFsMounted(self):
-    """Waits for /home/chronos/user to be mounted as guestfs"""
-    util.WaitFor(lambda: (self._cri.FilesystemMountedAt('/home/chronos/user') ==
+    """Waits for the guest user to be mounted as guestfs"""
+    guest_path = self._CryptohomePath('$guest')
+    util.WaitFor(lambda: (self._cri.FilesystemMountedAt(guest_path) ==
                           'guestfs'), 20)
 
   def _NavigateGuestLogin(self):
@@ -395,19 +402,15 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
           'typeof Oobe.loginForTesting == \'undefined\''):
         raise exceptions.LoginException('Oobe.loginForTesting js api missing')
 
-      username = 'test@test.test'
-      password = ''
       self.oobe.ExecuteJavaScript(
-          'Oobe.loginForTesting(\'%s\', \'%s\');' % (username, password))
+          'Oobe.loginForTesting(\'%s\', \'%s\');' % (self._username,
+                                                     self._password))
 
     try:
       util.WaitFor(self._IsLoggedIn, 60)
     except util.TimeoutException:
       self._cri.TakeScreenShot('login-screen')
       raise exceptions.LoginException('Timed out going through login screen')
-
-    # Wait for extensions to load.
-    self._WaitForBrowserToComeUp()
 
     if self.chrome_branch_number < 1500:
       # Wait for the startup window, then close it. Startup window doesn't exist
@@ -416,6 +419,14 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     else:
       # Open a new window/tab.
       self.tab_list_backend.New(15)
+
+    # Wait for extensions to load.
+    try:
+      self._WaitForBrowserToComeUp()
+    except util.TimeoutException:
+      logging.error('Chrome args: %s' % self._GetChromeProcess()['args'])
+      self._cri.TakeScreenShot('extension-timeout')
+      raise
 
 
 class SSHForwarder(object):

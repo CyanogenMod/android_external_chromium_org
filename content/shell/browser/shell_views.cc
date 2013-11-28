@@ -31,7 +31,7 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/aura/test/test_screen.h"
-#include "ui/shell/minimal_shell.h"
+#include "ui/wm/test/wm_test_helper.h"
 #endif
 
 #if defined(OS_WIN)
@@ -88,14 +88,28 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   void SetAddressBarURL(const GURL& url) {
     url_entry_->SetText(ASCIIToUTF16(url.spec()));
   }
-  void SetWebContents(WebContents* web_contents) {
+  void SetWebContents(WebContents* web_contents, const gfx::Size& size) {
     contents_view_->SetLayoutManager(new views::FillLayout());
     web_view_ = new views::WebView(web_contents->GetBrowserContext());
     web_view_->SetWebContents(web_contents);
+    web_view_->SetPreferredSize(size);
     web_contents->GetView()->Focus();
     contents_view_->AddChildView(web_view_);
     Layout();
+
+    // Resize the widget, keeping the same origin.
+    gfx::Rect bounds = GetWidget()->GetWindowBoundsInScreen();
+    bounds.set_size(GetWidget()->GetRootView()->GetPreferredSize());
+    GetWidget()->SetBounds(bounds);
+
+    // Resizing a widget on chromeos doesn't automatically resize the root, need
+    // to explicitly do that.
+#if defined(OS_CHROMEOS)
+    GetWidget()->GetNativeWindow()->GetDispatcher()->SetHostSize(
+        bounds.size());
+#endif
   }
+
   void SetWindowTitle(const string16& title) { title_ = title; }
   void EnableUIControl(UIControl control, bool is_enabled) {
     if (control == BACK_BUTTON) {
@@ -278,7 +292,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 }  // namespace
 
 #if defined(OS_CHROMEOS)
-shell::MinimalShell* Shell::minimal_shell_ = NULL;
+wm::WMTestHelper* Shell::wm_test_helper_ = NULL;
 #endif
 views::ViewsDelegate* Shell::views_delegate_ = NULL;
 
@@ -292,7 +306,7 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
   chromeos::DBusThreadManager::Initialize();
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, aura::TestScreen::Create());
-  minimal_shell_ = new shell::MinimalShell(default_window_size);
+  wm_test_helper_ = new wm::WMTestHelper(default_window_size);
 #else
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
@@ -301,14 +315,9 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 }
 
 void Shell::PlatformExit() {
-  std::vector<Shell*> windows = windows_;
-  for (std::vector<Shell*>::iterator it = windows.begin();
-       it != windows.end(); ++it) {
-    (*it)->window_widget_->Close();
-  }
 #if defined(OS_CHROMEOS)
-  if (minimal_shell_)
-    delete minimal_shell_;
+  if (wm_test_helper_)
+    delete wm_test_helper_;
 #endif
   if (views_delegate_)
     delete views_delegate_;
@@ -347,28 +356,28 @@ void Shell::PlatformSetIsLoading(bool loading) {
 
 void Shell::PlatformCreateWindow(int width, int height) {
 #if defined(OS_CHROMEOS)
-  window_widget_ =
-      views::Widget::CreateWindowWithContextAndBounds(
-          new ShellWindowDelegateView(this),
-          minimal_shell_->GetDefaultParent(NULL, NULL, gfx::Rect()),
-          gfx::Rect(0, 0, width, height));
+  window_widget_ = views::Widget::CreateWindowWithContextAndBounds(
+      new ShellWindowDelegateView(this),
+      wm_test_helper_->GetDefaultParent(NULL, NULL, gfx::Rect()),
+      gfx::Rect(0, 0, width, height));
 #else
-  window_widget_ =
-      views::Widget::CreateWindowWithBounds(new ShellWindowDelegateView(this),
-               gfx::Rect(0, 0, width, height));
+  window_widget_ = views::Widget::CreateWindowWithBounds(
+      new ShellWindowDelegateView(this), gfx::Rect(0, 0, width, height));
 #endif
 
+  content_size_ = gfx::Size(width, height);
+
   window_ = window_widget_->GetNativeWindow();
-  // Call ShowRootWindow on RootWindow created by MinimalShell without
+  // Call ShowRootWindow on RootWindow created by WMTestHelper without
   // which XWindow owned by RootWindow doesn't get mapped.
-  window_->GetDispatcher()->ShowRootWindow();
+  window_->GetDispatcher()->host()->Show();
   window_widget_->Show();
 }
 
 void Shell::PlatformSetContents() {
   ShellWindowDelegateView* delegate_view =
-    static_cast<ShellWindowDelegateView*>(window_widget_->widget_delegate());
-  delegate_view->SetWebContents(web_contents_.get());
+      static_cast<ShellWindowDelegateView*>(window_widget_->widget_delegate());
+  delegate_view->SetWebContents(web_contents_.get(), content_size_);
 }
 
 void Shell::PlatformResizeSubViews() {

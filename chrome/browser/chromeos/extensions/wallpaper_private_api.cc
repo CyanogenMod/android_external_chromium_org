@@ -25,9 +25,9 @@
 #include "chrome/browser/chromeos/login/user_image.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "grit/platform_locale_settings.h"
@@ -56,8 +56,8 @@ const char kWallpaperManifestBaseURL[] = "https://commondatastorage.googleapis."
 #endif
 
 bool IsOEMDefaultWallpaper() {
-  return CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshOemWallpaperSmall);
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      ash::switches::kAshDefaultWallpaperIsOem);
 }
 
 // Saves |data| as |file_name| to directory with |key|. Return false if the
@@ -621,7 +621,7 @@ bool WallpaperPrivateGetThumbnailFunction::RunImpl() {
     // thumbnail. We should either resize it or include a wallpaper thumbnail in
     // addition to large and small wallpaper resolutions.
     thumbnail_path = CommandLine::ForCurrentProcess()->GetSwitchValuePath(
-        ash::switches::kAshOemWallpaperSmall);
+        ash::switches::kAshDefaultWallpaperSmall);
   }
 
   sequence_token_ = BrowserThread::GetBlockingPool()->

@@ -171,25 +171,8 @@ void PluginServiceImpl::Init() {
 
   RegisterPepperPlugins();
 
-  // The --site-per-process flag enables an out-of-process iframes
-  // prototype, which uses WebView for rendering. We need to register the MIME
-  // type we use with the plugin, so the renderer can instantiate it.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kSitePerProcess)) {
-    WebPluginInfo webview_plugin(
-        ASCIIToUTF16("WebView Tag"),
-        base::FilePath(),
-        ASCIIToUTF16("1.2.3.4"),
-        ASCIIToUTF16("Browser Plugin."));
-    webview_plugin.type = WebPluginInfo::PLUGIN_TYPE_NPAPI;
-    WebPluginMimeType webview_plugin_mime_type;
-    webview_plugin_mime_type.mime_type = "application/browser-plugin";
-    webview_plugin_mime_type.file_extensions.push_back("*");
-    webview_plugin.mime_types.push_back(webview_plugin_mime_type);
-    RegisterInternalPlugin(webview_plugin, true);
-  }
-
   // Load any specified on the command line as well.
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
   base::FilePath path =
       command_line->GetSwitchValuePath(switches::kLoadPlugin);
   if (!path.empty())
@@ -753,7 +736,7 @@ void PluginServiceImpl::AddExtraPluginPath(const base::FilePath& path) {
  if (!NPAPIPluginsSupported()) {
     // TODO(jam): remove and just have CHECK once we're sure this doesn't get
     // triggered.
-    DLOG(INFO) << "NPAPI plugins not supported";
+    DVLOG(0) << "NPAPI plugins not supported";
     return;
   }
   PluginList::Singleton()->AddExtraPluginPath(path);
@@ -772,7 +755,7 @@ void PluginServiceImpl::RegisterInternalPlugin(
     bool add_at_beginning) {
   if (!NPAPIPluginsSupported() &&
       info.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
-    DLOG(INFO) << "Don't register NPAPI plugins when they're not supported";
+    DVLOG(0) << "Don't register NPAPI plugins when they're not supported";
     return;
   }
   PluginList::Singleton()->RegisterInternalPlugin(info, add_at_beginning);

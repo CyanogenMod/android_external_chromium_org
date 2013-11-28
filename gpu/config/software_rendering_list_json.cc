@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "6.13",
+  "version": "6.16",
   "entries": [
     {
       "id": 1,
@@ -37,8 +37,8 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 3,
-      "description": "GL driver is software rendered. Accelerated compositing is disabled.",
-      "cr_bugs": [59302],
+      "description": "GL driver is software rendered. GPU acceleration is disabled.",
+      "cr_bugs": [59302, 315217],
       "os": {
         "type": "linux"
       },
@@ -47,7 +47,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "value": "software"
       },
       "features": [
-        "accelerated_compositing"
+        "all"
       ]
     },
     {
@@ -122,7 +122,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 12,
       "description": "Drivers older than 2009-01 on Windows are possibly unreliable.",
-      "cr_bugs": [72979, 89802],
+      "cr_bugs": [72979, 89802, 315205],
       "os": {
         "type": "win"
       },
@@ -147,92 +147,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         }
       ],
       "features": [
-        "accelerated_2d_canvas",
-        "accelerated_video",
-        "accelerated_video_decode",
-        "3d_css",
-        "multisampling",
-        "flash_3d",
-        "flash_stage3d",
-        "force_compositing_mode"
-      ]
-    },
-    {
-      "id": 13,
-      "description": "ATI drivers older than 10.6 on Windows XP are possibly unreliable.",
-      "cr_bugs": [74212],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "vendor_id": "0x1002",
-      "driver_version": {
-        "op": "<",
-        "value": "8.741"
-      },
-      "features": [
-        "accelerated_video",
-        "accelerated_video_decode",
-        "3d_css",
-        "multisampling",
-        "flash_3d",
-        "flash_stage3d",
-        "force_compositing_mode"
-      ]
-    },
-    {
-      "id": 14,
-      "description": "NVIDIA drivers older than 257.21 on Windows XP are possibly unreliable.",
-      "cr_bugs": [74212],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "vendor_id": "0x10de",
-      "driver_version": {
-        "op": "<",
-        "value": "6.14.12.5721"
-      },
-      "features": [
-        "accelerated_video",
-        "accelerated_video_decode",
-        "3d_css",
-        "multisampling",
-        "flash_3d",
-        "flash_stage3d",
-        "force_compositing_mode"
-      ]
-    },
-    {
-      "id": 15,
-      "description": "Intel drivers older than 14.42.7.5294 on Windows XP are possibly unreliable.",
-      "cr_bugs": [74212],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "vendor_id": "0x8086",
-      "driver_version": {
-        "op": "<",
-        "value": "6.14.10.5294"
-      },
-      "features": [
-        "accelerated_video",
-        "accelerated_video_decode",
-        "3d_css",
-        "multisampling",
-        "flash_3d",
-        "flash_stage3d",
-        "force_compositing_mode"
+        "all"
       ]
     },
     {
@@ -535,21 +450,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 41,
-      "description": "Disable 3D (but not Stage3D) in Flash on XP",
-      "cr_bugs": [134885],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "features": [
-        "flash_3d"
-      ]
-    },
-    {
       "id": 42,
       "description": "AMD Radeon HD 6490M and 6970M on Snow Leopard are buggy.",
       "cr_bugs": [137307, 285350],
@@ -564,22 +464,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "device_id": ["0x6760", "0x6720"],
       "features": [
         "webgl"
-      ]
-    },
-    {
-      "id": 43,
-      "description": "Intel driver version 8.15.10.1749 has problems sharing textures.",
-      "cr_bugs": [133924],
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x8086",
-      "driver_version": {
-        "op": "=",
-        "value": "8.15.10.1749"
-      },
-      "features": [
-        "texture_sharing"
       ]
     },
     {
@@ -705,46 +589,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "gl_vendor": {
         "op": "beginwith",
         "value": "VMware"
-      },
-      "features": [
-        "all"
-      ]
-    },
-    {
-      "id": 51,
-      "description": "NVIDIA drivers 6.14.11.9621 is buggy on Windows XP.",
-      "cr_bugs": [152096],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "vendor_id": "0x10de",
-      "driver_version": {
-        "op": "=",
-        "value": "6.14.11.9621"
-      },
-      "features": [
-        "all"
-      ]
-    },
-    {
-      "id": 52,
-      "description": "NVIDIA drivers 6.14.11.8267 is buggy on Windows XP.",
-      "cr_bugs": [152096],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "vendor_id": "0x10de",
-      "driver_version": {
-        "op": "=",
-        "value": "6.14.11.8267"
       },
       "features": [
         "all"
@@ -929,36 +773,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 66,
-      "description": "Force compositing mode is unstable in MacOSX earlier than 10.8.",
-      "cr_bugs": [174101],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8"
-        }
-      },
-      "features": [
-        "force_compositing_mode"
-      ]
-    },
-    {
-      "id": 67,
-      "description": "Accelerated 2D Canvas is not supported on WinXP.",
-      "cr_bugs": [175149],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "features": [
-        "accelerated_2d_canvas"
-      ]
-    },
-    {
       "id": 68,
       "description": "VMware Fusion 4 has corrupt rendering with Win Vista+.",
       "cr_bugs": [169470],
@@ -1074,18 +888,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 )  // String split to avoid MSVC char limit.
 LONG_STRING_CONST(
     {
-      "id": 75,
-      "description": "Texture sharing not supported on AMD Switchable GPUs due to driver issues",
-      "cr_bugs": [117371],
-      "os": {
-        "type": "win"
-      },
-      "multi_gpu_style": "amd_switchable",
-      "features": [
-        "texture_sharing"
-      ]
-    },
-    {
       "id": 76,
       "description": "WebGL is disabled on Android unless GPU reset notification is supported",
       "os": {
@@ -1104,25 +906,8 @@ LONG_STRING_CONST(
       ]
     },
     {
-      "id": 77,
-      "description": "Multisampling is reportedly very slow on Quadro NVS 135M/GeForce 8400M GS",
-      "cr_bugs": [279446],
-      "os": {
-        "type": "win",
-        "version": {
-          "op": "=",
-          "value": "5"
-        }
-      },
-      "vendor_id": "0x10de",
-      "device_id": ["0x0429", "0x042b"],
-      "features": [
-        "multisampling"
-      ]
-    },
-    {
       "id": 78,
-      "description": "Accelerated video decode interferes with GPU blacklist on older Intel drivers",
+      "description": "Accelerated video decode interferes with GPU sandbox on older Intel drivers",
       "cr_bugs": [180695],
       "os": {
         "type": "win"
@@ -1139,8 +924,8 @@ LONG_STRING_CONST(
     },
     {
       "id": 79,
-      "description": "Disable force compositing mode on all Windows versions prior to and including Vista.",
-      "cr_bugs": [273920, 170421],
+      "description": "Disable GPU on all Windows versions prior to and including Vista.",
+      "cr_bugs": [315199],
       "os": {
         "type": "win",
         "version": {
@@ -1148,21 +933,43 @@ LONG_STRING_CONST(
           "value": "6.0"
         }
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "osmesa"
+          }
+        }
+      ],
       "features": [
-        "flash_3d",
-        "flash_stage3d",
-        "force_compositing_mode"
+        "all"
       ]
     },
     {
       "id": 80,
       "description": "Texture sharing should be disabled on all Windows machines",
-      "cr_bugs": [304369],
+      "cr_bugs": [304369, 315215],
       "os": {
         "type": "win"
       },
       "features": [
         "texture_sharing"
+      ]
+    },
+    {
+      "id": 81,
+      "description": "Apple software renderer used under VMWare hangs on Mac OS 10.6 and 10.7.",
+      "cr_bugs": [230931],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<=",
+          "value": "10.7"
+        }
+      },
+      "vendor_id": "0x15ad",
+      "features": [
+        "force_compositing_mode"
       ]
     }
   ]

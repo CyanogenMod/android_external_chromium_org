@@ -54,28 +54,39 @@ bool NeedsAudioProcessing(
 
 // This is a temporary audio buffer with parameters used to send data to
 // callbacks.
-class WebRtcLocalAudioTrack::ConfiguredBuffer :
-    public base::RefCounted<WebRtcLocalAudioTrack::ConfiguredBuffer> {
+class WebRtcLocalAudioTrack::ConfiguredBuffer {
  public:
-  ConfiguredBuffer() : sink_buffer_size_(0) {}
+  ConfiguredBuffer() {}
+  virtual ~ConfiguredBuffer() {}
 
-  void Initialize(const media::AudioParameters& params) {
+  void Configure(const media::AudioParameters& params) {
     DCHECK(params.IsValid());
-    params_ = params;
 
-    // Use 10ms as the sink buffer size since that is the native packet size
-    // WebRtc is running on.
-    sink_buffer_size_ = params.sample_rate() / 100;
-    audio_wrapper_ =
-        media::AudioBus::Create(params.channels(), sink_buffer_size_);
-    buffer_.reset(new int16[sink_buffer_size_ * params.channels()]);
+    // PeerConnection uses 10ms as the sink buffer size as its native packet
+    // size. We use the native PeerConnection buffer size to achieve the best
+    // performance when a PeerConnection is connected with a track.
+    int sink_buffer_size = params.sample_rate() / 100;
+    if (params.frames_per_buffer() < sink_buffer_size) {
+      // When the source is running with a buffer size smaller than the peer
+      // connection buffer size, that means no PeerConnection is connected
+      // to the track, use the same buffer size as the incoming format to
+      // avoid extra FIFO for WebAudio.
+      sink_buffer_size = params.frames_per_buffer();
+    }
+    params_.Reset(params.format(), params.channel_layout(), params.channels(),
+                  params.input_channels(), params.sample_rate(),
+                  params.bits_per_sample(), sink_buffer_size);
+
+    audio_wrapper_ = media::AudioBus::Create(params_.channels(),
+                                             params_.frames_per_buffer());
+    buffer_.reset(new int16[params_.frames_per_buffer() * params_.channels()]);
 
     // The size of the FIFO should be at least twice of the source buffer size
     // or twice of the sink buffer size.
     int buffer_size = std::max(
         kMaxNumberOfBuffersInFifo * params.frames_per_buffer(),
-        kMaxNumberOfBuffersInFifo * sink_buffer_size_);
-    fifo_.reset(new media::AudioFifo(params.channels(), buffer_size));
+        kMaxNumberOfBuffersInFifo * params_.frames_per_buffer());
+    fifo_.reset(new media::AudioFifo(params_.channels(), buffer_size));
   }
 
   void Push(media::AudioBus* audio_source) {
@@ -95,18 +106,15 @@ class WebRtcLocalAudioTrack::ConfiguredBuffer :
   }
 
   int16* buffer() const { return buffer_.get(); }
+
+  // Format of the output audio buffer.
   const media::AudioParameters& params() const { return params_; }
-  int sink_buffer_size() const { return sink_buffer_size_; }
 
  private:
-  ~ConfiguredBuffer() {}
-  friend class base::RefCounted<WebRtcLocalAudioTrack::ConfiguredBuffer>;
-
   media::AudioParameters params_;
   scoped_ptr<media::AudioBus> audio_wrapper_;
   scoped_ptr<media::AudioFifo> fifo_;
   scoped_ptr<int16[]> buffer_;
-  int sink_buffer_size_;
 };
 
 scoped_refptr<WebRtcLocalAudioTrack> WebRtcLocalAudioTrack::Create(
@@ -131,13 +139,18 @@ WebRtcLocalAudioTrack::WebRtcLocalAudioTrack(
       capturer_(capturer),
       webaudio_source_(webaudio_source),
       track_source_(track_source),
-      need_audio_processing_(NeedsAudioProcessing(constraints)) {
+      need_audio_processing_(NeedsAudioProcessing(constraints)),
+      buffer_(new ConfiguredBuffer()) {
   DCHECK(capturer.get() || webaudio_source);
+  if (!webaudio_source_) {
+    source_provider_.reset(new WebRtcLocalAudioSourceProvider());
+    AddSink(source_provider_.get());
+  }
   DVLOG(1) << "WebRtcLocalAudioTrack::WebRtcLocalAudioTrack()";
 }
 
 WebRtcLocalAudioTrack::~WebRtcLocalAudioTrack() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::~WebRtcLocalAudioTrack()";
   // Users might not call Stop() on the track.
   Stop();
@@ -147,28 +160,30 @@ void WebRtcLocalAudioTrack::Capture(media::AudioBus* audio_source,
                                     int audio_delay_milliseconds,
                                     int volume,
                                     bool key_pressed) {
+  DCHECK(capture_thread_checker_.CalledOnValidThread());
   scoped_refptr<WebRtcAudioCapturer> capturer;
   std::vector<int> voe_channels;
-  int sample_rate = 0;
-  int number_of_channels = 0;
-  int number_of_frames = 0;
   SinkList sinks;
+  SinkList sinks_to_notify_format;
   bool is_webaudio_source = false;
-  scoped_refptr<ConfiguredBuffer> current_buffer;
   {
     base::AutoLock auto_lock(lock_);
     capturer = capturer_;
     voe_channels = voe_channels_;
-    current_buffer = buffer_;
-    sample_rate = current_buffer->params().sample_rate();
-    number_of_channels = current_buffer->params().channels();
-    number_of_frames = current_buffer->sink_buffer_size();
     sinks = sinks_;
+    std::swap(sinks_to_notify_format_, sinks_to_notify_format);
     is_webaudio_source = (webaudio_source_.get() != NULL);
   }
 
+  // Notify the tracks on when the format changes. This will do nothing if
+  // |sinks_to_notify_format| is empty.
+  for (SinkList::const_iterator it = sinks_to_notify_format.begin();
+       it != sinks_to_notify_format.end(); ++it) {
+    (*it)->SetCaptureFormat(buffer_->params());
+  }
+
   // Push the data to the fifo.
-  current_buffer->Push(audio_source);
+  buffer_->Push(audio_source);
 
   // When the source is WebAudio, turn off the audio processing if the delay
   // value is 0 even though the constraint is set to true. In such case, it
@@ -180,7 +195,7 @@ void WebRtcLocalAudioTrack::Capture(media::AudioBus* audio_source,
     need_audio_processing = (audio_delay_milliseconds != 0);
 
   int current_volume = volume;
-  while (current_buffer->Consume()) {
+  while (buffer_->Consume()) {
     // Feed the data to the sinks.
     // TODO (jiayl): we should not pass the real audio data down if the track is
     // disabled. This is currently done so to feed input to WebRTC typing
@@ -188,10 +203,10 @@ void WebRtcLocalAudioTrack::Capture(media::AudioBus* audio_source,
     // WebRTC to the track.
     for (SinkList::const_iterator it = sinks.begin(); it != sinks.end(); ++it) {
       int new_volume = (*it)->CaptureData(voe_channels,
-                                          current_buffer->buffer(),
-                                          sample_rate,
-                                          number_of_channels,
-                                          number_of_frames,
+                                          buffer_->buffer(),
+                                          buffer_->params().sample_rate(),
+                                          buffer_->params().channels(),
+                                          buffer_->params().frames_per_buffer(),
                                           audio_delay_milliseconds,
                                           current_volume,
                                           need_audio_processing,
@@ -208,24 +223,19 @@ void WebRtcLocalAudioTrack::Capture(media::AudioBus* audio_source,
 
 void WebRtcLocalAudioTrack::SetCaptureFormat(
     const media::AudioParameters& params) {
-  if (!params.IsValid())
-    return;
+  DVLOG(1) << "WebRtcLocalAudioTrack::SetCaptureFormat()";
+  // If the source is restarted, we might have changed to another capture
+  // thread.
+  capture_thread_checker_.DetachFromThread();
+  DCHECK(capture_thread_checker_.CalledOnValidThread());
 
-  scoped_refptr<ConfiguredBuffer> new_buffer(new ConfiguredBuffer());
-  new_buffer->Initialize(params);
+  DCHECK(params.IsValid());
+  buffer_->Configure(params);
 
-  SinkList sinks;
-  {
-    base::AutoLock auto_lock(lock_);
-    buffer_ = new_buffer;
-    sinks = sinks_;
-  }
-
-  // Update all the existing sinks with the new format.
-  for (SinkList::const_iterator it = sinks.begin();
-       it != sinks.end(); ++it) {
-    (*it)->SetCaptureFormat(params);
-  }
+  base::AutoLock auto_lock(lock_);
+  // Copy |sinks_| to |sinks_to_notify_format_| to notify all the sinks
+  // on the new format.
+  sinks_to_notify_format_ = sinks_;
 }
 
 void WebRtcLocalAudioTrack::AddChannel(int channel_id) {
@@ -266,11 +276,9 @@ std::string WebRtcLocalAudioTrack::kind() const {
 }
 
 void WebRtcLocalAudioTrack::AddSink(WebRtcAudioCapturerSink* sink) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::AddSink()";
   base::AutoLock auto_lock(lock_);
-  if (buffer_.get())
-    sink->SetCaptureFormat(buffer_->params());
 
   // Verify that |sink| is not already added to the list.
   DCHECK(std::find_if(
@@ -280,19 +288,33 @@ void WebRtcLocalAudioTrack::AddSink(WebRtcAudioCapturerSink* sink) {
   // Create (and add to the list) a new WebRtcAudioCapturerSinkOwner which owns
   // the |sink| and delagates all calls to the WebRtcAudioCapturerSink
   // interface.
-  sinks_.push_back(new WebRtcAudioCapturerSinkOwner(sink));
+  scoped_refptr<WebRtcAudioCapturerSinkOwner> sink_owner(
+      new WebRtcAudioCapturerSinkOwner(sink));
+  sinks_.push_back(sink_owner);
+
+  // Also push the |sink_owner| to |sinks_to_notify_format_| so that we will
+  // call SetCaptureFormat() on the new sink.
+  sinks_to_notify_format_.push_back(sink_owner);
 }
 
 void WebRtcLocalAudioTrack::RemoveSink(
     WebRtcAudioCapturerSink* sink) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::RemoveSink()";
 
   base::AutoLock auto_lock(lock_);
-  // Get iterator to the first element for which WrapsSink(sink) returns true.
+  // Remove the item on |tracks_to_notify_format_|.
+  // This has to be done before remove the element in |sinks_| since there it
+  // will clear the delegate.
   SinkList::iterator it = std::find_if(
-      sinks_.begin(), sinks_.end(),
+      sinks_to_notify_format_.begin(), sinks_to_notify_format_.end(),
       WebRtcAudioCapturerSinkOwner::WrapsSink(sink));
+  if (it != sinks_to_notify_format_.end())
+    sinks_to_notify_format_.erase(it);
+
+  // Get iterator to the first element for which WrapsSink(sink) returns true.
+  it = std::find_if(sinks_.begin(), sinks_.end(),
+                    WebRtcAudioCapturerSinkOwner::WrapsSink(sink));
   if (it != sinks_.end()) {
     // Clear the delegate to ensure that no more capture callbacks will
     // be sent to this sink. Also avoids a possible crash which can happen
@@ -303,18 +325,13 @@ void WebRtcLocalAudioTrack::RemoveSink(
 }
 
 void WebRtcLocalAudioTrack::Start() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::Start()";
   if (webaudio_source_.get()) {
     // If the track is hooking up with WebAudio, do NOT add the track to the
     // capturer as its sink otherwise two streams in different clock will be
     // pushed through the same track.
-    WebRtcLocalAudioSourceProvider* source_provider = NULL;
-    if (capturer_.get()) {
-      source_provider = static_cast<WebRtcLocalAudioSourceProvider*>(
-          capturer_->audio_source_provider());
-    }
-    webaudio_source_->Start(this, source_provider);
+     webaudio_source_->Start(this, capturer_.get());
     return;
   }
 
@@ -323,7 +340,7 @@ void WebRtcLocalAudioTrack::Start() {
 }
 
 void WebRtcLocalAudioTrack::Stop() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::Stop()";
   if (!capturer_.get() && !webaudio_source_.get())
     return;
@@ -335,6 +352,8 @@ void WebRtcLocalAudioTrack::Stop() {
     // in such case and no need to call RemoveTrack().
     webaudio_source_->Stop();
   } else {
+    // It is necessary to call RemoveTrack on the |capturer_| to avoid getting
+    // audio callback after Stop().
     capturer_->RemoveTrack(this);
   }
 
@@ -343,7 +362,8 @@ void WebRtcLocalAudioTrack::Stop() {
   SinkList sinks;
   {
     base::AutoLock auto_lock(lock_);
-    sinks = sinks_;
+    sinks.swap(sinks_);
+    sinks_to_notify_format_.clear();
     webaudio_source_ = NULL;
     capturer_ = NULL;
   }

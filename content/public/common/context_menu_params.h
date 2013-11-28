@@ -48,7 +48,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   ~ContextMenuParams();
 
   // This is the type of Context Node that the context menu was invoked on.
-  WebKit::WebContextMenuData::MediaType media_type;
+  blink::WebContextMenuData::MediaType media_type;
 
   // These values represent the coordinates of the mouse when the context menu
   // was invoked.  Coords are relative to the associated RenderView's origin.
@@ -124,13 +124,13 @@ struct CONTENT_EXPORT ContextMenuParams {
   // Whether context is editable.
   bool is_editable;
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
   // Writing direction menu items.
-  // Currently only used on OS X.
+  // Currently only used on OS X and Linux.
   int writing_direction_default;
   int writing_direction_left_to_right;
   int writing_direction_right_to_left;
-#endif  // OS_MACOSX
+#endif  // OS_MACOSX || defined(TOOLKIT_GTK)
 
   // These flags indicate to the browser whether the renderer believes it is
   // able to perform the corresponding action.
@@ -143,7 +143,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   std::string frame_charset;
 
   // The referrer policy of the frame on which the menu is invoked.
-  WebKit::WebReferrerPolicy referrer_policy;
+  blink::WebReferrerPolicy referrer_policy;
 
   CustomContextMenuContext custom_context;
   std::vector<MenuItem> custom_items;

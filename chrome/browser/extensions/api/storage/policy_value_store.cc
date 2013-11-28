@@ -7,10 +7,10 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/storage/settings_namespace.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/value_store/value_store_change.h"
 #include "chrome/browser/value_store/value_store_util.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -38,8 +38,7 @@ PolicyValueStore::PolicyValueStore(
 
 PolicyValueStore::~PolicyValueStore() {}
 
-void PolicyValueStore::SetCurrentPolicy(const policy::PolicyMap& policy,
-                                        bool notify_if_changed) {
+void PolicyValueStore::SetCurrentPolicy(const policy::PolicyMap& policy) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   // Convert |policy| to a dictionary value. Only include mandatory policies
   // for now.
@@ -94,7 +93,7 @@ void PolicyValueStore::SetCurrentPolicy(const policy::PolicyMap& policy,
         changes.end(), result->changes().begin(), result->changes().end());
   }
 
-  if (!changes.empty() && notify_if_changed) {
+  if (!changes.empty()) {
     observers_->Notify(
         &SettingsObserver::OnSettingsChanged,
         extension_id_,

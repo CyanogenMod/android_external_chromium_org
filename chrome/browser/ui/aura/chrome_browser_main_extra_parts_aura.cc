@@ -4,10 +4,17 @@
 
 #include "chrome/browser/ui/aura/chrome_browser_main_extra_parts_aura.h"
 
+#include "base/command_line.h"
+#include "base/run_loop.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/ui/aura/active_desktop_monitor.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/simple_message_box.h"
+#include "chrome/common/chrome_switches.h"
+#include "grit/chromium_strings.h"
+#include "grit/generated_resources.h"
 #include "ui/aura/env.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
 #include "ui/views/widget/native_widget_aura.h"
@@ -28,6 +35,7 @@
 
 namespace {
 
+#if !defined(OS_CHROMEOS) && defined(USE_ASH)
 // Returns the desktop this process was initially launched in.
 chrome::HostDesktopType GetInitialDesktop() {
 #if defined(OS_WIN) && defined(USE_ASH)
@@ -39,6 +47,7 @@ chrome::HostDesktopType GetInitialDesktop() {
 #endif
   return chrome::HOST_DESKTOP_TYPE_NATIVE;
 }
+#endif  // !defined(OS_CHROMEOS) && defined(USE_ASH)
 
 }  // namespace
 
@@ -68,7 +77,7 @@ void ChromeBrowserMainExtraPartsAura::ToolkitInitialized() {
 #endif
 }
 
-void ChromeBrowserMainExtraPartsAura::PostMainMessageLoopStart() {
+void ChromeBrowserMainExtraPartsAura::PreCreateThreads() {
 #if !defined(OS_CHROMEOS)
 #if defined(USE_ASH)
   if (!chrome::ShouldOpenAshOnStartup())
@@ -80,9 +89,45 @@ void ChromeBrowserMainExtraPartsAura::PostMainMessageLoopStart() {
 #endif
 }
 
+void ChromeBrowserMainExtraPartsAura::PreProfileInit() {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Now that we have some minimal ui initialized, check to see if we're
+  // running as root and bail if we are.
+  DetectRunningAsRoot();
+#endif
+}
+
 void ChromeBrowserMainExtraPartsAura::PostMainMessageLoopRun() {
   active_desktop_monitor_.reset();
 
   // aura::Env instance is deleted in BrowserProcessImpl::StartTearDown
   // after the metrics service is deleted.
 }
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+void ChromeBrowserMainExtraPartsAura::DetectRunningAsRoot() {
+  if (getuid() == 0) {
+    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    if (command_line.HasSwitch(switches::kUserDataDir))
+      return;
+
+    string16 title = l10n_util::GetStringFUTF16(
+        IDS_REFUSE_TO_RUN_AS_ROOT,
+        l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+    string16 message = l10n_util::GetStringFUTF16(
+        IDS_REFUSE_TO_RUN_AS_ROOT_2,
+        l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+
+    chrome::ShowMessageBox(NULL,
+                           title,
+                           message,
+                           chrome::MESSAGE_BOX_TYPE_WARNING);
+
+    // Avoids gpu_process_transport_factory.cc(153)] Check failed:
+    // per_compositor_data_.empty() when quit is chosen.
+    base::RunLoop().RunUntilIdle();
+
+    exit(EXIT_FAILURE);
+  }
+}
+#endif

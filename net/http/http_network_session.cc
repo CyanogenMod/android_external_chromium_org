@@ -82,6 +82,7 @@ HttpNetworkSession::Params::Params()
       enable_quic_https(false),
       quic_clock(NULL),
       quic_random(NULL),
+      quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
 }
@@ -111,7 +112,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                            params.quic_random ? params.quic_random :
                                QuicRandom::GetInstance(),
                            params.quic_clock ? params. quic_clock :
-                               new QuicClock()),
+                               new QuicClock(),
+                           params.quic_max_packet_length),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
@@ -126,7 +128,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                          params.time_func,
                          params.trusted_spdy_proxy),
       http_stream_factory_(new HttpStreamFactoryImpl(this, false)),
-      websocket_handshake_stream_factory_(
+      http_stream_factory_for_websocket_(
           new HttpStreamFactoryImpl(this, true)),
       params_(params) {
   DCHECK(proxy_service_);

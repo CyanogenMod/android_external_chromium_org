@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/thread_task_runner_handle.h"
@@ -266,14 +267,14 @@ void URLFetcherCore::SetAutomaticallyRetryOnNetworkChanges(int max_retries) {
 
 void URLFetcherCore::SaveResponseToFileAtPath(
     const base::FilePath& file_path,
-    scoped_refptr<base::TaskRunner> file_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner) {
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
   SaveResponseWithWriter(scoped_ptr<URLFetcherResponseWriter>(
       new URLFetcherFileWriter(file_task_runner, file_path)));
 }
 
 void URLFetcherCore::SaveResponseToTemporaryFile(
-    scoped_refptr<base::TaskRunner> file_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner) {
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
   SaveResponseWithWriter(scoped_ptr<URLFetcherResponseWriter>(
       new URLFetcherFileWriter(file_task_runner, base::FilePath())));
@@ -512,7 +513,7 @@ void URLFetcherCore::StartURLRequest() {
 
   if (is_chunked_upload_)
     request_->EnableChunkedUpload();
-  request_->set_load_flags(flags);
+  request_->SetLoadFlags(flags);
   request_->SetReferrer(referrer_);
   request_->set_first_party_for_cookies(first_party_for_cookies_.is_empty() ?
       original_url_ : first_party_for_cookies_);
@@ -827,9 +828,11 @@ void URLFetcherCore::DidWriteBuffer(scoped_refptr<DrainableIOBuffer> data,
   if (WriteBuffer(data) < 0)
     return;
 
-  // Finished writing buffer_. Read some more.
+  // Finished writing buffer_. Read some more, unless the request has been
+  // cancelled and deleted.
   DCHECK_EQ(0, data->BytesRemaining());
-  ReadResponse();
+  if (request_.get())
+    ReadResponse();
 }
 
 void URLFetcherCore::ReadResponse() {

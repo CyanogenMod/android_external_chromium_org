@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl', 'linux'],
   'SEARCH': [
     '.',
     'pepper',
@@ -27,6 +27,7 @@
         "kernel_intercept.cc",
         "kernel_object.cc",
         "kernel_proxy.cc",
+        "kernel_wrap_dummy.cc",
         "kernel_wrap_glibc.cc",
         "kernel_wrap_newlib.cc",
         "kernel_wrap_win.cc",
@@ -95,7 +96,9 @@
         "syscalls/listen.c",
         "syscalls/lstat.c",
         "syscalls/mkdir.c",
-        "syscalls/mount.c",
+        # Not called mount.c to avoid object file naming conflict with
+        # mount.cc.
+        "syscalls/syscall_mount.c",
         "syscalls/ntohl.c",
         "syscalls/ntohs.c",
         "syscalls/pipe.c",

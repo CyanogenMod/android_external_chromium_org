@@ -29,22 +29,22 @@
 class ChromeHttpUserAgentSettings;
 class ChromeNetworkDelegate;
 class CookieSettings;
-class DesktopNotificationService;
-class ExtensionInfoMap;
 class HostContentSettingsMap;
 class ManagedModeURLFilter;
 class Profile;
 class ProtocolHandlerRegistry;
 class SigninNamesOnIOThread;
-class TransportSecurityPersister;
 
 namespace chrome_browser_net {
 class LoadTimeStats;
 class ResourcePrefetchPredictorObserver;
 }
 
+namespace extensions {
+class InfoMap;
+}
+
 namespace net {
-class CertVerifier;
 class CookieStore;
 class FraudulentCertificateReporter;
 class FtpTransactionFactory;
@@ -54,6 +54,7 @@ class ServerBoundCertService;
 class ProxyConfigService;
 class ProxyService;
 class SSLConfigService;
+class TransportSecurityPersister;
 class TransportSecurityState;
 class URLRequestJobFactoryImpl;
 }  // namespace net
@@ -113,13 +114,9 @@ class ProfileIOData {
   // These are useful when the Chrome layer is called from the content layer
   // with a content::ResourceContext, and they want access to Chrome data for
   // that profile.
-  ExtensionInfoMap* GetExtensionInfoMap() const;
+  extensions::InfoMap* GetExtensionInfoMap() const;
   CookieSettings* GetCookieSettings() const;
   HostContentSettingsMap* GetHostContentSettingsMap() const;
-
-#if defined(ENABLE_NOTIFICATIONS)
-  DesktopNotificationService* GetNotificationService() const;
-#endif
 
   IntegerPrefMember* session_startup_pref() const {
     return &session_startup_pref_;
@@ -250,13 +247,9 @@ class ProfileIOData {
     scoped_refptr<HostContentSettingsMap> host_content_settings_map;
     scoped_refptr<net::SSLConfigService> ssl_config_service;
     scoped_refptr<net::CookieMonster::Delegate> cookie_monster_delegate;
-    scoped_refptr<ExtensionInfoMap> extension_info_map;
+    scoped_refptr<extensions::InfoMap> extension_info_map;
     scoped_ptr<chrome_browser_net::ResourcePrefetchPredictorObserver>
         resource_prefetch_predictor_observer_;
-
-#if defined(ENABLE_NOTIFICATIONS)
-    DesktopNotificationService* notification_service;
-#endif
 
     // This pointer exists only as a means of conveying a url job factory
     // pointer from the protocol handler registry on the UI thread to the
@@ -272,10 +265,6 @@ class ProfileIOData {
 
 #if defined(ENABLE_MANAGED_USERS)
     scoped_refptr<const ManagedModeURLFilter> managed_mode_url_filter;
-#endif
-
-#if defined(OS_CHROMEOS)
-    scoped_ptr<policy::PolicyCertVerifier> cert_verifier;
 #endif
 
     // The profile this struct was populated from. It's passed as a void* to
@@ -488,7 +477,7 @@ class ProfileIOData {
   mutable scoped_ptr<policy::URLBlacklistManager> url_blacklist_manager_;
 
   // Pointed to by URLRequestContext.
-  mutable scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  mutable scoped_refptr<extensions::InfoMap> extension_info_map_;
   mutable scoped_ptr<net::ServerBoundCertService> server_bound_cert_service_;
   mutable scoped_ptr<ChromeNetworkDelegate> network_delegate_;
   mutable scoped_ptr<net::FraudulentCertificateReporter>
@@ -498,14 +487,10 @@ class ProfileIOData {
   mutable scoped_ptr<net::HttpServerProperties>
       http_server_properties_;
 #if defined(OS_CHROMEOS)
-  mutable scoped_ptr<net::CertVerifier> cert_verifier_;
+  mutable scoped_ptr<policy::PolicyCertVerifier> cert_verifier_;
 #endif
 
-#if defined(ENABLE_NOTIFICATIONS)
-  mutable DesktopNotificationService* notification_service_;
-#endif
-
-  mutable scoped_ptr<TransportSecurityPersister>
+  mutable scoped_ptr<net::TransportSecurityPersister>
       transport_security_persister_;
 
   // These are only valid in between LazyInitialize() and their accessor being

@@ -6,9 +6,6 @@
   'variables': {
     'chromium_code': 1,
   },
-  'includes': [
-    'ui_resources.gypi',
-  ],
   'targets': [
     {
       'target_name': 'ui',
@@ -26,19 +23,15 @@
         '../third_party/zlib/zlib.gyp:zlib',
         '../url/url.gyp:url_lib',
         'base/strings/ui_strings.gyp:ui_strings',
-        'events/events.gyp:events',
+        'events/events.gyp:events_base',
         'gfx/gfx.gyp:gfx',
-        'ui_resources',
+        'resources/ui_resources.gyp:ui_resources',
       ],
       'defines': [
         'UI_IMPLEMENTATION',
       ],
-      # Export these dependencies since text_elider.h includes ICU headers.
       'export_dependent_settings': [
         '../net/net.gyp:net',
-        '../third_party/icu/icu.gyp:icui18n',
-        '../third_party/icu/icu.gyp:icuuc',
-        'events/events.gyp:events',
         'gfx/gfx.gyp:gfx',
       ],
       'sources' : [
@@ -58,12 +51,13 @@
         'base/accessibility/accessible_text_utils.h',
         'base/accessibility/accessible_view_state.cc',
         'base/accessibility/accessible_view_state.h',
-        'base/android/ui_jni_registrar.cc',
-        'base/android/ui_jni_registrar.h',
+        'base/android/ui_base_jni_registrar.cc',
+        'base/android/ui_base_jni_registrar.h',
         'base/android/view_android.cc',
         'base/android/view_android.h',
         'base/android/window_android.cc',
         'base/android/window_android.h',
+        'base/android/window_android_observer.h',
         'base/base_window.cc',
         'base/base_window.h',
         'base/clipboard/clipboard.cc',
@@ -145,6 +139,10 @@
         'base/default_theme_provider.cc',
         'base/default_theme_provider.h',
         'base/default_theme_provider_mac.mm',
+        'base/device_form_factor_android.cc',
+        'base/device_form_factor_desktop.cc',
+        'base/device_form_factor_ios.mm',
+        'base/device_form_factor.h',
         'base/dragdrop/cocoa_dnd_util.h',
         'base/dragdrop/cocoa_dnd_util.mm',
         'base/dragdrop/drag_drop_types.h',
@@ -285,7 +283,6 @@
         'base/win/atl_module.h',
         'base/win/dpi_setup.cc',
         'base/win/dpi_setup.h',
-        'base/win/extra_sdk_defines.h',
         'base/win/foreground_helper.cc',
         'base/win/foreground_helper.h',
         'base/win/hidden_window.cc',
@@ -351,6 +348,11 @@
             ],
           },
         }],
+        ['toolkit_views==1', {
+          'dependencies': [
+            'events/events.gyp:events',
+          ],
+        }],
         ['use_aura==1', {
           'sources/': [
             ['exclude', 'base/work_area_watcher_observer.h'],
@@ -361,7 +363,10 @@
             ['exclude', 'base/x/root_window_property_watcher_x.h'],
             ['exclude', 'base/x/work_area_watcher_x.cc'],
             ['exclude', 'base/x/work_area_watcher_x.h'],
-           ],
+          ],
+          'dependencies': [
+            'events/events.gyp:events',
+          ],
         }, {  # use_aura!=1
           'sources!': [
             'base/cursor/cursor.cc',
@@ -394,6 +399,8 @@
             '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:glib',
           ],
+        }],
+        ['desktop_linux == 1 or chromeos == 1', {
           'conditions': [
             ['toolkit_views==0 and use_aura==0', {
               # Note: because of gyp predence rules this has to be defined as
@@ -411,11 +418,11 @@
                 ['include', '^base/dragdrop/os_exchange_data.cc'],
               ],
             }],
-            ['use_pango==1', {
-              'dependencies': [
-                '../build/linux/system.gyp:pangocairo',
-              ],
-            }],
+          ],
+        }],
+        ['use_pango==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:pangocairo',
           ],
         }],
         ['chromeos==1 or (use_aura==1 and OS=="linux" and use_x11==0)', {
@@ -551,7 +558,7 @@
             'base/ui_base_types.cc',
           ],
           'dependencies': [
-            'ui_jni_headers',
+            'ui_base_jni_headers',
           ],
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)/ui',
@@ -564,7 +571,12 @@
         }],
         ['OS=="android" and android_webview_build==0', {
           'dependencies': [
-            'ui_java',
+            'android/ui_android.gyp:ui_java',
+          ],
+        }],
+        ['OS=="android" or OS=="ios"', {
+          'sources!': [
+            'base/device_form_factor_desktop.cc'
           ],
         }],
         ['OS=="linux"', {
@@ -589,24 +601,12 @@
         ]
       }
     },
-    {
-      'target_name': 'keycode_converter',
-      'type': 'static_library',
-      'dependencies': [
-        '../base/base.gyp:base',
-      ],
-      'sources': [
-        'base/keycodes/keycode_converter.cc',
-        'base/keycodes/keycode_converter.h',
-        'base/keycodes/keycode_converter_data.h',
-      ],
-    }
   ],
   'conditions': [
     ['OS=="android"' , {
        'targets': [
          {
-           'target_name': 'ui_jni_headers',
+           'target_name': 'ui_base_jni_headers',
            'type': 'none',
            'direct_dependent_settings': {
              'include_dirs': [
@@ -614,44 +614,17 @@
              ],
            },
            'sources': [
-             'android/java/src/org/chromium/ui/Clipboard.java',
-             'android/java/src/org/chromium/ui/LocalizationUtils.java',
-             'android/java/src/org/chromium/ui/SelectFileDialog.java',
-             'android/java/src/org/chromium/ui/ViewAndroid.java',
-             'android/java/src/org/chromium/ui/WindowAndroid.java',
+             'android/java/src/org/chromium/ui/base/Clipboard.java',
+             'android/java/src/org/chromium/ui/base/LocalizationUtils.java',
+             'android/java/src/org/chromium/ui/base/SelectFileDialog.java',
+             'android/java/src/org/chromium/ui/base/ViewAndroid.java',
+             'android/java/src/org/chromium/ui/base/WindowAndroid.java',
            ],
            'variables': {
              'jni_gen_package': 'ui',
+             'jni_generator_ptr_type': 'long',
            },
            'includes': [ '../build/jni_generator.gypi' ],
-         },
-         {
-           'target_name': 'ui_java',
-           'type': 'none',
-           'variables': {
-             'java_in_dir': '../ui/android/java',
-             'has_java_resources': 1,
-             'R_package': 'org.chromium.ui',
-             'R_package_relpath': 'org/chromium/ui',
-             'java_strings_grd': 'android_ui_strings.grd',
-           },
-           'dependencies': [
-             '../base/base.gyp:base_java',
-             'window_open_disposition_java',
-           ],
-           'includes': [ '../build/java.gypi' ],
-         },
-         {
-           'target_name': 'window_open_disposition_java',
-           'type': 'none',
-           'sources': [
-             'android/java/WindowOpenDisposition.template',
-           ],
-           'variables': {
-             'package_name': 'org/chromium/ui',
-             'template_deps': ['base/window_open_disposition_list.h'],
-           },
-           'includes': [ '../build/android/java_cpp_template.gypi' ],
          },
        ],
     }],

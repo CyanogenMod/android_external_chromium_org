@@ -17,7 +17,6 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -28,9 +27,10 @@
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "url/gurl.h"
 
@@ -283,6 +283,7 @@ void IdentityGetAuthTokenFunction::OnMintTokenFailure(
 
   switch (error.state()) {
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::ACCOUNT_DELETED:
     case GoogleServiceAuthError::ACCOUNT_DISABLED:
       extensions::IdentityAPI::GetFactoryInstance()

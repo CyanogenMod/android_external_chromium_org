@@ -120,6 +120,10 @@ void BrowserFrame::InitBrowserFrame() {
         command_line.GetSwitchValueNative(switches::kUserDataDir);
     params.wm_class_name += " (" + user_data_dir + ")";
   }
+  const char kX11WindowRoleBrowser[] = "browser";
+  const char kX11WindowRolePopup[] = "pop-up";
+  params.wm_role_name = browser_view_->browser()->is_type_tabbed() ?
+      std::string(kX11WindowRoleBrowser) : std::string(kX11WindowRolePopup);
 #endif  // defined(OS_LINUX)
 
   Init(params);
@@ -143,9 +147,8 @@ gfx::Rect BrowserFrame::GetBoundsForTabStrip(views::View* tabstrip) const {
   return browser_frame_view_->GetBoundsForTabStrip(tabstrip);
 }
 
-BrowserNonClientFrameView::TabStripInsets BrowserFrame::GetTabStripInsets(
-    bool force_restored) const {
-  return browser_frame_view_->GetTabStripInsets(force_restored);
+int BrowserFrame::GetTopInset() const {
+  return browser_frame_view_->GetTopInset();
 }
 
 int BrowserFrame::GetThemeBackgroundXInset() const {
@@ -158,15 +161,6 @@ void BrowserFrame::UpdateThrobber(bool running) {
 
 views::View* BrowserFrame::GetFrameView() const {
   return browser_frame_view_;
-}
-
-void BrowserFrame::TabStripDisplayModeChanged() {
-  if (GetRootView()->has_children()) {
-    // Make sure the child of the root view gets Layout again.
-    GetRootView()->child_at(0)->InvalidateLayout();
-  }
-  GetRootView()->Layout();
-  native_browser_frame_->TabStripDisplayModeChanged();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -116,8 +117,8 @@ ui::TextInputType DetermineTextInputType() {
 }
 
 bool IsOmniboxAutoCompletionForImeEnabled() {
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableOmniboxAutoCompletionForIme);
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableOmniboxAutoCompletionForIme);
 }
 
 }  // namespace
@@ -198,7 +199,16 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
   }
   if (select_all_on_gesture_tap_ && event->type() == ui::ET_GESTURE_TAP)
     SelectAll(false);
-  select_all_on_gesture_tap_ = false;
+
+  if (event->type() == ui::ET_GESTURE_TAP ||
+      event->type() == ui::ET_GESTURE_TAP_CANCEL ||
+      event->type() == ui::ET_GESTURE_TWO_FINGER_TAP ||
+      event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
+      event->type() == ui::ET_GESTURE_PINCH_BEGIN ||
+      event->type() == ui::ET_GESTURE_LONG_PRESS ||
+      event->type() == ui::ET_GESTURE_LONG_TAP) {
+    select_all_on_gesture_tap_ = false;
+  }
 }
 
 void OmniboxViewViews::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -522,9 +532,6 @@ void OmniboxViewViews::UpdatePopup() {
   if (!model()->has_focus())
     return;
 
-  // Hide the inline autocompletion for IME users.
-  location_bar_view_->SetImeInlineAutocompletion(string16());
-
   // Prevent inline autocomplete when the caret isn't at the end of the text,
   // and during IME composition editing unless
   // |kEnableOmniboxAutoCompletionForIme| is enabled.
@@ -575,6 +582,11 @@ bool OmniboxViewViews::OnInlineAutocompleteTextMaybeChanged(
   }
   TextChanged();
   return true;
+}
+
+void OmniboxViewViews::OnInlineAutocompleteTextCleared() {
+  // Hide the inline autocompletion for IME users.
+  location_bar_view_->SetImeInlineAutocompletion(string16());
 }
 
 void OmniboxViewViews::OnRevertTemporaryText() {
@@ -672,11 +684,6 @@ int OmniboxViewViews::GetMaxEditWidth(int entry_width) const {
   return entry_width;
 }
 
-views::View* OmniboxViewViews::AddToView(views::View* parent) {
-  parent->AddChildView(this);
-  return this;
-}
-
 int OmniboxViewViews::OnPerformDrop(const ui::DropTargetEvent& event) {
   NOTIMPLEMENTED();
   return ui::DragDropTypes::DRAG_NONE;
@@ -739,6 +746,9 @@ void OmniboxViewViews::OnAfterCutOrCopy() {
   bool write_url;
   model()->AdjustTextForCopy(GetSelectedRange().GetMin(), IsSelectAll(),
                              &selected_text, &url, &write_url);
+  if (IsSelectAll())
+    UMA_HISTOGRAM_COUNTS(OmniboxEditModel::kCutOrCopyAllTextHistogram, 1);
+
   if (write_url) {
     BookmarkNodeData data;
     data.ReadFromTuple(url, selected_text);
@@ -960,7 +970,7 @@ void OmniboxViewViews::OnPaste() {
   const string16 text(GetClipboardText());
   if (!text.empty()) {
     // Record this paste, so we can do different behavior.
-    model()->on_paste();
+    model()->OnPaste();
     // Force a Paste operation to trigger the text_changed code in
     // OnAfterPossibleChange(), even if identical contents are pasted.
     text_before_change_.clear();

@@ -43,8 +43,6 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
   // If a derived class overrides this method, it should call parent's
   // implementation.
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
-  virtual void OnInputLocaleChanged() OVERRIDE;
 
   virtual TextInputType GetTextInputType() const OVERRIDE;
   virtual TextInputMode GetTextInputMode() const OVERRIDE;
@@ -78,6 +76,7 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
 
   // Convenience method to call delegate_->DispatchFabricatedKeyEventPostIME().
   // Returns true if the event was processed
+  // TODO(komatsu): Unify this function to DispatchKeyEventPostIME.
   bool DispatchFabricatedKeyEventPostIME(EventType type,
                                          KeyboardCode key_code,
                                          int flags) const;

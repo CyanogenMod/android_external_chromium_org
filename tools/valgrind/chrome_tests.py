@@ -121,6 +121,8 @@ class ChromeTests:
       cmd.append("--gtest_print_time")
     if self._options.gtest_repeat:
       cmd.append("--gtest_repeat=%s" % self._options.gtest_repeat)
+    if self._options.gtest_shuffle:
+      cmd.append("--gtest_shuffle")
     return cmd
 
   def Run(self):
@@ -280,6 +282,9 @@ class ChromeTests:
 
   def TestDevice(self):
     return self.SimpleTest("device", "device_unittests")
+
+  def TestEvents(self):
+    return self.SimpleTest("events", "events_unittests")
 
   def TestFFmpeg(self):
     return self.SimpleTest("chrome", "ffmpeg_unittests")
@@ -533,6 +538,7 @@ class ChromeTests:
     "courgette": TestCourgette,  "courgette_unittests": TestCourgette,
     "crypto": TestCrypto,        "crypto_unittests": TestCrypto,
     "device": TestDevice,        "device_unittests": TestDevice,
+    "events": TestEvents,        "events_unittests": TestEvents,
     "ffmpeg": TestFFmpeg,        "ffmpeg_unittests": TestFFmpeg,
     "ffmpeg_regression_tests": TestFFmpegRegressions,
     "gpu": TestGPU,              "gpu_unittests": TestGPU,
@@ -580,6 +586,8 @@ def _main():
   parser.add_option("--gtest_filter",
                     help="additional arguments to --gtest_filter")
   parser.add_option("--gtest_repeat", help="argument for --gtest_repeat")
+  parser.add_option("--gtest_shuffle", action="store_true", default=False,
+                    help="Randomize tests' orders on every iteration.")
   parser.add_option("-v", "--verbose", action="store_true", default=False,
                     help="verbose output - enable debug log messages")
   parser.add_option("--tool", dest="valgrind_tool", default="memcheck",

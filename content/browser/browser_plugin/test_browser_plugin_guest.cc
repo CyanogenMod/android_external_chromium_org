@@ -16,7 +16,7 @@ class BrowserPluginGuest;
 TestBrowserPluginGuest::TestBrowserPluginGuest(
     int instance_id,
     WebContentsImpl* web_contents)
-    : BrowserPluginGuest(instance_id, web_contents, NULL, false),
+    : BrowserPluginGuest(instance_id, false, web_contents, NULL),
       update_rect_count_(0),
       damage_buffer_call_count_(0),
       exit_observed_(false),
@@ -83,7 +83,7 @@ void TestBrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
   exit_observed_ = true;
   if (status != base::TERMINATION_STATUS_NORMAL_TERMINATION &&
       status != base::TERMINATION_STATUS_STILL_RUNNING)
-    LOG(INFO) << "Guest crashed status: " << status;
+    VLOG(0) << "Guest crashed status: " << status;
   if (crash_message_loop_runner_.get())
     crash_message_loop_runner_->Quit();
   BrowserPluginGuest::RenderProcessGone(status);
@@ -92,7 +92,7 @@ void TestBrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
 void TestBrowserPluginGuest::OnHandleInputEvent(
     int instance_id,
     const gfx::Rect& guest_window_rect,
-    const WebKit::WebInputEvent* event) {
+    const blink::WebInputEvent* event) {
   BrowserPluginGuest::OnHandleInputEvent(instance_id,
                                          guest_window_rect,
                                          event);

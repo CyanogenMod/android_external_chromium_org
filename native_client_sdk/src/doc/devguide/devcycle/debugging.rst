@@ -10,7 +10,7 @@ and measure your application's performance.
 .. contents:: Table Of Contents
   :local:
   :backlinks: none
-  :depth: 2
+  :depth: 3
 
 Diagnostic information
 ======================
@@ -189,7 +189,7 @@ the calls to stderr.
 Debugging with Visual Studio
 ----------------------------
 
-If you develop on a Windows platform you can use the Native :doc:`Client Visual
+If you develop on a Windows platform you can use the :doc:`Native Client Visual
 Studio add-in <vs-addin>` to write and debug your code. The add-in defines new
 project platforms that let you run your module in two different modes: As a
 Pepper plugin and as a Native Client module. When running as a Pepper plugin
@@ -205,30 +205,78 @@ Debugging with nacl-gdb
 The Native Client SDK includes a command-line debugger that you can use to
 debug Native Client modules. The debugger is based on the GNU debugger `gdb
 <http://www.gnu.org/software/gdb/>`_, and is located at
-``toolchain/<platform>_<architecture>_<library>/bin/<prefix>-nacl-gdb``, where:
+``toolchain/<platform>_x86_newlib/bin/x86_64-nacl-gdb`` (where *<platform>*
+is the platform of your development machine: ``win``, ``mac``, or
+``linux``).
 
-* *<platform>* is the platform of your development machine (win, mac, or linux)
-* *<architecture>* is your target architecture (x86 or arm)
-* *<library>* is the C library you are compiling with (newlib or glibc)
-* *<prefix>* depends on the module you are debugging (i686- for x86 32-bit
-  modules, x86_64- for x86 64-bit modules, arm- for ARM modules)
+Note that this same copy of GDB can be used to debug any NaCl program,
+whether built using newlib or glibc for x86-32, x86-64 or ARM.  In the SDK,
+``i686-nacl-gdb`` is an alias for ``x86_64-nacl-gdb``, and the ``newlib``
+and ``glibc`` toolchains both contain the same version of GDB.
 
-For example, to debug an x86 64-bit module built with glibc on Windows, you
-would use ``toolchain/win_x86_glibc/bin/x86_64-nacl-gdb``.
+Debugging PNaCl pexes
+~~~~~~~~~~~~~~~~~~~~~
+
+If you want to use GDB to debug a program that is compiled with the PNaCl
+toolchain, you must convert the ``pexe`` file to a ``nexe``.  (You can skip
+this step if you are using the GCC toolchain.)
+
+* Firstly, make sure you are passing the ``-g`` :ref:`compile option
+  <compile_flags>` to ``pnacl-clang`` to enable generating debugging info.
+  You might also want to omit ``-O2`` from the compile-time and link-time
+  options, otherwise GDB not might be able to print variables' values when
+  debugging (this is more of a problem with the PNaCl/LLVM toolchain than
+  with GCC).
+
+* Secondly, use ``pnacl-translate`` to convert your ``pexe`` to one or more
+  ``nexe`` files.  For example:
+
+  .. naclcode::
+    :prettyprint: 0
+
+    <NACL_SDK_ROOT>/toolchain/win_pnacl/bin/pnacl-translate ^
+      --allow-llvm-bitcode-input hello_world.pexe -arch x86-32 -o hello_world_x86_32.nexe
+    <NACL_SDK_ROOT>/toolchain/win_pnacl/bin/pnacl-translate ^
+      --allow-llvm-bitcode-input hello_world.pexe -arch x86-64 -o hello_world_x86_64.nexe
+
+  For this, use the non-finalized ``pexe`` file produced by
+  ``pnacl-clang``, not the ``pexe`` file produced by ``pnacl-finalize``.
+  The latter ``pexe`` has debugging info stripped out.  The option
+  ``--allow-llvm-bitcode-input`` tells ``pnacl-translate`` to accept a
+  non-finalized ``pexe``.
+
+* Replace the ``nmf`` :ref:`manifest file <manifest_file>` that points to
+  your ``pexe`` file with one that points to the ``nexe`` files.  For the
+  example ``nexe`` filenames above, the new ``nmf`` file would contain:
+
+  .. naclcode::
+    :prettyprint: 0
+
+    {
+      "program": {
+        "x86-32": {"url": "hello_world_x86_32.nexe"},
+        "x86-64": {"url": "hello_world_x86_64.nexe"},
+      }
+    }
+
+* Change the ``<embed>`` HTML element to use
+  ``type="application/x-nacl"`` rather than
+  ``type="application/x-pnacl"``.
+
+* Copy the ``nexe`` and ``nmf`` files to the location that your local web
+  server serves files from.
 
 .. Note::
   :class: note
 
-  **Prerequisites for using nacl-gdb**:
+  **Note:** If you know whether Chrome is using the x86-32 or x86-64
+  version of the NaCl sandbox on your system, you can translate the
+  ``pexe`` once to a single x86-32 or x86-64 ``nexe``.  Otherwise, you
+  might find it easier to translate the ``pexe`` to both ``nexe``
+  formats as described above.
 
-  * You must use the pepper_23 bundle (or greater) in the SDK.
-  * Your version of Chrome must be greater than or equal to the Pepper bundle
-    that you are using. For example, if you are using the pepper_23 bundle, you
-    must use Chrome 23 or greater. Type about:chrome in the Chrome address bar
-    to find out what version of Chrome you have. You may want to install and
-    use Chrome Canary on Windows and Mac OS; it's the newest version of Chrome
-    that's available, and it runs side-by-side with your current version of
-    Chrome.
+Running nacl-gdb
+~~~~~~~~~~~~~~~~
 
 Before you start using nacl-gdb, make sure you can :doc:`build <building>` your
 module and :doc:`run <running>` your application normally. This will verify
@@ -270,7 +318,7 @@ Follow the instructions below to debug your module with nacl-gdb:
      Turns off the Chrome sandbox (not the Native Client sandbox). This enables
      the stdout and stderr streams, and lets the debugger connect.
 
-   **Optional flagsa:**
+   **Optional flags:**
 
    ``--disable-hang-monitor``
      Prevents Chrome from displaying a warning when a tab is unresponsive.
@@ -419,7 +467,7 @@ Debugging with other tools
 
 If you cannot use the :ref:`Visual Studio add-in <visual_studio>`, or you want
 to use a debugger other than nacl-gdb, you must manually build your module as a
-Pepper plugin (sometimes referred to as a `"trusted
+Pepper plugin (sometimes referred to as a "`trusted
 <http://www.chromium.org/nativeclient/getting-started/getting-started-background-and-basics#TOC-Trusted-vs-Untrusted>`_"
 or "in-process" plugin).  Pepper plugins (.DLL files on Windows; .so files on
 Linux; .bundle files on Mac) are loaded directly in either the Chrome renderer

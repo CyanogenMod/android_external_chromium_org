@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_registry_simple.h"
-#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -58,12 +58,13 @@ class AwAutofillManagerDelegate
 
   // AutofillManagerDelegate implementation.
   virtual autofill::PersonalDataManager* GetPersonalDataManager() OVERRIDE;
+  virtual scoped_refptr<autofill::AutofillWebDataService>
+      GetDatabase() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual void HideRequestAutocompleteDialog() OVERRIDE;
   virtual void ShowAutofillSettings() OVERRIDE;
   virtual void ConfirmSaveCreditCard(
       const autofill::AutofillMetrics& metric_logger,
-      const autofill::CreditCard& credit_card,
       const base::Closure& save_card_callback) OVERRIDE;
   virtual void ShowRequestAutocompleteDialog(
       const autofill::FormData& form,

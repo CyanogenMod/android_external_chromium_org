@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/compositor.h"
@@ -34,12 +34,6 @@ const int kRightColumnWidth = 210;
 const int kIconSize = 69;
 
 class ExtensionUninstallDialogDelegateView;
-
-// TODO(estade): remove this when UseNewStyle() is the default.
-int HorizontalMargin() {
-  return views::DialogDelegate::UseNewStyle() ? views::kButtonHEdgeMarginNew :
-                                                views::kPanelHorizMargin;
-}
 
 // Returns parent window for extension uninstall dialog.
 gfx::NativeWindow GetParent(Browser* browser) {
@@ -205,7 +199,7 @@ string16 ExtensionUninstallDialogDelegateView::GetWindowTitle() const {
 gfx::Size ExtensionUninstallDialogDelegateView::GetPreferredSize() {
   int width = kRightColumnWidth;
   width += kIconSize;
-  width += HorizontalMargin() * 2;
+  width += views::kButtonHEdgeMarginNew * 2;
   width += views::kRelatedControlHorizontalSpacing;
 
   int height = views::kPanelVertMargin * 2;
@@ -216,7 +210,7 @@ gfx::Size ExtensionUninstallDialogDelegateView::GetPreferredSize() {
 }
 
 void ExtensionUninstallDialogDelegateView::Layout() {
-  int x = HorizontalMargin();
+  int x = views::kButtonHEdgeMarginNew;
   int y = views::kPanelVertMargin;
 
   heading_->SizeToFit(kRightColumnWidth);

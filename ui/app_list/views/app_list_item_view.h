@@ -47,16 +47,20 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
 
   void CancelContextMenu();
 
+  gfx::ImageSkia GetDragImage();
+  void OnDragEnded();
+
+  void SetAsAttemptedFolderTarget(bool is_target_folder);
+
   AppListItemModel* model() const { return model_; }
 
   const views::Label* title() const { return title_; }
-
-  gfx::ImageSkia GetDragImage();
 
  private:
   enum UIState {
     UI_STATE_NORMAL,    // Normal UI (icon + label)
     UI_STATE_DRAGGING,  // Dragging UI (scaled icon only)
+    UI_STATE_DROPPING_IN_FOLDER,  // Folder dropping preview UI
   };
 
   // Get icon from model and schedule background processing.

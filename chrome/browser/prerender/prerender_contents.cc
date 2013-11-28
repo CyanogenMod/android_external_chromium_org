@@ -263,7 +263,9 @@ void PrerenderContents::StartPrerendering(
 
   prerendering_has_started_ = true;
 
-  prerender_contents_.reset(CreateWebContents(session_storage_namespace));
+  alias_session_storage_namespace = session_storage_namespace->CreateAlias();
+  prerender_contents_.reset(
+      CreateWebContents(alias_session_storage_namespace.get()));
   BrowserTabContents::AttachTabHelpers(prerender_contents_.get());
 #if defined(OS_ANDROID)
   // Delay icon fetching until the contents are getting swapped in
@@ -281,10 +283,9 @@ void PrerenderContents::StartPrerendering(
   child_id_ = GetRenderViewHost()->GetProcess()->GetID();
   route_id_ = GetRenderViewHost()->GetRoutingID();
 
-  // For Local Predictor based prerendering, log transactions to see if we could
-  // merge session storage namespaces in the event of a mismatch.
-  if (origin_ == ORIGIN_LOCAL_PREDICTOR)
-    session_storage_namespace->AddTransactionLogProcessId(child_id_);
+  // Log transactions to see if we could merge session storage namespaces in
+  // the event of a mismatch.
+  alias_session_storage_namespace->AddTransactionLogProcessId(child_id_);
 
   // Register this with the ResourceDispatcherHost as a prerender
   // RenderViewHost. This must be done before the Navigate message to catch all
@@ -316,8 +317,9 @@ void PrerenderContents::StartPrerendering(
   content::NavigationController::LoadURLParams load_url_params(
       prerender_url_);
   load_url_params.referrer = referrer_;
-  load_url_params.transition_type = (origin_ == ORIGIN_OMNIBOX ?
-      content::PAGE_TRANSITION_TYPED : content::PAGE_TRANSITION_LINK);
+  load_url_params.transition_type =
+      ((origin_ == ORIGIN_OMNIBOX || origin_ == ORIGIN_INSTANT) ?
+          content::PAGE_TRANSITION_TYPED : content::PAGE_TRANSITION_LINK);
   load_url_params.override_user_agent =
       prerender_manager_->config().is_overriding_user_agent ?
       content::NavigationController::UA_OVERRIDE_TRUE :
@@ -585,6 +587,19 @@ void PrerenderContents::DidFinishLoad(int64 frame_id,
 void PrerenderContents::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
     const content::FrameNavigateParams& params) {
+  // If the prerender made a second navigation entry, abort the prerender. This
+  // avoids having to correctly implement a complex history merging case (this
+  // interacts with location.replace) and correctly synchronize with the
+  // renderer. The final status may be monitored to see we need to revisit this
+  // decision. This does not affect client redirects as those do not push new
+  // history entries. (Calls to location.replace, navigations before onload, and
+  // <meta http-equiv=refresh> with timeouts under 1 second do not create
+  // entries in Blink.)
+  if (prerender_contents_->GetController().GetEntryCount() > 1) {
+    Destroy(FINAL_STATUS_NEW_NAVIGATION_ENTRY);
+    return;
+  }
+
   // Add each redirect as an alias. |params.url| is included in
   // |params.redirects|.
   //
@@ -682,10 +697,8 @@ void PrerenderContents::DestroyWhenUsingTooManyResources() {
 WebContents* PrerenderContents::ReleasePrerenderContents() {
   prerender_contents_->SetDelegate(NULL);
   content::WebContentsObserver::Observe(NULL);
-  SessionStorageNamespace* session_storage_namespace =
-      GetSessionStorageNamespace();
-  if (session_storage_namespace && origin_ == ORIGIN_LOCAL_PREDICTOR)
-    session_storage_namespace->RemoveTransactionLogProcessId(child_id_);
+  if (alias_session_storage_namespace)
+    alias_session_storage_namespace->RemoveTransactionLogProcessId(child_id_);
   return prerender_contents_.release();
 }
 

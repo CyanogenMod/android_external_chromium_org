@@ -66,6 +66,9 @@ FileManager.prototype = {
   },
   get backgroundPage() {
     return this.backgroundPage_;
+  },
+  get volumeManager() {
+    return this.volumeManager_;
   }
 };
 
@@ -114,6 +117,15 @@ DialogType.isModal = function(type) {
 DialogType.isOpenDialog = function(type) {
   return type == DialogType.SELECT_OPEN_FILE ||
          type == DialogType.SELECT_OPEN_MULTI_FILE;
+};
+
+/**
+ * @param {string} type Dialog type.
+ * @return {boolean} Whether the type is folder selection dialog.
+ */
+DialogType.isFolderDialog = function(type) {
+  return type == DialogType.SELECT_FOLDER ||
+         type == DialogType.SELECT_UPLOAD_FOLDER;
 };
 
 /**
@@ -209,14 +221,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }.bind(this));
 
     // TODO(yoshiki): Remove the flag when the feature is launched.
-    this.enableExperimentalWebstoreIntegration_ = false;
-    group.add(function(done) {
-      chrome.commandLinePrivate.hasSwitch(
-          'file-manager-enable-webstore-integration', function(flag) {
-        this.enableExperimentalWebstoreIntegration_ = flag;
-        done();
-      }.bind(this));
-    }.bind(this));
+    this.enableExperimentalWebstoreIntegration_ = true;
 
     group.run(callback);
   };
@@ -624,9 +629,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.initVolumeManager_ = function(callback) {
     // Auto resolving to local path does not work for folders (e.g., dialog for
     // loading unpacked extensions).
-    var noLocalPathResolution =
-      this.params_.type == DialogType.SELECT_FOLDER ||
-      this.params_.type == DialogType.SELECT_UPLOAD_FOLDER;
+    var noLocalPathResolution = DialogType.isFolderDialog(this.params_.type);
 
     // If this condition is false, VolumeManagerWrapper hides all drive
     // related event and data, even if Drive is enabled on preference.
@@ -742,8 +745,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         DialogType.isOpenDialog(this.dialogType) ?
             PreviewPanel.VisibilityType.ALWAYS_VISIBLE :
             PreviewPanel.VisibilityType.AUTO,
-        this.getCurrentDirectory(),
-        this.metadataCache_);
+        this.metadataCache_,
+        this.volumeManager_);
     this.previewPanel_.addEventListener(
         PreviewPanel.Event.VISIBILITY_CHANGE,
         this.onPreviewPanelVisibilityChange_.bind(this));
@@ -754,29 +757,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     // Initialize progress center panel.
     this.progressCenterPanel_ = new ProgressCenterPanel(
-        dom.querySelector('#progress-center'),
-        this.backgroundPage_.background.progressCenter.requestCancel.bind(
-            this.backgroundPage_.background.progressCenter));
-    var initialItems =
-        this.backgroundPage_.background.progressCenter.applicationItems;
-    for (var i = 0; i < initialItems.length; i++) {
-      this.progressCenterPanel_.updateItem(
-          initialItems[i],
-          this.backgroundPage_.background.progressCenter.getSummarizedItem());
-    }
-    this.backgroundPage_.background.progressCenter.addEventListener(
-        ProgressCenterEvent.ITEM_UPDATED,
-        function(event) {
-          this.progressCenterPanel_.updateItem(
-              event.item,
-              this.backgroundPage_.background.progressCenter.
-                  getSummarizedItem());
-        }.bind(this));
-    this.backgroundPage_.background.progressCenter.addEventListener(
-        ProgressCenterEvent.RESET,
-        function(event) {
-          this.progressCenterPanel_.reset();
-        }.bind(this));
+        dom.querySelector('#progress-center'));
+    this.backgroundPage_.background.progressCenter.addPanel(
+        this.progressCenterPanel_);
 
     this.document_.addEventListener('keydown', this.onKeyDown_.bind(this));
 
@@ -907,7 +890,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onBreadcrumbClick_ = function(event) {
-    this.directoryModel_.changeDirectory(event.path);
+    // TODO(hirono): Use directoryModel#changeDirectoryEntry after implementing
+    // it.
+    if (event.entry === RootType.DRIVE_SHARED_WITH_ME)
+      this.directoryModel_.changeDirectory(RootDirectory.DRIVE_SHARED_WITH_ME);
+    else
+      this.directoryModel_.changeDirectory(event.entry.fullPath);
   };
 
   /**
@@ -927,14 +915,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.dialogType == DialogType.SELECT_UPLOAD_FOLDER ||
         this.dialogType == DialogType.SELECT_SAVEAS_FILE;
 
-    var showSpecialSearchRoots =
-        this.dialogType == DialogType.SELECT_OPEN_FILE ||
-        this.dialogType == DialogType.SELECT_OPEN_MULTI_FILE ||
-        this.dialogType == DialogType.FULL_PAGE;
-
     this.fileFilter_ = new FileFilter(
         this.metadataCache_,
-        false  /* Don't show dot files by default. */);
+        true /* Show dot files by default. */);
 
     this.fileWatcher_ = new FileWatcher(this.metadataCache_);
     this.fileWatcher_.addEventListener(
@@ -946,8 +929,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.fileFilter_,
         this.fileWatcher_,
         this.metadataCache_,
-        this.volumeManager_,
-        showSpecialSearchRoots);
+        this.volumeManager_);
 
     this.folderShortcutsModel_ = new FolderShortcutsDataModel();
 
@@ -1318,14 +1300,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }
 
     var options = this.fileTypeSelector_.querySelectorAll('option');
-    if (options.length < 2) {
-      // There is in fact no choice, hide the selector.
-      this.fileTypeSelector_.hidden = true;
-      return;
-    }
+    if (options.length >= 2) {
+      // There is in fact no choice, show the selector.
+      this.fileTypeSelector_.hidden = false;
 
-    this.fileTypeSelector_.addEventListener('change',
-        this.updateFileTypeFilter_.bind(this));
+      this.fileTypeSelector_.addEventListener('change',
+          this.updateFileTypeFilter_.bind(this));
+    }
   };
 
   /**
@@ -1826,6 +1807,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.dialogDom_.insertBefore(
         this.filePopup_, this.dialogDom_.querySelector('#iframe-drag-area'));
     this.filePopup_.focus();
+    this.document_.body.setAttribute('overlay-visible', '');
     this.document_.querySelector('#iframe-drag-area').hidden = false;
   };
 
@@ -2238,17 +2220,17 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     if (this.commandHandler)
       this.commandHandler.updateAvailability();
-    this.updateUnformattedDriveStatus_();
+    this.updateUnformattedVolumeStatus_();
     this.updateTitle_();
     this.updateGearMenu_();
-    this.previewPanel_.currentPath_ = this.getCurrentDirectory();
+    var currentEntry = this.getCurrentDirectoryEntry();
+    this.previewPanel_.currentEntry = util.isFakeDirectoryEntry(currentEntry) ?
+        null : currentEntry;
   };
 
-  // TODO(haruki): Rename this method. "Drive" here does not refer
-  // "Google Drive".
-  FileManager.prototype.updateUnformattedDriveStatus_ = function() {
+  FileManager.prototype.updateUnformattedVolumeStatus_ = function() {
     var volumeInfo = this.volumeManager_.getVolumeInfo(
-        PathUtil.getRootPath(this.directoryModel_.getCurrentRootPath()));
+        this.directoryModel_.getCurrentDirPath());
 
     if (volumeInfo && volumeInfo.error) {
       this.dialogDom_.setAttribute('unformatted', '');
@@ -2299,6 +2281,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.filePopup_.contentWindow.unload(true /* exiting */);
     if (this.butterBar_)
       this.butterBar_.dispose();
+    if (this.progressCenterPanel_)
+      this.backgroundPage_.background.progressCenter.removePanel(
+          this.progressCenterPanel_);
     if (this.fileOperationManager_) {
       if (this.onCopyProgressBound_) {
         this.fileOperationManager_.removeEventListener(
@@ -2794,8 +2779,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         var selection = this.getSelection();
         if (selection.totalCount == 1 &&
             selection.entries[0].isDirectory &&
-            this.dialogType != DialogType.SELECT_FOLDER &&
-            this.dialogType != DialogType.SELECT_UPLOAD_FOLDER) {
+            !DialogType.isFolderDialog(this.dialogType)) {
           event.preventDefault();
           this.onDirectoryAction_(selection.entries[0]);
         } else if (this.dispatchSelectionAction_()) {
@@ -3122,8 +3106,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var files = [];
     var selectedIndexes = this.currentList_.selectionModel.selectedIndexes;
 
-    if ((this.dialogType == DialogType.SELECT_FOLDER ||
-         this.dialogType == DialogType.SELECT_UPLOAD_FOLDER) &&
+    if (DialogType.isFolderDialog(this.dialogType) &&
         selectedIndexes.length == 0) {
       var url = this.getCurrentDirectoryURL();
       var singleSelection = {
@@ -3168,8 +3151,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     var selectedEntry = dm.item(selectedIndexes[0]);
 
-    if (this.dialogType == DialogType.SELECT_FOLDER ||
-        this.dialogType == DialogType.SELECT_UPLOAD_FOLDER) {
+    if (DialogType.isFolderDialog(this.dialogType)) {
       if (!selectedEntry.isDirectory)
         throw new Error('Selected entry is not a folder!');
     } else if (this.dialogType == DialogType.SELECT_OPEN_FILE) {
@@ -3464,48 +3446,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             self.directoryModel_.removeEventListener('scan-completed',
                                                      onDirectoryChanged);
           });
-      });
-    });
-  };
-
-  /**
-   * Opens the default app change dialog.
-   */
-  FileManager.prototype.showChangeDefaultAppPicker = function() {
-    var onActionsReady = function(actions, rememberedActionId) {
-      var items = [];
-      var defaultIndex = -1;
-      for (var i = 0; i < actions.length; i++) {
-        if (actions[i].hidden)
-          continue;
-        var title = actions[i].title;
-        if (actions[i].id == rememberedActionId) {
-          title += ' ' + loadTimeData.getString('DEFAULT_ACTION_LABEL');
-          defaultIndex = i;
-        }
-        var item = {
-          id: actions[i].id,
-          label: title,
-          class: actions[i].class,
-          iconUrl: actions[i].icon100
-        };
-        items.push(item);
-      }
-      var show = this.defaultTaskPicker.showOkCancelDialog(
-          str('CHANGE_DEFAULT_APP_BUTTON_LABEL'),
-          '',
-          items,
-          defaultIndex,
-          function(action) {
-            ActionChoiceUtil.setRememberedActionId(action.id);
-          });
-      if (!show)
-        console.error('DefaultTaskPicker can\'t be shown.');
-    }.bind(this);
-
-    ActionChoiceUtil.getDefinedActions(loadTimeData, function(actions) {
-      ActionChoiceUtil.getRememberedActionId(function(actionId) {
-        onActionsReady(actions, actionId);
       });
     });
   };

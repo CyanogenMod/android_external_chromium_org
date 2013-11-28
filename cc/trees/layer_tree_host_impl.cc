@@ -56,6 +56,7 @@
 #include "cc/trees/quad_culler.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
+#include "gpu/GLES2/gl2extchromium.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -76,24 +77,47 @@ void DidVisibilityChange(cc::LayerTreeHostImpl* id, bool visible) {
 }
 
 size_t GetMaxTransferBufferUsageBytes(cc::ContextProvider* context_provider) {
-  if (context_provider) {
-    // We want to make sure the default transfer buffer size is equal to the
-    // amount of data that can be uploaded by the compositor to avoid stalling
-    // the pipeline.
-    // For reference Chromebook Pixel can upload 1MB in about 0.5ms.
-    const size_t kMaxBytesUploadedPerMs = 1024 * 1024 * 2;
-    // Assuming a two frame deep pipeline between CPU and GPU and we are
-    // drawing 60 frames per second which would require us to draw one
-    // frame in 16 milliseconds.
-    const size_t kMaxTransferBufferUsageBytes = 16 * 2 * kMaxBytesUploadedPerMs;
-    return std::min(
-        context_provider->ContextCapabilities().max_transfer_buffer_usage_bytes,
-        kMaxTransferBufferUsageBytes);
-  } else {
-    // Software compositing should not use this value in production. Just use a
-    // default value when testing uploads with the software compositor.
+  // Software compositing should not use this value in production. Just use a
+  // default value when testing uploads with the software compositor.
+  if (!context_provider)
     return std::numeric_limits<size_t>::max();
-  }
+
+  // We want to make sure the default transfer buffer size is equal to the
+  // amount of data that can be uploaded by the compositor to avoid stalling
+  // the pipeline.
+  // For reference Chromebook Pixel can upload 1MB in about 0.5ms.
+  const size_t kMaxBytesUploadedPerMs = 1024 * 1024 * 2;
+  // Assuming a two frame deep pipeline between CPU and GPU and we are
+  // drawing 60 frames per second which would require us to draw one
+  // frame in 16 milliseconds.
+  const size_t kMaxTransferBufferUsageBytes = 16 * 2 * kMaxBytesUploadedPerMs;
+  return std::min(
+      context_provider->ContextCapabilities().max_transfer_buffer_usage_bytes,
+      kMaxTransferBufferUsageBytes);
+}
+
+size_t GetMaxRasterTasksUsageBytes(cc::ContextProvider* context_provider) {
+  // Transfer-buffer/raster-tasks limits are different but related. We make
+  // equal here, as this is ideal when using transfer buffers. When not using
+  // transfer buffers we should still limit raster to something similar, to
+  // preserve caching behavior (and limit memory waste when priorities change).
+  return GetMaxTransferBufferUsageBytes(context_provider);
+}
+
+GLenum GetMapImageTextureTarget(cc::ContextProvider* context_provider) {
+  if (!context_provider)
+    return GL_TEXTURE_2D;
+
+  // TODO(reveman): Determine if GL_TEXTURE_EXTERNAL_OES works well on
+  // Android before we enable this. crbug.com/322780
+#if !defined(OS_ANDROID)
+  if (context_provider->ContextCapabilities().egl_image_external)
+    return GL_TEXTURE_EXTERNAL_OES;
+  if (context_provider->ContextCapabilities().texture_rectangle)
+    return GL_TEXTURE_RECTANGLE_ARB;
+#endif
+
+  return GL_TEXTURE_2D;
 }
 
 }  // namespace
@@ -228,7 +252,11 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       external_stencil_test_enabled_(false),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
+      micro_benchmark_controller_(this),
       need_to_update_visible_tiles_before_draw_(false),
+#ifndef NDEBUG
+      did_lose_called_(false),
+#endif
       shared_bitmap_manager_(manager) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
@@ -294,6 +322,8 @@ void LayerTreeHostImpl::CommitComplete() {
   }
 
   client_->SendManagedMemoryStats();
+
+  micro_benchmark_controller_.DidCompleteCommit();
 }
 
 bool LayerTreeHostImpl::CanDraw() const {
@@ -553,8 +583,9 @@ static void AppendQuadsForRenderSurfaceLayer(
 }
 
 static void AppendQuadsToFillScreen(
-    ResourceProvider::ResourceId resource_id,
-    gfx::SizeF resource_scaled_size,
+    ResourceProvider::ResourceId overhang_resource_id,
+    gfx::SizeF overhang_resource_scaled_size,
+    gfx::Rect root_scroll_layer_rect,
     RenderPass* target_render_pass,
     LayerImpl* root_layer,
     SkColor screen_background_color,
@@ -565,6 +596,16 @@ static void AppendQuadsToFillScreen(
   Region fill_region = occlusion_tracker.ComputeVisibleRegionInScreen();
   if (fill_region.IsEmpty())
     return;
+
+  // Divide the fill region into the part to be filled with the overhang
+  // resource and the part to be filled with the background color.
+  Region screen_background_color_region = fill_region;
+  Region overhang_region;
+  if (overhang_resource_id) {
+    overhang_region = fill_region;
+    overhang_region.Subtract(root_scroll_layer_rect);
+    screen_background_color_region.Intersect(root_scroll_layer_rect);
+  }
 
   bool for_surface = false;
   QuadCuller quad_culler(&target_render_pass->quad_list,
@@ -588,7 +629,8 @@ static void AppendQuadsToFillScreen(
                             root_target_rect,
                             root_target_rect,
                             false,
-                            opacity);
+                            opacity,
+                            SkXfermode::kSrcOver_Mode);
 
   AppendQuadsData append_quads_data;
 
@@ -596,38 +638,44 @@ static void AppendQuadsToFillScreen(
   bool did_invert = root_layer->screen_space_transform().GetInverse(
       &transform_to_layer_space);
   DCHECK(did_invert);
-  for (Region::Iterator fill_rects(fill_region);
+  for (Region::Iterator fill_rects(screen_background_color_region);
        fill_rects.has_rect();
        fill_rects.next()) {
     // The root layer transform is composed of translations and scales only,
     // no perspective, so mapping is sufficient (as opposed to projecting).
     gfx::Rect layer_rect =
         MathUtil::MapClippedRect(transform_to_layer_space, fill_rects.rect());
-    if (resource_id) {
-      scoped_ptr<TextureDrawQuad> tex_quad = TextureDrawQuad::Create();
-      const float vertex_opacity[4] = {1.f, 1.f, 1.f, 1.f};
-      tex_quad->SetNew(
-          shared_quad_state,
-          layer_rect,
-          layer_rect,
-          resource_id,
-          false,
-          gfx::PointF(layer_rect.x() / resource_scaled_size.width(),
-                      layer_rect.y() / resource_scaled_size.height()),
-          gfx::PointF(layer_rect.right() / resource_scaled_size.width(),
-                      layer_rect.bottom() / resource_scaled_size.height()),
-          screen_background_color,
-          vertex_opacity,
-          false);
-        quad_culler.Append(tex_quad.PassAs<DrawQuad>(), &append_quads_data);
-    } else {
-      // Skip the quad culler and just append the quads directly to avoid
-      // occlusion checks.
-      scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
-      quad->SetNew(
-          shared_quad_state, layer_rect, screen_background_color, false);
-      quad_culler.Append(quad.PassAs<DrawQuad>(), &append_quads_data);
-    }
+    // Skip the quad culler and just append the quads directly to avoid
+    // occlusion checks.
+    scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
+    quad->SetNew(
+        shared_quad_state, layer_rect, screen_background_color, false);
+    quad_culler.Append(quad.PassAs<DrawQuad>(), &append_quads_data);
+  }
+  for (Region::Iterator fill_rects(overhang_region);
+       fill_rects.has_rect();
+       fill_rects.next()) {
+    DCHECK(overhang_resource_id);
+    gfx::Rect layer_rect =
+        MathUtil::MapClippedRect(transform_to_layer_space, fill_rects.rect());
+    scoped_ptr<TextureDrawQuad> tex_quad = TextureDrawQuad::Create();
+    const float vertex_opacity[4] = {1.f, 1.f, 1.f, 1.f};
+    tex_quad->SetNew(
+        shared_quad_state,
+        layer_rect,
+        layer_rect,
+        overhang_resource_id,
+        false,
+        gfx::PointF(layer_rect.x() / overhang_resource_scaled_size.width(),
+                    layer_rect.y() / overhang_resource_scaled_size.height()),
+        gfx::PointF(layer_rect.right() /
+                        overhang_resource_scaled_size.width(),
+                    layer_rect.bottom() /
+                        overhang_resource_scaled_size.height()),
+        screen_background_color,
+        vertex_opacity,
+        false);
+      quad_culler.Append(tex_quad.PassAs<DrawQuad>(), &append_quads_data);
   }
 }
 
@@ -733,8 +781,7 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     RenderPass* target_render_pass =
         frame->render_passes_by_id[target_render_pass_id];
 
-    bool prevent_occlusion = it.target_render_surface_layer()->HasCopyRequest();
-    occlusion_tracker.EnterLayer(it, prevent_occlusion);
+    occlusion_tracker.EnterLayer(it);
 
     AppendQuadsData append_quads_data(target_render_pass_id);
 
@@ -826,13 +873,14 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
 
   if (!active_tree_->has_transparent_background()) {
     frame->render_passes.back()->has_transparent_background = false;
-    AppendQuadsToFillScreen(ResourceIdForUIResource(overhang_ui_resource_id_),
-                            gfx::ScaleSize(overhang_ui_resource_size_,
-                                           device_scale_factor_),
-                            frame->render_passes.back(),
-                            active_tree_->root_layer(),
-                            active_tree_->background_color(),
-                            occlusion_tracker);
+    AppendQuadsToFillScreen(
+        ResourceIdForUIResource(overhang_ui_resource_id_),
+        gfx::ScaleSize(overhang_ui_resource_size_, device_scale_factor_),
+        active_tree_->RootScrollLayerDeviceViewportBounds(),
+        frame->render_passes.back(),
+        active_tree_->root_layer(),
+        active_tree_->background_color(),
+        occlusion_tracker);
   }
 
   if (draw_frame)
@@ -1194,6 +1242,10 @@ void LayerTreeHostImpl::BeginImplFrame(const BeginFrameArgs& args) {
   client_->BeginImplFrame(args);
 }
 
+void LayerTreeHostImpl::DidSwapBuffers() {
+  client_->DidSwapBuffersOnImplThread();
+}
+
 void LayerTreeHostImpl::OnSwapBuffersComplete() {
   client_->OnSwapBuffersCompleteOnImplThread();
 }
@@ -1371,10 +1423,14 @@ const RendererCapabilities& LayerTreeHostImpl::GetRendererCapabilities() const {
 }
 
 bool LayerTreeHostImpl::SwapBuffers(const LayerTreeHostImpl::FrameData& frame) {
-  if (frame.has_no_damage)
+  if (frame.has_no_damage) {
+    active_tree()->BreakSwapPromises(SwapPromise::SWAP_FAILS);
     return false;
-  renderer_->SwapBuffers();
+  }
+  CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
+  renderer_->SwapBuffers(metadata);
   active_tree_->ClearLatencyInfo();
+  active_tree()->FinishSwapPromises();
   return true;
 }
 
@@ -1408,6 +1464,9 @@ void LayerTreeHostImpl::DidLoseOutputSurface() {
   // important) in production. We should adjust the test to not need this.
   if (renderer_)
     client_->DidLoseOutputSurfaceOnImplThread();
+#ifndef NDEBUG
+  did_lose_called_ = true;
+#endif
 }
 
 void LayerTreeHostImpl::Readback(void* pixels,
@@ -1628,7 +1687,9 @@ void LayerTreeHostImpl::CreateAndSetTileManager(
                           settings_.num_raster_threads,
                           rendering_stats_instrumentation_,
                           using_map_image,
-                          GetMaxTransferBufferUsageBytes(context_provider));
+                          GetMaxTransferBufferUsageBytes(context_provider),
+                          GetMaxRasterTasksUsageBytes(context_provider),
+                          GetMapImageTextureTarget(context_provider));
 
   UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
   need_to_update_visible_tiles_before_draw_ = false;
@@ -1640,6 +1701,10 @@ void LayerTreeHostImpl::EnforceZeroBudget(bool zero_budget) {
 
 bool LayerTreeHostImpl::InitializeRenderer(
     scoped_ptr<OutputSurface> output_surface) {
+#ifndef NDEBUG
+  DCHECK(!renderer_ || did_lose_called_);
+#endif
+
   // Since we will create a new resource provider, we cannot continue to use
   // the old resources (i.e. render_surfaces and texture IDs). Clear them
   // before we destroy the old resource provider.
@@ -2715,7 +2780,6 @@ void LayerTreeHostImpl::SetDebugState(
 void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
                                          const UIResourceBitmap& bitmap) {
   DCHECK_GT(uid, 0);
-  DCHECK_EQ(bitmap.GetFormat(), UIResourceBitmap::RGBA8);
 
   GLint wrap_mode = 0;
   switch (bitmap.GetWrapMode()) {
@@ -2732,11 +2796,15 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   ResourceProvider::ResourceId id = ResourceIdForUIResource(uid);
   if (id)
     DeleteUIResource(uid);
+
+  ResourceFormat format = resource_provider_->best_texture_format();
+  if (bitmap.GetFormat() == UIResourceBitmap::ETC1)
+    format = ETC1;
   id = resource_provider_->CreateResource(
       bitmap.GetSize(),
       wrap_mode,
       ResourceProvider::TextureUsageAny,
-      resource_provider_->best_texture_format());
+      format);
 
   UIResourceData data;
   data.resource_id = id;
@@ -2806,6 +2874,11 @@ void LayerTreeHostImpl::MarkUIResourceNotEvicted(UIResourceId uid) {
   evicted_ui_resources_.erase(found_in_evicted);
   if (evicted_ui_resources_.empty())
     client_->OnCanDrawStateChanged(CanDraw());
+}
+
+void LayerTreeHostImpl::ScheduleMicroBenchmark(
+    scoped_ptr<MicroBenchmarkImpl> benchmark) {
+  micro_benchmark_controller_.ScheduleRun(benchmark.Pass());
 }
 
 }  // namespace cc

@@ -138,7 +138,6 @@ WallpaperManager* WallpaperManager::Get() {
 
 WallpaperManager::WallpaperManager()
     : loaded_wallpapers_(0),
-      wallpaper_loader_(new UserImageLoader(ImageDecoder::ROBUST_JPEG_CODEC)),
       command_line_for_testing_(NULL),
       should_cache_wallpaper_(false),
       weak_factory_(this) {
@@ -157,6 +156,8 @@ WallpaperManager::WallpaperManager()
       GetSequencedTaskRunnerWithShutdownBehavior(
           sequence_token_,
           base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+  wallpaper_loader_ = new UserImageLoader(ImageDecoder::ROBUST_JPEG_CODEC,
+                                          task_runner_);
 }
 
 WallpaperManager::~WallpaperManager() {
@@ -312,6 +313,7 @@ void WallpaperManager::Observe(int type,
       break;
     }
     case chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED: {
+      NotifyAnimationFinished();
       if (should_cache_wallpaper_) {
         BrowserThread::PostDelayedTask(
             BrowserThread::UI, FROM_HERE,
@@ -603,6 +605,19 @@ void WallpaperManager::UpdateWallpaper() {
     return;
   }
   SetUserWallpaper(last_selected_user_);
+}
+
+void WallpaperManager::AddObserver(WallpaperManager::Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void WallpaperManager::RemoveObserver(WallpaperManager::Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
+void WallpaperManager::NotifyAnimationFinished() {
+  FOR_EACH_OBSERVER(
+      Observer, observers_, OnWallpaperAnimationFinished(last_selected_user_));
 }
 
 // WallpaperManager, private: --------------------------------------------------
@@ -1048,9 +1063,7 @@ void WallpaperManager::StartLoad(const std::string& email,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TRACE_EVENT_ASYNC_BEGIN0("ui", "LoadAndDecodeWallpaper", this);
 
-  // All wallpaper related operation should run on the same thread. So we pass
-  // |sequence_token_| here.
-  wallpaper_loader_->Start(wallpaper_path.value(), 0, sequence_token_,
+  wallpaper_loader_->Start(wallpaper_path.value(), 0,
                            base::Bind(&WallpaperManager::OnWallpaperDecoded,
                                       base::Unretained(this),
                                       email,

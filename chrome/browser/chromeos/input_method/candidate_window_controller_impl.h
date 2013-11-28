@@ -11,8 +11,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_view.h"
 #include "chrome/browser/chromeos/input_method/infolist_window_view.h"
-#include "chromeos/ime/ibus_bridge.h"
-#include "chromeos/ime/ibus_daemon_controller.h"
+#include "ui/base/ime/chromeos/ibus_bridge.h"
 
 namespace views {
 class Widget;
@@ -42,6 +41,7 @@ class CandidateWindowControllerImpl
       CandidateWindowController::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(
       CandidateWindowController::Observer* observer) OVERRIDE;
+  virtual void Hide() OVERRIDE;
 
  protected:
   // Returns infolist window position. This function handles right or bottom
@@ -81,17 +81,15 @@ class CandidateWindowControllerImpl
   void CreateView();
 
   // IBusPanelCandidateWindowHandlerInterface overrides.
-  virtual void HideAuxiliaryText() OVERRIDE;
-  virtual void HideLookupTable() OVERRIDE;
-  virtual void HidePreeditText() OVERRIDE;
-  virtual void SetCursorLocation(const ibus::Rect& cursor_position,
-                                 const ibus::Rect& composition_head) OVERRIDE;
+  virtual void SetCursorBounds(const gfx::Rect& cursor_bounds,
+                               const gfx::Rect& composition_head) OVERRIDE;
   virtual void UpdateAuxiliaryText(const std::string& utf8_text,
                                    bool visible) OVERRIDE;
   virtual void UpdateLookupTable(const CandidateWindow& candidate_window,
                                  bool visible) OVERRIDE;
   virtual void UpdatePreeditText(const std::string& utf8_text,
                                  unsigned int cursor, bool visible) OVERRIDE;
+  virtual void FocusStateChanged(bool is_focused) OVERRIDE;
 
   // Updates infolist bounds, if current bounds is up-to-date, this function
   // does nothing.

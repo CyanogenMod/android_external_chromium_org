@@ -10,6 +10,10 @@
 #include "ash/shell_delegate.h"
 #include "base/compiler_specific.h"
 
+namespace content {
+class BrowserContext;
+}
+
 namespace keyboard {
 class KeyboardControllerProxy;
 }
@@ -26,6 +30,9 @@ class ShellDelegateImpl : public ash::ShellDelegate {
   virtual ~ShellDelegateImpl();
 
   void SetWatcher(WindowWatcher* watcher);
+  void set_browser_context(content::BrowserContext* browser_context) {
+    browser_context_ = browser_context;
+  }
 
   virtual bool IsFirstRunAfterBoot() const OVERRIDE;
   virtual bool IsIncognitoAllowed() const OVERRIDE;
@@ -38,8 +45,7 @@ class ShellDelegateImpl : public ash::ShellDelegate {
       CreateKeyboardControllerProxy() OVERRIDE;
   virtual content::BrowserContext* GetCurrentBrowserContext() OVERRIDE;
   virtual app_list::AppListViewDelegate* CreateAppListViewDelegate() OVERRIDE;
-  virtual ash::LauncherDelegate* CreateLauncherDelegate(
-      ash::LauncherModel* model) OVERRIDE;
+  virtual LauncherDelegate* CreateLauncherDelegate(ShelfModel* model) OVERRIDE;
   virtual ash::SystemTrayDelegate* CreateSystemTrayDelegate() OVERRIDE;
   virtual ash::UserWallpaperDelegate* CreateUserWallpaperDelegate() OVERRIDE;
   virtual ash::CapsLockDelegate* CreateCapsLockDelegate() OVERRIDE;
@@ -59,6 +65,7 @@ class ShellDelegateImpl : public ash::ShellDelegate {
   WindowWatcher* watcher_;
 
   LauncherDelegateImpl* launcher_delegate_;
+  content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellDelegateImpl);
 };

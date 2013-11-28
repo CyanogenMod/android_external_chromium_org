@@ -66,6 +66,38 @@ ManageProfileUITest.prototype = {
   },
 };
 
+// Receiving the new profile defaults in the manage-user overlay shouldn't mess
+// up the focus in a visible higher-level overlay.
+TEST_F('ManageProfileUITest', 'NewProfileDefaultsFocus', function() {
+  var self = this;
+
+  function checkFocus(pageName, expectedFocus, initialFocus) {
+    OptionsPage.showPageByName(pageName);
+    initialFocus.focus();
+    expectEquals(initialFocus, document.activeElement, pageName);
+
+    ManageProfileOverlay.receiveNewProfileDefaults(
+        self.testProfileInfo_(false));
+    expectEquals(expectedFocus, document.activeElement, pageName);
+    OptionsPage.closeOverlay();
+  }
+
+  // Receiving new profile defaults sets focus to the name field if the create
+  // overlay is open, and should not change focus at all otherwise.
+  checkFocus('manageProfile',
+             $('manage-profile-cancel'),
+             $('manage-profile-cancel'));
+  checkFocus('createProfile',
+             $('create-profile-name'),
+             $('create-profile-cancel'));
+  checkFocus('managedUserLearnMore',
+             $('managed-user-learn-more-done'),
+             $('managed-user-learn-more-done'));
+  checkFocus('managedUserLearnMore',
+             document.querySelector('#managed-user-learn-more-text a'),
+             document.querySelector('#managed-user-learn-more-text a'));
+});
+
 // The default options should be reset each time the creation overlay is shown.
 TEST_F('ManageProfileUITest', 'DefaultCreateOptions', function() {
   OptionsPage.showPageByName('createProfile');
@@ -120,17 +152,22 @@ TEST_F('ManageProfileUITest', 'CreateManagedUserText', function() {
   assertTrue($('create-profile-managed').disabled);
 });
 
-// Managed users should not be able to edit their profile names.
+// Managed users should not be able to edit their profile names, and the initial
+// focus should be adjusted accordingly.
 TEST_F('ManageProfileUITest', 'EditManagedUserNameAllowed', function() {
   var nameField = $('manage-profile-name');
 
   this.setProfileManaged_(false);
   ManageProfileOverlay.showManageDialog();
-  assertFalse(nameField.disabled);
+  expectFalse(nameField.disabled);
+  expectEquals(nameField, document.activeElement);
+
+  OptionsPage.closeOverlay();
 
   this.setProfileManaged_(true);
   ManageProfileOverlay.showManageDialog();
-  assertTrue(nameField.disabled);
+  expectTrue(nameField.disabled);
+  expectEquals($('manage-profile-ok'), document.activeElement);
 });
 
 // Setting profile information should allow the confirmation to be shown.
@@ -165,6 +202,7 @@ TEST_F('ManageProfileUITest', 'ShowCreateConfirmationOnSuccess', function() {
   CreateProfileOverlay.onSuccess(this.testProfileInfo_(true));
   assertEquals('managedUserCreateConfirm',
                OptionsPage.getTopmostVisiblePage().name);
+  expectEquals($('managed-user-created-switch'), document.activeElement);
 });
 
 // An error should be shown if creating a new managed user fails.

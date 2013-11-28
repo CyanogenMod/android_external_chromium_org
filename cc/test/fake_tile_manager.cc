@@ -5,6 +5,7 @@
 #include "cc/test/fake_tile_manager.h"
 
 #include <deque>
+#include <limits>
 
 #include "cc/resources/raster_worker_pool.h"
 
@@ -32,6 +33,9 @@ class FakeRasterWorkerPool : public RasterWorkerPool {
       completed_tasks_.pop_front();
     }
   }
+  virtual GLenum GetResourceTarget() const OVERRIDE {
+    return GL_TEXTURE_2D;
+  }
   virtual ResourceFormat GetResourceFormat() const OVERRIDE {
     return RGBA_8888;
   }
@@ -50,6 +54,7 @@ FakeTileManager::FakeTileManager(TileManagerClient* client)
                   NULL,
                   make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
                   1,
+                  std::numeric_limits<unsigned>::max(),
                   NULL) {}
 
 FakeTileManager::FakeTileManager(TileManagerClient* client,
@@ -58,6 +63,17 @@ FakeTileManager::FakeTileManager(TileManagerClient* client,
                   resource_provider,
                   make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
                   1,
+                  std::numeric_limits<unsigned>::max(),
+                  NULL) {}
+
+FakeTileManager::FakeTileManager(TileManagerClient* client,
+                                 ResourceProvider* resource_provider,
+                                 size_t raster_task_limit_bytes)
+    : TileManager(client,
+                  resource_provider,
+                  make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
+                  1,
+                  raster_task_limit_bytes,
                   NULL) {}
 
 FakeTileManager::~FakeTileManager() {}
@@ -67,7 +83,7 @@ void FakeTileManager::AssignMemoryToTiles(
   tiles_for_raster.clear();
   all_tiles.Clear();
 
-  ManageTiles(state);
+  SetGlobalStateForTesting(state);
   GetTilesWithAssignedBins(&all_tiles);
   AssignGpuMemoryToTiles(&all_tiles, &tiles_for_raster);
 }

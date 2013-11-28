@@ -24,8 +24,8 @@
 #if defined(OS_MACOSX)
 #include <AvailabilityMacros.h>
 #include "base/mac/foundation_util.h"
-#elif !defined(OS_ANDROID)
-#include <glib.h>
+#elif !defined(OS_CHROMEOS) && defined(USE_GLIB)
+#include <glib.h>  // for g_get_home_dir()
 #endif
 
 #include <fstream>
@@ -48,6 +48,7 @@
 #include "base/time/time.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/content_uri_utils.h"
 #include "base/os_compat_android.h"
 #endif
 
@@ -79,6 +80,12 @@ static int CallLstat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return lstat64(path, sb);
 }
+#if defined(OS_ANDROID)
+static int CallFstat(int fd, stat_wrapper_t *sb) {
+  ThreadRestrictions::AssertIOAllowed();
+  return fstat64(fd, sb);
+}
+#endif
 #endif
 
 // Helper for NormalizeFilePath(), defined below.
@@ -308,6 +315,11 @@ bool CopyDirectory(const FilePath& from_path,
 
 bool PathExists(const FilePath& path) {
   ThreadRestrictions::AssertIOAllowed();
+#if defined(OS_ANDROID)
+  if (path.IsContentUri()) {
+    return ContentUriExists(path);
+  }
+#endif
   return access(path.value().c_str(), F_OK) == 0;
 }
 
@@ -323,22 +335,6 @@ bool DirectoryExists(const FilePath& path) {
     return S_ISDIR(file_info.st_mode);
   return false;
 }
-
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::stat_wrapper_t;
-using base::CallStat;
-using base::CallLstat;
-using base::DirectoryExists;
-using base::FileEnumerator;
-using base::FilePath;
-using base::MakeAbsoluteFilePath;
-using base::RealPath;
-using base::VerifySpecificPathControlledByUser;
 
 bool ReadFromFD(int fd, char* buffer, size_t bytes) {
   size_t total_read = 0;
@@ -360,8 +356,7 @@ bool CreateSymbolicLink(const FilePath& target_path,
                    symlink_path.value().c_str()) != -1;
 }
 
-bool ReadSymbolicLink(const FilePath& symlink_path,
-                      FilePath* target_path) {
+bool ReadSymbolicLink(const FilePath& symlink_path, FilePath* target_path) {
   DCHECK(!symlink_path.empty());
   DCHECK(target_path);
   char buf[PATH_MAX];
@@ -377,7 +372,7 @@ bool ReadSymbolicLink(const FilePath& symlink_path,
 }
 
 bool GetPosixFilePermissions(const FilePath& path, int* mode) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(mode);
 
   stat_wrapper_t file_info;
@@ -392,7 +387,7 @@ bool GetPosixFilePermissions(const FilePath& path, int* mode) {
 
 bool SetPosixFilePermissions(const FilePath& path,
                              int mode) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK((mode & ~FILE_PERMISSION_MASK) == 0);
 
   // Calls stat() so that we can preserve the higher bits like S_ISGID.
@@ -409,6 +404,22 @@ bool SetPosixFilePermissions(const FilePath& path,
 
   return true;
 }
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::stat_wrapper_t;
+using base::CallStat;
+using base::CallLstat;
+using base::DirectoryExists;
+using base::FileEnumerator;
+using base::FilePath;
+using base::MakeAbsoluteFilePath;
+using base::RealPath;
+using base::VerifySpecificPathControlledByUser;
 
 // Creates and opens a temporary file in |directory|, returning the
 // file descriptor. |path| is set to the temporary file path.
@@ -569,8 +580,21 @@ bool IsLink(const FilePath& file_path) {
 
 bool GetFileInfo(const FilePath& file_path, base::PlatformFileInfo* results) {
   stat_wrapper_t file_info;
-  if (CallStat(file_path.value().c_str(), &file_info) != 0)
-    return false;
+#if defined(OS_ANDROID)
+  if (file_path.IsContentUri()) {
+    int fd = OpenContentUriForRead(file_path);
+    if (fd < 0)
+      return false;
+    ScopedFD scoped_fd(&fd);
+    if (base::CallFstat(fd, &file_info) != 0)
+      return false;
+  } else {
+#endif  // defined(OS_ANDROID)
+    if (CallStat(file_path.value().c_str(), &file_info) != 0)
+      return false;
+#if defined(OS_ANDROID)
+  }
+#endif  // defined(OS_ANDROID)
   results->is_directory = S_ISDIR(file_info.st_mode);
   results->size = file_info.st_size;
 #if defined(OS_MACOSX)
@@ -778,7 +802,7 @@ FilePath GetHomeDir() {
 
 #if defined(OS_ANDROID)
   DLOG(WARNING) << "OS_ANDROID: Home directory lookup not yet implemented.";
-#else
+#elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
   // g_get_home_dir calls getpwent, which can fall through to LDAP calls.
   base::ThreadRestrictions::AssertIOAllowed();
 

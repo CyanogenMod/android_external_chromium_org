@@ -21,10 +21,6 @@ namespace gfx {
 class Rect;
 }
 
-namespace content {
-class WebContents;
-}
-
 namespace autofill {
 
 class AutofillDriver;
@@ -38,10 +34,9 @@ class AutofillManager;
 class AutofillExternalDelegate
     : public AutofillPopupDelegate {
  public:
-  // Creates an AutofillExternalDelegate for the specified contents,
-  // AutofillManager, and AutofillDriver.
-  AutofillExternalDelegate(content::WebContents* web_contents,
-                           AutofillManager* autofill_manager,
+  // Creates an AutofillExternalDelegate for the specified AutofillManager and
+  // AutofillDriver.
+  AutofillExternalDelegate(AutofillManager* autofill_manager,
                            AutofillDriver* autofill_driver);
   virtual ~AutofillExternalDelegate();
 
@@ -103,8 +98,6 @@ class AutofillExternalDelegate
       const PasswordFormFillData& fill_data);
 
  protected:
-  content::WebContents* web_contents() { return web_contents_; }
-
   base::WeakPtr<AutofillExternalDelegate> GetWeakPtr();
 
  private:
@@ -135,8 +128,6 @@ class AutofillExternalDelegate
                             std::vector<base::string16>* autofill_icons,
                             std::vector<int>* autofill_unique_ids);
 
-  // The web_contents associated with this delegate.
-  content::WebContents* web_contents_;  // weak; owns me.
   AutofillManager* autofill_manager_;  // weak.
 
   // Provides driver-level context to the shared code of the component. Must

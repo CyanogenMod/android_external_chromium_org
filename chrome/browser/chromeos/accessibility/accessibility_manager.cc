@@ -9,6 +9,7 @@
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/wm/event_rewriter_event_filter.h"
+#include "ash/wm/sticky_keys.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
@@ -32,7 +33,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/speech/tts_controller.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/api/experimental_accessibility.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/pref_names.h"
@@ -47,6 +48,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/file_reader.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -285,10 +287,11 @@ AccessibilityManager::AccessibilityManager()
       sticky_keys_enabled_(false),
       spoken_feedback_enabled_(false),
       high_contrast_enabled_(false),
+      autoclick_enabled_(false),
       autoclick_delay_ms_(ash::AutoclickController::kDefaultAutoclickDelayMs),
       spoken_feedback_notification_(ash::A11Y_NOTIFICATION_NONE),
-      weak_ptr_factory_(this) {
-
+      weak_ptr_factory_(this),
+      should_speak_chrome_vox_announcements_on_user_screen_(true) {
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
                               content::NotificationService::AllSources());
@@ -306,6 +309,10 @@ AccessibilityManager::AccessibilityManager()
 
 AccessibilityManager::~AccessibilityManager() {
   CHECK(this == g_accessibility_manager);
+  if (profile_) {
+    extensions::ExtensionSystem::Get(profile_)->
+        event_router()->UnregisterObserver(this);
+  }
 }
 
 void AccessibilityManager::EnableLargeCursor(bool enabled) {
@@ -377,7 +384,7 @@ void AccessibilityManager::UpdateStickyKeysFromPref() {
   sticky_keys_enabled_ = enabled;
 #if defined(USE_ASH)
   // Sticky keys is implemented only in ash.
-  ash::Shell::GetInstance()->event_rewriter_filter()->EnableStickyKeys(enabled);
+  ash::Shell::GetInstance()->sticky_keys()->Enable(enabled);
 #endif
 }
 
@@ -409,10 +416,6 @@ void AccessibilityManager::UpdateSpokenFeedbackFromPref() {
 
   spoken_feedback_enabled_ = enabled;
 
-  Speak(l10n_util::GetStringUTF8(
-      enabled ? IDS_CHROMEOS_ACC_SPOKEN_FEEDBACK_ENABLED :
-      IDS_CHROMEOS_ACC_SPOKEN_FEEDBACK_DISABLED).c_str());
-
   ExtensionAccessibilityEventRouter::GetInstance()->
       SetAccessibilityEnabled(enabled);
 
@@ -423,10 +426,12 @@ void AccessibilityManager::UpdateSpokenFeedbackFromPref() {
       content::NotificationService::AllSources(),
       content::Details<AccessibilityStatusEventDetails>(&details));
 
-  if (enabled)
+  if (enabled) {
     LoadChromeVox();
-  else
-    UnloadChromeVox();
+  } else {
+    ExtensionAccessibilityEventRouter::GetInstance()->
+        OnChromeVoxLoadStateChanged(profile_, false, false);
+  }
 }
 
 void AccessibilityManager::LoadChromeVox() {
@@ -503,25 +508,6 @@ bool AccessibilityManager::IsSpokenFeedbackEnabled() {
 void AccessibilityManager::ToggleSpokenFeedback(
     ash::AccessibilityNotificationVisibility notify) {
   EnableSpokenFeedback(!IsSpokenFeedbackEnabled(), notify);
-}
-
-void AccessibilityManager::Speak(const std::string& text) {
-  UtteranceContinuousParameters params;
-
-  Utterance* utterance = new Utterance(profile_);
-  utterance->set_text(text);
-  utterance->set_lang(g_browser_process->GetApplicationLocale());
-  utterance->set_continuous_parameters(params);
-  utterance->set_can_enqueue(false);
-  utterance->set_options(new DictionaryValue());
-
-  TtsController* controller = TtsController::GetInstance();
-  controller->SpeakOrEnqueue(utterance);
-}
-
-void AccessibilityManager::MaybeSpeak(const std::string& text) {
-  if (IsSpokenFeedbackEnabled())
-    Speak(text);
 }
 
 void AccessibilityManager::EnableHighContrast(bool enabled) {
@@ -686,6 +672,10 @@ void AccessibilityManager::SetProfile(Profile* profile) {
         base::Bind(
             &AccessibilityManager::UpdateChromeOSAccessibilityHistograms,
             base::Unretained(this)));
+
+    extensions::ExtensionSystem::Get(profile)->event_router()->RegisterObserver(
+        this, extensions::api::experimental_accessibility::
+            OnChromeVoxLoadStateChanged::kEventName);
   }
 
   large_cursor_pref_handler_.HandleProfileChanged(profile_, profile);
@@ -769,6 +759,9 @@ void AccessibilityManager::Observe(
     case chrome::NOTIFICATION_SESSION_STARTED:
       // Update |profile_| when entering a session.
       SetProfile(ProfileManager::GetDefaultProfile());
+
+      // Ensure ChromeVox makes announcements at the start of new sessions.
+      should_speak_chrome_vox_announcements_on_user_screen_ = true;
       break;
     case chrome::NOTIFICATION_PROFILE_DESTROYED: {
       // Update |profile_| when exiting a session or shutting down.
@@ -797,4 +790,28 @@ void AccessibilityManager::OnDisplayStateChanged(
   if (display_state.available)
     EnableSpokenFeedback(true, ash::A11Y_NOTIFICATION_SHOW);
 }
+
+void AccessibilityManager::OnListenerAdded(
+    const extensions::EventListenerInfo& details) {
+  if (details.extension_id != extension_misc::kChromeVoxExtensionId)
+    return;
+
+    ExtensionAccessibilityEventRouter::GetInstance()->
+        OnChromeVoxLoadStateChanged(profile_,
+            IsSpokenFeedbackEnabled(),
+            chrome_vox_loaded_on_lock_screen_ ||
+                should_speak_chrome_vox_announcements_on_user_screen_);
+
+    should_speak_chrome_vox_announcements_on_user_screen_ =
+        chrome_vox_loaded_on_lock_screen_;
+}
+
+void AccessibilityManager::OnListenerRemoved(
+    const extensions::EventListenerInfo& details) {
+  if (details.extension_id != extension_misc::kChromeVoxExtensionId)
+    return;
+
+  UnloadChromeVox();
+}
+
 }  // namespace chromeos

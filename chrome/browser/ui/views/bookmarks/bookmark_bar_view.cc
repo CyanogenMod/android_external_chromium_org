@@ -674,7 +674,7 @@ bool BookmarkBarView::HitTestRect(const gfx::Rect& rect) const {
   // omnibox popup from activating the top few pixels of items on the bookmark
   // bar.
   if (!IsDetached() && browser_view_ &&
-      browser_view_->GetLocationBar()->GetLocationEntry()->model()->
+      browser_view_->GetLocationBar()->GetOmniboxView()->model()->
           popup_model()->IsOpen()) {
     return false;
   }
@@ -1241,12 +1241,11 @@ void BookmarkBarView::ShowContextMenuForView(views::View* source,
     parent = model_->bookmark_bar_node();
     nodes.push_back(parent);
   }
-  Profile* profile = browser_->profile();
   bool close_on_remove =
-      (parent == BookmarkModelFactory::GetForProfile(profile)->other_node()) &&
-      (parent->child_count() == 1);
+      (parent == model_->other_node()) && (parent->child_count() == 1);
+
   context_menu_.reset(new BookmarkContextMenu(
-      GetWidget(), browser_, profile,
+      GetWidget(), browser_, browser_->profile(),
       browser_->tab_strip_model()->GetActiveWebContents(),
       parent, nodes, close_on_remove));
   context_menu_->RunMenuAt(point, source_type);
@@ -1276,7 +1275,8 @@ void BookmarkBarView::Init() {
       base::Bind(&BookmarkBarView::OnAppsPageShortcutVisibilityPrefChanged,
                  base::Unretained(this)));
   apps_page_shortcut_->SetVisible(
-      chrome::ShouldShowAppsShortcutInBookmarkBar(browser_->profile()));
+      chrome::ShouldShowAppsShortcutInBookmarkBar(
+          browser_->profile(), browser_->host_desktop_type()));
 
   bookmarks_separator_view_ = new ButtonSeparatorView();
   AddChildView(bookmarks_separator_view_);
@@ -1852,7 +1852,7 @@ void BookmarkBarView::OnAppsPageShortcutVisibilityPrefChanged() {
   DCHECK(apps_page_shortcut_);
   // Only perform layout if required.
   bool visible = chrome::ShouldShowAppsShortcutInBookmarkBar(
-      browser_->profile());
+      browser_->profile(), browser_->host_desktop_type());
   if (apps_page_shortcut_->visible() == visible)
     return;
   apps_page_shortcut_->SetVisible(visible);

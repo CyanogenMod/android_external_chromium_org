@@ -19,7 +19,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -27,6 +26,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/common/feature_switch.h"
 #include "net/base/net_util.h"
 
 using extensions::FeatureSwitch;
@@ -169,7 +169,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, Test) {
 }
 
 // Sometimes times out on Mac.  http://crbug.com/48151
-#if defined(OS_MACOSX)
+//
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#if defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
 #define MAYBE_NoFileAccess DISABLED_NoFileAccess
 #else
 #define MAYBE_NoFileAccess NoFileAccess

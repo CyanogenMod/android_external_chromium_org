@@ -29,7 +29,7 @@ namespace {
 // used to match the focus manger behaviour in ash and views.
 class TestFocusController : public ui::EventHandler {
  public:
-  explicit TestFocusController(aura::RootWindow* root)
+  explicit TestFocusController(aura::Window* root)
       : root_(root) {
     root_->AddPreTargetHandler(this);
   }
@@ -158,6 +158,9 @@ class TestTextInputClient : public ui::TextInputClient {
       base::i18n::TextDirection direction) OVERRIDE { return false; }
   virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE {}
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE {}
+  virtual void OnCandidateWindowShown() OVERRIDE {}
+  virtual void OnCandidateWindowUpdated() OVERRIDE {}
+  virtual void OnCandidateWindowHidden() OVERRIDE {}
 
   ui::TextInputType type_;
 
@@ -206,7 +209,7 @@ class KeyboardControllerTest : public testing::Test {
     aura_test_helper_->TearDown();
   }
 
-  aura::RootWindow* root_window() { return aura_test_helper_->root_window(); }
+  aura::Window* root_window() { return aura_test_helper_->root_window(); }
   KeyboardControllerProxy* proxy() { return proxy_; }
   KeyboardController* controller() { return controller_.get(); }
 
@@ -338,7 +341,7 @@ class KeyboardControllerUsabilityTest : public KeyboardControllerTest {
 
   virtual void SetUp() OVERRIDE {
     CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kKeyboardUsabilityTest);
+        switches::kKeyboardUsabilityExperiment);
     KeyboardControllerTest::SetUp();
   }
 

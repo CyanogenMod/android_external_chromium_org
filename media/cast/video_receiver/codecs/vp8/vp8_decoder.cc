@@ -4,14 +4,25 @@
 
 #include "media/cast/video_receiver/codecs/vp8/vp8_decoder.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "third_party/libvpx/source/libvpx/vpx/vp8dx.h"
 
 namespace media {
 namespace cast {
 
-Vp8Decoder::Vp8Decoder(int number_of_cores) {
-  decoder_.reset(new vpx_dec_ctx_t());
+void LogFrameDecodedEvent(CastEnvironment* const cast_environment,
+                          uint32 frame_id) {
+// TODO(mikhal): Sort out passing of rtp_timestamp.
+// cast_environment->Logging()->InsertFrameEvent(kVideoFrameDecoded,
+//      0, frame_id);
+}
+
+Vp8Decoder::Vp8Decoder(int number_of_cores,
+                       scoped_refptr<CastEnvironment> cast_environment)
+    : decoder_(new vpx_dec_ctx_t()),
+      cast_environment_(cast_environment) {
   InitDecode(number_of_cores);
 }
 
@@ -27,30 +38,34 @@ void Vp8Decoder::InitDecode(int number_of_cores) {
   }
 }
 
-bool Vp8Decoder::Decode(const EncodedVideoFrame& input_image,
-                        I420VideoFrame* decoded_frame) {
-  VLOG(1) << "VP8 decode frame:" << static_cast<int>(input_image.frame_id)
-          << " sized:" << input_image.data.size();
+bool Vp8Decoder::Decode(const EncodedVideoFrame* encoded_frame,
+                        const base::TimeTicks render_time,
+                        const VideoFrameDecodedCallback& frame_decoded_cb) {
+  const int frame_id_int = static_cast<int>(encoded_frame->frame_id);
+  VLOG(1) << "VP8 decode frame:" << frame_id_int
+          << " sized:" << encoded_frame->data.size();
 
-  if (input_image.data.empty()) return false;
+  if (encoded_frame->data.empty()) return false;
 
   vpx_codec_iter_t iter = NULL;
   vpx_image_t* img;
-  if (vpx_codec_decode(decoder_.get(),
-                       input_image.data.data(),
-                       static_cast<unsigned int>(input_image.data.size()),
-                       0,
-                       1 /* real time*/)) {
+  if (vpx_codec_decode(
+      decoder_.get(),
+      reinterpret_cast<const uint8*>(encoded_frame->data.data()),
+      static_cast<unsigned int>(encoded_frame->data.size()),
+      0,
+      1 /* real time*/)) {
     VLOG(1) << "Failed to decode VP8 frame.";
     return false;
   }
 
   img = vpx_codec_get_frame(decoder_.get(), &iter);
   if (img == NULL) {
-    VLOG(1) << "Skip rendering VP8 frame:"
-            << static_cast<int>(input_image.frame_id);
+    VLOG(1) << "Skip rendering VP8 frame:" << frame_id_int;
     return false;
   }
+
+  scoped_ptr<I420VideoFrame> decoded_frame(new I420VideoFrame());
 
   // The img is only valid until the next call to vpx_codec_decode.
   // Populate the decoded image.
@@ -75,6 +90,16 @@ bool Vp8Decoder::Decode(const EncodedVideoFrame& input_image,
 
   memcpy(decoded_frame->v_plane.data, img->planes[VPX_PLANE_V],
          decoded_frame->v_plane.length);
+
+  // Log:: Decoding complete (should be called from the main thread).
+  cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE, base::Bind(
+      LogFrameDecodedEvent, cast_environment_,encoded_frame->frame_id));
+  VLOG(1) << "Decoded frame " << frame_id_int;
+
+  // Frame decoded - return frame to the user via callback.
+  cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
+      base::Bind(frame_decoded_cb, base::Passed(&decoded_frame),
+                 render_time));
 
   return true;
 }

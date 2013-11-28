@@ -7,11 +7,14 @@
 #include "base/debug/trace_event.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/scrollbar_animation_controller.h"
+#include "cc/base/math_util.h"
+#include "cc/base/util.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/layers/scrollbar_layer_impl_base.h"
+#include "cc/resources/ui_resource_request.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "ui/gfx/size_conversions.h"
@@ -119,6 +122,9 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
 
   target_tree->SetLatencyInfo(latency_info_);
   latency_info_.Clear();
+
+  target_tree->PassSwapPromises(&swap_promise_list_);
+
   target_tree->SetPageScaleFactorAndLimits(
       page_scale_factor(), min_page_scale_factor(), max_page_scale_factor());
   target_tree->SetPageScaleDelta(
@@ -236,6 +242,15 @@ void LayerTreeImpl::SetPageScaleDelta(float delta) {
 gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
   return gfx::ScaleSize(layer_tree_host_impl_->UnscaledScrollableViewportSize(),
                         1.0f / total_page_scale_factor());
+}
+
+gfx::Rect LayerTreeImpl::RootScrollLayerDeviceViewportBounds() const {
+  if (!root_scroll_layer_ || root_scroll_layer_->children().empty())
+    return gfx::Rect();
+  LayerImpl* layer = root_scroll_layer_->children()[0];
+  return MathUtil::MapClippedRect(
+      layer->screen_space_transform(),
+      gfx::Rect(layer->content_bounds()));
 }
 
 void LayerTreeImpl::UpdateMaxScrollOffset() {
@@ -694,6 +709,32 @@ const ui::LatencyInfo& LayerTreeImpl::GetLatencyInfo() {
 
 void LayerTreeImpl::ClearLatencyInfo() {
   latency_info_.Clear();
+}
+
+void LayerTreeImpl::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
+  DCHECK(swap_promise);
+  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
+    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
+  swap_promise_list_.push_back(swap_promise.Pass());
+}
+
+void LayerTreeImpl::PassSwapPromises(
+    ScopedPtrVector<SwapPromise>* new_swap_promise) {
+  swap_promise_list_.insert_and_take(swap_promise_list_.end(),
+                                     *new_swap_promise);
+  new_swap_promise->clear();
+}
+
+void LayerTreeImpl::FinishSwapPromises() {
+  for (size_t i = 0; i < swap_promise_list_.size(); i++)
+    swap_promise_list_[i]->DidSwap();
+  swap_promise_list_.clear();
+}
+
+void LayerTreeImpl::BreakSwapPromises(SwapPromise::DidNotSwapReason reason) {
+  for (size_t i = 0; i < swap_promise_list_.size(); i++)
+    swap_promise_list_[i]->DidNotSwap(reason);
+  swap_promise_list_.clear();
 }
 
 void LayerTreeImpl::DidModifyTilePriorities() {

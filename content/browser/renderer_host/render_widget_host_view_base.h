@@ -18,6 +18,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/callback_forward.h"
+#include "base/timer/timer.h"
 #include "content/common/content_export.h"
 #include "content/port/browser/render_widget_host_view_port.h"
 #include "ui/gfx/native_widget_types.h"
@@ -58,25 +59,21 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual string16 GetSelectedText() const OVERRIDE;
   virtual bool IsMouseLocked() OVERRIDE;
   virtual void UnhandledWheelEvent(
-      const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+      const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
-      const WebKit::WebInputEvent& input_event) OVERRIDE;
+      const blink::WebInputEvent& input_event) OVERRIDE;
   virtual void OnSetNeedsFlushInput() OVERRIDE;
   virtual void OnDidFlushInput() OVERRIDE;
   virtual void GestureEventAck(int gesture_event_type,
                                InputEventAckState ack_result) OVERRIDE;
-  virtual void SetPopupType(WebKit::WebPopupType popup_type) OVERRIDE;
-  virtual WebKit::WebPopupType GetPopupType() OVERRIDE;
+  virtual void SetPopupType(blink::WebPopupType popup_type) OVERRIDE;
+  virtual blink::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
-  virtual SyntheticGesture* CreateSmoothScrollGesture(
-      bool scroll_down, int pixels_to_scroll, int mouse_event_x,
-      int mouse_event_y) OVERRIDE;
-  virtual SyntheticGesture* CreatePinchGesture(
-      bool zoom_in, int pixels_to_move, int anchor_x,
-      int anchor_y) OVERRIDE;
+  virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
+      OVERRIDE;
   virtual bool CanSubscribeFrame() const OVERRIDE;
   virtual void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
@@ -126,7 +123,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 
   // Whether this view is a popup and what kind of popup it is (select,
   // autofill...).
-  WebKit::WebPopupType popup_type_;
+  blink::WebPopupType popup_type_;
 
   // A custom background to paint behind the web content. This will be tiled
   // horizontally. Can be null, in which case we fall back to painting white.
@@ -157,12 +154,16 @@ protected:
   float current_device_scale_factor_;
 
  private:
+  void FlushInput();
+
   // Manager of the tree representation of the WebKit render tree.
   scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
 
   gfx::Rect current_display_area_;
 
   uint32 renderer_frame_number_;
+
+  base::OneShotTimer<RenderWidgetHostViewBase> flush_input_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewBase);
 };

@@ -17,7 +17,7 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_controller_target.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
-#import "chrome/common/extensions/extension.h"
+#import "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #import "third_party/GTM/AppKit/GTMFadeTruncatingTextFieldCell.h"
 #import "ui/base/cocoa/menu_controller.h"
@@ -144,6 +144,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
 }
 
 - (void)dealloc {
+  [mediaIndicatorView_ setAnimationDoneCallbackObject:nil withSelector:nil];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [[self tabView] setController:nil];
   [super dealloc];
@@ -277,8 +278,13 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   [mediaIndicatorView_ removeFromSuperview];
   mediaIndicatorView_.reset([mediaIndicatorView retain]);
   [self updateVisibility];
-  if (mediaIndicatorView_)
+  if (mediaIndicatorView_) {
     [[self view] addSubview:mediaIndicatorView_];
+    [mediaIndicatorView_
+      setAnimationDoneCallbackObject:self
+                        withSelector:@selector(updateVisibility)];
+
+  }
 }
 
 - (HoverCloseButton*)closeButton {

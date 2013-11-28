@@ -1,6 +1,7 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "chrome/browser/devtools/devtools_window.h"
 
 #include <algorithm>
@@ -55,6 +56,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view.h"
@@ -187,6 +189,7 @@ class DevToolsWindow::FrontendWebContentsObserver
   virtual void AboutToNavigateRenderView(
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) OVERRIDE;
+  virtual void WebContentsDestroyed(content::WebContents*) OVERRIDE;
 
   DevToolsWindow* devtools_window_;
   DISALLOW_COPY_AND_ASSIGN(FrontendWebContentsObserver);
@@ -196,6 +199,11 @@ DevToolsWindow::FrontendWebContentsObserver::FrontendWebContentsObserver(
     DevToolsWindow* devtools_window)
     : WebContentsObserver(devtools_window->web_contents()),
       devtools_window_(devtools_window) {
+}
+
+void DevToolsWindow::FrontendWebContentsObserver::WebContentsDestroyed(
+    content::WebContents* contents) {
+  delete devtools_window_;
 }
 
 DevToolsWindow::FrontendWebContentsObserver::~FrontendWebContentsObserver() {
@@ -257,6 +265,10 @@ DictionaryValue* CreateFileSystemValue(
 const char DevToolsWindow::kDevToolsApp[] = "DevToolsApp";
 
 DevToolsWindow::~DevToolsWindow() {
+  content::DevToolsManager::GetInstance()->ClientHostClosing(
+      frontend_host_.get());
+  UpdateBrowserToolbar();
+
   DevToolsWindows* instances = &g_instances.Get();
   DevToolsWindows::iterator it(
       std::find(instances->begin(), instances->end(), this));
@@ -292,7 +304,7 @@ void DevToolsWindow::RegisterProfilePrefs(
       prefs::kDevToolsFileSystemPaths,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
-      prefs::kDevToolsAdbKey, EmptyString(),
+      prefs::kDevToolsAdbKey, std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   registry->RegisterDictionaryPref(
@@ -358,6 +370,7 @@ DevToolsWindow* DevToolsWindow::OpenDevToolsWindowForWorker(
 // static
 DevToolsWindow* DevToolsWindow::CreateDevToolsWindowForWorker(
     Profile* profile) {
+  content::RecordAction(content::UserMetricsAction("DevTools_InspectWorker"));
   return Create(profile, GURL(), NULL, DEVTOOLS_DOCK_SIDE_UNDOCKED, true,
                 false);
 }
@@ -413,6 +426,8 @@ DevToolsWindow* DevToolsWindow::ToggleDevToolsWindow(
     Profile* profile = Profile::FromBrowserContext(
         inspected_rvh->GetProcess()->GetBrowserContext());
     DevToolsDockSide dock_side = GetDockSideFromPrefs(profile);
+    content::RecordAction(
+        content::UserMetricsAction("DevTools_InspectRenderer"));
     window = Create(profile, GURL(), inspected_rvh, dock_side, false, false);
     manager->RegisterDevToolsClientHostFor(agent.get(),
                                            window->frontend_host_.get());
@@ -467,6 +482,7 @@ int DevToolsWindow::GetMinimizedHeight() {
 }
 
 void DevToolsWindow::InspectedContentsClosing() {
+  intercepted_page_beforeunload_ = false;
   web_contents_->GetRenderViewHost()->ClosePage();
 }
 
@@ -566,6 +582,77 @@ void DevToolsWindow::Show(const DevToolsToggleAction& action) {
   ScheduleAction(action);
 }
 
+// static
+bool DevToolsWindow::HandleBeforeUnload(content::WebContents* frontend_contents,
+    bool proceed, bool* proceed_to_fire_unload) {
+  DevToolsWindow* window = AsDevToolsWindow(
+      frontend_contents->GetRenderViewHost());
+  DCHECK(window);
+  if (!window->intercepted_page_beforeunload_)
+    return false;
+  window->BeforeUnloadFired(frontend_contents, proceed,
+      proceed_to_fire_unload);
+  return true;
+}
+
+// static
+bool DevToolsWindow::InterceptPageBeforeUnload(content::WebContents* contents) {
+  DevToolsWindow* window =
+      DevToolsWindow::GetInstanceForInspectedRenderViewHost(
+          contents->GetRenderViewHost());
+  if (!window || window->intercepted_page_beforeunload_)
+    return false;
+
+  window->intercepted_page_beforeunload_ = true;
+  // Handle case of devtools inspecting another devtools instance by passing
+  // the call up to the inspecting devtools instance.
+  if (!DevToolsWindow::InterceptPageBeforeUnload(window->web_contents())) {
+    window->web_contents()->GetRenderViewHost()->FirePageBeforeUnload(false);
+  }
+  return true;
+}
+
+// static
+bool DevToolsWindow::NeedsToInterceptBeforeUnload(
+    content::WebContents* contents) {
+  DevToolsWindow* window =
+      DevToolsWindow::GetInstanceForInspectedRenderViewHost(
+          contents->GetRenderViewHost());
+  return window && !window->intercepted_page_beforeunload_;
+}
+
+// static
+bool DevToolsWindow::HasFiredBeforeUnloadEventForDevToolsBrowser(
+    Browser* browser) {
+  DCHECK(browser->is_devtools());
+  // When FastUnloadController is used, devtools frontend will be detached
+  // from the browser window at this point which means we've already fired
+  // beforeunload.
+  if (browser->tab_strip_model()->empty())
+    return true;
+  content::WebContents* contents =
+      browser->tab_strip_model()->GetWebContentsAt(0);
+  DevToolsWindow* window = AsDevToolsWindow(contents->GetRenderViewHost());
+  DCHECK(window);
+  return window->intercepted_page_beforeunload_;
+}
+
+// static
+void DevToolsWindow::OnPageCloseCanceled(content::WebContents* contents) {
+  DevToolsWindow *window =
+      DevToolsWindow::GetInstanceForInspectedRenderViewHost(
+          contents->GetRenderViewHost());
+  if (!window)
+    return;
+  window->intercepted_page_beforeunload_ = false;
+  // Propagate to devtools opened on devtools if any.
+  DevToolsWindow::OnPageCloseCanceled(window->web_contents());
+}
+
+void DevToolsWindow::SetDockSideForTest(DevToolsDockSide dock_side) {
+  SetDockSide(SideToString(dock_side));
+}
+
 DevToolsWindow::DevToolsWindow(Profile* profile,
                                const GURL& url,
                                content::RenderViewHost* inspected_rvh,
@@ -578,13 +665,14 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
       width_(-1),
       height_(-1),
       dock_side_before_minimized_(dock_side),
+      intercepted_page_beforeunload_(false),
       weak_factory_(this) {
   web_contents_ =
       content::WebContents::Create(content::WebContents::CreateParams(profile));
   frontend_contents_observer_.reset(new FrontendWebContentsObserver(this));
 
   web_contents_->GetController().LoadURL(url, content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL, EmptyString());
+      content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 
   frontend_host_.reset(content::DevToolsClientHost::CreateDevToolsFrontendHost(
       web_contents_, this));
@@ -601,9 +689,6 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
   entry->GetFavicon().valid = true;
 
   // Register on-load actions.
-  content::Source<content::NavigationController> nav_controller_source(
-      &web_contents_->GetController());
-  registrar_.Add(this, chrome::NOTIFICATION_TAB_CLOSING, nav_controller_source);
   registrar_.Add(
       this, chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
       content::Source<ThemeService>(
@@ -661,6 +746,7 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableDevToolsExperiments))
     url_string += "&experiments=true";
+  url_string += "&updateAppcache";
   return GURL(url_string);
 }
 
@@ -740,22 +826,8 @@ DevToolsDockSide DevToolsWindow::SideFromString(
 void DevToolsWindow::Observe(int type,
                              const content::NotificationSource& source,
                              const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_TAB_CLOSING) {
-    if (content::Source<content::NavigationController>(source).ptr() ==
-        &web_contents_->GetController()) {
-      // This happens when browser closes all of its tabs as a result
-      // of window.Close event.
-      // Notify manager that this DevToolsClientHost no longer exists and
-      // initiate self-destuct here.
-      content::DevToolsManager::GetInstance()->ClientHostClosing(
-          frontend_host_.get());
-      UpdateBrowserToolbar();
-      delete this;
-    }
-  } else {
-    DCHECK_EQ(chrome::NOTIFICATION_BROWSER_THEME_CHANGED, type);
-    UpdateTheme();
-  }
+  DCHECK_EQ(chrome::NOTIFICATION_BROWSER_THEME_CHANGED, type);
+  UpdateTheme();
 }
 
 content::WebContents* DevToolsWindow::OpenURLFromTab(
@@ -807,19 +879,34 @@ void DevToolsWindow::CloseContents(content::WebContents* source) {
   if (inspected_window)
     inspected_window->UpdateDevTools();
   // In case of docked web_contents_, we own it so delete here.
+  // Embedding DevTools window will be deleted as a result of
+  // WebContentsDestroyed callback.
   delete web_contents_;
-
-  delete this;
 }
 
 void DevToolsWindow::BeforeUnloadFired(content::WebContents* tab,
                                        bool proceed,
                                        bool* proceed_to_fire_unload) {
-  if (proceed) {
-    content::DevToolsManager::GetInstance()->ClientHostClosing(
-        frontend_host_.get());
+  if (!intercepted_page_beforeunload_) {
+    // Docked devtools window closed directly.
+    if (proceed) {
+      content::DevToolsManager::GetInstance()->ClientHostClosing(
+          frontend_host_.get());
+    }
+    *proceed_to_fire_unload = proceed;
+  } else {
+    // Inspected page is attempting to close.
+    content::WebContents* inspected_web_contents = GetInspectedWebContents();
+    if (proceed) {
+      inspected_web_contents->GetRenderViewHost()->FirePageBeforeUnload(false);
+    } else {
+      bool should_proceed;
+      inspected_web_contents->GetDelegate()->BeforeUnloadFired(
+          inspected_web_contents, false, &should_proceed);
+      DCHECK(!should_proceed);
+    }
+    *proceed_to_fire_unload = false;
   }
-  *proceed_to_fire_unload = proceed;
 }
 
 bool DevToolsWindow::PreHandleKeyboardEvent(
@@ -1058,6 +1145,16 @@ void DevToolsWindow::RemoveFileSystem(const std::string& file_system_path) {
                      &file_system_path_value, NULL, NULL);
 }
 
+void DevToolsWindow::UpgradeDraggedFileSystemPermissions(
+    const std::string& file_system_url) {
+  CHECK(web_contents_->GetURL().SchemeIs(chrome::kChromeDevToolsScheme));
+  file_helper_->UpgradeDraggedFileSystemPermissions(
+      file_system_url,
+      base::Bind(&DevToolsWindow::FileSystemAdded, weak_factory_.GetWeakPtr()),
+      base::Bind(&DevToolsWindow::ShowDevToolsConfirmInfoBar,
+                 weak_factory_.GetWeakPtr()));
+}
+
 void DevToolsWindow::IndexPath(int request_id,
                                const std::string& file_system_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -1132,14 +1229,13 @@ void DevToolsWindow::FileSystemsLoaded(
 
 void DevToolsWindow::FileSystemAdded(
     const DevToolsFileHelper::FileSystem& file_system) {
-  StringValue error_string_value(EmptyString());
-  DictionaryValue* file_system_value = NULL;
+  scoped_ptr<base::StringValue> error_string_value(
+      new base::StringValue(std::string()));
+  scoped_ptr<base::DictionaryValue> file_system_value;
   if (!file_system.file_system_path.empty())
-    file_system_value = CreateFileSystemValue(file_system);
+    file_system_value.reset(CreateFileSystemValue(file_system));
   CallClientFunction("InspectorFrontendAPI.fileSystemAdded",
-                     &error_string_value, file_system_value, NULL);
-  if (file_system_value)
-    delete file_system_value;
+                     error_string_value.get(), file_system_value.get(), NULL);
 }
 
 void DevToolsWindow::IndexingTotalWorkCalculated(
@@ -1322,7 +1418,7 @@ void DevToolsWindow::UpdateTheme() {
       SkColorToRGBAString(tp->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT)) +
       "\")");
   web_contents_->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      EmptyString16(), ASCIIToUTF16(command));
+      base::string16(), base::ASCIIToUTF16(command));
 }
 
 void DevToolsWindow::AddDevToolsExtensionsToClient() {
@@ -1383,8 +1479,8 @@ void DevToolsWindow::CallClientFunction(const std::string& function_name,
     }
   }
   string16 javascript = ASCIIToUTF16(function_name + "(" + params + ");");
-  web_contents_->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(EmptyString16(), javascript);
+  web_contents_->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
+      base::string16(), javascript);
 }
 
 void DevToolsWindow::UpdateBrowserToolbar() {

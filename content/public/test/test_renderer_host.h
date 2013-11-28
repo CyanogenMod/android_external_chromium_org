@@ -34,6 +34,7 @@ class MockRenderProcessHostFactory;
 class NavigationController;
 class RenderProcessHostFactory;
 class RenderViewHostDelegate;
+class TestRenderFrameHostFactory;
 class TestRenderViewHostFactory;
 class WebContents;
 
@@ -116,6 +117,7 @@ class RenderViewHostTestEnabler {
 
   scoped_ptr<MockRenderProcessHostFactory> rph_factory_;
   scoped_ptr<TestRenderViewHostFactory> rvh_factory_;
+  scoped_ptr<TestRenderFrameHostFactory> rfh_factory_;
 };
 
 // RenderViewHostTestHarness ---------------------------------------------------
@@ -172,7 +174,7 @@ class RenderViewHostTestHarness : public testing::Test {
   TestBrowserThreadBundle* thread_bundle() { return thread_bundle_.get(); }
 
 #if defined(USE_AURA)
-  aura::RootWindow* root_window() { return aura_test_helper_->root_window(); }
+  aura::Window* root_window() { return aura_test_helper_->root_window(); }
 #endif
 
   // Replaces the RPH being used.

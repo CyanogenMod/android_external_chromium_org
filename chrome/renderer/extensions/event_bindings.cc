@@ -14,8 +14,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/value_counter.h"
@@ -30,6 +28,8 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/event_filter.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/view_type.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -40,8 +40,8 @@
 #include "url/gurl.h"
 #include "v8/include/v8.h"
 
-using WebKit::WebFrame;
-using WebKit::WebURL;
+using blink::WebFrame;
+using blink::WebURL;
 using content::RenderThread;
 
 namespace extensions {

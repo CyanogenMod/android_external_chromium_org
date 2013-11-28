@@ -53,6 +53,8 @@ class SearchBoxModelObserverBridge : public SearchBoxModelObserver {
   void SetSearchText(const base::string16& text);
 
   virtual void IconChanged() OVERRIDE;
+  virtual void SpeechRecognitionButtonPropChanged() OVERRIDE;
+  virtual void SetSpeechRecognitionButtonState(bool toggled) OVERRIDE;
   virtual void HintTextChanged() OVERRIDE;
   virtual void SelectionModelChanged() OVERRIDE;
   virtual void TextChanged() OVERRIDE;
@@ -94,6 +96,17 @@ void SearchBoxModelObserverBridge::SetSearchText(const base::string16& text) {
 void SearchBoxModelObserverBridge::IconChanged() {
   [[parent_ searchImageView] setImage:gfx::NSImageFromImageSkiaWithColorSpace(
       GetModel()->icon(), base::mac::GetSRGBColorSpace())];
+}
+
+void SearchBoxModelObserverBridge::SpeechRecognitionButtonPropChanged() {
+  // TODO(mukai): implement.
+  NOTIMPLEMENTED();
+}
+
+void SearchBoxModelObserverBridge::SetSpeechRecognitionButtonState(
+    bool toggled) {
+  // TODO(mukai): implement.
+  NOTIMPLEMENTED();
 }
 
 void SearchBoxModelObserverBridge::HintTextChanged() {
@@ -161,8 +174,7 @@ void SearchBoxModelObserverBridge::TextChanged() {
 
   menuController_.reset();
   appListMenu_.reset(
-      new app_list::AppListMenu([delegate_ appListDelegate],
-                                [delegate_ appListModel]->users()));
+      new app_list::AppListMenu([delegate_ appListDelegate]));
   menuController_.reset([[AppListMenuController alloc]
       initWithSearchBoxController:self]);
   [menuButton_ setMenu:[menuController_ menu]];  // Menu will populate here.

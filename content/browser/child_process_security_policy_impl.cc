@@ -135,6 +135,22 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     return (it->second & permissions) == permissions;
   }
 
+#if defined(OS_ANDROID)
+  // Determine if the certain permissions have been granted to a content URI.
+  bool HasPermissionsForContentUri(const base::FilePath& file,
+                                   int permissions) {
+    DCHECK(!file.empty());
+    DCHECK(file.IsContentUri());
+    if (!permissions)
+      return false;
+    base::FilePath file_path = file.StripTrailingSeparators();
+    FileMap::const_iterator it = file_permissions_.find(file_path);
+    if (it != file_permissions_.end())
+      return (it->second & permissions) == permissions;
+    return false;
+  }
+#endif
+
   void GrantBindings(int bindings) {
     enabled_bindings_ |= bindings;
   }
@@ -171,6 +187,10 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   // Determine if the certain permissions have been granted to a file.
   bool HasPermissionsForFile(const base::FilePath& file, int permissions) {
+#if defined(OS_ANDROID)
+    if (file.IsContentUri())
+      return HasPermissionsForContentUri(file, permissions);
+#endif
     if (!permissions || file.empty() || !file.IsAbsolute())
       return false;
     base::FilePath current_path = file.StripTrailingSeparators();
@@ -478,6 +498,12 @@ void ChildProcessSecurityPolicyImpl::GrantCreateFileForFileSystem(
   GrantPermissionsForFileSystem(child_id, filesystem_id, CREATE_NEW_FILE_GRANT);
 }
 
+void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFileSystem(
+    int child_id, const std::string& filesystem_id) {
+  GrantPermissionsForFileSystem(
+      child_id, filesystem_id, CREATE_READ_WRITE_FILE_GRANT);
+}
+
 void ChildProcessSecurityPolicyImpl::GrantCopyIntoFileSystem(
     int child_id, const std::string& filesystem_id) {
   GrantPermissionsForFileSystem(child_id, filesystem_id, COPY_INTO_FILE_GRANT);
@@ -643,12 +669,6 @@ bool ChildProcessSecurityPolicyImpl::CanDeleteFromFileSystem(
                                      DELETE_FILE_GRANT);
 }
 
-void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFileSystem(
-    int child_id, const std::string& filesystem_id) {
-  GrantPermissionsForFileSystem(
-      child_id, filesystem_id, CREATE_READ_WRITE_FILE_GRANT);
-}
-
 bool ChildProcessSecurityPolicyImpl::HasPermissionsForFile(
     int child_id, const base::FilePath& file, int permissions) {
   base::AutoLock lock(lock_);
@@ -793,7 +813,7 @@ bool ChildProcessSecurityPolicyImpl::CanAccessCookiesForOrigin(
 bool ChildProcessSecurityPolicyImpl::CanSendCookiesForOrigin(int child_id,
                                                              const GURL& gurl) {
   for (PluginProcessHostIterator iter; !iter.Done(); ++iter) {
-    if (iter.GetData().process_type == child_id) {
+    if (iter.GetData().id == child_id) {
       if (iter.GetData().process_type == PROCESS_TYPE_PLUGIN) {
         // NPAPI plugin processes are unsandboxed and so are trusted. Plugins
         // can make request to any origin.

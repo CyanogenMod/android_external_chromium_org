@@ -15,6 +15,20 @@ namespace iphoto {
 
 class IPhotoDataProvider;
 
+// Presents a virtual file system containing iPhoto contents in the
+// following organization:
+// /                    = virtual root
+// |- /Albums
+//    |- /AlbumName     = An album entry by name.
+//       |- pic1.jpg    = Entries for photos in the album.
+//       |- pic2.jpg
+//    |- /AnotherAlbum
+//       |- pic3.jpg
+//       |- /originals  = A directory for originals.
+//          |- pic3.jpg = Original picture. Same name as album photo.
+
+extern const char kIPhotoAlbumsDir[];
+
 class IPhotoFileUtil : public NativeMediaFileUtil {
  public:
   explicit IPhotoFileUtil(MediaPathFilter* media_path_filter);
@@ -43,12 +57,12 @@ class IPhotoFileUtil : public NativeMediaFileUtil {
       fileapi::FileSystemOperationContext* context,
       const fileapi::FileSystemURL& url,
       EntryList* file_list) OVERRIDE;
-  virtual base::PlatformFileError CreateSnapshotFileSync(
+  virtual base::PlatformFileError DeleteDirectorySync(
       fileapi::FileSystemOperationContext* context,
-      const fileapi::FileSystemURL& url,
-      base::PlatformFileInfo* file_info,
-      base::FilePath* platform_path,
-      scoped_refptr<webkit_blob::ShareableFileReference>* file_ref) OVERRIDE;
+      const fileapi::FileSystemURL& url) OVERRIDE;
+  virtual base::PlatformFileError DeleteFileSync(
+      fileapi::FileSystemOperationContext* context,
+      const fileapi::FileSystemURL& url) OVERRIDE;
   virtual base::PlatformFileError GetLocalFilePath(
       fileapi::FileSystemOperationContext* context,
       const fileapi::FileSystemURL& url,

@@ -210,20 +210,14 @@ class NET_EXPORT_PRIVATE QuicConnection
   // indicating if the fin bit was consumed.  This does not indicate the data
   // has been sent on the wire: it may have been turned into a packet and queued
   // if the socket was unexpectedly blocked.
+  // If |delegate| is provided, then it will be informed once ACKs have been
+  // received for all the packets written in this call.
+  // The |delegate| is not owned by the QuicConnection and must outlive it.
   QuicConsumedData SendStreamData(QuicStreamId id,
                                   const IOVector& data,
                                   QuicStreamOffset offset,
-                                  bool fin);
-
-  // Same as SendStreamData, except the provided delegate will be informed
-  // once ACKs have been received for all the packets written.
-  // The |delegate| is not owned by the QuicConnection and must outlive it.
-  QuicConsumedData SendStreamDataAndNotifyWhenAcked(
-      QuicStreamId id,
-      const IOVector& data,
-      QuicStreamOffset offset,
-      bool fin,
-      QuicAckNotifier::DelegateInterface* delegate);
+                                  bool fin,
+                                  QuicAckNotifier::DelegateInterface* delegate);
 
   // Send a stream reset frame to the peer.
   virtual void SendRstStream(QuicStreamId id,
@@ -276,6 +270,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // The version of the protocol this connection is using.
   QuicVersion version() const { return framer_.version(); }
 
+  // The versions of the protocol that this connection supports.
+  const QuicVersionVector& supported_versions() const {
+    return framer_.supported_versions();
+  }
+
   // From QuicFramerVisitorInterface
   virtual void OnError(QuicFramer* framer) OVERRIDE;
   virtual bool OnProtocolVersionMismatch(QuicVersion received_version) OVERRIDE;
@@ -285,6 +284,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual void OnVersionNegotiationPacket(
       const QuicVersionNegotiationPacket& packet) OVERRIDE;
   virtual void OnRevivedPacket() OVERRIDE;
+  virtual bool OnUnauthenticatedHeader(const QuicPacketHeader& header) OVERRIDE;
   virtual bool OnPacketHeader(const QuicPacketHeader& header) OVERRIDE;
   virtual void OnFecProtectedPayload(base::StringPiece payload) OVERRIDE;
   virtual bool OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE;
@@ -308,8 +308,6 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // QuicSentPacketManager::HelperInterface
   virtual QuicPacketSequenceNumber GetNextPacketSequenceNumber() OVERRIDE;
-  virtual void OnPacketNacked(QuicPacketSequenceNumber sequence_number,
-                              size_t nack_count) OVERRIDE;
 
   // Accessors
   void set_visitor(QuicConnectionVisitorInterface* visitor) {
@@ -334,10 +332,20 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   bool connected() const { return connected_; }
 
+  // Must only be called on client connections.
+  const QuicVersionVector& server_supported_versions() const {
+    DCHECK(!is_server_);
+    return server_supported_versions_;
+  }
+
   size_t NumFecGroups() const { return group_map_.size(); }
 
   // Testing only.
   size_t NumQueuedPackets() const { return queued_packets_.size(); }
+
+  QuicEncryptedPacket* ReleaseConnectionClosePacket() {
+    return connection_close_packet_.release();
+  }
 
   // Flush any queued frames immediately.  Preserves the batch write mode and
   // does nothing if there are no pending frames.
@@ -370,11 +378,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // by the same policy as the RTO alarm, but is a separate alarm.
   QuicTime OnAbandonFecTimeout();
 
-  // Retransmits unacked packets which were sent with initial encryption, if
-  // |initial_encryption_only| is true, otherwise retransmits all unacked
-  // packets. Used when the negotiated protocol version is different than what
-  // was initially assumed and when the visitor wants to re-transmit packets
-  // with initial encryption when the initial encrypter changes.
+  // Retransmits all unacked packets with retransmittable frames if
+  // |retransmission_type| is ALL_PACKETS, otherwise retransmits only initially
+  // encrypted packets. Used when the negotiated protocol version is different
+  // from what was initially assumed and when the visitor wants to re-transmit
+  // initially encrypted packets when the initial encrypter changes.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
   // Changes the encrypter used for level |level| to |encrypter|. The function
@@ -406,6 +414,15 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   bool is_server() const { return is_server_; }
 
+  // Returns the underlying congestion manager.
+  const QuicCongestionManager& congestion_manager() const {
+    return congestion_manager_;
+  }
+
+  bool CanWrite(TransmissionType transmission_type,
+                HasRetransmittableData retransmittable,
+                IsHandshake handshake);
+
  protected:
   // Send a packet to the peer using encryption |level|. If |sequence_number|
   // is present in the |retransmission_map_|, then contents of this packet will
@@ -417,13 +434,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // manager, and when |forced| is true, it bypasses the congestion manager.
   // TODO(wtc): none of the callers check the return value.
   virtual bool SendOrQueuePacket(EncryptionLevel level,
-                                 QuicPacketSequenceNumber sequence_number,
-                                 QuicPacket* packet,
-                                 QuicPacketEntropyHash entropy_hash,
-                                 TransmissionType transmission_type,
-                                 HasRetransmittableData retransmittable,
-                                 IsHandshake handshake,
-                                 Force forced);
+                                 const SerializedPacket& packet,
+                                 TransmissionType transmission_type);
 
   // Writes the given packet to socket, encrypted with |level|, with the help
   // of helper. Returns true on successful write, false otherwise. However,
@@ -476,10 +488,6 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   friend class ScopedPacketBundler;
   friend class test::QuicConnectionPeer;
-
-  bool CanWrite(TransmissionType transmission_type,
-                HasRetransmittableData retransmittable,
-                IsHandshake handshake);
 
   // Packets which have not been written to the wire.
   // Owns the QuicPacket* packet.
@@ -579,14 +587,6 @@ class NET_EXPORT_PRIVATE QuicConnection
                               RetransmissionTimeComparator>
       RetransmissionTimeouts;
 
-  // Inner helper function for SendStreamData and
-  // SendStreamDataAndNotifyWhenAcked.
-  QuicConsumedData SendStreamDataInner(QuicStreamId id,
-                                       const IOVector& data,
-                                       QuicStreamOffset offset,
-                                       bool fin,
-                                       QuicAckNotifier *notifier);
-
   // Sends a version negotiation packet to the peer.
   void SendVersionNegotiationPacket();
 
@@ -679,9 +679,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   std::vector<QuicRstStreamFrame> last_rst_frames_;
   std::vector<QuicGoAwayFrame> last_goaway_frames_;
   std::vector<QuicConnectionCloseFrame> last_close_frames_;
-  // Then number of packets retransmitted because of nacks
-  // while processed the current ack frame.
-  size_t retransmitted_nacked_packet_count_;
 
   QuicCongestionFeedbackFrame outgoing_congestion_feedback_;
 
@@ -706,6 +703,9 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // Contains information about the current write in progress, if any.
   scoped_ptr<PendingWrite> pending_write_;
+
+  // Contains the connection close packet if the connection has been closed.
+  scoped_ptr<QuicEncryptedPacket> connection_close_packet_;
 
   // True when the socket becomes unwritable.
   bool write_blocked_;
@@ -768,9 +768,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // The state of connection in version negotiation finite state machine.
   QuicVersionNegotiationState version_negotiation_state_;
 
-  // Number of times the RTO timer has fired in a row without receiving an ack.
-  size_t consecutive_rto_count_;
-
   // Tracks if the connection was created by the server.
   bool is_server_;
 
@@ -790,6 +787,10 @@ class NET_EXPORT_PRIVATE QuicConnection
   // all packets that a given block of data was sent in. The AckNotifierManager
   // maintains the currently active notifiers.
   AckNotifierManager ack_notifier_manager_;
+
+  // If non-empty this contains the set of versions received in a
+  // version negotiation packet.
+  QuicVersionVector server_supported_versions_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

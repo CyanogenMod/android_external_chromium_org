@@ -65,6 +65,7 @@
 #include "chrome/browser/enumerate_modules_model_win.h"
 #include "chrome/browser/ui/metro_pin_tab_helper_win.h"
 #include "content/public/browser/gpu_data_manager.h"
+#include "ui/gfx/win/dpi.h"
 #include "win8/util/win8_util.h"
 #endif
 
@@ -190,10 +191,22 @@ ToolsMenuModel::ToolsMenuModel(ui::SimpleMenuModel::Delegate* delegate,
 ToolsMenuModel::~ToolsMenuModel() {}
 
 void ToolsMenuModel::Build(Browser* browser) {
-#if !defined(OS_CHROMEOS) && !defined(OS_MACOSX)
-  AddItemWithStringId(IDC_CREATE_SHORTCUTS, IDS_CREATE_SHORTCUTS);
-  AddSeparator(ui::NORMAL_SEPARATOR);
+  bool show_create_shortcuts = true;
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
+  show_create_shortcuts = false;
+#elif defined(USE_ASH)
+  if (browser->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH)
+    show_create_shortcuts = false;
 #endif
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableStreamlinedHostedApps)) {
+    AddItemWithStringId(IDC_CREATE_HOSTED_APP, IDS_CREATE_HOSTED_APP);
+    AddSeparator(ui::NORMAL_SEPARATOR);
+  } else if (show_create_shortcuts) {
+    AddItemWithStringId(IDC_CREATE_SHORTCUTS, IDS_CREATE_SHORTCUTS);
+    AddSeparator(ui::NORMAL_SEPARATOR);
+  }
 
   AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
 
@@ -538,7 +551,10 @@ void WrenchMenuModel::Build(bool is_new_menu) {
 
 #if defined(USE_AURA)
  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-     content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) {
+     content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor() &&
+     gfx::win::GetUndocumentedDPIScale() == 1.0f &&
+     gfx::GetDPIScale() == 1.0 &&
+     gfx::GetModernUIScale() == 1.0f) {
     if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH) {
       // Metro mode, add the 'Relaunch Chrome in desktop mode'.
       AddSeparator(ui::NORMAL_SEPARATOR);

@@ -32,8 +32,6 @@ LOCAL_SRC_FILES := \
 	gpu/config/gpu_info.cc \
 	gpu/config/gpu_info_collector_android.cc \
 	gpu/config/gpu_info_collector.cc \
-	gpu/config/gpu_switching_list_json.cc \
-	gpu/config/gpu_switching_list.cc \
 	gpu/config/gpu_test_config.cc \
 	gpu/config/gpu_test_expectations_parser.cc \
 	gpu/config/gpu_util.cc \
@@ -90,6 +88,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -111,6 +110,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
@@ -182,6 +182,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -204,6 +205,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \

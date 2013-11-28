@@ -21,6 +21,10 @@ import time
 
 import cmd_helper
 import constants
+import screenshot
+
+from utils import host_path_finder
+
 try:
   from pylib import pexpect
 except:
@@ -461,10 +465,18 @@ class AndroidCommands(object):
 
   def RestartAdbdOnDevice(self):
     logging.info('Killing adbd on the device...')
-    adb_pids = self.KillAll('adbd', signal=signal.SIGTERM, with_su=True)
-    assert adb_pids, 'Unable to obtain adbd pid'
-    logging.info('Waiting for device to settle...')
-    self._adb.SendCommand('wait-for-device')
+    adb_pids = self.ExtractPid('adbd')
+    if not adb_pids:
+      raise errors.MsgException('Unable to obtain adbd pid')
+    try:
+      self.KillAll('adbd', signal=signal.SIGTERM, with_su=True)
+      logging.info('Waiting for device to settle...')
+      self._adb.SendCommand('wait-for-device')
+      new_adb_pids = self.ExtractPid('adbd')
+      if new_adb_pids == adb_pids:
+        logging.error('adbd on the device may not have been restarted.')
+    except Exception as e:
+      logging.error('Exception when trying to kill adbd on the device [%s]', e)
 
   def RestartAdbServer(self):
     """Restart the adb server."""
@@ -737,6 +749,20 @@ class AndroidCommands(object):
     start_line = m.group(0)
     return GetLogTimestamp(start_line, self.GetDeviceYear())
 
+  def StartCrashUploadService(self, package):
+    # TODO(frankf): We really need a python wrapper around Intent
+    # to be shared with StartActivity/BroadcastIntent.
+    cmd = (
+      'am startservice -a %s.crash.ACTION_FIND_ALL -n '
+      '%s/%s.crash.MinidumpUploadService' %
+      (constants.PACKAGE_INFO['chrome'].package,
+       package,
+       constants.PACKAGE_INFO['chrome'].package))
+    am_output = self.RunShellCommandWithSU(cmd)
+    assert am_output and 'Starting' in am_output[-1], (
+        'Service failed to start: %s' % am_output)
+    time.sleep(15)
+
   def BroadcastIntent(self, package, intent, *args):
     """Send a broadcast intent.
 
@@ -841,13 +867,21 @@ class AndroidCommands(object):
       A list of tuples of the form (host_path, device_path) for files whose
       md5sums do not match.
     """
+
+    # Md5Sum resolves symbolic links in path names so the calculation of
+    # relative path names from its output will need the real path names of the
+    # base directories. Having calculated these they are used throughout the
+    # function since this makes us less subject to any future changes to Md5Sum.
+    real_host_path = os.path.realpath(host_path)
+    real_device_path = self.RunShellCommand('realpath "%s"' % device_path)[0]
+
     host_hash_tuples, device_hash_tuples = self._RunMd5Sum(
-        host_path, device_path)
+        real_host_path, real_device_path)
 
     # Ignore extra files on the device.
     if not ignore_filenames:
       host_files = [os.path.relpath(os.path.normpath(p.path),
-                    os.path.normpath(host_path)) for p in host_hash_tuples]
+                                    real_host_path) for p in host_hash_tuples]
 
       def HostHas(fname):
         return any(path in fname for path in host_files)
@@ -862,12 +896,12 @@ class AndroidCommands(object):
     # only a single file is given as the base name given in device_path may
     # differ from that in host_path.
     def HostToDevicePath(host_file_path):
-      return os.path.join(device_path, os.path.relpath(
-          host_file_path, os.path.normpath(host_path)))
+      return os.path.join(device_path, os.path.relpath(host_file_path,
+                                                       real_host_path))
 
     device_hashes = [h.hash for h in device_hash_tuples]
-    return [(t.path, HostToDevicePath(t.path) if os.path.isdir(host_path) else
-             device_path)
+    return [(t.path, HostToDevicePath(t.path) if
+             os.path.isdir(real_host_path) else real_device_path)
             for t in host_hash_tuples if t.hash not in device_hashes]
 
   def PushIfNeeded(self, host_path, device_path):
@@ -1409,6 +1443,20 @@ class AndroidCommands(object):
     logging.warning('Could not find disk IO stats.')
     return None
 
+  def PurgeUnpinnedAshmem(self):
+    """Purges the unpinned ashmem memory for the whole system.
+
+    This can be used to make memory measurements more stable in particular.
+    """
+    host_path = host_path_finder.GetMostRecentHostPath('purge_ashmem')
+    if not host_path:
+      raise Exception('Could not find the purge_ashmem binary.')
+    device_path = os.path.join(constants.TEST_EXECUTABLE_DIR, 'purge_ashmem')
+    self.PushIfNeeded(host_path, device_path)
+    if self.RunShellCommand(device_path, log_result=True):
+      return
+    raise Exception('Error while purging ashmem.')
+
   def GetMemoryUsageForPid(self, pid):
     """Returns the memory usage for given pid.
 
@@ -1420,7 +1468,7 @@ class AndroidCommands(object):
       [0]: Dict of {metric:usage_kb}, for the process which has specified pid.
       The metric keys which may be included are: Size, Rss, Pss, Shared_Clean,
       Shared_Dirty, Private_Clean, Private_Dirty, Referenced, Swap,
-      KernelPageSize, MMUPageSize, Nvidia (tablet only).
+      KernelPageSize, MMUPageSize, Nvidia (tablet only), VmHWM.
       [1]: Detailed /proc/[PID]/smaps information.
     """
     usage_dict = collections.defaultdict(int)
@@ -1454,6 +1502,16 @@ class AndroidCommands(object):
         usage_bytes = int(match.group('usage_bytes'))
         usage_dict['Nvidia'] = int(round(usage_bytes / 1000.0))  # kB
         break
+
+    peak_value_kb = 0
+    for line in self.GetProtectedFileContents('/proc/%s/status' % pid,
+                                              log_result=False):
+      if not line.startswith('VmHWM:'):  # Format: 'VmHWM: +[0-9]+ kB'
+        continue
+      peak_value_kb = int(line.split(':')[1].strip().split(' ')[0])
+    usage_dict['VmHWM'] = peak_value_kb
+    if not peak_value_kb:
+      logging.warning('Could not find memory peak value for pid ' + str(pid))
 
     return (usage_dict, smaps)
 
@@ -1570,14 +1628,13 @@ class AndroidCommands(object):
     """Saves a screenshot image to |host_file| on the host.
 
     Args:
-      host_file: Absolute path to the image file to store on the host.
+      host_file: Absolute path to the image file to store on the host or None to
+                 use an autogenerated file name.
+
+    Returns:
+      Resulting host file name of the screenshot.
     """
-    host_dir = os.path.dirname(host_file)
-    if not os.path.exists(host_dir):
-      os.makedirs(host_dir)
-    device_file = '%s/screenshot.png' % self.GetExternalStorage()
-    self.RunShellCommand('/system/bin/screencap -p %s' % device_file)
-    self.PullFileFromDevice(device_file, host_file)
+    return screenshot.TakeScreenshot(self, host_file)
 
   def PullFileFromDevice(self, device_file, host_file):
     """Download |device_file| on the device from to |host_file| on the host.

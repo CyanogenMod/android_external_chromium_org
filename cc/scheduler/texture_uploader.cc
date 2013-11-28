@@ -38,7 +38,7 @@ static const size_t kTextureUploadFlushPeriod = 4;
 
 namespace cc {
 
-TextureUploader::Query::Query(WebKit::WebGraphicsContext3D* context)
+TextureUploader::Query::Query(blink::WebGraphicsContext3D* context)
     : context_(context),
       query_id_(0),
       value_(0),
@@ -74,7 +74,7 @@ unsigned TextureUploader::Query::Value() {
   return value_;
 }
 
-TextureUploader::TextureUploader(WebKit::WebGraphicsContext3D* context,
+TextureUploader::TextureUploader(blink::WebGraphicsContext3D* context,
                                  bool use_map_tex_sub_image,
                                  bool use_shallow_flush)
     : context_(context),
@@ -147,14 +147,14 @@ void TextureUploader::Upload(const uint8* image,
     // ETC1 does not support subimage uploads.
     DCHECK(is_full_upload);
     UploadWithTexImageETC1(image, size);
-    return;
-  }
-
-  if (use_map_tex_sub_image_) {
-    UploadWithMapTexSubImage(
-        image, image_rect, source_rect, dest_offset, format);
   } else {
-    UploadWithTexSubImage(image, image_rect, source_rect, dest_offset, format);
+    if (use_map_tex_sub_image_) {
+      UploadWithMapTexSubImage(
+          image, image_rect, source_rect, dest_offset, format);
+    } else {
+      UploadWithTexSubImage(
+          image, image_rect, source_rect, dest_offset, format);
+    }
   }
 
   if (is_full_upload)

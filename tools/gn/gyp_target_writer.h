@@ -10,7 +10,9 @@
 
 #include "base/basictypes.h"
 #include "tools/gn/gyp_helper.h"
+#include "tools/gn/path_output.h"
 
+class BuilderRecord;
 class Err;
 class Settings;
 class SourceFile;
@@ -25,13 +27,15 @@ class GypTargetWriter {
           host_debug(NULL),
           host_release(NULL) {
     }
-    const Target* debug;
-    const Target* release;
-    const Target* host_debug;
-    const Target* host_release;
+    const BuilderRecord* debug;
+    const BuilderRecord* release;
+    const BuilderRecord* host_debug;
+    const BuilderRecord* host_release;
   };
 
-  GypTargetWriter(const Target* target, std::ostream& out);
+  GypTargetWriter(const Target* target,
+                  const SourceDir& gyp_dir,
+                  std::ostream& out);
   virtual ~GypTargetWriter();
 
   static void WriteFile(const SourceFile& gyp_file,
@@ -41,11 +45,19 @@ class GypTargetWriter {
   virtual void Run() = 0;
 
  protected:
+  // Writes the given number of spaces to the output stream and returns it.
+  std::ostream& Indent(int spaces);
+  static std::ostream& Indent(std::ostream& out, int spaces);
+
+  static const int kExtraIndent = 2;
+
   const Settings* settings_;  // Non-owning.
   const Target* target_;  // Non-owning.
+  SourceDir gyp_dir_;  // Dir of GYP file.
   std::ostream& out_;
 
   GypHelper helper_;
+  PathOutput path_output_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GypTargetWriter);

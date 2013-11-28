@@ -266,7 +266,7 @@ void GpuVideoDecodeAccelerator::Initialize(
     NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
     return;
   }
-  DLOG(INFO) << "Initializing DXVA HW decoder for windows.";
+  DVLOG(0) << "Initializing DXVA HW decoder for windows.";
   video_decode_accelerator_.reset(new DXVAVideoDecodeAccelerator(
       this, make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
@@ -462,6 +462,10 @@ void GpuVideoDecodeAccelerator::OnWillDestroyStub() {
   DCHECK(stub_);
   stub_->channel()->RemoveRoute(host_route_id_);
   stub_->RemoveDestructionObserver(this);
+  {
+    DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
+    uncleared_textures_.clear();
+  }
   if (filter_.get()) {
     // Remove the filter first because the member variables can be accessed on
     // IO thread. When filter is removed, OnFilterRemoved will delete |this|.

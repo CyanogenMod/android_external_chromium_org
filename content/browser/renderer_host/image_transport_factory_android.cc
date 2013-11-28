@@ -20,7 +20,7 @@ base::LazyInstance<ObserverList<ImageTransportFactoryAndroidObserver> >::Leaky
     g_factory_observers = LAZY_INSTANCE_INITIALIZER;
 
 class GLContextLostListener
-    : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
+    : public blink::WebGraphicsContext3D::WebGraphicsContextLostCallback {
  public:
   // WebGraphicsContextLostCallback implementation.
   virtual void onContextLost() OVERRIDE;
@@ -43,10 +43,13 @@ class CmdBufferImageTransportFactory : public ImageTransportFactoryAndroid {
   virtual void DeleteTexture(uint32_t id) OVERRIDE;
   virtual void AcquireTexture(
       uint32 texture_id, const signed char* mailbox_name) OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* GetContext3D() OVERRIDE {
+  virtual blink::WebGraphicsContext3D* GetContext3D() OVERRIDE {
     return context_.get();
   }
   virtual GLHelper* GetGLHelper() OVERRIDE;
+  virtual uint32 GetChannelID() OVERRIDE {
+    return context_->GetChannelID();
+  }
 
  private:
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context_;
@@ -62,10 +65,9 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
   DCHECK(gpu_channel_host);
 
-  WebKit::WebGraphicsContext3D::Attributes attrs;
+  blink::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   GURL url("chrome://gpu/ImageTransportFactoryAndroid");
-  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client;
   static const size_t kBytesPerPixel = 4;
   gfx::DeviceDisplayInfo display_info;
   size_t full_screen_texture_size_in_bytes = display_info.GetDisplayHeight() *
@@ -79,11 +81,12 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
       3 * full_screen_texture_size_in_bytes, kDefaultMaxTransferBufferSize);
   limits.mapped_memory_reclaim_limit =
       WebGraphicsContext3DCommandBufferImpl::kNoLimit;
+  bool use_echo_for_swap_ack = true;
   context_.reset(
       new WebGraphicsContext3DCommandBufferImpl(0,  // offscreen
                                                 url,
                                                 gpu_channel_host.get(),
-                                                swap_client,
+                                                use_echo_for_swap_ack,
                                                 attrs,
                                                 false,
                                                 limits));

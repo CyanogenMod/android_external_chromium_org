@@ -24,13 +24,12 @@
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
+#include "components/policy/core/common/policy_map.h"
 #include "policy/policy_constants.h"
 #endif
 
 namespace {
 
-using testing::AnyNumber;
 using testing::Return;
 using testing::_;
 
@@ -104,7 +103,6 @@ class SyncedPrefChangeRegistrarTest : public InProcessBrowserTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     EXPECT_CALL(policy_provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(policy_provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
         &policy_provider_);
   }

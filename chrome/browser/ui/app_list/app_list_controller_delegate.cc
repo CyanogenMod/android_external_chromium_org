@@ -6,14 +6,15 @@
 
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/ui/app_list/extension_uninstaller.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/common/extension.h"
 #include "net/base/url_util.h"
 
 namespace {
@@ -30,6 +31,10 @@ const extensions::Extension* GetExtension(Profile* profile,
 }  // namespace
 
 AppListControllerDelegate::~AppListControllerDelegate() {}
+
+bool AppListControllerDelegate::ForceNativeDesktop() const {
+  return false;
+}
 
 void AppListControllerDelegate::ViewClosing() {}
 
@@ -102,7 +107,7 @@ bool AppListControllerDelegate::HasOptionsPage(
   const ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
   const extensions::Extension* extension = GetExtension(profile, app_id);
-  return service->IsExtensionEnabledForLauncher(app_id) &&
+  return extension_util::IsAppLaunchableWithoutEnabling(app_id, service) &&
          extension &&
          !extensions::ManifestURL::GetOptionsPage(extension).is_empty();
 }
@@ -128,8 +133,7 @@ AppListControllerDelegate::GetExtensionLaunchType(
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
   return service->extension_prefs()->
-      GetLaunchType(GetExtension(profile, app_id),
-                    extensions::ExtensionPrefs::LAUNCH_DEFAULT);
+      GetLaunchType(GetExtension(profile, app_id));
 }
 
 void AppListControllerDelegate::SetExtensionLaunchType(
@@ -157,8 +161,7 @@ void AppListControllerDelegate::GetApps(Profile* profile,
                                         ExtensionSet* out_apps) {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
-  if (!service)
-    return;
+  DCHECK(service);
   out_apps->InsertAll(*service->extensions());
   out_apps->InsertAll(*service->disabled_extensions());
   out_apps->InsertAll(*service->terminated_extensions());

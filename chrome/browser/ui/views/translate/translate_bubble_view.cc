@@ -65,8 +65,20 @@ void GetTranslateLanguages(content::WebContents* web_contents,
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(web_contents);
   *source = translate_tab_helper->language_state().original_language();
-  *target = TranslateManager::GetLanguageCode(
-      g_browser_process->GetApplicationLocale());
+
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  Profile* original_profile = profile->GetOriginalProfile();
+  PrefService* prefs = original_profile->GetPrefs();
+  if (!web_contents->GetBrowserContext()->IsOffTheRecord()) {
+    std::string auto_translate_language =
+        TranslateManager::GetAutoTargetLanguage(*source, prefs);
+    if (!auto_translate_language.empty()) {
+      *target = auto_translate_language;
+      return;
+    }
+  }
+  *target = TranslateManager::GetTargetLanguage(prefs);
 }
 
 // TODO(hajimehoshi): The interface to offer denial choices should be another
@@ -131,6 +143,13 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
                                      TranslateBubbleModel::ViewState type,
                                      Browser* browser) {
   if (IsShowing()) {
+    // When the user reads the advanced setting panel, the bubble should not be
+    // changed because he/she is focusing on the bubble.
+    if (translate_bubble_view_->web_contents() == web_contents &&
+        translate_bubble_view_->model()->GetViewState() ==
+        TranslateBubbleModel::VIEW_STATE_ADVANCED) {
+      return;
+    }
     translate_bubble_view_->SwitchView(type);
     return;
   }
@@ -143,12 +162,10 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
       new TranslateUIDelegate(web_contents, source_language, target_language));
   scoped_ptr<TranslateBubbleModel> model(
       new TranslateBubbleModelImpl(type, ui_delegate.Pass()));
-  bool is_in_incognito_window =
-      web_contents->GetBrowserContext()->IsOffTheRecord();
   TranslateBubbleView* view = new TranslateBubbleView(anchor_view,
                                                       model.Pass(),
-                                                      is_in_incognito_window,
-                                                      browser);
+                                                      browser,
+                                                      web_contents);
   views::BubbleDelegateView::CreateBubble(view)->Show();
 }
 
@@ -189,10 +206,14 @@ void TranslateBubbleView::ButtonPressed(views::Button* sender,
 }
 
 void TranslateBubbleView::WindowClosing() {
-  if (!translate_executed_ &&
-      (browser_ == NULL || !browser_->IsAttemptingToCloseBrowser())) {
+  // The operations for |model_| are valid only when a WebContents is alive.
+  // TODO(hajimehoshi): TranslateBubbleViewModel(Impl) should not hold a
+  // WebContents as a member variable because the WebContents might be destroyed
+  // while the TranslateBubbleViewModel(Impl) is still alive. Instead,
+  // TranslateBubbleViewModel should take a reference of a WebContents at each
+  // method. (crbug/320497)
+  if (!translate_executed_ && web_contents())
     model_->TranslationDeclined();
-  }
 
   // We have to reset |translate_bubble_view_| here, not in our destructor,
   // because we'll be destroyed asynchronously and the shown state will be
@@ -251,6 +272,11 @@ void TranslateBubbleView::LinkClicked(views::Link* source, int event_flags) {
   HandleLinkClicked(static_cast<LinkID>(source->id()));
 }
 
+void TranslateBubbleView::WebContentsDestroyed(
+    content::WebContents* web_contents) {
+  GetWidget()->CloseNow();
+}
+
 TranslateBubbleModel::ViewState TranslateBubbleView::GetViewState() const {
   return model_->GetViewState();
 }
@@ -258,9 +284,10 @@ TranslateBubbleModel::ViewState TranslateBubbleView::GetViewState() const {
 TranslateBubbleView::TranslateBubbleView(
     views::View* anchor_view,
     scoped_ptr<TranslateBubbleModel> model,
-    bool is_in_incognito_window,
-    Browser* browser)
+    Browser* browser,
+    content::WebContents* web_contents)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
+      WebContentsObserver(web_contents),
       before_translate_view_(NULL),
       translating_view_(NULL),
       after_translate_view_(NULL),
@@ -271,7 +298,9 @@ TranslateBubbleView::TranslateBubbleView(
       target_language_combobox_(NULL),
       always_translate_checkbox_(NULL),
       model_(model.Pass()),
-      is_in_incognito_window_(is_in_incognito_window),
+      is_in_incognito_window_(
+          web_contents ?
+          web_contents->GetBrowserContext()->IsOffTheRecord() : false),
       browser_(browser),
       translate_executed_(false) {
   if (model_->GetViewState() !=
@@ -311,6 +340,8 @@ void TranslateBubbleView::HandleButtonPressed(
       break;
     }
     case BUTTON_ID_DONE: {
+      if (always_translate_checkbox_)
+        model_->SetAlwaysTranslate(always_translate_checkbox_->checked());
       translate_executed_ = true;
       model_->Translate();
       break;
@@ -332,9 +363,8 @@ void TranslateBubbleView::HandleButtonPressed(
       break;
     }
     case BUTTON_ID_ALWAYS_TRANSLATE: {
-      DCHECK(always_translate_checkbox_);
-      model_->SetAlwaysTranslate(always_translate_checkbox_->checked());
-      UpdateAdvancedView();
+      // Do nothing. The state of the checkbox affects only when the 'Done'
+      // button is pressed.
       break;
     }
   }
@@ -385,12 +415,20 @@ void TranslateBubbleView::HandleComboboxSelectedIndexChanged(
       break;
     }
     case COMBOBOX_ID_SOURCE_LANGUAGE: {
+      if (model_->GetOriginalLanguageIndex() ==
+          source_language_combobox_->selected_index()) {
+        break;
+      }
       model_->UpdateOriginalLanguageIndex(
           source_language_combobox_->selected_index());
       UpdateAdvancedView();
       break;
     }
     case COMBOBOX_ID_TARGET_LANGUAGE: {
+      if (model_->GetTargetLanguageIndex() ==
+          target_language_combobox_->selected_index()) {
+        break;
+      }
       model_->UpdateTargetLanguageIndex(
           target_language_combobox_->selected_index());
       UpdateAdvancedView();
@@ -437,9 +475,7 @@ views::View* TranslateBubbleView::CreateViewBeforeTranslate() {
   cs->AddPaddingColumn(1, 0);
 
   cs = layout->AddColumnSet(COLUMN_SET_ID_CONTENT);
-  cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
-                0, GridLayout::USE_PREF, 0, 0);
-  cs->AddPaddingColumn(1, views::kUnrelatedControlHorizontalSpacing);
+  cs->AddPaddingColumn(1, 0);
   cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
                 0, GridLayout::USE_PREF, 0, 0);
   cs->AddPaddingColumn(0, views::kRelatedButtonHSpacing);
@@ -455,9 +491,6 @@ views::View* TranslateBubbleView::CreateViewBeforeTranslate() {
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   layout->StartRow(0, COLUMN_SET_ID_CONTENT);
-  layout->AddView(CreateLink(this,
-                             IDS_TRANSLATE_BUBBLE_LEARN_MORE,
-                             LINK_ID_LEARN_MORE));
   layout->AddView(denial_combobox_);
   layout->AddView(CreateLabelButton(
       this,
@@ -490,9 +523,7 @@ views::View* TranslateBubbleView::CreateViewTranslating() {
   cs->AddPaddingColumn(1, 0);
 
   cs = layout->AddColumnSet(COLUMN_SET_ID_CONTENT);
-  cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
-                0, GridLayout::USE_PREF, 0, 0);
-  cs->AddPaddingColumn(1, views::kUnrelatedControlHorizontalSpacing);
+  cs->AddPaddingColumn(1, 0);
   cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
                 0, GridLayout::USE_PREF, 0, 0);
 
@@ -502,9 +533,6 @@ views::View* TranslateBubbleView::CreateViewTranslating() {
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   layout->StartRow(0, COLUMN_SET_ID_CONTENT);
-  layout->AddView(CreateLink(this,
-                             IDS_TRANSLATE_BUBBLE_LEARN_MORE,
-                             LINK_ID_LEARN_MORE));
   views::LabelButton* revert_button = CreateLabelButton(
       this,
       l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_REVERT),
@@ -539,9 +567,7 @@ views::View* TranslateBubbleView::CreateViewAfterTranslate() {
   cs->AddPaddingColumn(1, 0);
 
   cs = layout->AddColumnSet(COLUMN_SET_ID_CONTENT);
-  cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
-                0, GridLayout::USE_PREF, 0, 0);
-  cs->AddPaddingColumn(1, views::kUnrelatedControlHorizontalSpacing);
+  cs->AddPaddingColumn(1, 0);
   cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
                 0, GridLayout::USE_PREF, 0, 0);
 
@@ -554,9 +580,6 @@ views::View* TranslateBubbleView::CreateViewAfterTranslate() {
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   layout->StartRow(0, COLUMN_SET_ID_CONTENT);
-  layout->AddView(CreateLink(this,
-                             IDS_TRANSLATE_BUBBLE_LEARN_MORE,
-                             LINK_ID_LEARN_MORE));
   layout->AddView(CreateLabelButton(
       this,
       l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_REVERT),
@@ -589,9 +612,7 @@ views::View* TranslateBubbleView::CreateViewError() {
   cs->AddPaddingColumn(1, 0);
 
   cs = layout->AddColumnSet(COLUMN_SET_ID_CONTENT);
-  cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
-                0, GridLayout::USE_PREF, 0, 0);
-  cs->AddPaddingColumn(1, views::kUnrelatedControlHorizontalSpacing);
+  cs->AddPaddingColumn(1, 0);
   cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
                 0, GridLayout::USE_PREF, 0, 0);
 
@@ -604,9 +625,6 @@ views::View* TranslateBubbleView::CreateViewError() {
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   layout->StartRow(0, COLUMN_SET_ID_CONTENT);
-  layout->AddView(CreateLink(this,
-                             IDS_TRANSLATE_BUBBLE_LEARN_MORE,
-                             LINK_ID_LEARN_MORE));
   layout->AddView(CreateLabelButton(
       this,
       l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_TRY_AGAIN),
@@ -657,7 +675,6 @@ views::View* TranslateBubbleView::CreateViewAdvanced() {
 
   enum {
     COLUMN_SET_ID_LANGUAGES,
-    COLUMN_SET_ID_ALWAYS_TRANSLATE,
     COLUMN_SET_ID_BUTTONS,
   };
 
@@ -668,13 +685,6 @@ views::View* TranslateBubbleView::CreateViewAdvanced() {
   cs->AddColumn(GridLayout::FILL, GridLayout::CENTER,
                 0, GridLayout::USE_PREF, 0, 0);
   cs->AddPaddingColumn(1, 0);
-
-  if (!is_in_incognito_window_) {
-    cs = layout->AddColumnSet(COLUMN_SET_ID_ALWAYS_TRANSLATE);
-    cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
-                  0, GridLayout::USE_PREF, 0, 0);
-    cs->AddPaddingColumn(1, 0);
-  }
 
   cs = layout->AddColumnSet(COLUMN_SET_ID_BUTTONS);
   cs->AddColumn(GridLayout::LEADING, GridLayout::CENTER,
@@ -697,9 +707,9 @@ views::View* TranslateBubbleView::CreateViewAdvanced() {
   layout->AddView(target_language_combobox_);
 
   if (!is_in_incognito_window_) {
-    layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
-
-    layout->StartRow(0, COLUMN_SET_ID_ALWAYS_TRANSLATE);
+    layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+    layout->StartRow(0, COLUMN_SET_ID_LANGUAGES);
+    layout->SkipColumns(1);
     layout->AddView(always_translate_checkbox_);
   }
 
@@ -741,13 +751,10 @@ void TranslateBubbleView::UpdateAdvancedView() {
   string16 target_language_name =
       model_->GetLanguageNameAt(model_->GetTargetLanguageIndex());
 
-  string16 message =
-      l10n_util::GetStringFUTF16(IDS_TRANSLATE_BUBBLE_ALWAYS,
-                                 source_language_name,
-                                 target_language_name);
   // "Always translate" checkbox doesn't exist in an incognito window.
   if (always_translate_checkbox_) {
-    always_translate_checkbox_->SetText(message);
+    always_translate_checkbox_->SetText(
+        l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_ALWAYS));
     always_translate_checkbox_->SetChecked(
         model_->ShouldAlwaysTranslate());
   }

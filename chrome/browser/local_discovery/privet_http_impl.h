@@ -8,8 +8,11 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/file_util.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/local_discovery/privet_http.h"
+#include "printing/pdf_render_settings.h"
 
 namespace local_discovery {
 
@@ -155,7 +158,7 @@ class PrivetLocalPrintOperationImpl
   virtual ~PrivetLocalPrintOperationImpl();
   virtual void Start() OVERRIDE;
 
-  virtual void SendData(const std::string& data) OVERRIDE;
+  virtual void SetData(base::RefCountedBytes* data) OVERRIDE;
 
   virtual void SetTicket(const std::string& ticket) OVERRIDE;
 
@@ -163,7 +166,13 @@ class PrivetLocalPrintOperationImpl
 
   virtual void SetJobname(const std::string& jobname) OVERRIDE;
 
-  virtual  void SetOffline(bool offline) OVERRIDE;
+  virtual void SetOffline(bool offline) OVERRIDE;
+
+  virtual void SetConversionSettings(
+      const printing::PdfRenderSettings& conversion_settings) OVERRIDE;
+
+  virtual void SetPWGRasterConverterForTesting(
+      scoped_ptr<PWGRasterConverter> pwg_raster_converter) OVERRIDE;
 
   virtual PrivetHTTPClient* GetHTTPClient() OVERRIDE;
 
@@ -180,39 +189,53 @@ class PrivetLocalPrintOperationImpl
                                 int http_code,
                                 const base::DictionaryValue* value) OVERRIDE;
  private:
-  typedef base::Callback<void(const base::DictionaryValue* value)>
+  typedef base::Callback<void(bool, const base::DictionaryValue* value)>
       ResponseCallback;
-
-  void StartCurrentRequest();
 
   void StartInitialRequest();
   void GetCapabilities();
-  // TODO(noamsml): void DoCreatejob();
+  void DoCreatejob();
   void DoSubmitdoc();
 
-  void OnCapabilities(const base::DictionaryValue* value);
-  void OnSubmitdocResponse(const base::DictionaryValue* value);
+  void StartConvertToPWG();
+  void StartPrinting();
+
+  void OnCapabilitiesResponse(bool has_error,
+                              const base::DictionaryValue* value);
+  void OnSubmitdocResponse(bool has_error,
+                           const base::DictionaryValue* value);
+  void OnCreatejobResponse(bool has_error,
+                           const base::DictionaryValue* value);
+  void OnPWGRasterConverted(bool success, const base::FilePath& pwg_file_path);
 
   PrivetHTTPClientImpl* privet_client_;
   PrivetLocalPrintOperation::Delegate* delegate_;
 
-  base::Closure current_request_;
   ResponseCallback current_response_;
 
   std::string ticket_;
-  std::string data_;
+  scoped_refptr<base::RefCountedBytes> data_;
+  base::FilePath pwg_file_path_;
 
   bool use_pdf_;
   bool has_capabilities_;
   bool has_extended_workflow_;
   bool started_;
   bool offline_;
+  printing::PdfRenderSettings conversion_settings_;
 
   std::string user_;
   std::string jobname_;
 
+  std::string jobid_;
+
+  int invalid_job_retries_;
+
   scoped_ptr<PrivetURLFetcher> url_fetcher_;
   scoped_ptr<PrivetInfoOperation> info_operation_;
+  scoped_ptr<PWGRasterConverter> pwg_raster_converter_;
+
+  base::WeakPtrFactory<PrivetLocalPrintOperationImpl> weak_factory_;
 };
 
 class PrivetHTTPClientImpl : public PrivetHTTPClient,

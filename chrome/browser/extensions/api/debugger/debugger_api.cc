@@ -21,7 +21,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api_constants.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -32,7 +31,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler.h"
@@ -45,7 +43,9 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_utils.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -397,7 +397,7 @@ void ExtensionDevToolsClientHost::SendDetachedEvent() {
                                                     detach_reason_));
   scoped_ptr<extensions::Event> event(new extensions::Event(
       OnDetach::kEventName, args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   extensions::ExtensionSystem::Get(profile_)->event_router()->
       DispatchEventToExtension(extension_id_, event.Pass());
 }
@@ -414,7 +414,7 @@ void ExtensionDevToolsClientHost::Observe(
     Close();
   } else {
     DCHECK_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED, type);
-    if (content::Details<InfoBarRemovedDetails>(details)->first == infobar_) {
+    if (content::Details<InfoBar::RemovedDetails>(details)->first == infobar_) {
       infobar_ = NULL;
       SendDetachedEvent();
       Close();
@@ -447,7 +447,7 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
     scoped_ptr<ListValue> args(OnEvent::Create(debuggee_, method_name, params));
     scoped_ptr<extensions::Event> event(new extensions::Event(
         OnEvent::kEventName, args.Pass()));
-    event->restrict_to_profile = profile_;
+    event->restrict_to_browser_context = profile_;
     extensions::ExtensionSystem::Get(profile_)->event_router()->
         DispatchEventToExtension(extension_id_, event.Pass());
   } else {
@@ -485,13 +485,13 @@ void DebuggerFunction::FormatErrorMessage(const std::string& format) {
 bool DebuggerFunction::InitAgentHost() {
   if (debuggee_.tab_id) {
     WebContents* web_contents = NULL;
-    bool result = ExtensionTabUtil::GetTabById(*debuggee_.tab_id,
-                                               GetProfile(),
-                                               include_incognito(),
-                                               NULL,
-                                               NULL,
-                                               &web_contents,
-                                               NULL);
+    bool result = extensions::ExtensionTabUtil::GetTabById(*debuggee_.tab_id,
+                                                           GetProfile(),
+                                                           include_incognito(),
+                                                           NULL,
+                                                           NULL,
+                                                           &web_contents,
+                                                           NULL);
     if (result && web_contents) {
       if (content::HasWebUIScheme(web_contents->GetURL())) {
         error_ = ErrorUtils::FormatErrorMessage(

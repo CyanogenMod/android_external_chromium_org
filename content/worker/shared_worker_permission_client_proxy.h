@@ -17,23 +17,25 @@ class ThreadSafeSender;
 // This proxy is created on the main renderer thread then passed onto
 // the blink's worker thread.
 class SharedWorkerPermissionClientProxy
-    : public WebKit::WebWorkerPermissionClientProxy {
+    : public blink::WebWorkerPermissionClientProxy {
  public:
   SharedWorkerPermissionClientProxy(
       const GURL& origin_url,
+      bool is_unique_origin,
       int routing_id,
       ThreadSafeSender* thread_safe_sender);
   virtual ~SharedWorkerPermissionClientProxy();
 
   // WebWorkerPermissionClientProxy overrides.
-  virtual bool allowDatabase(const WebKit::WebString& name,
-                             const WebKit::WebString& display_name,
+  virtual bool allowDatabase(const blink::WebString& name,
+                             const blink::WebString& display_name,
                              unsigned long estimated_size);
   virtual bool allowFileSystem();
-  virtual bool allowIndexedDB(const WebKit::WebString& name);
+  virtual bool allowIndexedDB(const blink::WebString& name);
 
  private:
   const GURL origin_url_;
+  const bool is_unique_origin_;
   const int routing_id_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 

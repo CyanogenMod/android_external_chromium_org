@@ -16,20 +16,20 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 
 using content::BrowserThread;
 using content::UserMetricsAction;
@@ -113,21 +113,6 @@ BackgroundPageType GetBackgroundPageType(const Extension* extension) {
   return EVENT_PAGE;
 }
 
-void DispatchOnInstalledEvent(
-    Profile* profile,
-    const std::string& extension_id,
-    const Version& old_version,
-    bool chrome_updated) {
-  // profile manager can be NULL in unit tests.
-  if (!g_browser_process->profile_manager())
-    return;
-  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
-    return;
-
-  extensions::RuntimeEventRouter::DispatchOnInstalledEvent(
-      profile, extension_id, old_version, chrome_updated);
-}
-
 }  // namespace
 
 InstalledLoader::InstalledLoader(ExtensionService* extension_service)
@@ -166,11 +151,18 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
   // Chrome was not running.
   const ManagementPolicy* policy = extensions::ExtensionSystem::Get(
       extension_service_->profile())->management_policy();
-  if (extension.get() && !policy->UserMayLoad(extension.get(), NULL)) {
-    // The error message from UserMayInstall() often contains the extension ID
-    // and is therefore not well suited to this UI.
-    error = errors::kDisabledByPolicy;
-    extension = NULL;
+  if (extension.get()) {
+    Extension::DisableReason disable_reason = Extension::DISABLE_NONE;
+    if (!policy->UserMayLoad(extension.get(), NULL)) {
+      // The error message from UserMayInstall() often contains the extension ID
+      // and is therefore not well suited to this UI.
+      error = errors::kDisabledByPolicy;
+      extension = NULL;
+    } else if (!extension_prefs_->IsExtensionDisabled(extension->id()) &&
+               policy->MustRemainDisabled(extension, &disable_reason, NULL)) {
+      extension_prefs_->SetExtensionState(extension->id(), Extension::DISABLED);
+      extension_prefs_->AddDisableReason(extension->id(), disable_reason);
+    }
   }
 
   if (!extension.get()) {

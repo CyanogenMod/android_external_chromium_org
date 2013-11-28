@@ -216,6 +216,63 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.Dock.Action" enum="DockedAction">
+  <summary>
+    User-initiated action taken that affects docked windows such as docking,
+    undocking, minimizing, restoring, closing or just dragging a docked window.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.ActionSource" enum="DockedActionSource">
+  <summary>
+    Source (mouse, touch or unknown) of the user-initiated action for docked
+    windows.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.ItemsAll">
+  <summary>
+    Number of all docked windows or panels including hidden or minimized.
+    Recorded on every user action that interacts with docked windows.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.ItemsLarge">
+  <summary>
+    Number of large (wider than dock maximum width) windows that had to be
+    shrunk to get docked among the visible docked windows. Recorded on every
+    user action that interacts with docked windows.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.ItemsPanels">
+  <summary>
+    Number of docked visible panels. Recorded on every user action that
+    interacts with docked windows.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.ItemsVisible">
+  <summary>
+    Number of visible docked windows or panels. Recorded on every user action
+    that interacts with docked windows.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.TimeBetweenUse" units="seconds">
+  <summary>
+    Time elapsed between instances of docking, undocking or any other action
+    affecting docked state of a window.
+  </summary>
+</histogram>
+
+<histogram name="Ash.Dock.Width" units="pixels">
+  <summary>
+    Width of the docked area in pixels. Recorded every time it changes after a
+    user window resize operation is completed.
+  </summary>
+</histogram>
+
 <histogram name="Ash.GestureCreated" enum="UIEventType">
   <summary>
     The gesture-events recognized and dispatched by the browser gesture
@@ -227,6 +284,24 @@ other types of suffix sets.
   <summary>
     The gesture-events recognized and dispatched by the browser gesture
     recognizer for various UI components.
+  </summary>
+</histogram>
+
+<histogram name="Ash.ShelfAlignmentOverTime" enum="ShelfAlignmentValue">
+  <summary>
+    The current state of the shelf (alignment) tracked over time by logging on a
+    regular basis (30 minutes), this is used instead of log in or shelf usage to
+    track users that do not lock/unlock or log in frequently and use a small
+    number of browser instances or otherwise infrequently interact with the
+    shelf launcher.
+  </summary>
+</histogram>
+
+<histogram name="Ash.ShelfAlignmentUsage" enum="ShelfAlignmentValue">
+  <summary>
+    The current state of the shelf (alignment) when the shelf launcher is used
+    to launch an app/window/etc, this is used instead of log in to give data on
+    users that do not lock/unlock or log in frequently.
   </summary>
 </histogram>
 
@@ -1203,6 +1278,43 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Cast.Sender.CastButtonShown" enum="BooleanEnabled">
+  <summary>
+    Records the number of times the cast button was shown to the user. The value
+    will be true if the button is enabled, and false if the button is disabled.
+    Note that depending on the current UX, it's possible that we hide the button
+    entirely if it's disabled, so it's possible for the false values to be 0.
+  </summary>
+</histogram>
+
+<histogram name="Cast.Sender.CastButtonShownInitialFullscreen"
+    enum="BooleanEnabled">
+  <summary>
+    Records the number of times the cast button was shown to the user when the
+    video is fullscreened. The value will only be recorded on entering
+    fullscreen. The value will be true if the button is enabled, and false if
+    the button is disabled. Note that depending on the current UX,it's possible
+    that we hide the button entirely if it's disabled, so it's possible for the
+    false values to be 0.
+  </summary>
+</histogram>
+
+<histogram name="Cast.Sender.CastPlaySuccess" enum="BooleanSuccess">
+  <summary>
+    Records the result of a request to play remotely. The value will be true if
+    the playback succeeded, and false if there was an error.
+  </summary>
+</histogram>
+
+<histogram name="Cast.Sender.CastTimeRemainingPercentage"
+    units="percent remaining">
+  <summary>
+    Records the percentage of the video left at the time the remote playback is
+    stopped. This will be recorded when the playback is stopped by the user, or
+    when it's stopped by the cast device.
+  </summary>
+</histogram>
+
 <histogram name="Cellular.ActivationFailure">
   <summary>
     The count of cellular device activation failures (Chrome OS).
@@ -1276,7 +1388,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Chrome.Browser.CrashedExecutionPhase" enum="ExecutionPhase">
+  <summary>
+    Indicates the execution phase the browser was in when the browser crashed.
+  </summary>
+</histogram>
+
 <histogram name="Chrome.Browser.ExecutionPhase" enum="ExecutionPhase">
+  <obsolete>
+    Deprecated as of 11/2013.
+  </obsolete>
   <summary>
     Indicates the execution phase the browser was in when browser didn't exit
     cleanly.
@@ -1426,6 +1547,56 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="ConnectivityDiagnostics.ChromeOsSignalStrength"
+    units="percent">
+  <summary>
+    Connectivity Diagnostics App: WiFi signal strength recorded during
+    NIC_SIGNAL_STRENGTH test.
+  </summary>
+  <details>
+    The &quot;Strength&quot; property of a WiFi signal is a partially-reversible
+    function that linearly maps the RSSI range -120dBm to -20dBm to Strength
+    values from 0 to 100.
+  </details>
+</histogram>
+
+<histogram name="ConnectivityDiagnostics.HTTP_LATENCY" units="milliseconds">
+  <summary>HTTP latency seen by the Connectivity Diagnostics.</summary>
+  <details>
+    HTTP latency is computed using the chrome.socket API to make an HTTP GET
+    request to the /generate_204 page of three randomly generated Google
+    hostnames (*-ccd-testing-v4.metric.gstatic.com). The time taken from issuing
+    the HTTP request to receiving a response is clocked in JavaScript and the
+    arithmetic mean of the three times is used as the HTTP latency.
+  </details>
+</histogram>
+
+<histogram name="ConnectivityDiagnostics.RESOLVER_LATENCY" units="milliseconds">
+  <summary>Resolution latency seen by the Connectivity Diagnostics.</summary>
+  <details>
+    Resolver latency is computed by using the chrome.dns API to query three
+    randomly generated Google hostnames (*-ccd-testing-v4.metric.gstatic.com).
+    The random hostnames guarantees that there will be no caching of DNS
+    hostnames. The time taken from issuing the DNS request to receiving a
+    response is clocked in JavaScript and the arithmetic mean of the three times
+    is used as the resolver latency.
+  </details>
+</histogram>
+
+<histogram name="ConnectivityDiagnostics.TestVerdict"
+    enum="ConnectivityDiagnosticsTestVerdict">
+  <summary>
+    Connectivity Diagnostics App: Outcome of the connectivity tests.
+  </summary>
+</histogram>
+
+<histogram name="ConnectivityDiagnostics.TimeTaken" units="milliseconds">
+  <summary>
+    Connectivity Diagnostics App: Amount of time taken to run each of the
+    connectivity tests.
+  </summary>
+</histogram>
+
 <histogram name="Cookie.ParsedCookieStatus" enum="ParsedCookieStatus">
   <obsolete>
     Deprecated as of 9/2013. Experiment to measure control characters in cookies
@@ -1513,6 +1684,29 @@ other types of suffix sets.
   <summary>
     The type of file system that Chrome OS cros-disks daemon is requested to
     mount.
+  </summary>
+</histogram>
+
+<histogram name="DataReductionProxy.BypassInfoFallback"
+    enum="DataReductionProxyBypassEventType">
+  <summary>
+    Counts various events that trigger Chrome to bypass the fallback
+    configuration of the data reduction proxy.
+  </summary>
+</histogram>
+
+<histogram name="DataReductionProxy.BypassInfoPrimary"
+    enum="DataReductionProxyBypassEventType">
+  <summary>
+    Counts various events that trigger Chrome to bypass the primary
+    configuration of the data reduction proxy.
+  </summary>
+</histogram>
+
+<histogram name="DataReductionProxy.ProbeURL"
+    enum="DataReductionProxyProbeURLFetchResult">
+  <summary>
+    Counts various outcomes of requesting the data reduction proxy's probe URL.
   </summary>
 </histogram>
 
@@ -2966,6 +3160,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Download.OpenMethod" enum="DownloadOpenMethod">
+  <summary>
+    Invocation count for methods of opening a download. For some file types,
+    Chrome defaults to opening the file in the browser instead of invoking the
+    system handler. The user has the option of overriding this behavior.
+  </summary>
+</histogram>
+
 <histogram name="Download.OpensOutstanding">
   <summary>The number of unopened downloads, when one is opened.</summary>
 </histogram>
@@ -4026,7 +4228,7 @@ other types of suffix sets.
 <histogram name="Extensions.AppLaunchContainer" enum="AppLaunchContainer">
   <summary>
     The number of times apps are launched grouped by
-    extension_misc::LaunchContainer.
+    extensions::LaunchContainer.
   </summary>
 </histogram>
 
@@ -4170,6 +4372,15 @@ other types of suffix sets.
 <histogram name="Extensions.ExtensionRootPathLength">
   <summary>
     Length of the Extensions dir path inside the profile directory.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ExtensionServiceInitTime">
+  <summary>
+    Time taken for the ExtensionService to initialize, including the time it
+    takes to load the extensions for the service's profile and parse their
+    manifests. This happens during startup and also any time a new profile is
+    loaded.
   </summary>
 </histogram>
 
@@ -4535,6 +4746,36 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Extensions.ResourceDirectoryTimestampQueryLatency"
+    units="milliseconds">
+  <summary>
+    The initialization latency (in milliseconds) introduced to each extension
+    resource request by querying the directory timestamp.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ResourceLastModifiedDelta" units="seconds">
+  <summary>
+    The difference in seconds between an extension resource's last modification
+    time and its extension base directory's creation time. Recorded on each
+    extension resource request if the difference is non-negative (i.e., the
+    resource's last modification time is more recent than the directory's
+    creation time.) For cases where the directory creation date is more recent,
+    see Extensions.ResourceLastModifiedNegativeDelta instead.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ResourceLastModifiedNegativeDelta" units="seconds">
+  <summary>
+    The absolute difference in seconds between an extension resource's last
+    modification time and extension base directory's creation time. Recorded on
+    each extension resource request if the difference is negative (i.e., the
+    directory's creation time is more recent than the resource's last
+    modification time.) For cases where the resource modification time is more
+    recent, see Extensions.ResourceLastModifiedDelta instead.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.SandboxUnpackFailure">
   <summary>
     Count the number of times a sandboxed extension unpack fails.
@@ -4749,6 +4990,32 @@ other types of suffix sets.
 
 <histogram name="Extensions.UpdateType" enum="ExtensionType">
   <summary>Updates grouped by Extension::HistogramType.</summary>
+</histogram>
+
+<histogram name="Extensions.WebstoreDownload.InterruptReason"
+    enum="InterruptReason">
+  <summary>The reason a webstore download was interrupted.</summary>
+</histogram>
+
+<histogram name="Extensions.WebstoreDownload.InterruptReceivedKBytes"
+    units="KB">
+  <summary>
+    The number of KBytes received for a webstore download before it was
+    interrupted.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.WebstoreDownload.InterruptTotalKBytes" units="KB">
+  <summary>
+    The total expected size in KBytes of an interrupted webstore download.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.WebstoreDownload.InterruptTotalSizeUnknown"
+    enum="Boolean">
+  <summary>
+    Tracks whether the total size of an interrupted webstore download was known.
+  </summary>
 </histogram>
 
 <histogram name="FileBrowser.Create" enum="FileDialogType">
@@ -5411,6 +5678,9 @@ other types of suffix sets.
 
 <histogram name="InstantExtended.NewOptInState"
     enum="InstantExtended_NewOptInState">
+  <obsolete>
+    Deprecated as of 11/2013.
+  </obsolete>
   <summary>
     Records, on startup, whether the user has chosen to opt-in to or opt-out of
     InstantExtended via chrome://flags.
@@ -5874,6 +6144,13 @@ other types of suffix sets.
   <summary>
     Time spent waiting in AudioOutputController::WaitTillDataReady() if the data
     was not initially available.
+  </summary>
+</histogram>
+
+<histogram name="Media.AudioOutputControllerPlaybackStartupSuccess"
+    enum="BooleanSuccess">
+  <summary>
+    Whether playback started successfully after stream startup was requested.
   </summary>
 </histogram>
 
@@ -6354,6 +6631,16 @@ other types of suffix sets.
   <summary>Coded width of HTML5 video.</summary>
 </histogram>
 
+<histogram name="Media.VideoColorRange" enum="FFmpegColorRanges">
+  <summary>
+    Pixel format color range of HTML5 video. Emitted on video load.
+  </summary>
+</histogram>
+
+<histogram name="Media.VideoPixelFormat" enum="VideoPixelFormat">
+  <summary>Pixel format used in HTML5 video. Emitted on video load.</summary>
+</histogram>
+
 <histogram name="Media.VideoVisibleAspectRatio">
   <summary>Visible aspect ratio of HTML5 video.</summary>
 </histogram>
@@ -6397,7 +6684,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="MediaGalleries.Counts" enum="MediaGalleriesUsageType">
+<histogram name="MediaGalleries.Usage" enum="MediaGalleriesUsageType">
   <summary>Various usage counts for media galleries.</summary>
 </histogram>
 
@@ -10080,6 +10367,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Network.Shill.Cellular.DHCPOptionFailureDetected"
+    enum="NetworkDHCPOptionFailure">
+  <summary>
+    Chrome OS network metric that tracks the number of DHCP option failures
+    encountered by Shill.  This indicates that Shill is using minimal DHCP
+    options due to suspected MTU issues on the return path from the DHCP server
+    back to the client.
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.Cellular.Disconnect"
     enum="NetworkDisconnectType">
   <summary>
@@ -10202,6 +10499,16 @@ other types of suffix sets.
   <summary>
     Chrome OS cellular network metric that tracks the number of corrupted
     profiles encountered by Shill.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.Ethernet.DHCPOptionFailureDetected"
+    enum="NetworkDHCPOptionFailure">
+  <summary>
+    Chrome OS network metric that tracks the number of DHCP option failures
+    encountered by Shill.  This indicates that Shill is using minimal DHCP
+    options due to suspected MTU issues on the return path from the DHCP server
+    back to the client.
   </summary>
 </histogram>
 
@@ -10450,6 +10757,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Network.Shill.Wifi.DHCPOptionFailureDetected"
+    enum="NetworkDHCPOptionFailure">
+  <summary>
+    Chrome OS network metric that tracks the number of DHCP option failures
+    encountered by Shill.  This indicates that Shill is using minimal DHCP
+    options due to suspected MTU issues on the return path from the DHCP server
+    back to the client.
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.Wifi.Disconnect" enum="NetworkDisconnectType">
   <summary>
     Chrome OS network usage metric that tracks whether an 802.11 wireless
@@ -10655,6 +10972,16 @@ other types of suffix sets.
     of a WiFi scan (if the scan includes both a progressive scan and a full
     scan, the TimeToScanAndConnect starts with the first scan of the series) and
     the completion of a successful connection.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.WiMax.DHCPOptionFailureDetected"
+    enum="NetworkDHCPOptionFailure">
+  <summary>
+    Chrome OS network metric that tracks the number of DHCP option failures
+    encountered by Shill.  This indicates that Shill is using minimal DHCP
+    options due to suspected MTU issues on the return path from the DHCP server
+    back to the client.
   </summary>
 </histogram>
 
@@ -11012,6 +11339,13 @@ other types of suffix sets.
   <summary>Time spent on the Suggested Sites NTP pane, in seconds.</summary>
 </histogram>
 
+<histogram name="NewTabPage.SuggestionsType" enum="NtpSuggestionsType">
+  <summary>
+    Indicate, for each impression of the New Tab Page, whether the suggestions
+    were obtained from the client or server.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.ThumbnailErrorRate">
   <summary>
     The percentage of errors per attempts to load image thumbnails on the New
@@ -11179,6 +11513,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Omnibox.CutOrCopyAllText" units="count">
+  <summary>
+    The number of cut or copy commands on all selected text in the omnibox.
+    Gathered on desktop platforms (Win, Mac, Linux, ChromeOS).
+  </summary>
+</histogram>
+
 <histogram name="Omnibox.EnteredKeywordMode" enum="OmniboxEnteredKeywordMode">
   <summary>
     The number of times users enter keyword hint mode &quot;Search ___
@@ -11197,6 +11538,20 @@ other types of suffix sets.
   <summary>
     The length of time between when a user focused on the omnibox and opened an
     omnibox match (which could be what they typed or a suggestion).
+  </summary>
+</histogram>
+
+<histogram name="Omnibox.Paste" units="count">
+  <summary>
+    The number of paste commands on the text in the omnibox. Reported every time
+    a paste command is done.
+  </summary>
+</histogram>
+
+<histogram name="Omnibox.PasteAndGo" units="count">
+  <summary>
+    The number of paste-and-go commands on the text in the omnibox. Reported
+    every time a paste-and-go command is done.
   </summary>
 </histogram>
 
@@ -11280,6 +11635,10 @@ other types of suffix sets.
 
 <histogram name="OSX.CatSixtyFour" enum="CatSixtyFour">
   <summary>The cat's flavor and how many bits there are in it.</summary>
+</histogram>
+
+<histogram name="OSX.ExceptionHandlerEvents" enum="OSXExceptionHandlerEvents">
+  <summary>Events seen by the OSX NSException swizzle.</summary>
 </histogram>
 
 <histogram name="OutdatedUpgradeBubble.NumLaterPerReinstall">
@@ -11939,6 +12298,21 @@ other types of suffix sets.
 
 <histogram name="Platform.SmartUncorrectableErrors">
   <summary>Uncorrectable disk errors (SMART 187), sent at boot.</summary>
+</histogram>
+
+<histogram name="Platform.SpringChargerType">
+  <summary>
+    USB device ID of the charger plugged into a Spring device (if any), sent
+    once a minute.  The Device ID is composed from the following 4 8-bit
+    registers of the TSU6721 chip: ADC (07h), Device Type 3 (15h), Device Type 2
+    (0Bh), Device Type 1 (0Ah).  Device Type 1/2/3 is a bitmap and most of bits
+    are mutually exclusive (excepted VBUS debounce).  ADC is the 5-bit value of
+    the ID pin, but for most types (as in Device Type), there are only one or
+    two possible ID pin connections/values. The datasheet can be found here:
+    http://www.ti.com/lit/ds/symlink/tsu6721.pdf.
+
+    Note that different brand/models of the charger can have the same ID.
+  </summary>
 </histogram>
 
 <histogram name="Platform.StatefulUsage" units="%">
@@ -12963,6 +13337,107 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="PLT.PT_BeginToCommit" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.BeginToCommit. Commit: responseStart. Begin: requestStart or
+    navigationStart if user-initiated request.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_BeginToFinish" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.BeginToFinish. Finish: loadEventEnd. Begin: requestStart or
+    navigationStart if user-initiated request.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_BeginToFinishDoc" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.BeginToFinishDoc. FinishDoc: loadEventStart. Begin:
+    requestStart or navigationStart if user-initiated request.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_CommitToFinish" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.CommitToFinish. Commit: responseStart. Finish: loadEventEnd.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_CommitToFinishDoc" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.CommitToFinishDoc. Commit: responseStart. FinishDoc:
+    loadEventStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_FinishDocToFinish" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.FinishDocToFinish. Finish: loadEventEnd. FinishDoc:
+    loadEventStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_RequestToCommit" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and measures the time until
+    the renderer got first byte of document. Commit: time when renderer got
+    first byte of document. Request: navigationStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_RequestToDomContentLoaded" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and measures the time until
+    the beginning of the DOMContentLoaded event. DOMContentLoaded:
+    domContentLoadedEventStart. Request: navigationStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_RequestToFinish" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.RequestToFinish. Finish: loadEventEnd. Request:
+    navigationStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_RequestToFinishDoc" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and measures the page load
+    time until the beginning of the load event. Finish: loadEventStart. Request:
+    navigationStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_RequestToStart" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.RequestToStart. Start: requestStart. Request:
+    navigationStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_StartToCommit" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.StartToCommit. Start: requestStart. Commit: responseStart.
+  </summary>
+</histogram>
+
+<histogram name="PLT.PT_StartToFinish" units="milliseconds">
+  <summary>
+    This time is based on the NavigationTiming spec and is a more accurate
+    version of PLT.StartToFinish. Start: requestStart. Finish: loadEventEnd.
+  </summary>
+</histogram>
+
 <histogram name="PLT.RequestToFinish" units="milliseconds">
   <summary>
     Time from &quot;request&quot; to &quot;finish.&quot;  &quot;Request&quot; ==
@@ -13349,6 +13824,12 @@ other types of suffix sets.
     The number of times that the user adjusted the brightness during a session
     when on battery. Values for this metric are clamped to 10k count, so the
     last bucket should be considered to be including all metrics above 10k.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.Event" enum="PrerenderEvent">
+  <summary>
+    Enumeration of what events related to prerendering have occurred.
   </summary>
 </histogram>
 
@@ -13775,6 +14256,22 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.PeriodicCleanupDeleteContentsTime"
+    units="milliseconds">
+  <summary>
+    How long the cleanup portion of PrerenderManager::PeriodicCleanup takes, to
+    measure jank.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PeriodicCleanupResourceCheckTime"
+    units="milliseconds">
+  <summary>
+    How long the resource check portion of PrerenderManager::PeriodicCleanup
+    takes, to measure jank.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.PrerenderCountOf3Max">
   <summary>
     After launching a prerender, how many simultanious prerenders are recorded
@@ -13859,6 +14356,11 @@ other types of suffix sets.
   <summary>Enumeration of how prerender was used per session.</summary>
 </histogram>
 
+<histogram name="Prerender.SessionStorageNamespaceMergeTime"
+    units="milliseconds">
+  <summary>Time to perform the session storage namespace merge.</summary>
+</histogram>
+
 <histogram name="Prerender.SimulatedLocalBrowsingBaselinePLT"
     units="milliseconds">
   <summary>
@@ -13874,7 +14376,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Prerender.TabContentsDeleterTimeout">
+<histogram name="Prerender.TabContentsDeleterSuppressedDialog"
+    enum="BooleanSuppressed">
+  <summary>
+    A boolean that indicates how often we suppress a dialog from a tab when
+    swapping it with a prerender.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.TabContentsDeleterTimeout"
+    enum="BooleanCloseTimeout">
   <summary>
     A boolean that indicates how often we fail to delete an old prerendered tab
     before the timeout.
@@ -14847,6 +15358,10 @@ other types of suffix sets.
 
 <histogram name="SB2.BloomFilterFalsePositives"
     enum="SB2BloomFilterFalsePositives">
+  <obsolete>
+    This became misleading around M-22 (September 2012), deleted in M-32
+    (November 2013).
+  </obsolete>
   <summary>
     All prefix misses (server returned no full hashes) and prefix misses due to
     false positives in the bloom filter.
@@ -15939,7 +16454,14 @@ other types of suffix sets.
   <summary>
     The id of a tracked preference whose last value isn't known. We may be just
     starting to track the preference, or local state may have been changed
-    outside of Chrome.
+    outside of Chrome. This should only happen once per pref per profile.
+  </summary>
+</histogram>
+
+<histogram name="Settings.TrackedPreferenceMigrated" enum="TrackedPreference">
+  <summary>
+    Logs the tracked preference id when it is migrated to the new MAC algorithm.
+    This should only happen once per pref per profile.
   </summary>
 </histogram>
 
@@ -15955,6 +16477,13 @@ other types of suffix sets.
     Counts the number of times the user clicked on the No Thanks button of the
     settings reset bubble before clicking on the Reset button in the same Chrome
     session.
+  </summary>
+</histogram>
+
+<histogram name="Signin.OneClickConfirmation" enum="SigninFlowConfirmations">
+  <summary>
+    Count of the ways users interact with the confirmation dialogs of the new
+    web based sign in to Chrome flow (accessed via the one click signin).
   </summary>
 </histogram>
 
@@ -17314,6 +17843,464 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SimpleCache.Media.CheckCRCResult" enum="CheckCRCResult">
+  <summary>
+    Whether or not the CRC was checked at the moment when the last reference to
+    a read-only entry stream is closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.CreationToIndex" units="milliseconds">
+  <summary>
+    The time from the creation of the simple cache backend until the index has
+    been loaded from disk.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.CreationToIndexFail" units="milliseconds">
+  <summary>
+    The time from the creation of the simple cache backend until the index fails
+    to load.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.EntryCreatedAndStream2Omitted"
+    enum="SimpleCache.EntryCreatedAndStream2Omitted">
+  <summary>
+    Whether, upon creation of a new cache entry, the file for stream 2 was
+    omitted since that stream was empty.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.EntryCreationResult" enum="BooleanSuccess">
+  <summary>
+    For entry creation operations that were sent to the disk, the result of
+    creation.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.EntryCreationTime" units="milliseconds">
+  <summary>The time, in ms, spent creating a new entry on disk.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.EntryOpenedAndStream2Removed"
+    enum="SimpleCache.EntryOpenedAndStream2Removed">
+  <summary>
+    Whether, upon opening of an existing cache entry, stream 2 was empty and the
+    file for that stream was therefore removed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.EntryOperationsPending">
+  <summary>
+    At the time that operations are run, the number of pending operations on a
+    particular entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.CacheSizeOnStart" units="bytes">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.CacheSizeOnStart2" units="KB">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.EntryCount">
+  <summary>The number of entries to be erased in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.MaxCacheSizeOnStart" units="bytes">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.MaxCacheSizeOnStart2" units="KB">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.Result" enum="BooleanSuccess">
+  <summary>The result of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.SizeOfEvicted" units="bytes">
+  <summary>The number of bytes to be erased in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.SizeOfEvicted2" units="KB">
+  <summary>The amount of memory freed in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.SizeWhenDone" units="bytes">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.SizeWhenDone2" units="KB">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.TimeToDone" units="milliseconds">
+  <summary>Time spent completing an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.Eviction.TimeToSelectEntries"
+    units="milliseconds">
+  <summary>Time spent selecting entries for eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.FileDescriptorLimitHard">
+  <summary>
+    The maximum limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (This
+    is the highest value we could raise the current limit to if we liked.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.FileDescriptorLimitSoft">
+  <summary>
+    The current limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (We can
+    raise this to the maximum limit if we like, without root access.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.FileDescriptorLimitStatus"
+    enum="SimpleCache.FileDescriptorLimitStatus">
+  <summary>
+    The result of trying to get the file descriptor limit.  Emitted each time
+    the browser is launched.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.GlobalOpenEntryCount">
+  <summary>
+    The number of open entries across all caches backed by the Simple Cache. An
+    entry is opened whenever a caller asks to open it to read or write cache
+    data, and remains open until the last caller asks to close it. Logged
+    whenever an entry is opened or closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.HeaderSize" units="bytes">
+  <summary>
+    The size of the header stream of a Simple Cache entry, emitted every time
+    the headers are written or rewritten.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.HeaderSizeChange"
+    enum="SimpleCacheHeaderSizeChange">
+  <summary>
+    How the header size has changed in a Simple Cache entry, emitted every time
+    a write operation occurs on the header stream.  (This includes the initial
+    write, rewrites, and other writes that we couldn't classify.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.HeaderSizeDecreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.HeaderSizeDecreasePercentage"
+    units="percent">
+  <summary>
+    The relative size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.HeaderSizeIncreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.HeaderSizeIncreasePercentage"
+    units="percent">
+  <summary>
+    The relative size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexCorrupt" enum="BooleanCorrupt">
+  <summary>For each index load, whether the index file was corrupt.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexCreatedEntryCount">
+  <summary>The number of entries in a newly created index file.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexEntriesLoaded">
+  <summary>Number of entries loaded from the index file on start.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexEntriesRestored">
+  <summary>
+    Number of entries restored from disk when there was no index or the index
+    was corrupted.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexFileStateOnLoad"
+    enum="SimpleIndexState">
+  <summary>
+    The state the index file is at when an attempt is made to load from it.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexInitializationWaiters">
+  <summary>
+    At the time of index initialization, the number of enqueued jobs awaiting
+    index initialization.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexInitializeMethod"
+    enum="SimpleCacheIndexInitializeMethod">
+  <summary>The method used to initialize the simple cache index.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexLoadTime" units="milliseconds">
+  <summary>
+    Time (as measured on the worker pool) spent loading the index file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexNumEntriesOnWrite">
+  <summary>The number of entries written to the index on a flush.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexRestoreTime" units="milliseconds">
+  <summary>
+    Time (as measured on the worker pool) spent restoring the index file by
+    iterating directory entries.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexWriteInterval.Background"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the background.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexWriteInterval.Foreground"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the foreground.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexWriteToDiskTime.Background"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    background, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.IndexWriteToDiskTime.Foreground"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    foreground, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.KeyMatchedOnOpen" enum="BooleanMatched">
+  <summary>
+    For each call to OpenEntry, whether the key on disk matched the request key.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.LastClusterLossPercent" units="percent">
+  <summary>
+    For each file in the Simple Cache, the percentage of disk space used by the
+    cluster loss, the unused disk space in the last 4096 byte cluster of the
+    file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.LastClusterSize" units="bytes">
+  <summary>
+    For each file in the Simple Cache, the number of bytes in the last 4096 byte
+    cluster when the entry is saved to disk.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.OpenEntryIndexState"
+    enum="SimpleCacheOpenEntryIndexState">
+  <summary>
+    At the time that an entry is opened, the state of that entry in the index.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.ReadIsParallelizable"
+    enum="SimpleCacheReadParallelizable">
+  <summary>
+    For each Read operation, whether it could have been issued in parallel of a
+    previous Read operation.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.ReadResult" enum="SimpleCacheReadResult">
+  <summary>The outcome of Entry::ReadData in the simple cache.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCheckEOFHasCrc" enum="BooleanHasCrc">
+  <summary>
+    For each EOFRecord found with a valid magic number, indicates if the record
+    also contains a CRC.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCheckEOFResult"
+    enum="SimpleCacheSyncCheckEOFResult">
+  <summary>
+    The result, at the synchronous layer, of checking the EOF record of a cache
+    entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCloseResult"
+    enum="SimpleCacheSyncCloseResult">
+  <summary>
+    The result, at the synchronous layer, of closing a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCreatePlatformFileError"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCreatePlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCreatePlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCreateResult"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCreateResult_WithIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncCreateResult_WithoutIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenEntryAge" units="hours">
+  <summary>
+    The age of the entry (time since last modified), when opened at the
+    synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenPlatformFileError"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenPlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenPlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenResult"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenResult_WithIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncOpenResult_WithoutIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.SyncWriteResult"
+    enum="SimpleCacheSyncWriteResult">
+  <summary>
+    The result, at the synchronous layer, of writing to a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.WriteDependencyType"
+    enum="SimpleCacheWriteDependencyType">
+  <summary>
+    Shows whether a write operation depends on the previous operation in queue
+    particularly in the aspect of its possibility to run in parallel.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Media.WriteResult2" enum="SimpleCacheWriteResult">
+  <summary>The outcome of Entry::WriteData in the simple cache.</summary>
+</histogram>
+
 <histogram name="SimpleCache.OpenEntryIndexState"
     enum="SimpleCacheOpenEntryIndexState">
   <obsolete>
@@ -17955,6 +18942,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.AppCache.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.AppCache in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite for the appcache db.</summary>
 </histogram>
 
@@ -17963,10 +18953,16 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.Cookie.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.Cookie in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite the cookie db.</summary>
 </histogram>
 
 <histogram name="Sqlite.DatabaseTracker.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.DatabaseTracker in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite the websqldb tracker db.</summary>
 </histogram>
 
@@ -17978,12 +18974,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.DomainBoundCerts.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.DomainBoundCerts in M-27.
+  </obsolete>
   <summary>
     Error codes returned by sqlite for the domain-bound certs db.
   </summary>
 </histogram>
 
 <histogram name="Sqlite.DomStorageDatabase.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.DomStorageDatabase in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite for the domstorage db.</summary>
 </histogram>
 
@@ -17999,6 +19001,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.History.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.History in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite for the history db.</summary>
 </histogram>
 
@@ -18011,6 +19016,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.Quota.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.Quota in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite for the quota db.</summary>
 </histogram>
 
@@ -18026,15 +19034,37 @@ other types of suffix sets.
   <summary>Errors truncating database for Raze().</summary>
 </histogram>
 
+<histogram name="Sqlite.RecoveryEvents" enum="SqliteRecoveryEventEnum">
+  <summary>
+    Records specific failure and success cases in sql::Recovery implementation,
+    to determine which cases (if any) might be worth writing additional
+    automated recovery code for, versus which should lead to clearing databases.
+  </summary>
+</histogram>
+
+<histogram name="Sqlite.RecoveryHandle" enum="SqliteErrorCode">
+  <summary>Error from sqlite3_backup_init() in sql::Recovery.</summary>
+</histogram>
+
+<histogram name="Sqlite.RecoveryStep" enum="SqliteErrorCode">
+  <summary>Error from sqlite3_backup_step() in sql::Recovery.</summary>
+</histogram>
+
 <histogram name="Sqlite.SizeKB" units="Kb">
   <summary>Size in kilobytes of pre-existing database at startup.</summary>
 </histogram>
 
 <histogram name="Sqlite.Text.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.Text in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite the full text db.</summary>
 </histogram>
 
 <histogram name="Sqlite.Thumbnail.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.Thumbnail in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite for the thumbnail db.</summary>
 </histogram>
 
@@ -18043,6 +19073,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.Web.Error" enum="SqliteErrorCode">
+  <obsolete>
+    Moved to Sqlite.Error.Web in M-27.
+  </obsolete>
   <summary>Error codes returned by sqlite the web db.</summary>
 </histogram>
 
@@ -18090,6 +19123,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Startup.CreateFirstProfile" units="milliseconds">
+  <summary>
+    How long it takes to load the original profile synchronously on the UI
+    thread.
+  </summary>
+</histogram>
+
 <histogram name="Startup.Fling.TimeToDisplayVideo" units="milliseconds">
   <summary>
     The elapsed time from the Fling application launch to the first video frame
@@ -18102,6 +19142,23 @@ other types of suffix sets.
     Deprecated 12/2011. Merged into MobileSessionStartType.
   </obsolete>
   <summary>Whether a startup is a resume (vs a cold start).</summary>
+</histogram>
+
+<histogram name="Startup.LoadTime.ExeMainToDllMain">
+  <summary>
+    Time from the main() function in chrome.exe to chrome.dll's main().
+  </summary>
+</histogram>
+
+<histogram name="Startup.LoadTime.ProcessCreateToDllMain">
+  <summary>Time from the process creation to chrome.dll's main().</summary>
+</histogram>
+
+<histogram name="Startup.LoadTime.ProcessCreateToExeMain">
+  <summary>
+    Time from the process creation to executing the main() function in
+    chrome.exe.
+  </summary>
 </histogram>
 
 <histogram name="Startup.MobileSessionStartAction"
@@ -18259,6 +19316,13 @@ other types of suffix sets.
   <summary>
     Whether OAuth2 refresh token was available at the time when
     ProfileSyncService was starting backend.
+  </summary>
+</histogram>
+
+<histogram name="Sync.SyncAuthError" enum="SyncAuthError">
+  <summary>
+    Counts the number of times sync clients have encountered an auth error and
+    number of times auth errors are fixed.
   </summary>
 </histogram>
 
@@ -18506,6 +19570,33 @@ other types of suffix sets.
   </obsolete>
 </histogram>
 
+<histogram name="Touchscreen.ActionAfterDoubleTapNoDelay"
+    enum="ActionAfterDoubleTap">
+  <summary>
+    On non-mobile sites, gesture taps are delayed to prevent double taps from
+    sending a click event. This stat tracks the user's first action within 5
+    seconds after a double tap gesture when the gesture tap delay is disabled.
+  </summary>
+</histogram>
+
+<histogram name="Touchscreen.ActionAfterDoubleTapWithDelay"
+    enum="ActionAfterDoubleTap">
+  <summary>
+    On non-mobile sites, gesture taps are delayed to prevent double taps from
+    sending a click event. This stat tracks the user's first action within 5
+    seconds after a double tap gesture when gesture tap events are delayed.
+  </summary>
+</histogram>
+
+<histogram name="Touchscreen.SingleTapType" enum="TapDelayType">
+  <summary>
+    On non-mobile sites, gesture taps are delayed to prevent double taps from
+    sending a click event. This stat counts the number of taps that are delayed
+    by the double-tap delay versus those that are sent immediately on mobile
+    sites.
+  </summary>
+</histogram>
+
 <histogram name="Translate.AlwaysTranslateLang">
   <summary>
     The number of times the always translate option was selected in the
@@ -18529,15 +19620,15 @@ other types of suffix sets.
 
 <histogram name="Translate.DeclineTranslate">
   <summary>
-    The number of times the &quot;Nope&quot; (don't translate) was clicked in
-    the translate infobar.
+    The number of times the &quot;Nope&quot; (don't translate) or the infobar's
+    X button was clicked in the translate infobar.
   </summary>
 </histogram>
 
 <histogram name="Translate.DeclineTranslateCloseInfobar">
   <summary>
-    The number of times the translate infobar was closed without the user
-    translating the page.
+    The number of times the translate infobar was closed by clicking the X
+    button without the user translating the page.
   </summary>
 </histogram>
 
@@ -18549,6 +19640,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Translate.InitiationStatus" enum="TranslateInitiationStatus">
+  <obsolete>
+    Deprecated as of 11/2013, and replaced by Translate.InitiationStatus.v2.
+  </obsolete>
+  <summary>
+    The reason why Chrome decided to perform the next action (e.g., to show
+    infobar, to translate a page without any prompting, and so on) when Chrome
+    Translate is ready to translate a page.
+  </summary>
+</histogram>
+
+<histogram name="Translate.InitiationStatus.v2"
+    enum="TranslateInitiationStatus">
   <summary>
     The reason why Chrome decided to perform the next action (e.g., to show
     infobar, to translate a page without any prompting, and so on) when Chrome
@@ -19303,7 +20406,25 @@ other types of suffix sets.
   <summary>
     Count of the different success and failure modes when opening an IndexedDB
     backing store - clean open, successful open with recovery, failed recovery,
-    etc.
+    etc. Includes all hosts.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.BackingStore.OpenStatus.Docs"
+    enum="IDBLevelDBBackingStoreOpenResult">
+  <summary>
+    Count of the different success and failure modes when opening an IndexedDB
+    backing store - clean open, successful open with recovery, failed recovery,
+    etc. Only for docs.google.com.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.BackingStore.OverlyLargeOriginLength"
+    units="characters">
+  <summary>
+    Length of leveldb directories that cause paths to not fit in the filesystem,
+    either because the individual component is too long or the overall path is
+    larger than MAX_PATH.
   </summary>
 </histogram>
 
@@ -19805,6 +20926,13 @@ other types of suffix sets.
   <summary>Counts number of calls to WebRTC APIs from JavaScript.</summary>
 </histogram>
 
+<histogram name="Webstore.ExtensionInstallResult" enum="BooleanSuccess">
+  <summary>
+    The success or failure of all extension installs from the webstore. This
+    includes those initiated by sync.
+  </summary>
+</histogram>
+
 <histogram name="Win8.PageLoad" enum="Win8PageLoadType">
   <summary>
     Count of page loads in each of the 2 different environments (metro/desktop)
@@ -19901,6 +21029,12 @@ other types of suffix sets.
   <int value="0" label="ScrolledMainFrame"/>
   <int value="1" label="ScrolledMainFrameWithAcceleratedFixedRootBackground"/>
   <int value="2" label="ScrolledMainFrameWithUnacceleratedFixedRootBackground"/>
+</enum>
+
+<enum name="ActionAfterDoubleTap" type="int">
+  <int value="0" label="Navigated Back"/>
+  <int value="1" label="Stopped Navigation"/>
+  <int value="2" label="No Action"/>
 </enum>
 
 <enum name="ActionUponResourceRequest" type="int">
@@ -20213,6 +21347,7 @@ other types of suffix sets.
   <int value="19" label="Selected 'Add cc+billing' suggestion"/>
   <int value="20" label="Selected 'Add shipping' suggestion"/>
   <int value="21" label="Selected 'Add cc' suggestion"/>
+  <int value="22" label="Account switched: Wallet account added (multilogin)"/>
 </enum>
 
 <enum name="AutofillExperimentId" type="int">
@@ -20309,9 +21444,12 @@ other types of suffix sets.
   <int value="42" label="Credit card: date, Unknown"/>
   <int value="43" label="Credit card: date, Match"/>
   <int value="44" label="Credit card: date, Mismatch"/>
-  <int value="45" label="Password, Unknown"/>
-  <int value="46" label="Password, Match"/>
-  <int value="47" label="Password, Mismatch"/>
+  <int value="45" label="Credit card: type, Unknown"/>
+  <int value="46" label="Credit card: type, Match"/>
+  <int value="47" label="Credit card: type, Mismatch"/>
+  <int value="48" label="Password, Unknown"/>
+  <int value="49" label="Password, Match"/>
+  <int value="50" label="Password, Mismatch"/>
 </enum>
 
 <enum name="AutofillUserHappiness" type="int">
@@ -20370,6 +21508,11 @@ other types of suffix sets.
 <enum name="BooleanAttempted" type="int">
   <int value="0" label="Not Attempted"/>
   <int value="1" label="Attempted"/>
+</enum>
+
+<enum name="BooleanCloseTimeout" type="int">
+  <int value="0" label="Closed normally"/>
+  <int value="1" label="Timed out"/>
 </enum>
 
 <enum name="BooleanCommonNameMatch" type="int">
@@ -20465,6 +21608,11 @@ other types of suffix sets.
 <enum name="BooleanSuccess" type="int">
   <int value="0" label="Failure"/>
   <int value="1" label="Success"/>
+</enum>
+
+<enum name="BooleanSuppressed" type="int">
+  <int value="0" label="No suppressions"/>
+  <int value="1" label="Suppressed"/>
 </enum>
 
 <enum name="BooleanTabDiscard" type="int">
@@ -20666,6 +21814,14 @@ other types of suffix sets.
   <int value="13" label="TLS-1.2">An SSL connection that uses TLS 1.2</int>
 </enum>
 
+<enum name="ConnectivityDiagnosticsTestVerdict" type="int">
+  <int value="0" label="NO_PROBLEM"/>
+  <int value="1" label="POTENTIAL_PROBLEM"/>
+  <int value="2" label="PROBLEM"/>
+  <int value="3" label="TEST_FAILURE_OCCURRED"/>
+  <int value="4" label="TEST_NOT_RUN"/>
+</enum>
+
 <enum name="CookieDeletionCause" type="int">
   <summary>Reason why a cookie was removed from the cookie store</summary>
   <int value="0" label="explicit">
@@ -20756,6 +21912,21 @@ other types of suffix sets.
   <int value="6" label="Sheets"/>
   <int value="7" label="Slides"/>
   <int value="8" label="PlayMusic"/>
+</enum>
+
+<enum name="DataReductionProxyBypassEventType" type="int">
+  <int value="0" label="Short bypass"/>
+  <int value="1" label="Long bypass"/>
+  <int value="2" label="Bypass due to internal server error"/>
+  <int value="3" label="Bypass due to other error"/>
+</enum>
+
+<enum name="DataReductionProxyProbeURLFetchResult" type="int">
+  <int value="0" label="Internet disconnected"/>
+  <int value="1" label="Probe failed, proxy disabled"/>
+  <int value="2" label="Probe failed, proxy already disabled"/>
+  <int value="3" label="Probe succeeded, proxy enabled"/>
+  <int value="4" label="Probe succeeded, proxy already enabled"/>
 </enum>
 
 <enum name="DataReductionProxyPromoAction" type="int">
@@ -20861,6 +22032,25 @@ other types of suffix sets.
   </int>
 </enum>
 
+<enum name="DockedAction" type="int">
+  <int value="0" label="None"/>
+  <int value="1" label="Dock"/>
+  <int value="2" label="Undock"/>
+  <int value="3" label="Resize"/>
+  <int value="4" label="Reorder"/>
+  <int value="5" label="Evict"/>
+  <int value="6" label="Maximize"/>
+  <int value="7" label="Minimize"/>
+  <int value="8" label="Restore"/>
+  <int value="9" label="Close"/>
+</enum>
+
+<enum name="DockedActionSource" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Mouse"/>
+  <int value="2" label="Touch"/>
+</enum>
+
 <enum name="DomainBoundCerts.GetCertResult" type="int">
   <int value="0" label="SYNC_SUCCESS"/>
   <int value="1" label="ASYNC_SUCCESS"/>
@@ -20940,13 +22130,14 @@ other types of suffix sets.
   <int value="7" label="Cancelled"/>
   <int value="8" label="Started"/>
   <int value="9" label="Interrupted"/>
-  <int value="10" label="Calls to AppendDataToFile (Size) (Obsolete)"/>
-  <int value="11" label="Calls to AppendDataToFile (Count) (Obsolete)"/>
+  <int value="10" label="Calls to AppendDataToFile (Size) (Obsolete 8/2013)"/>
+  <int value="11" label="Calls to AppendDataToFile (Count) (Obsolete 8/2013)"/>
   <int value="12" label="Interrupted at End of Download"/>
   <int value="13" label="Attempt to Append to Detached File"/>
   <int value="14" label="File Missing After Successful Scan"/>
-  <int value="15" label="Supports ranges and strong validation"/>
+  <int value="15" label="Supports ranges and strong ETag (Obsolete 11/2013)"/>
   <int value="16" label="No WebContents at interruption"/>
+  <int value="17" label="Supports ranges and strong validation"/>
 </enum>
 
 <enum name="DownloadDatabaseRecordDroppedType" type="int">
@@ -21142,6 +22333,12 @@ other types of suffix sets.
   <int value="6" label="USER_VALIDATED"/>
   <int value="7" label="DANGEROUS_HOST"/>
   <int value="8" label="POTENTIALLY_UNWANTED"/>
+</enum>
+
+<enum name="DownloadOpenMethod" type="int">
+  <int value="0" label="Opened with plaform handler by default"/>
+  <int value="1" label="Opened in browser by default"/>
+  <int value="2" label="Opened with plaform handler by user choice"/>
 </enum>
 
 <enum name="DownloadSavePackageEvent" type="int">
@@ -21889,13 +23086,14 @@ other types of suffix sets.
 </enum>
 
 <enum name="ExecutionPhase" type="int">
-  <int value="0" label="CLEAN_SHUTDOWN"/>
+  <int value="0" label="UNINITIALIZED_PHASE"/>
   <int value="100" label="START_METRICS_RECORDING"/>
   <int value="200" label="CREATE_PROFILE"/>
   <int value="300" label="STARTUP_TIMEBOMB_ARM"/>
   <int value="400" label="THREAD_WATCHER_START"/>
   <int value="500" label="MAIN_MESSAGE_LOOP_RUN"/>
   <int value="600" label="SHUTDOWN_TIMEBOMB_ARM"/>
+  <int value="700" label="SHUTDOWN_COMPLETE"/>
 </enum>
 
 <enum name="ExtensionBackgroundPageType" type="int">
@@ -22002,7 +23200,7 @@ other types of suffix sets.
   <int value="71" label="USB_CLOSEDEVICE"/>
   <int value="72" label="TTS_STOP"/>
   <int value="73" label="SERIAL_GETPORTS"/>
-  <int value="74" label="FILEBROWSERPRIVATE_CLEARDRIVECACHE"/>
+  <int value="74" label="DELETED_FILEBROWSERPRIVATE_CLEARDRIVECACHE"/>
   <int value="75" label="SERIAL_GETCONTROLSIGNALS"/>
   <int value="76" label="DEVELOPERPRIVATE_ENABLE"/>
   <int value="77" label="FILEBROWSERPRIVATE_GETDRIVEFILEPROPERTIES"/>
@@ -22345,7 +23543,7 @@ other types of suffix sets.
   <int value="413" label="FILEBROWSERPRIVATE_SEARCHDRIVEMETADATA"/>
   <int value="414" label="ECHOPRIVATE_CHECKALLOWREDEEMOFFERS"/>
   <int value="415" label="MEDIAGALLERIESPRIVATE_EJECTDEVICE"/>
-  <int value="416" label="FILEBROWSERPRIVATE_LOGOUTUSER"/>
+  <int value="416" label="FILEBROWSERPRIVATE_LOGOUTUSERFORREAUTHENTICATION"/>
   <int value="417" label="DEVELOPERPRIVATE_CHOOSEPATH"/>
   <int value="418" label="DEVELOPERPRIVATE_PACKDIRECTORY"/>
   <int value="419" label="NETWORKINGPRIVATE_VERIFYDESTINATION"/>
@@ -22453,6 +23651,7 @@ other types of suffix sets.
   <int value="520" label="VIRTUALKEYBOARDPRIVATE_HIDEKEYBOARD"/>
   <int value="521" label="SYSTEM_STORAGE_GETAVAILABLECAPACITY"/>
   <int value="522" label="VIRTUALKEYBOARDPRIVATE_KEYBOARDLOADED"/>
+  <int value="523" label="MEDIAGALLERIES_GETALLMEDIAFILESYSTEMMETADATA"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -22789,6 +23988,23 @@ other types of suffix sets.
   <int value="184" label="input[type=email][multiple]"/>
   <int value="185" label="input[type=email][maxlength]"/>
   <int value="186" label="input[type=email][multiple][maxlength]"/>
+  <int value="187" label="TextTrackCueConstructor"/>
+  <int value="188" label="CSSStyleDeclarationPropertyName"/>
+  <int value="189" label="CSSStyleDeclarationFloatPropertyName"/>
+  <int value="190" label="InputTypeText"/>
+  <int value="191" label="InputTypeTextMaxLength"/>
+  <int value="192" label="InputTypePassword"/>
+  <int value="193" label="InputTypePasswordMaxLength"/>
+  <int value="194" label="SVGInstanceRoot"/>
+  <int value="195" label="ShowModalDialog"/>
+  <int value="196" label="PrefixedPageVisibility"/>
+  <int value="197" label="HTMLFrameElementLocation"/>
+  <int value="198" label="CSSStyleSheetInsertRuleOptionalArg"/>
+  <int value="199" label="CSSWebkitRegionAtRule"/>
+  <int value="200" label="DocumentBeforeUnloadRegistered"/>
+  <int value="201" label="DocumentBeforeUnloadFired"/>
+  <int value="202" label="DocumentUnloadRegistered"/>
+  <int value="203" label="DocumentUnloadFired"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -23162,6 +24378,12 @@ other types of suffix sets.
   <int value="1950507339" label="TAK"/>
 </enum>
 
+<enum name="FFmpegColorRanges" type="int">
+  <int value="0" label="UNSPECIFIED"/>
+  <int value="1" label="MPEG"/>
+  <int value="2" label="JPEG"/>
+</enum>
+
 <enum name="FileDialogType" type="int">
   <int value="0" label="Select folder"/>
   <int value="1" label="Save as file"/>
@@ -23427,6 +24649,36 @@ other types of suffix sets.
   </int>
   <int value="17" label="RECOVERY_EVENT_FAILED_META_INIT">
     Failed sql::MetaTable::Init().
+  </int>
+  <int value="18" label="RECOVERY_EVENT_FAILED_META_VERSION">
+    Failed sql::Recovery::SetupMeta() or GetMetaVersionNumber().
+  </int>
+  <int value="19" label="RECOVERY_EVENT_DEPRECATED">
+    Recovery found deprecated version and razed.
+  </int>
+  <int value="20" label="RECOVERY_EVENT_FAILED_V5_INITSCHEMA">
+    Failed v5 recovery loading schema.
+  </int>
+  <int value="21" label="RECOVERY_EVENT_FAILED_V5_AUTORECOVER_FAVICONS">
+    Failed v5 recovery on favicons.
+  </int>
+  <int value="22" label="RECOVERY_EVENT_FAILED_V5_AUTORECOVER_ICON_MAPPING">
+    Failed v5 recovery on icon_mapping.
+  </int>
+  <int value="23" label="RECOVERY_EVENT_RECOVERED_VERSION5">
+    Successful recovery of version 6 database.
+  </int>
+  <int value="24" label="RECOVERY_EVENT_FAILED_AUTORECOVER_FAVICONS">
+    Failed v6/7 recovery on favicons.
+  </int>
+  <int value="25" label="RECOVERY_EVENT_FAILED_AUTORECOVER_FAVICON_BITMAPS">
+    Failed v6/7 recovery on favicon_bitmaps.
+  </int>
+  <int value="26" label="RECOVERY_EVENT_FAILED_AUTORECOVER_ICON_MAPPING">
+    Failed v6/7 recovery on icon_mapping.
+  </int>
+  <int value="27" label="RECOVERY_EVENT_FAILED_COMMIT">
+    Failed sql::Recovery::Recovered().
   </int>
 </enum>
 
@@ -24990,8 +26242,12 @@ other types of suffix sets.
   <int value="3" label="GetMediaFileSystems API invocations"/>
   <int value="4" label="Profiles With API Usage"/>
   <int value="5" label="Dialog shown"/>
-  <int value="6" label="Gallery added from WebUI"/>
-  <int value="7" label="Gallery removed from WebUI"/>
+  <int value="6" label="Dialog permissions saved"/>
+  <int value="7" label="Gallery added from WebUI"/>
+  <int value="8" label="Gallery removed from WebUI"/>
+  <int value="9" label="Preferences initialized"/>
+  <int value="10" label="Preferences initialization failed"/>
+  <int value="11" label="GetAllMediaFileSystemMetadata API invocations"/>
 </enum>
 
 <enum name="MediaKeyError" type="int">
@@ -25439,6 +26695,10 @@ other types of suffix sets.
   <int value="0" label="Corrupted Profile"/>
 </enum>
 
+<enum name="NetworkDHCPOptionFailure" type="int">
+  <int value="0" label="DHCP Option Failure"/>
+</enum>
+
 <enum name="NetworkDisconnectType" type="int">
   <int value="0" label="System Disconnect"/>
   <int value="1" label="User Disconnect"/>
@@ -25600,6 +26860,11 @@ other types of suffix sets.
   <int value="0" label="NTP Promo viewed"/>
   <int value="1" label="NTP Promo closed"/>
   <int value="2" label="NTP Promo link clicked"/>
+</enum>
+
+<enum name="NtpSuggestionsType" type="int">
+  <int value="0" label="Client suggestion"/>
+  <int value="1" label="Server suggestion"/>
 </enum>
 
 <enum name="NtpTileExperimentActions" type="int">
@@ -25816,6 +27081,26 @@ other types of suffix sets.
   <int value="32" label="EPIPE">Broken pipe</int>
   <int value="33" label="EDOM">Numerical argument out of domain</int>
   <int value="34" label="ERANGE">Numerical result out of range</int>
+</enum>
+
+<enum name="OSXExceptionHandlerEvents" type="int">
+  <int value="0" label="EXCEPTION_ACCESSIBILITY">
+    Object does not support accessibility attributes
+  </int>
+  <int value="1" label="EXCEPTION_MENU_ITEM_BOUNDS_CHECK">
+    Forced crash due to menu item bounds checking failure
+  </int>
+  <int value="2" label="EXCEPTION_VIEW_NOT_IN_WINDOW">
+    Forced crash due to view not in a window requiring a window
+  </int>
+  <int value="3" label="EXCEPTION_NSURL_INIT_NIL">
+    Whitelisted exception for bug 85463.  Suspect ImageKit conversions for media
+    browser in open or save panel.
+  </int>
+  <int value="4" label="EXCEPTION_NSDATADETECTOR_NIL_STRING">
+    Whitelisted exception for bug 316759.  Suspect background address detection,
+    field unknown.
+  </int>
 </enum>
 
 <enum name="OtherPossibleUsernamesUsage" type="int">
@@ -26393,6 +27678,32 @@ other types of suffix sets.
   <int value="3" label="canceled in-flight"/>
 </enum>
 
+<enum name="PrerenderEvent" type="int">
+  <int value="0" label="Swapin no delegate"/>
+  <int value="1" label="Swapin candidate"/>
+  <int value="2" label="Swapin candidate namespace matces"/>
+  <int value="3" label="Swapin no merge pending"/>
+  <int value="4" label="Swapin merging disabled"/>
+  <int value="5" label="Swapin issuing merge"/>
+  <int value="6" label="Merge for swapin candidate"/>
+  <int value="7" label="Merge result no pending swapin"/>
+  <int value="8" label="Merge result timeout cb"/>
+  <int value="9" label="Merge result result cb"/>
+  <int value="10" label="Merge result timed out"/>
+  <int value="11" label="Merge result merge done"/>
+  <int value="12" label="Merge result: namespace not found"/>
+  <int value="13" label="Merge result: namespace not alias"/>
+  <int value="14" label="Merge result: not logging"/>
+  <int value="15" label="Merge result: no transactions"/>
+  <int value="16" label="Merge result: too many transactions"/>
+  <int value="17" label="Merge result: not mergeable"/>
+  <int value="18" label="Merge result: mergeable"/>
+  <int value="19" label="Merge result merge failed"/>
+  <int value="20" label="Merge result swapping in"/>
+  <int value="21" label="Merge result swapin successful"/>
+  <int value="22" label="Merge result swapin failed"/>
+</enum>
+
 <enum name="PrerenderFinalStatus" type="int">
   <int value="0" label="USED"/>
   <int value="1" label="TIMED_OUT"/>
@@ -26441,6 +27752,7 @@ other types of suffix sets.
   <int value="44" label="PAGE_BEING_CAPTURED"/>
   <int value="45" label="BAD_DEFERRED_REDIRECT"/>
   <int value="46" label="NAVIGATION_UNCOMMITTED"/>
+  <int value="47" label="NEW_NAVIGATION_ENTRY"/>
 </enum>
 
 <enum name="PrerenderHoverEvent" type="int">
@@ -26537,6 +27849,10 @@ other types of suffix sets.
       label="Namespace mismatch: merge result too many transactions"/>
   <int value="80" label="Namespace mismatch: merge result not mergeable"/>
   <int value="81" label="Namespace mismatch: merge result mergeable"/>
+  <int value="82" label="Init failed unencrypted sync not enabled"/>
+  <int value="83" label="Continue prerender check next URL not skipped"/>
+  <int value="84" label="Prerender Service returned hinting candidates"/>
+  <int value="85" label="Namespace mismatch: merge result namespace not alias"/>
 </enum>
 
 <enum name="PrerenderLocalVisitCoreTransition" type="int">
@@ -27284,6 +28600,15 @@ other types of suffix sets.
   <int value="3" label="Specified URLs"/>
 </enum>
 
+<enum name="ShelfAlignmentValue" type="int">
+  <summary>
+    The alignment of the shelf area (see ash/launcher/launcher_view.cc).
+  </summary>
+  <int value="0" label="Bottom"/>
+  <int value="1" label="Left"/>
+  <int value="2" label="Right"/>
+</enum>
+
 <enum name="ShillTerminationActionResult" type="int">
   <summary>
     The termination action result types come from TerminationActionResult in
@@ -27304,6 +28629,23 @@ other types of suffix sets.
   <int value="0" label="Learn more"/>
   <int value="1" label="Settings page"/>
   <int value="2" label="Dismiss"/>
+</enum>
+
+<enum name="SigninFlowConfirmations" type="int">
+  <int value="0" label="Shown"/>
+  <int value="1" label="OK"/>
+  <int value="2" label="Return"/>
+  <int value="3" label="Advanced"/>
+  <int value="4" label="Close"/>
+  <int value="5" label="Escape"/>
+  <int value="6" label="Undo"/>
+  <int value="7" label="Learn more"/>
+  <int value="8" label="Learn more ok"/>
+  <int value="9" label="Learn more return"/>
+  <int value="10" label="Learn more advanced"/>
+  <int value="11" label="Learn more close"/>
+  <int value="12" label="Learn more escape"/>
+  <int value="13" label="Learn more undo"/>
 </enum>
 
 <enum name="SimpleCache.EntryCreatedAndStream2Omitted" type="int">
@@ -27448,7 +28790,7 @@ other types of suffix sets.
   <int value="11" label="PREFETCH"/>
   <int value="12" label="FAVICON"/>
   <int value="13" label="XHR"/>
-  <int value="14" label="LAST_TYPE"/>
+  <int value="14" label="PING"/>
 </enum>
 
 <enum name="SocketStreamConnectionType" type="int">
@@ -27752,6 +29094,72 @@ other types of suffix sets.
     Error in stat while mmapping file
   </int>
   <int value="20" label="SQLITE_IOERR_SHMLOCK">Unused</int>
+</enum>
+
+<enum name="SqliteRecoveryEventEnum" type="int">
+  <summary>
+    Track successful completion or failure of sql::Recovery implementation.
+  </summary>
+  <int value="0" label="RECOVERY_SUCCESS_BEGIN">
+    sql::Recovery::Init() (helper for Begin()) completely successfully.
+  </int>
+  <int value="1" label="RECOVERY_FAILED_OPEN_TEMPORARY">
+    Failed to open temporary database to recover into.
+  </int>
+  <int value="2" label="RECOVERY_FAILED_VIRTUAL_TABLE_INIT">
+    Failed to initialize recover vtable subsystem for connection.
+  </int>
+  <int value="3" label="RECOVERY_FAILED_VIRTUAL_TABLE_SYSTEM_SQLITE">
+    USE_SYSTEM_SQLITE in force, recovery virtual table not available.
+  </int>
+  <int value="4" label="RECOVERY_FAILED_WRITABLE_SCHEMA">
+    Failed to enable writable_schema.
+  </int>
+  <int value="5" label="RECOVERY_FAILED_ATTACH">
+    Failed to attach corrupt database to recovery database.
+  </int>
+  <int value="6" label="RECOVERY_SUCCESS_BACKUP">
+    sql::Recovery::Backup() (helper for Recovered()) completely successfully.
+  </int>
+  <int value="7" label="RECOVERY_FAILED_BACKUP_INIT">
+    Failed sqlite3_backup_init().  Error code in Sqlite.RecoveryHandle.
+  </int>
+  <int value="8" label="RECOVERY_FAILED_BACKUP_STEP">
+    Failed sqlite3_backup_step().  Error code in Sqlite.RecoveryStep.
+  </int>
+  <int value="9" label="RECOVERY_SUCCESS_AUTORECOVER">
+    sql::Recovery::AutoRecoverTable() completed successfully.
+  </int>
+  <int value="10" label="RECOVERY_FAILED_AUTORECOVER_UNRECOGNIZED_TYPE">
+    Failed sqlite3_backup_step().  Error code in Sqlite.RecoveryStep.
+  </int>
+  <int value="11" label="RECOVERY_FAILED_AUTORECOVER_MISSING_TABLE">
+    AutoRecoverTable() could not find the target table.
+  </int>
+  <int value="12" label="RECOVERY_FAILED_AUTORECOVER_CREATE">
+    AutoRecoverTable() failed creating recovery vtable.
+  </int>
+  <int value="13" label="RECOVERY_FAILED_AUTORECOVER_INSERT">
+    AutoRecoverTable() failed copying data from recovery to target table.
+  </int>
+  <int value="14" label="RECOVERY_FAILED_AUTORECOVER_DROP">
+    AutoRecoverTable() failed to drop recovery table.
+  </int>
+  <int value="15" label="RECOVERY_SUCCESS_SETUP_META">
+    sql::Recovery::SetupMeta() completed successfully.
+  </int>
+  <int value="16" label="RECOVERY_FAILED_META_CREATE">
+    SetupMeta() failed to create meta recovery table.
+  </int>
+  <int value="17" label="RECOVERY_SUCCESS_META_VERSION">
+    GetMetaVersionNumber() found no version row in meta table.
+  </int>
+  <int value="18" label="RECOVERY_FAILED_META_QUERY">
+    GetMetaVersionNumber() failed querying recovery meta table.
+  </int>
+  <int value="19" label="RECOVERY_FAILED_META_NO_VERSION">
+    GetMetaVersionNumber() found no version row in meta table.
+  </int>
 </enum>
 
 <enum name="SqliteVersionDeprecation" type="int">
@@ -28154,6 +29562,12 @@ other types of suffix sets.
   <int value="3" label="Attempted"/>
 </enum>
 
+<enum name="SyncAuthError" type="int">
+  <int value="0"
+      label="Number of times clients have encountered an Auth error."/>
+  <int value="1" label="Number of times clients have fixed an auth error."/>
+</enum>
+
 <enum name="SyncBackendInitializeRestoreState" type="int">
   <int value="0" label="Expected restored types and found some"/>
   <int value="1" label="Expected restored types but found none"/>
@@ -28201,6 +29615,11 @@ other types of suffix sets.
 <enum name="TabSwitchedToForegroundRevisit" type="int">
   <int value="0" label="First time"/>
   <int value="1" label="Revisit"/>
+</enum>
+
+<enum name="TapDelayType" type="int">
+  <int value="0" label="Delayed Tap"/>
+  <int value="1" label="Undelayed Tap"/>
 </enum>
 
 <enum name="TcpSocketStatus" type="int">
@@ -28291,6 +29710,7 @@ other types of suffix sets.
   <int value="7" label="Auto translation by user configuration"/>
   <int value="8" label="Auto translation by linked from a translated page"/>
   <int value="9" label="Show infobar"/>
+  <int value="10" label="MIME-type is not supported"/>
 </enum>
 
 <enum name="TranslateLanguage" type="int">
@@ -28466,9 +29886,12 @@ other types of suffix sets.
 </enum>
 
 <enum name="VariationsResourceRequestsAllowedState" type="int">
-  <int value="0" label="Resource requests allowed"/>
-  <int value="1" label="Resource requests not allowed"/>
+  <int value="0" label="Requests allowed"/>
+  <int value="1" label="Requests not allowed (Obsolete 11/2013)"/>
   <int value="2" label="Notified that requests became allowed"/>
+  <int value="3" label="Requests not allowed: EULA not accepted"/>
+  <int value="4" label="Requests not allowed: network down"/>
+  <int value="5" label="Requests not allowed: disabled by command line"/>
 </enum>
 
 <enum name="VariationsSeedEmpty" type="int">
@@ -28516,6 +29939,16 @@ other types of suffix sets.
   <int value="10" label="H.264 MultiviewHigh"/>
   <int value="11" label="VP8"/>
   <int value="12" label="VP9"/>
+</enum>
+
+<enum name="VideoPixelFormat" type="int">
+  <int value="0" label="UNKNOWN"/>
+  <int value="1" label="YV12"/>
+  <int value="2" label="YV16"/>
+  <int value="3" label="I420"/>
+  <int value="4" label="YV12A"/>
+  <int value="5" label="HOLE"/>
+  <int value="6" label="NATIVE_TEXTURE"/>
 </enum>
 
 <enum name="ViewFileType" type="int">
@@ -28944,6 +30377,23 @@ other types of suffix sets.
   <affected-histogram name="Renderer4.BeginToFinish_NormalLoad"/>
 </fieldtrial>
 
+<fieldtrial name="ConnectivityDiagnostics" separator=".">
+  <group name="0" label="INTERNET_DISCONNECTED"/>
+  <group name="1" label="CHROME_VERSION"/>
+  <group name="2" label="CHROMEOS_VERSION"/>
+  <group name="3" label="DNS_RESOLVER_PRESENT"/>
+  <group name="4" label="CAPTIVE_PORTAL_DNS"/>
+  <group name="5" label="CAPTIVE_PORTAL_HTTP"/>
+  <group name="6" label="FIREWALL_80"/>
+  <group name="7" label="FIREWALL_443"/>
+  <group name="8" label="RESOLVER_LATENCY"/>
+  <group name="9" label="HTTP_LATENCY"/>
+  <group name="10" label="NIC_SIGNAL_STRENGTH"/>
+  <group name="11" label="PING_GATEWAY"/>
+  <affected-histogram name="ConnectivityDiagnostics.TestVerdict"/>
+  <affected-histogram name="ConnectivityDiagnostics.TimeTaken"/>
+</fieldtrial>
+
 <fieldtrial name="ConnnectBackupJobs">
   <group name="ConnectBackupJobsEnabled"/>
   <group name="ConnectBackupJobsDisabled"/>
@@ -28975,6 +30425,19 @@ other types of suffix sets.
   <affected-histogram name="PLT.NT_Redirect"/>
   <affected-histogram name="PLT.NT_Request"/>
   <affected-histogram name="PLT.NT_Response"/>
+  <affected-histogram name="PLT.PT_BeginToCommit"/>
+  <affected-histogram name="PLT.PT_BeginToFinish"/>
+  <affected-histogram name="PLT.PT_BeginToFinishDoc"/>
+  <affected-histogram name="PLT.PT_CommitToFinish"/>
+  <affected-histogram name="PLT.PT_CommitToFinishDoc"/>
+  <affected-histogram name="PLT.PT_FinishDocToFinish"/>
+  <affected-histogram name="PLT.PT_RequestToCommit"/>
+  <affected-histogram name="PLT.PT_RequestToDomContentLoaded"/>
+  <affected-histogram name="PLT.PT_RequestToFinish"/>
+  <affected-histogram name="PLT.PT_RequestToFinishDoc"/>
+  <affected-histogram name="PLT.PT_RequestToStart"/>
+  <affected-histogram name="PLT.PT_StartToCommit"/>
+  <affected-histogram name="PLT.PT_StartToFinish"/>
 </fieldtrial>
 
 <fieldtrial name="DefaultAppsExperiment">
@@ -29125,6 +30588,28 @@ other types of suffix sets.
   <affected-histogram name="FileBrowser.Load"/>
 </fieldtrial>
 
+<fieldtrial name="FromGWS">
+  <group name="FromGWS"
+      label="Only page loads that are a result of a navigation from a web
+             search are considered."/>
+  <affected-histogram name="PLT.BeginToFinish"/>
+  <affected-histogram name="PLT.BeginToFinishDoc"/>
+  <affected-histogram name="PLT.BeginToFirstPaint"/>
+  <affected-histogram name="PLT.CommitToFirstPaint"/>
+  <affected-histogram name="PLT.PT_BeginToCommit"/>
+  <affected-histogram name="PLT.PT_BeginToFinish"/>
+  <affected-histogram name="PLT.PT_BeginToFinishDoc"/>
+  <affected-histogram name="PLT.PT_CommitToFinish"/>
+  <affected-histogram name="PLT.PT_CommitToFinishDoc"/>
+  <affected-histogram name="PLT.PT_RequestToCommit"/>
+  <affected-histogram name="PLT.PT_RequestToDomContentLoaded"/>
+  <affected-histogram name="PLT.PT_RequestToFinish"/>
+  <affected-histogram name="PLT.PT_RequestToFinishDoc"/>
+  <affected-histogram name="PLT.PT_RequestToStart"/>
+  <affected-histogram name="PLT.PT_StartToCommit"/>
+  <affected-histogram name="PLT.PT_StartToFinish"/>
+</fieldtrial>
+
 <fieldtrial name="HttpPipeliningCompatibility">
   <group name="disable_test" label="Do nothing"/>
   <group name="enable_test" label="Test connection for HTTP pipelining"/>
@@ -29199,6 +30684,11 @@ other types of suffix sets.
   <affected-histogram name="Instant.SessionsStorageNamespace"/>
 </fieldtrial>
 
+<fieldtrial name="Interval" separator="_">
+  <group name="Interval" label="Interval between two consecutive connects is"/>
+  <affected-histogram name="Net.TCP_Connection_Latency"/>
+</fieldtrial>
+
 <fieldtrial name="Interval_20ms_plus_and_minus" separator="_">
   <group name="Interval_20ms_Minus"
       label="Interval between two consecutive connects is less than 20ms."/>
@@ -29206,6 +30696,14 @@ other types of suffix sets.
       label="Interval between two consecutive connects is greater than or
              equal to 20ms."/>
   <affected-histogram name="Net.TCP_Connection_Latency"/>
+</fieldtrial>
+
+<fieldtrial name="Interval_lt_gt_20ms" separator="_">
+  <group name="LessThanOrEqual_10ms" label="less than or equal to 10ms."/>
+  <group name="LessThanOrEqual_20ms"
+      label="more than 10ms, and less than or equal to 20ms."/>
+  <group name="GreaterThan_20ms" label="greater than 20ms."/>
+  <affected-histogram name="Net.TCP_Connection_Latency_Interval"/>
 </fieldtrial>
 
 <fieldtrial name="IPv6_Probe">
@@ -30243,6 +31741,25 @@ other types of suffix sets.
       name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet10"/>
   <affected-histogram
       name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet20"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketSizeTest" separator=".">
+  <group name="PacketSizeTest.Connectivity.Failure"
+      label="This histogram records the size of the packet size that was not
+             received from the server."/>
+  <group name="PacketSizeTest.Connectivity.Success"
+      label="This histogram records the size of the packet size that was
+             received from the server."/>
+  <affected-histogram name="NetConnectivity4"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketSizeTestPort" separator=".">
+  <group name="443" label="Packet is sent on port 443."/>
+  <group name="80" label="Packet is sent on port 80."/>
+  <affected-histogram
+      name="NetConnectivity4.PacketSizeTest.Connectivity.Failure"/>
+  <affected-histogram
+      name="NetConnectivity4.PacketSizeTest.Connectivity.Success"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4SeriesRecv" separator=".">

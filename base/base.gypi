@@ -39,6 +39,10 @@
           'android/base_jni_registrar.h',
           'android/build_info.cc',
           'android/build_info.h',
+          'android/command_line_android.cc',
+          'android/command_line_android.h',
+          'android/content_uri_utils.cc',
+          'android/content_uri_utils.h',
           'android/cpu_features.cc',
           'android/fifo_utils.cc',
           'android/fifo_utils.h',
@@ -536,6 +540,7 @@
           'sys_info_android.cc',
           'sys_info_chromeos.cc',
           'sys_info_freebsd.cc',
+          'sys_info_internal.h',
           'sys_info_ios.mm',
           'sys_info_linux.cc',
           'sys_info_mac.cc',
@@ -699,13 +704,21 @@
           4018,
         ],
         'target_conditions': [
-          ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
+          ['(<(desktop_linux) == 0 and <(chromeos) == 0) or >(nacl_untrusted_build)==1', {
               'sources/': [
                 ['exclude', '^nix/'],
               ],
               'sources!': [
                 'atomicops_internals_x86_gcc.cc',
+              ],
+          }],
+          ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
+              'sources!': [
                 'message_loop/message_pump_glib.cc',
+              ],
+          }],
+          ['<(use_x11)==0 or >(nacl_untrusted_build)==1', {
+              'sources!': [
                 'message_loop/message_pump_x11.cc',
               ],
           }],

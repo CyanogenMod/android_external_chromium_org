@@ -649,8 +649,8 @@ class MockWebSocketStream : public WebSocketStream {
   MOCK_METHOD0(AsWebSocketStream, WebSocketStream*());
 };
 
-struct ArgumentCopyingWebSocketStreamFactory {
-  scoped_ptr<WebSocketStreamRequest> Factory(
+struct ArgumentCopyingWebSocketStreamCreator {
+  scoped_ptr<WebSocketStreamRequest> Create(
       const GURL& socket_url,
       const std::vector<std::string>& requested_subprotocols,
       const GURL& origin,
@@ -695,15 +695,15 @@ class WebSocketChannelTest : public ::testing::Test {
         connect_data_.socket_url,
         connect_data_.requested_subprotocols,
         connect_data_.origin,
-        base::Bind(&ArgumentCopyingWebSocketStreamFactory::Factory,
-                   base::Unretained(&connect_data_.factory)));
+        base::Bind(&ArgumentCopyingWebSocketStreamCreator::Create,
+                   base::Unretained(&connect_data_.creator)));
   }
 
   // Same as CreateChannelAndConnect(), but calls the on_success callback as
   // well. This method is virtual so that subclasses can also set the stream.
   virtual void CreateChannelAndConnectSuccessfully() {
     CreateChannelAndConnect();
-    connect_data_.factory.connect_delegate->OnSuccess(stream_.Pass());
+    connect_data_.creator.connect_delegate->OnSuccess(stream_.Pass());
   }
 
   // Returns a WebSocketEventInterface to be passed to the WebSocketChannel.
@@ -727,6 +727,11 @@ class WebSocketChannelTest : public ::testing::Test {
   // A struct containing the data that will be used to connect the channel.
   // Grouped for readability.
   struct ConnectData {
+    ConnectData() :
+        socket_url("ws://ws/"),
+        origin("http://ws/")
+    {}
+
     // URLRequestContext object.
     URLRequestContext url_request_context;
 
@@ -737,8 +742,8 @@ class WebSocketChannelTest : public ::testing::Test {
     // Origin of the request
     GURL origin;
 
-    // A fake WebSocketStreamFactory that just records its arguments.
-    ArgumentCopyingWebSocketStreamFactory factory;
+    // A fake WebSocketStreamCreator that just records its arguments.
+    ArgumentCopyingWebSocketStreamCreator creator;
   };
   ConnectData connect_data_;
 
@@ -875,16 +880,16 @@ class WebSocketChannelStreamTest : public WebSocketChannelTest {
   scoped_ptr<MockWebSocketStream> mock_stream_;
 };
 
-// Simple test that everything that should be passed to the factory function is
-// passed to the factory function.
-TEST_F(WebSocketChannelTest, EverythingIsPassedToTheFactoryFunction) {
+// Simple test that everything that should be passed to the creator function is
+// passed to the creator function.
+TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   connect_data_.socket_url = GURL("ws://example.com/test");
   connect_data_.origin = GURL("http://example.com/test");
   connect_data_.requested_subprotocols.push_back("Sinbad");
 
   CreateChannelAndConnect();
 
-  const ArgumentCopyingWebSocketStreamFactory& actual = connect_data_.factory;
+  const ArgumentCopyingWebSocketStreamCreator& actual = connect_data_.creator;
 
   EXPECT_EQ(&connect_data_.url_request_context, actual.url_request_context);
 
@@ -902,7 +907,7 @@ TEST_F(WebSocketChannelTest, EverythingIsPassedToTheFactoryFunction) {
 TEST_F(WebSocketChannelDeletingTest, OnAddChannelResponseFail) {
   CreateChannelAndConnect();
   EXPECT_TRUE(channel_);
-  connect_data_.factory.connect_delegate->OnFailure(
+  connect_data_.creator.connect_delegate->OnFailure(
       kWebSocketErrorNoStatusReceived);
   EXPECT_EQ(NULL, channel_.get());
 }
@@ -1062,6 +1067,20 @@ TEST_F(WebSocketChannelDeletingTest, FailChannelDueToBadControlFrame) {
   EXPECT_EQ(NULL, channel_.get());
 }
 
+// Version of above test with NULL data.
+TEST_F(WebSocketChannelDeletingTest, FailChannelDueToBadControlFrameNull) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, NOT_MASKED, NULL}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+  deleting_ = EVENT_ON_DROP_CHANNEL;
+
+  CreateChannelAndConnectSuccessfully();
+  EXPECT_EQ(NULL, channel_.get());
+}
+
 TEST_F(WebSocketChannelDeletingTest, FailChannelDueToPongAfterClose) {
   scoped_ptr<ReadableFakeWebSocketStream> stream(
       new ReadableFakeWebSocketStream);
@@ -1069,6 +1088,21 @@ TEST_F(WebSocketChannelDeletingTest, FailChannelDueToPongAfterClose) {
     {FINAL_FRAME, WebSocketFrameHeader::kOpCodeClose, NOT_MASKED,
      CLOSE_DATA(NORMAL_CLOSURE, "Success")},
     {FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, NOT_MASKED, ""}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+  deleting_ = EVENT_ON_DROP_CHANNEL;
+
+  CreateChannelAndConnectSuccessfully();
+  EXPECT_EQ(NULL, channel_.get());
+}
+
+TEST_F(WebSocketChannelDeletingTest, FailChannelDueToPongAfterCloseNull) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+    {FINAL_FRAME, WebSocketFrameHeader::kOpCodeClose, NOT_MASKED,
+     CLOSE_DATA(NORMAL_CLOSURE, "Success")},
+    {FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, NOT_MASKED, NULL}};
   stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
   set_stream(stream.Pass());
   deleting_ = EVENT_ON_DROP_CHANNEL;
@@ -1089,6 +1123,18 @@ TEST_F(WebSocketChannelDeletingTest, FailChannelDueToUnknownOpCode) {
   EXPECT_EQ(NULL, channel_.get());
 }
 
+TEST_F(WebSocketChannelDeletingTest, FailChannelDueToUnknownOpCodeNull) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {{FINAL_FRAME, 0x7, NOT_MASKED, NULL}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+  deleting_ = EVENT_ON_DROP_CHANNEL;
+
+  CreateChannelAndConnectSuccessfully();
+  EXPECT_EQ(NULL, channel_.get());
+}
+
 TEST_F(WebSocketChannelEventInterfaceTest, ConnectSuccessReported) {
   // false means success.
   EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, ""));
@@ -1098,7 +1144,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, ConnectSuccessReported) {
 
   CreateChannelAndConnect();
 
-  connect_data_.factory.connect_delegate->OnSuccess(stream_.Pass());
+  connect_data_.creator.connect_delegate->OnSuccess(stream_.Pass());
 }
 
 TEST_F(WebSocketChannelEventInterfaceTest, ConnectFailureReported) {
@@ -1107,8 +1153,14 @@ TEST_F(WebSocketChannelEventInterfaceTest, ConnectFailureReported) {
 
   CreateChannelAndConnect();
 
-  connect_data_.factory.connect_delegate->OnFailure(
+  connect_data_.creator.connect_delegate->OnFailure(
       kWebSocketErrorNoStatusReceived);
+}
+
+TEST_F(WebSocketChannelEventInterfaceTest, NonWebSocketSchemeRejected) {
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(true, ""));
+  connect_data_.socket_url = GURL("http://www.google.com/");
+  CreateChannelAndConnect();
 }
 
 TEST_F(WebSocketChannelEventInterfaceTest, ProtocolPassed) {
@@ -1117,7 +1169,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, ProtocolPassed) {
 
   CreateChannelAndConnect();
 
-  connect_data_.factory.connect_delegate->OnSuccess(
+  connect_data_.creator.connect_delegate->OnSuccess(
       scoped_ptr<WebSocketStream>(new FakeWebSocketStream("Bob", "")));
 }
 
@@ -1300,6 +1352,22 @@ TEST_F(WebSocketChannelEventInterfaceTest, FragmentedMessage) {
   base::MessageLoop::current()->RunUntilIdle();
 }
 
+// A message can consist of one frame with NULL payload.
+TEST_F(WebSocketChannelEventInterfaceTest, NullMessage) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeText, NOT_MASKED, NULL}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(_));
+  EXPECT_CALL(
+      *event_interface_,
+      OnDataFrame(true, WebSocketFrameHeader::kOpCodeText, AsVector("")));
+  CreateChannelAndConnectSuccessfully();
+}
+
 // A control frame is not permitted to be split into multiple frames. RFC6455
 // 5.5 "All control frames ... MUST NOT be fragmented."
 TEST_F(WebSocketChannelEventInterfaceTest, MultiFrameControlMessageIsRejected) {
@@ -1435,6 +1503,22 @@ TEST_F(WebSocketChannelEventInterfaceTest, ControlFrameInDataMessage) {
                             WebSocketFrameHeader::kOpCodeContinuation,
                             AsVector("MESSAGE")));
   }
+
+  CreateChannelAndConnectSuccessfully();
+  base::MessageLoop::current()->RunUntilIdle();
+}
+
+// It seems redundant to repeat the entirety of the above test, so just test a
+// Pong with NULL data.
+TEST_F(WebSocketChannelEventInterfaceTest, PongWithNullData) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, NOT_MASKED, NULL}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::ASYNC, OK, frames);
+  set_stream(stream.Pass());
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(_));
 
   CreateChannelAndConnectSuccessfully();
   base::MessageLoop::current()->RunUntilIdle();
@@ -1611,6 +1695,26 @@ TEST_F(WebSocketChannelEventInterfaceTest, CloseWithNoPayloadGivesStatus1005) {
       new ReadableFakeWebSocketStream);
   static const InitFrame frames[] = {
       {FINAL_FRAME, WebSocketFrameHeader::kOpCodeClose, NOT_MASKED, ""}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  stream->PrepareReadFramesError(ReadableFakeWebSocketStream::SYNC,
+                                 ERR_CONNECTION_CLOSED);
+  set_stream(stream.Pass());
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(_));
+  EXPECT_CALL(*event_interface_, OnClosingHandshake());
+  EXPECT_CALL(*event_interface_,
+              OnDropChannel(kWebSocketErrorNoStatusReceived, _));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
+// A version of the above test with NULL payload.
+TEST_F(WebSocketChannelEventInterfaceTest,
+       CloseWithNullPayloadGivesStatus1005) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeClose, NOT_MASKED, NULL}};
   stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
   stream->PrepareReadFramesError(ReadableFakeWebSocketStream::SYNC,
                                  ERR_CONNECTION_CLOSED);
@@ -1872,6 +1976,21 @@ TEST_F(WebSocketChannelStreamTest, Code1005IsNotEchoed) {
   CreateChannelAndConnectSuccessfully();
 }
 
+TEST_F(WebSocketChannelStreamTest, Code1005IsNotEchoedNull) {
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeClose, NOT_MASKED, NULL}};
+  static const InitFrame expected[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeClose, MASKED, ""}};
+  EXPECT_CALL(*mock_stream_, GetSubProtocol()).Times(AnyNumber());
+  EXPECT_CALL(*mock_stream_, ReadFrames(_, _))
+      .WillOnce(ReturnFrames(&frames))
+      .WillRepeatedly(Return(ERR_IO_PENDING));
+  EXPECT_CALL(*mock_stream_, WriteFrames(EqualsFrames(expected), _))
+      .WillOnce(Return(OK));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
 // RFC6455 5.5.2 "Upon receipt of a Ping frame, an endpoint MUST send a Pong
 // frame in response"
 // 5.5.3 "A Pong frame sent in response to a Ping frame must have identical
@@ -1884,6 +2003,23 @@ TEST_F(WebSocketChannelStreamTest, PingRepliedWithPong) {
   static const InitFrame expected[] = {
       {FINAL_FRAME, WebSocketFrameHeader::kOpCodePong,
        MASKED,      "Application data"}};
+  EXPECT_CALL(*mock_stream_, GetSubProtocol()).Times(AnyNumber());
+  EXPECT_CALL(*mock_stream_, ReadFrames(_, _))
+      .WillOnce(ReturnFrames(&frames))
+      .WillRepeatedly(Return(ERR_IO_PENDING));
+  EXPECT_CALL(*mock_stream_, WriteFrames(EqualsFrames(expected), _))
+      .WillOnce(Return(OK));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
+// A ping with a NULL payload should be responded to with a Pong with an empty
+// payload.
+TEST_F(WebSocketChannelStreamTest, NullPingRepliedWithEmptyPong) {
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodePing, NOT_MASKED, NULL}};
+  static const InitFrame expected[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, MASKED, ""}};
   EXPECT_CALL(*mock_stream_, GetSubProtocol()).Times(AnyNumber());
   EXPECT_CALL(*mock_stream_, ReadFrames(_, _))
       .WillOnce(ReturnFrames(&frames))
@@ -2131,7 +2267,7 @@ class WebSocketChannelStreamTimeoutTest : public WebSocketChannelStreamTest {
     CreateChannelAndConnect();
     channel_->SetClosingHandshakeTimeoutForTesting(
         TimeDelta::FromMilliseconds(kVeryTinyTimeoutMillis));
-    connect_data_.factory.connect_delegate->OnSuccess(stream_.Pass());
+    connect_data_.creator.connect_delegate->OnSuccess(stream_.Pass());
   }
 };
 

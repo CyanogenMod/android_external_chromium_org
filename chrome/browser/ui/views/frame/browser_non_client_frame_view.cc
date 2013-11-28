@@ -17,7 +17,6 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/taskbar_decorator.h"
 #include "chrome/browser/ui/views/new_avatar_button.h"
-#include "chrome/browser/ui/views/profile_chooser_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -116,15 +115,16 @@ void BrowserNonClientFrameView::UpdateAvatarInfo() {
   }
 
   // For popups and panels which don't have the avatar button, we still
-  // need to draw the taskbar decoration. Draw the avatar for
-  // custom-user-data-dir windows which don't support having a shortcut icon.
-  // For non-custom-user-data-dir windows, the window's relaunch details are set
-  // so that the profile's shortcut icon is used, which includes this badge.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUserDataDir)) {
-    chrome::DrawTaskbarDecoration(
-        frame_->GetNativeWindow(),
-        AvatarMenu::ShouldShowAvatarMenu() ? &avatar : NULL);
-  }
+  // need to draw the taskbar decoration. Even though we have an icon on the
+  // window's relaunch details, we draw over it because the user may have pinned
+  // the badge-less Chrome shortcut which will cause windows to ignore the
+  // relaunch details.
+  // TODO(calamity): ideally this should not be necessary but due to issues with
+  // the default shortcut being pinned, we add the runtime badge for safety.
+  // See crbug.com/313800.
+  chrome::DrawTaskbarDecoration(
+      frame_->GetNativeWindow(),
+      AvatarMenu::ShouldShowAvatarMenu() ? &avatar : NULL);
 }
 
 void BrowserNonClientFrameView::UpdateNewStyleAvatarInfo(
@@ -149,15 +149,4 @@ void BrowserNonClientFrameView::UpdateNewStyleAvatarInfo(
     new_avatar_button_ = NULL;
     frame_->GetRootView()->Layout();
   }
-}
-
-void BrowserNonClientFrameView::ShowProfileChooserViewBubble() {
-  gfx::Point origin;
-  views::View::ConvertPointToScreen(new_avatar_button(), &origin);
-  gfx::Rect bounds(origin, size());
-
-  ProfileChooserView::ShowBubble(
-      new_avatar_button(), views::BubbleBorder::TOP_RIGHT,
-      views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE, bounds,
-      browser_view_->browser());
 }

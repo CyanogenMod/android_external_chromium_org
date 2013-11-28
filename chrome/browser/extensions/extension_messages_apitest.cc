@@ -14,7 +14,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/messaging/incognito_connectability.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -29,6 +28,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/event_router.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/jwk_serializer.h"
 #include "net/dns/mock_host_resolver.h"
@@ -64,7 +64,7 @@ class MessageSender : public content::NotificationObserver {
                                       Profile* profile,
                                       GURL event_url) {
     scoped_ptr<Event> event(new Event("test.onMessage", event_args.Pass()));
-    event->restrict_to_profile = profile;
+    event->restrict_to_browser_context = profile;
     event->event_url = event_url;
     return event.Pass();
   }
@@ -532,10 +532,18 @@ IN_PROC_BROWSER_TEST_F(ExternallyConnectableMessagingTest,
   EXPECT_EQ(std::string(), tls_channel_id);
 }
 
+// Flaky on Linux. http://crbug.com/315264
+#if defined(OS_LINUX)
+#define MAYBE_WebConnectableWithEmptyTlsChannelIdAndClosedBackgroundPage \
+    DISABLED_WebConnectableWithEmptyTlsChannelIdAndClosedBackgroundPage
+#else
+#define MAYBE_WebConnectableWithEmptyTlsChannelIdAndClosedBackgroundPage \
+    WebConnectableWithEmptyTlsChannelIdAndClosedBackgroundPage
+#endif
 // Tests a web connectable extension that receives TLS channel id, but
 // immediately closes its background page upon receipt of a message.
 IN_PROC_BROWSER_TEST_F(ExternallyConnectableMessagingTest,
-    WebConnectableWithEmptyTlsChannelIdAndClosedBackgroundPage) {
+    MAYBE_WebConnectableWithEmptyTlsChannelIdAndClosedBackgroundPage) {
   InitializeTestServer();
 
   const Extension* chromium_connectable =

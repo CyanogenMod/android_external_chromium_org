@@ -15,6 +15,11 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/local_discovery/privet_local_printer_lister.h"
+#include "chrome/browser/local_discovery/service_discovery_shared_client.h"
+#endif  // ENABLE_MDNS
+
 class PrintSystemTaskProxy;
 
 namespace base {
@@ -26,15 +31,25 @@ namespace content {
 class WebContents;
 }
 
+namespace gfx {
+class Size;
+}
+
 namespace printing {
 struct PageSizeMargins;
 class PrintBackend;
 }
 
 // The handler for Javascript messages related to the print preview dialog.
-class PrintPreviewHandler : public content::WebUIMessageHandler,
-                            public ui::SelectFileDialog::Listener,
-                            public printing::PrintViewManagerObserver {
+class PrintPreviewHandler
+    : public content::WebUIMessageHandler,
+#if defined(ENABLE_MDNS)
+      public local_discovery::PrivetLocalPrinterLister::Delegate,
+      public local_discovery::PrivetCapabilitiesOperation::Delegate,
+      public local_discovery::PrivetLocalPrintOperation::Delegate,
+#endif
+      public ui::SelectFileDialog::Listener,
+      public printing::PrintViewManagerObserver {
  public:
   PrintPreviewHandler();
   virtual ~PrintPreviewHandler();
@@ -66,14 +81,46 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
   // dialog.
   void ShowSystemDialog();
 
+#if defined(ENABLE_MDNS)
+  // PrivetLocalPrinterLister::Delegate implementation.
+  virtual void LocalPrinterChanged(
+      bool added,
+      const std::string& name,
+      const local_discovery::DeviceDescription& description) OVERRIDE;
+  virtual void LocalPrinterRemoved(const std::string& name) OVERRIDE;
+  virtual void LocalPrinterCacheFlushed() OVERRIDE;
+
+  // PrivetCapabilitiesOperation::Delegate implementation.
+  virtual void OnPrivetCapabilities(
+      local_discovery::PrivetCapabilitiesOperation* capabilities_operation,
+      int http_error,
+      const base::DictionaryValue* capabilities) OVERRIDE;
+
+  // PrivetLocalPrintOperation::Delegate implementation.
+  virtual void OnPrivetPrintingDone(
+      const local_discovery::PrivetLocalPrintOperation*
+      print_operation) OVERRIDE;
+  virtual void OnPrivetPrintingError(
+      const local_discovery::PrivetLocalPrintOperation* print_operation,
+        int http_code) OVERRIDE;
+#endif  // ENABLE_MDNS
+  int regenerate_preview_request_count() const {
+    return regenerate_preview_request_count_;
+  }
+
  private:
   class AccessTokenService;
   struct CUPSPrinterColorModels;
+
+  static bool PrivetPrintingEnabled();
 
   content::WebContents* preview_web_contents() const;
 
   // Gets the list of printers. |args| is unused.
   void HandleGetPrinters(const base::ListValue* args);
+
+  // Starts getting all local privet printers. |arg| is unused.
+  void HandleGetPrivetPrinters(const base::ListValue* args);
 
   // Asks the initiator renderer to generate a preview.  First element of |args|
   // is a job settings JSON string.
@@ -144,6 +191,8 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
   // window opens behind the initiator window.
   void HandleForceOpenNewTab(const base::ListValue* args);
 
+  void HandleGetPrivetPrinterCapabilities(const base::ListValue* arg);
+
   void SendInitialSettings(const std::string& default_printer);
 
   // Send OAuth2 access token.
@@ -201,6 +250,32 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
       base::DictionaryValue* settings) const;
 #endif
 
+#if defined(ENABLE_MDNS)
+  void StopPrivetPrinterSearch();
+  void PrivetCapabilitiesUpdateClient(
+      scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
+  void PrivetLocalPrintUpdateClient(
+      std::string print_ticket,
+      gfx::Size page_size,
+      scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
+  bool PrivetUpdateClient(
+      scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
+  void StartPrivetLocalPrint(const std::string& print_ticket,
+                             const gfx::Size& page_size);
+  void SendPrivetCapabilitiesError(const std::string& id);
+  void PrintToPrivetPrinter(const std::string& printer_name,
+                            const std::string& print_ticket,
+                            const gfx::Size& page_size);
+  bool CreatePrivetHTTP(
+      const std::string& name,
+      const local_discovery::PrivetHTTPAsynchronousFactory::ResultCallback&
+      callback);
+  void FillPrinterDescription(
+      const std::string& name,
+      const local_discovery::DeviceDescription& description,
+      base::DictionaryValue* printer_value);
+#endif
+
   // Pointer to current print system.
   scoped_refptr<printing::PrintBackend> print_backend_;
 
@@ -231,6 +306,21 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
 #if defined(USE_CUPS)
   // The color capabilities from the last printer queried.
   scoped_ptr<CUPSPrinterColorModels> cups_printer_color_models_;
+#endif
+
+#if defined(ENABLE_MDNS)
+  scoped_refptr<local_discovery::ServiceDiscoverySharedClient>
+      service_discovery_client_;
+  scoped_ptr<local_discovery::PrivetLocalPrinterLister> printer_lister_;
+
+  scoped_ptr<local_discovery::PrivetHTTPAsynchronousFactory>
+      privet_http_factory_;
+  scoped_ptr<local_discovery::PrivetHTTPResolution> privet_http_resolution_;
+  scoped_ptr<local_discovery::PrivetHTTPClient> privet_http_client_;
+  scoped_ptr<local_discovery::PrivetCapabilitiesOperation>
+      privet_capabilities_operation_;
+  scoped_ptr<local_discovery::PrivetLocalPrintOperation>
+      privet_local_print_operation_;
 #endif
 
   base::WeakPtrFactory<PrintPreviewHandler> weak_factory_;

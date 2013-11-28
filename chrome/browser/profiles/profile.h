@@ -150,10 +150,6 @@ class Profile : public content::BrowserContext {
   // time.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // Gets task runner for I/O operations associated with |profile|.
-  static scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForProfile(
-      Profile* profile);
-
   // Create a new profile given a path. If |create_mode| is
   // CREATE_MODE_ASYNCHRONOUS then the profile is initialized asynchronously.
   static Profile* CreateProfile(const base::FilePath& path,
@@ -298,9 +294,6 @@ class Profile : public content::BrowserContext {
 
   // Initializes Chrome OS's preferences.
   virtual void InitChromeOSPreferences() = 0;
-
-  // True if the profile is for login session.
-  virtual bool IsLoginProfile() = 0;
 #endif  // defined(OS_CHROMEOS)
 
   // Returns the helper object that provides the proxy configuration service

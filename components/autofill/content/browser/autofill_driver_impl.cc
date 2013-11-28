@@ -12,6 +12,7 @@
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
@@ -60,11 +61,19 @@ AutofillDriverImpl::AutofillDriverImpl(
     : content::WebContentsObserver(web_contents),
       autofill_manager_(new AutofillManager(
           this, delegate, app_locale, enable_download_manager)),
-      autofill_external_delegate_(web_contents, autofill_manager_.get(), this) {
+      autofill_external_delegate_(autofill_manager_.get(), this) {
   autofill_manager_->SetExternalDelegate(&autofill_external_delegate_);
 }
 
 AutofillDriverImpl::~AutofillDriverImpl() {}
+
+bool AutofillDriverImpl::IsOffTheRecord() const {
+  return web_contents()->GetBrowserContext()->IsOffTheRecord();
+}
+
+net::URLRequestContextGetter* AutofillDriverImpl::GetURLRequestContext() {
+  return web_contents()->GetBrowserContext()->GetRequestContext();
+}
 
 content::WebContents* AutofillDriverImpl::GetWebContents() {
   return web_contents();
@@ -121,6 +130,25 @@ void AutofillDriverImpl::SendAutofillTypePredictionsToRenderer(
                                                     type_predictions));
 }
 
+void AutofillDriverImpl::RendererShouldAcceptDataListSuggestion(
+    const base::string16& value) {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(new AutofillMsg_AcceptDataListSuggestion(host->GetRoutingID(),
+                                                      value));
+}
+
+void AutofillDriverImpl::RendererShouldAcceptPasswordAutofillSuggestion(
+    const base::string16& username) {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(
+      new AutofillMsg_AcceptPasswordAutofillSuggestion(host->GetRoutingID(),
+                                                       username));
+}
+
 void AutofillDriverImpl::RendererShouldClearFilledForm() {
   if (!RendererIsAvailable())
     return;
@@ -133,6 +161,14 @@ void AutofillDriverImpl::RendererShouldClearPreviewedForm() {
     return;
   content::RenderViewHost* host = web_contents()->GetRenderViewHost();
   host->Send(new AutofillMsg_ClearPreviewedForm(host->GetRoutingID()));
+}
+
+void AutofillDriverImpl::RendererShouldSetNodeText(
+    const base::string16& value) {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(new AutofillMsg_SetNodeText(host->GetRoutingID(), value));
 }
 
 bool AutofillDriverImpl::OnMessageReceived(const IPC::Message& message) {

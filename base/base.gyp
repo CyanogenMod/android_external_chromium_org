@@ -35,7 +35,7 @@
         ],
       },
       'conditions': [
-        ['use_glib==1', {
+        ['desktop_linux == 1 or chromeos == 1', {
           'conditions': [
             ['chromeos==1', {
               'sources/': [ ['include', '_chromeos\\.cc$'] ]
@@ -51,7 +51,6 @@
           ],
           'dependencies': [
             'symbolize',
-            '../build/linux/system.gyp:glib',
             'xdg_mime',
           ],
           'defines': [
@@ -60,14 +59,19 @@
           'cflags': [
             '-Wno-write-strings',
           ],
-          'export_dependent_settings': [
-            '../build/linux/system.gyp:glib',
-          ],
-        }, {  # use_glib!=1
+        }, {  # desktop_linux == 0 and chromeos == 0
             'sources/': [
               ['exclude', '/xdg_user_dirs/'],
               ['exclude', '_nss\\.cc$'],
             ],
+        }],
+        ['use_glib==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:glib',
+          ],
+          'export_dependent_settings': [
+            '../build/linux/system.gyp:glib',
+          ],
         }],
         ['use_x11==1', {
           'dependencies': [
@@ -343,6 +347,20 @@
         'i18n/string_search.h',
         'i18n/time_formatting.cc',
         'i18n/time_formatting.h',
+        'i18n/timezone.cc',
+        'i18n/timezone.h',
+      ],
+    },
+    {
+      'target_name': 'base_message_loop_tests',
+      'type': 'static_library',
+      'dependencies': [
+        'base',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'sources': [
+        'message_loop/message_loop_test.cc',
+        'message_loop/message_loop_test.h',
       ],
     },
     {
@@ -384,8 +402,8 @@
         'prefs/pref_registry_simple.h',
         'prefs/pref_service.cc',
         'prefs/pref_service.h',
-        'prefs/pref_service_builder.cc',
-        'prefs/pref_service_builder.h',
+        'prefs/pref_service_factory.cc',
+        'prefs/pref_service_factory.h',
         'prefs/pref_store.cc',
         'prefs/pref_store.h',
         'prefs/pref_value_map.cc',
@@ -460,6 +478,7 @@
         'android/jni_string_unittest.cc',
         'android/path_utils_unittest.cc',
         'android/scoped_java_ref_unittest.cc',
+        'android/sys_utils_unittest.cc',
         'async_socket_io_handler_unittest.cc',
         'at_exit_unittest.cc',
         'atomicops_unittest.cc',
@@ -512,6 +531,7 @@
         'i18n/rtl_unittest.cc',
         'i18n/string_search_unittest.cc',
         'i18n/time_formatting_unittest.cc',
+        'i18n/timezone_unittest.cc',
         'ini_parser_unittest.cc',
         'ios/device_util_unittest.mm',
         'json/json_parser_unittest.cc',
@@ -621,6 +641,7 @@
         'template_util_unittest.cc',
         'test/expectations/expectation_unittest.cc',
         'test/expectations/parser_unittest.cc',
+        'test/test_reg_util_win_unittest.cc',
         'test/trace_event_analyzer_unittest.cc',
         'threading/non_thread_safe_unittest.cc',
         'threading/platform_thread_unittest.cc',
@@ -659,7 +680,6 @@
         'win/registry_unittest.cc',
         'win/scoped_bstr_unittest.cc',
         'win/scoped_comptr_unittest.cc',
-        'win/scoped_handle_unittest.cc',
         'win/scoped_process_information_unittest.cc',
         'win/scoped_variant_unittest.cc',
         'win/shortcut_unittest.cc',
@@ -670,6 +690,7 @@
       'dependencies': [
         'base',
         'base_i18n',
+        'base_message_loop_tests',
         'base_prefs',
         'base_prefs_test_support',
         'base_static',
@@ -687,7 +708,7 @@
         'module_dir': 'base'
       },
       'conditions': [
-        ['use_glib==1', {
+        ['desktop_linux == 1 or chromeos == 1', {
           'defines': [
             'USE_SYMBOLIZE',
           ],
@@ -715,26 +736,6 @@
             # iOS does not use message_pump_libevent.
             ['exclude', '^message_loop/message_pump_libevent_unittest\\.cc$'],
           ],
-          'conditions': [
-            ['coverage != 0', {
-              'sources!': [
-                # These sources can't be built with coverage due to a toolchain
-                # bug: http://openradar.appspot.com/radar?id=1499403
-                'json/json_reader_unittest.cc',
-                'strings/string_piece_unittest.cc',
-
-                # These tests crash when run with coverage turned on due to an
-                # issue with llvm_gcda_increment_indirect_counter:
-                # http://crbug.com/156058
-                'debug/trace_event_unittest.cc',
-                'debug/trace_event_unittest.h',
-                'logging_unittest.cc',
-                'string_util_unittest.cc',
-                'test/trace_event_analyzer_unittest.cc',
-                'utf_offset_string_conversions_unittest.cc',
-              ],
-            }],
-          ],
           'actions': [
             {
               'action_name': 'copy_test_data',
@@ -748,7 +749,7 @@
             },
           ],
         }],
-        ['use_glib==1', {
+        ['desktop_linux == 1 or chromeos == 1', {
           'sources!': [
             'file_version_info_unittest.cc',
           ],
@@ -763,11 +764,19 @@
             }],
           ],
           'dependencies': [
-            '../build/linux/system.gyp:glib',
             '../build/linux/system.gyp:ssl',
+          ],
+        }],
+        ['use_x11 == 1', {
+          'dependencies': [
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
-        }, {  # use_glib!=1
+        }],
+        ['use_glib == 1', {
+          'dependencies': [
+            '../build/linux/system.gyp:glib',
+          ],
+        }, {  # use_glib == 0
           'sources!': [
             'message_loop/message_pump_glib_unittest.cc',
           ]
@@ -819,8 +828,6 @@
             ['exclude', '^win/'],
           ],
           'sources!': [
-            'debug/trace_event_win_unittest.cc',
-            'time/time_win_unittest.cc',
             'win/win_util_unittest.cc',
           ],
         }],
@@ -891,6 +898,15 @@
             'test/test_file_util_linux.cc',
           ],
         }],
+        ['OS == "android"', {
+          'dependencies': [
+            'base_unittests_jni_headers',
+            'base_java_unittest_support',
+          ],
+          'include_dirs': [
+            '<(SHARED_INTERMEDIATE_DIR)/base',
+          ],
+        }],
       ],
       'sources': [
         'test/expectations/expectation.cc',
@@ -943,6 +959,7 @@
         'test/task_runner_test_template.h',
         'test/test_file_util.cc',
         'test/test_file_util.h',
+        'test/test_file_util_android.cc',
         'test/test_file_util_linux.cc',
         'test/test_file_util_mac.cc',
         'test/test_file_util_posix.cc',
@@ -1209,6 +1226,8 @@
           'sources': [
             'android/java/src/org/chromium/base/ActivityStatus.java',
             'android/java/src/org/chromium/base/BuildInfo.java',
+            'android/java/src/org/chromium/base/CommandLine.java',
+            'android/java/src/org/chromium/base/ContentUriUtils.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
@@ -1226,6 +1245,18 @@
                'android/java/src/org/chromium/base/ContextTypes.java',
              ],
             }],
+          ],
+          'variables': {
+            'jni_gen_package': 'base',
+            'jni_generator_ptr_type': 'long',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+        {
+          'target_name': 'base_unittests_jni_headers',
+          'type': 'none',
+          'sources': [
+            'test/android/java/src/org/chromium/base/ContentUriTestUtils.java',
           ],
           'variables': {
             'jni_gen_package': 'base',
@@ -1250,6 +1281,17 @@
               ],
             }]
           ],
+        },
+        {
+          'target_name': 'base_java_unittest_support',
+          'type': 'none',
+          'dependencies': [
+            'base_java',
+          ],
+          'variables': {
+            'java_in_dir': '../base/test/android/java',
+          },
+          'includes': [ '../build/java.gypi' ],
         },
         {
           'target_name': 'base_java_activity_state',

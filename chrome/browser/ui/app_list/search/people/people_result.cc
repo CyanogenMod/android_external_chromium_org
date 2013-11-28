@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
@@ -18,6 +17,8 @@
 #include "chrome/browser/ui/app_list/search/people/person.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/extensions/api/hangouts_private.h"
+#include "content/public/browser/user_metrics.h"
+#include "extensions/browser/event_router.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -164,6 +165,8 @@ void PeopleResult::OpenChat() {
   extensions::ExtensionSystem::Get(
       profile_)->event_router()->DispatchEventToExtension(
           hangouts_extension_id_, event.Pass());
+
+  content::RecordAction(content::UserMetricsAction("PeopleSearch_OpenChat"));
 }
 
 void PeopleResult::SendEmail() {
@@ -173,6 +176,7 @@ void PeopleResult::SendEmail() {
   // If no window exists, this will open a new window this one tab.
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
+  content::RecordAction(content::UserMetricsAction("PeopleSearch_SendEmail"));
 }
 
 void PeopleResult::RefreshHangoutsExtensionId() {

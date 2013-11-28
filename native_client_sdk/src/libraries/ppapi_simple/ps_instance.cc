@@ -64,21 +64,37 @@ void* PSInstance::MainThreadThunk(void *info) {
   si->inst_->main_loop_->AttachToCurrentThread();
 
   int ret = si->inst_->MainThread(si->argc_, si->argv_);
+
+  bool should_exit = si->inst_->exit_message_ == NULL;
+
+  if (si->inst_->exit_message_) {
+    // Send the exit message to JavaScript. Don't call exit(), so the message
+    // doesn't get dropped.
+    si->inst_->Log("Posting exit message to JavaScript.\n");
+    std::stringstream ss;
+    ss << si->inst_->exit_message_ << ":" << ret;
+    si->inst_->PostMessage(ss.str());
+  }
+
+  // Clean up StartInfo.
   for (uint32_t i = 0; i < si->argc_; i++) {
     delete[] si->argv_[i];
   }
   delete[] si->argv_;
   delete si;
 
-  // Exit the entire process once the 'main' thread returns.
-  // The error code will be available to javascript via
-  // the exitcode paramater of the crash event.
-  exit(ret);
+  if (should_exit) {
+    // Exit the entire process once the 'main' thread returns.
+    // The error code will be available to javascript via
+    // the exitcode parameter of the crash event.
+    exit(ret);
+  }
+
   return NULL;
 }
 
 // The default implementation supports running a 'C' main.
-int PSInstance::MainThread(int argc, char *argv[]) {
+int PSInstance::MainThread(int argc, char* argv[]) {
   if (!main_cb_) {
     Error("No main defined.\n");
     return 0;
@@ -87,6 +103,7 @@ int PSInstance::MainThread(int argc, char *argv[]) {
   Trace("Starting MAIN.\n");
   int ret = main_cb_(argc, argv);
   Log("Main thread returned with %d.\n", ret);
+
   return ret;
 }
 
@@ -98,7 +115,8 @@ PSInstance::PSInstance(PP_Instance instance)
       events_enabled_(PSE_NONE),
       verbosity_(PSV_WARN),
       tty_fd_(-1),
-      tty_prefix_(NULL) {
+      tty_prefix_(NULL),
+      exit_message_(NULL) {
   // Set the single Instance object
   s_InstanceObject = this;
 
@@ -218,6 +236,26 @@ bool PSInstance::ProcessProperties() {
       if (tty_resize)
         RegisterMessageHandler(tty_resize, MessageHandlerResizeStatic, this);
 
+      char* tty_rows = getenv("PS_TTY_ROWS");
+      char* tty_cols = getenv("PS_TTY_COLS");
+      if (tty_rows && tty_cols) {
+        char* end = tty_rows;
+        int rows = strtol(tty_rows, &end, 10);
+        if (*end != '\0' || rows < 0) {
+          Error("Invalid value for PS_TTY_ROWS: %s", tty_rows);
+        } else {
+          end = tty_cols;
+          int cols = strtol(tty_cols, &end, 10);
+          if (*end != '\0' || cols < 0)
+            Error("Invalid value for PS_TTY_COLS: %s", tty_cols);
+          else
+            HandleResize(cols, rows);
+        }
+      }
+      else if (tty_rows || tty_cols) {
+        Error("PS_TTY_ROWS and PS_TTY_COLS must be set together");
+      }
+
       tioc_nacl_output handler;
       handler.handler = TtyOutputHandlerStatic;
       handler.user_data = this;
@@ -226,6 +264,8 @@ bool PSInstance::ProcessProperties() {
       Error("Failed to open /dev/tty.\n");
     }
   }
+
+  exit_message_ = getenv("PS_EXIT_MESSAGE");
 
   // Set line buffering on stdout and stderr
 #if !defined(WIN32)
@@ -347,16 +387,22 @@ void PSInstance::MessageHandlerInput(const pp::Var& message) {
   }
 }
 
+void PSInstance::HandleResize(int width, int height){
+  struct winsize size;
+  memset(&size, 0, sizeof(size));
+  size.ws_col = width;
+  size.ws_row = height;
+  ioctl(tty_fd_, TIOCSWINSZ, reinterpret_cast<char*>(&size));
+}
+
 void PSInstance::MessageHandlerResize(const pp::Var& message) {
   assert(message.is_array());
   pp::VarArray array(message);
   assert(array.GetLength() == 2);
 
-  struct winsize size;
-  memset(&size, 0, sizeof(size));
-  size.ws_col = array.Get(0).AsInt();
-  size.ws_row = array.Get(1).AsInt();
-  ioctl(tty_fd_, TIOCSWINSZ, reinterpret_cast<char*>(&size));
+  int width = array.Get(0).AsInt();
+  int height = array.Get(1).AsInt();
+  HandleResize(width, height);
 }
 
 ssize_t PSInstance::TtyOutputHandlerStatic(const char* buf,

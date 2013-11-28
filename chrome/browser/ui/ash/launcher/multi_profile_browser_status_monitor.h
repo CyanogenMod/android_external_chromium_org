@@ -7,7 +7,7 @@
 
 #include "chrome/browser/ui/ash/launcher/browser_status_monitor.h"
 
-// MultiProfileBrowserStatusMonitor uses mainly the BrowserStatusMonitormonitor
+// MultiProfileBrowserStatusMonitor uses mainly the BrowserStatusMonitor
 // with the addition that it creates and destroys launcher items for windowed
 // V1 apps - upon creation as well as upon user switch.
 class MultiProfileBrowserStatusMonitor : public BrowserStatusMonitor {
@@ -22,11 +22,17 @@ class MultiProfileBrowserStatusMonitor : public BrowserStatusMonitor {
   virtual void RemoveV1AppFromShelf(Browser* browser) OVERRIDE;
 
  private:
-  // Returns true if app is owned by current user.
-  bool IsV1AppOwnedByCurrentUser(Browser* browser);
-
   typedef std::vector<Browser*> AppList;
   AppList app_list_;
+
+  // Connect a V1 app to the launcher.
+  void ConnectV1AppToLauncher(Browser* browser);
+
+  // Disconnect a V1 app from the launcher.
+  void DisconnectV1AppFromLauncher(Browser* browser);
+
+  // The launcher controller which is associated with this object.
+  ChromeLauncherController* launcher_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(MultiProfileBrowserStatusMonitor);
 };

@@ -60,6 +60,12 @@ PersonalDataManager* TabAutofillManagerDelegate::GetPersonalDataManager() {
       profile->GetOriginalProfile());
 }
 
+scoped_refptr<AutofillWebDataService>
+    TabAutofillManagerDelegate::GetDatabase() {
+  return AutofillWebDataService::FromBrowserContext(
+      web_contents_->GetBrowserContext());
+}
+
 PrefService* TabAutofillManagerDelegate::GetPrefs() {
   return Profile::FromBrowserContext(web_contents_->GetBrowserContext())->
       GetPrefs();
@@ -77,7 +83,6 @@ void TabAutofillManagerDelegate::ShowAutofillSettings() {
 
 void TabAutofillManagerDelegate::ConfirmSaveCreditCard(
     const AutofillMetrics& metric_logger,
-    const CreditCard& credit_card,
     const base::Closure& save_card_callback) {
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents_);

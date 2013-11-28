@@ -7,7 +7,6 @@
 #include "base/memory/linked_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -16,9 +15,10 @@
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/common/extensions/api/system_indicator.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
 
 namespace extensions {

@@ -57,7 +57,7 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
   scoped_ptr<net::URLRequest> request(
       params->resource_context()->GetRequestContext()->CreateRequest(
           params->url(), net::DEFAULT_PRIORITY, NULL));
-  request->set_load_flags(request->load_flags() | params->load_flags());
+  request->SetLoadFlags(request->load_flags() | params->load_flags());
   request->set_method(params->method());
   if (!params->post_body().empty()) {
     const std::string& body = params->post_body();
@@ -156,13 +156,6 @@ class MapValueIteratorAdapter {
   base::hash_map<int64, DownloadItem*>::const_iterator iter_;
   // Allow copy and assign.
 };
-
-void EnsureNoPendingDownloadJobsOnFile(bool* result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  *result = (DownloadFile::GetNumberOfDownloadFiles() == 0);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
-}
 
 class DownloadItemFactoryImpl : public DownloadItemFactory {
  public:

@@ -65,6 +65,8 @@ class AccessibilityEventRouterViews : public content::NotificationObserver {
 
   FRIEND_TEST_ALL_PREFIXES(AccessibilityEventRouterViewsTest,
                            TestFocusNotification);
+  FRIEND_TEST_ALL_PREFIXES(AccessibilityEventRouterViewsTest,
+                           MenuIndexAndCountForInvisibleMenu);
 
   AccessibilityEventRouterViews();
   virtual ~AccessibilityEventRouterViews();
@@ -115,6 +117,10 @@ class AccessibilityEventRouterViews : public content::NotificationObserver {
       ui::AccessibilityTypes::Event event,
       Profile* profile);
   static void SendSliderNotification(
+      views::View* view,
+      ui::AccessibilityTypes::Event event,
+      Profile* profile);
+  static void SendAlertControlNotification(
       views::View* view,
       ui::AccessibilityTypes::Event event,
       Profile* profile);

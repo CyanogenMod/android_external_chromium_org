@@ -24,12 +24,12 @@ using api::activity_log_private::ActivityResultSet;
 using api::activity_log_private::ExtensionActivity;
 using api::activity_log_private::Filter;
 
-const char kActivityLogExtensionId[] = "abjoigjokfeibfhiahiijggogladbmfm";
-const char kActivityLogTestExtensionId[] = "hhcnncjlpehbepkbgccanfpkneoejnpb";
+const char kActivityLogExtensionId[] = "fpofdchlamddhnajleknffcbmnjfahpg";
+const char kActivityLogTestExtensionId[] = "abjoigjokfeibfhiahiijggogladbmfm";
 // TODO(mvrable): Delete kActivityLogObsoleteExtensionId after ensuring that it
 // is no longer in use.
 const char kActivityLogObsoleteExtensionId[] =
-    "acldcpdepobcjbdanifkmfndkjoilgba";
+    "hhcnncjlpehbepkbgccanfpkneoejnpb";
 
 static base::LazyInstance<ProfileKeyedAPIFactory<ActivityLogAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
@@ -95,7 +95,7 @@ void ActivityLogAPI::OnExtensionActivity(scoped_refptr<Action> activity) {
   scoped_ptr<Event> event(
       new Event(activity_log_private::OnExtensionActivity::kEventName,
           value.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(event.Pass());
 }
 

@@ -6,29 +6,30 @@
 
 #include <iterator>
 
+#include "base/command_line.h"
 #include "base/prefs/pref_notifier.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/admin_policy.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_prefs_factory.h"
-#include "chrome/browser/extensions/extension_sorting.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/admin_policy.h"
+#include "extensions/browser/app_sorting.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_info.h"
@@ -88,6 +89,7 @@ const char kPrefAcknowledgePromptCount[] = "ack_prompt_count";
 // Indicates whether the user has acknowledged various types of extensions.
 const char kPrefExternalAcknowledged[] = "ack_external";
 const char kPrefBlacklistAcknowledged[] = "ack_blacklist";
+const char kPrefWipeoutAcknowledged[] = "ack_wiped";
 
 // Indicates whether the external extension was installed during the first
 // run of this profile.
@@ -157,6 +159,7 @@ const char kPrefGrantedPermissions[] = "granted_permissions";
 
 // The preference names for PermissionSet values.
 const char kPrefAPIs[] = "api";
+const char kPrefManifestPermissions[] = "manifest_permissions";
 const char kPrefExplicitHosts[] = "explicit_host";
 const char kPrefScriptableHosts[] = "scriptable_host";
 
@@ -188,6 +191,9 @@ const char kPrefGeometryCache[] = "geometry_cache";
 
 // A preference that indicates when an extension is last launched.
 const char kPrefLastLaunchTime[] = "last_launch_time";
+
+// A list of installed ids and a signature.
+const char kInstallSignature[] = "extensions.install_signature";
 
 // Provider of write access to a dictionary storing extension prefs.
 class ScopedExtensionPrefUpdate : public DictionaryPrefUpdate {
@@ -312,10 +318,12 @@ ExtensionPrefs* ExtensionPrefs::Create(
     PrefService* prefs,
     const base::FilePath& root_dir,
     ExtensionPrefValueMap* extension_pref_value_map,
+    scoped_ptr<AppSorting> app_sorting,
     bool extensions_disabled) {
   return ExtensionPrefs::Create(prefs,
                                 root_dir,
                                 extension_pref_value_map,
+                                app_sorting.Pass(),
                                 extensions_disabled,
                                 make_scoped_ptr(new TimeProvider()));
 }
@@ -325,15 +333,15 @@ ExtensionPrefs* ExtensionPrefs::Create(
     PrefService* pref_service,
     const base::FilePath& root_dir,
     ExtensionPrefValueMap* extension_pref_value_map,
+    scoped_ptr<AppSorting> app_sorting,
     bool extensions_disabled,
     scoped_ptr<TimeProvider> time_provider) {
-  scoped_ptr<ExtensionPrefs> prefs(
-      new ExtensionPrefs(pref_service,
-                         root_dir,
-                         extension_pref_value_map,
-                         time_provider.Pass(),
-                         extensions_disabled));
-  return prefs.release();
+  return new ExtensionPrefs(pref_service,
+                            root_dir,
+                            extension_pref_value_map,
+                            app_sorting.Pass(),
+                            time_provider.Pass(),
+                            extensions_disabled);
 }
 
 ExtensionPrefs::~ExtensionPrefs() {
@@ -542,6 +550,18 @@ PermissionSet* ExtensionPrefs::ReadPrefAsPermissionSet(
                                     &apis, NULL, NULL);
   }
 
+  // Retrieve the Manifest Keys permissions. Please refer to
+  // |SetExtensionPrefPermissionSet| for manifest_permissions_values format.
+  ManifestPermissionSet manifest_permissions;
+  const ListValue* manifest_permissions_values = NULL;
+  std::string manifest_permission_pref =
+      JoinPrefs(pref_key, kPrefManifestPermissions);
+  if (ReadPrefAsList(extension_id, manifest_permission_pref,
+                     &manifest_permissions_values)) {
+    ManifestPermissionSet::ParseFromJSON(
+        manifest_permissions_values, &manifest_permissions, NULL, NULL);
+  }
+
   // Retrieve the explicit host permissions.
   URLPatternSet explicit_hosts;
   ReadPrefAsURLPatternSet(
@@ -554,36 +574,50 @@ PermissionSet* ExtensionPrefs::ReadPrefAsPermissionSet(
       extension_id, JoinPrefs(pref_key, kPrefScriptableHosts),
       &scriptable_hosts, UserScript::ValidUserScriptSchemes());
 
-  return new PermissionSet(apis, explicit_hosts, scriptable_hosts);
+  return new PermissionSet(
+      apis, manifest_permissions, explicit_hosts, scriptable_hosts);
+}
+
+// Set the API or Manifest permissions.
+// The format of api_values is:
+// [ "permission_name1",   // permissions do not support detail.
+//   "permission_name2",
+//   {"permission_name3": value },
+//   // permission supports detail, permission detail will be stored in value.
+//   ...
+// ]
+template<typename T>
+static ListValue* CreatePermissionList(const T& permissions) {
+  ListValue* values = new ListValue();
+  for (typename T::const_iterator i = permissions.begin();
+      i != permissions.end(); ++i) {
+    scoped_ptr<Value> detail(i->ToValue());
+    if (detail) {
+      DictionaryValue* tmp = new DictionaryValue();
+      tmp->Set(i->name(), detail.release());
+      values->Append(tmp);
+    } else {
+      values->Append(new base::StringValue(i->name()));
+    }
+  }
+  return values;
 }
 
 void ExtensionPrefs::SetExtensionPrefPermissionSet(
     const std::string& extension_id,
     const std::string& pref_key,
     const PermissionSet* new_value) {
-  // Set the API permissions.
-  // The format of api_values is:
-  // [ "permission_name1",   // permissions do not support detail.
-  //   "permission_name2",
-  //   {"permission_name3": value },
-  //   // permission supports detail, permission detail will be stored in value.
-  //   ...
-  // ]
-  ListValue* api_values = new ListValue();
-  APIPermissionSet apis = new_value->apis();
   std::string api_pref = JoinPrefs(pref_key, kPrefAPIs);
-  for (APIPermissionSet::const_iterator i = apis.begin();
-       i != apis.end(); ++i) {
-    scoped_ptr<Value> detail(i->ToValue());
-    if (detail) {
-      DictionaryValue* tmp = new DictionaryValue();
-      tmp->Set(i->name(), detail.release());
-      api_values->Append(tmp);
-    } else {
-      api_values->Append(new base::StringValue(i->name()));
-    }
-  }
+  ListValue* api_values = CreatePermissionList(new_value->apis());
   UpdateExtensionPref(extension_id, api_pref, api_values);
+
+  std::string manifest_permissions_pref =
+      JoinPrefs(pref_key, kPrefManifestPermissions);
+  ListValue* manifest_permissions_values = CreatePermissionList(
+      new_value->manifest_permissions());
+  UpdateExtensionPref(extension_id,
+                      manifest_permissions_pref,
+                      manifest_permissions_values);
 
   // Set the explicit host permissions.
   if (!new_value->explicit_hosts().is_empty()) {
@@ -648,6 +682,18 @@ void ExtensionPrefs::SetExternalInstallFirstRun(
                       new base::FundamentalValue(true));
 }
 
+bool ExtensionPrefs::HasWipeoutBeenAcknowledged(
+    const std::string& extension_id) {
+  return ReadPrefAsBooleanAndReturn(extension_id, kPrefWipeoutAcknowledged);
+}
+
+void ExtensionPrefs::SetWipeoutAcknowledged(
+    const std::string& extension_id,
+    bool value) {
+  UpdateExtensionPref(extension_id, kPrefWipeoutAcknowledged,
+                      Value::CreateBooleanValue(value));
+}
+
 bool ExtensionPrefs::SetAlertSystemFirstRun() {
   if (prefs_->GetBoolean(prefs::kExtensionAlertsInitializedPref)) {
     return true;
@@ -673,7 +719,7 @@ void ExtensionPrefs::SetDidExtensionEscalatePermissions(
                       new base::FundamentalValue(did_escalate));
 }
 
-int ExtensionPrefs::GetDisableReasons(const std::string& extension_id) {
+int ExtensionPrefs::GetDisableReasons(const std::string& extension_id) const {
   int value = -1;
   if (ReadPrefAsInteger(extension_id, kPrefDisableReasons, &value) &&
       value >= 0) {
@@ -1028,92 +1074,98 @@ bool ExtensionPrefs::HasAllowFileAccessSetting(
 }
 
 ExtensionPrefs::LaunchType ExtensionPrefs::GetLaunchType(
-    const Extension* extension,
-    ExtensionPrefs::LaunchType default_pref_value) {
+    const Extension* extension) {
   int value = -1;
-  LaunchType result = LAUNCH_REGULAR;
+  LaunchType result = LAUNCH_TYPE_DEFAULT;
+
+  // Launch hosted apps as windows by default for streamlined hosted apps.
+  if (CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kEnableStreamlinedHostedApps)) {
+    result = LAUNCH_TYPE_WINDOW;
+  }
 
   if (ReadPrefAsInteger(extension->id(), kPrefLaunchType, &value) &&
-      (value == LAUNCH_PINNED ||
-       value == LAUNCH_REGULAR ||
-       value == LAUNCH_FULLSCREEN ||
-       value == LAUNCH_WINDOW)) {
+      (value == LAUNCH_TYPE_PINNED ||
+       value == LAUNCH_TYPE_REGULAR ||
+       value == LAUNCH_TYPE_FULLSCREEN ||
+       value == LAUNCH_TYPE_WINDOW)) {
     result = static_cast<LaunchType>(value);
-  } else {
-    result = default_pref_value;
   }
 #if defined(OS_MACOSX)
     // App windows are not yet supported on mac.  Pref sync could make
-    // the launch type LAUNCH_WINDOW, even if there is no UI to set it
+    // the launch type LAUNCH_TYPE_WINDOW, even if there is no UI to set it
     // on mac.
-    if (!extension->is_platform_app() && result == LAUNCH_WINDOW)
-      result = LAUNCH_REGULAR;
+    if (!extension->is_platform_app() && result == LAUNCH_TYPE_WINDOW)
+      result = LAUNCH_TYPE_REGULAR;
 #endif
 
 #if defined(OS_WIN)
     // We don't support app windows in Windows 8 single window Metro mode.
-    if (win8::IsSingleWindowMetroMode() && result == LAUNCH_WINDOW)
-      result = LAUNCH_REGULAR;
+    if (win8::IsSingleWindowMetroMode() && result == LAUNCH_TYPE_WINDOW)
+      result = LAUNCH_TYPE_REGULAR;
 #endif  // OS_WIN
 
   return result;
 }
 
-extension_misc::LaunchContainer ExtensionPrefs::GetLaunchContainer(
-    const Extension* extension,
-    ExtensionPrefs::LaunchType default_pref_value) {
-  extension_misc::LaunchContainer manifest_launch_container =
+LaunchContainer ExtensionPrefs::GetLaunchContainer(const Extension* extension) {
+  LaunchContainer manifest_launch_container =
       AppLaunchInfo::GetLaunchContainer(extension);
 
-  const extension_misc::LaunchContainer kInvalidLaunchContainer =
-      static_cast<extension_misc::LaunchContainer>(-1);
+  const LaunchContainer kInvalidLaunchContainer =
+      static_cast<LaunchContainer>(-1);
 
-  extension_misc::LaunchContainer result = kInvalidLaunchContainer;
+  LaunchContainer result = kInvalidLaunchContainer;
 
-  if (manifest_launch_container == extension_misc::LAUNCH_PANEL) {
+  if (manifest_launch_container == LAUNCH_PANEL) {
     // Apps with app.launch.container = 'panel' should always respect the
     // manifest setting.
     result = manifest_launch_container;
-  } else if (manifest_launch_container == extension_misc::LAUNCH_TAB) {
-    // Look for prefs that indicate the user's choice of launch
-    // container.  The app's menu on the NTP provides a UI to set
-    // this preference.  If no preference is set, |default_pref_value|
-    // is used.
-    ExtensionPrefs::LaunchType prefs_launch_type =
-        GetLaunchType(extension, default_pref_value);
+  } else if (manifest_launch_container == LAUNCH_TAB) {
+    // Look for prefs that indicate the user's choice of launch container. The
+    // app's menu on the NTP provides a UI to set this preference.
+    ExtensionPrefs::LaunchType prefs_launch_type = GetLaunchType(extension);
 
-    if (prefs_launch_type == ExtensionPrefs::LAUNCH_WINDOW) {
+    if (prefs_launch_type == LAUNCH_TYPE_WINDOW) {
       // If the pref is set to launch a window (or no pref is set, and
       // window opening is the default), make the container a window.
-      result = extension_misc::LAUNCH_WINDOW;
+      result = LAUNCH_WINDOW;
 #if defined(USE_ASH)
-    } else if (prefs_launch_type == ExtensionPrefs::LAUNCH_FULLSCREEN &&
+    } else if (prefs_launch_type == LAUNCH_TYPE_FULLSCREEN &&
                chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH) {
-      // LAUNCH_FULLSCREEN launches in a maximized app window in ash.
+      // LAUNCH_TYPE_FULLSCREEN launches in a maximized app window in ash.
       // For desktop chrome AURA on all platforms we should open the
       // application in full screen mode in the current tab, on the same
       // lines as non AURA chrome.
-      result = extension_misc::LAUNCH_WINDOW;
+      result = LAUNCH_WINDOW;
 #endif
     } else {
       // All other launch types (tab, pinned, fullscreen) are
       // implemented as tabs in a window.
-      result = extension_misc::LAUNCH_TAB;
+      result = LAUNCH_TAB;
     }
   } else {
-    // If a new value for app.launch.container is added, logic
-    // for it should be added here.  extension_misc::LAUNCH_WINDOW
-    // is not present because there is no way to set it in a manifest.
+    // If a new value for app.launch.container is added, logic for it should be
+    // added here.  LAUNCH_WINDOW is not present because there is no way to set
+    // it in a manifest.
     NOTREACHED() << manifest_launch_container;
   }
 
   // All paths should set |result|.
   if (result == kInvalidLaunchContainer) {
     DLOG(FATAL) << "Failed to set a launch container.";
-    result = extension_misc::LAUNCH_TAB;
+    result = LAUNCH_TAB;
   }
 
   return result;
+}
+
+bool ExtensionPrefs::HasPreferredLaunchContainer(const Extension* extension) {
+  int value = -1;
+  LaunchContainer manifest_launch_container =
+      AppLaunchInfo::GetLaunchContainer(extension);
+  return manifest_launch_container == LAUNCH_TAB &&
+      ReadPrefAsInteger(extension->id(), kPrefLaunchType, &value);
 }
 
 void ExtensionPrefs::SetLaunchType(const std::string& extension_id,
@@ -1167,13 +1219,13 @@ void ExtensionPrefs::SetKnownDisabled(const ExtensionIdSet& extension_ids) {
 void ExtensionPrefs::OnExtensionInstalled(
     const Extension* extension,
     Extension::State initial_state,
-    Blacklist::BlacklistState blacklist_state,
+    bool blacklisted_for_malware,
     const syncer::StringOrdinal& page_ordinal) {
   ScopedExtensionPrefUpdate update(prefs_, extension->id());
   DictionaryValue* extension_dict = update.Get();
   const base::Time install_time = time_provider_->GetCurrentTime();
   PopulateExtensionInfoPrefs(extension, install_time, initial_state,
-                             blacklist_state, extension_dict);
+                             blacklisted_for_malware, extension_dict);
   FinishExtensionInfoPrefs(extension->id(), install_time,
                            extension->RequiresSortOrdinal(),
                            page_ordinal, extension_dict);
@@ -1182,7 +1234,7 @@ void ExtensionPrefs::OnExtensionInstalled(
 void ExtensionPrefs::OnExtensionUninstalled(const std::string& extension_id,
                                             const Manifest::Location& location,
                                             bool external_uninstall) {
-  extension_sorting_->ClearOrdinals(extension_id);
+  app_sorting_->ClearOrdinals(extension_id);
 
   // For external extensions, we save a preference reminding ourself not to try
   // and install the extension anymore (except when |external_uninstall| is
@@ -1358,12 +1410,13 @@ ExtensionPrefs::GetUninstalledExtensionsInfo() const {
 void ExtensionPrefs::SetDelayedInstallInfo(
     const Extension* extension,
     Extension::State initial_state,
-    Blacklist::BlacklistState blacklist_state,
+    bool blacklisted_for_malware,
     DelayReason delay_reason,
     const syncer::StringOrdinal& page_ordinal) {
   DictionaryValue* extension_dict = new DictionaryValue();
   PopulateExtensionInfoPrefs(extension, time_provider_->GetCurrentTime(),
-                             initial_state, blacklist_state, extension_dict);
+                             initial_state, blacklisted_for_malware,
+                             extension_dict);
 
   // Add transient data that is needed by FinishDelayedInstallInfo(), but
   // should not be in the final extension prefs. All entries here should have
@@ -1623,10 +1676,10 @@ void ExtensionPrefs::FixMissingPrefs(const ExtensionIdList& extension_ids) {
   for (ExtensionIdList::const_iterator ext_id = extension_ids.begin();
        ext_id != extension_ids.end(); ++ext_id) {
     if (GetInstallTime(*ext_id) == base::Time()) {
-      LOG(INFO) << "Could not parse installation time of extension "
-                << *ext_id << ". It was probably installed before setting "
-                << kPrefInstallTime << " was introduced. Updating "
-                << kPrefInstallTime << " to the current time.";
+      VLOG(1) << "Could not parse installation time of extension "
+              << *ext_id << ". It was probably installed before setting "
+              << kPrefInstallTime << " was introduced. Updating "
+              << kPrefInstallTime << " to the current time.";
       const base::Time install_time = time_provider_->GetCurrentTime();
       UpdateExtensionPref(*ext_id,
                           kPrefInstallTime,
@@ -1658,7 +1711,7 @@ void ExtensionPrefs::InitPrefStore() {
   FixMissingPrefs(extension_ids);
   MigratePermissions(extension_ids);
   MigrateDisableReasons(extension_ids);
-  extension_sorting_->Initialize(extension_ids);
+  app_sorting_->Initialize(extension_ids);
 
   PreferenceAPI::InitExtensionControlledPrefs(this, extension_pref_value_map_);
 
@@ -1713,19 +1766,36 @@ void ExtensionPrefs::SetGeometryCache(
   UpdateExtensionPref(extension_id, kPrefGeometryCache, cache.release());
 }
 
+const DictionaryValue* ExtensionPrefs::GetInstallSignature() {
+ return prefs_->GetDictionary(kInstallSignature);
+}
+
+void ExtensionPrefs::SetInstallSignature(const DictionaryValue* signature) {
+  if (signature) {
+    prefs_->Set(kInstallSignature, *signature);
+    DVLOG(1) << "SetInstallSignature - saving";
+  } else {
+    DVLOG(1) << "SetInstallSignature - clearing";
+    prefs_->ClearPref(kInstallSignature);
+  }
+}
+
+
 ExtensionPrefs::ExtensionPrefs(
     PrefService* prefs,
     const base::FilePath& root_dir,
     ExtensionPrefValueMap* extension_pref_value_map,
+    scoped_ptr<AppSorting> app_sorting,
     scoped_ptr<TimeProvider> time_provider,
     bool extensions_disabled)
     : prefs_(prefs),
       install_directory_(root_dir),
       extension_pref_value_map_(extension_pref_value_map),
-      extension_sorting_(new ExtensionSorting(this)),
+      app_sorting_(app_sorting.Pass()),
       content_settings_store_(new ContentSettingsStore()),
       time_provider_(time_provider.Pass()),
       extensions_disabled_(extensions_disabled) {
+  app_sorting_->SetExtensionScopedPrefs(this),
   MakePathsRelative();
   InitPrefStore();
 }
@@ -1786,13 +1856,16 @@ void ExtensionPrefs::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterListPref(prefs::kExtensionKnownDisabled,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
 #if defined(TOOLKIT_VIEWS)
   registry->RegisterIntegerPref(
       prefs::kBrowserActionContainerWidth,
       0,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
+  registry->RegisterDictionaryPref(
+      kInstallSignature,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
 }
 
 template <class ExtensionIdContainer>
@@ -1830,7 +1903,7 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
     const Extension* extension,
     const base::Time install_time,
     Extension::State initial_state,
-    Blacklist::BlacklistState blacklist_state,
+    bool blacklisted_for_malware,
     DictionaryValue* extension_dict) {
   // Leave the state blank for component extensions so that old chrome versions
   // loading new profiles do not fail in GetInstalledExtensionInfo. Older
@@ -1852,7 +1925,7 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
   extension_dict->Set(kPrefInstallTime,
                       new base::StringValue(
                           base::Int64ToString(install_time.ToInternalValue())));
-  if (blacklist_state == Blacklist::BLACKLISTED_MALWARE)
+  if (blacklisted_for_malware)
     extension_dict->Set(kPrefBlacklist, new base::FundamentalValue(true));
 
   base::FilePath::StringType path = MakePathRelative(install_directory_,
@@ -1901,15 +1974,12 @@ void ExtensionPrefs::FinishExtensionInfoPrefs(
   // Clear state that may be registered from a previous install.
   extension_dict->Remove(EventRouter::kRegisteredEvents, NULL);
 
-  // FYI, all code below here races on sudden shutdown because
-  // |extension_dict|, |extension_sorting_|, |extension_pref_value_map_|,
-  // and |content_settings_store_| are updated non-transactionally. This is
-  // probably not fixable without nested transactional updates to pref
-  // dictionaries.
-  if (needs_sort_ordinal) {
-    extension_sorting_->EnsureValidOrdinals(extension_id,
-                                            suggested_page_ordinal);
-  }
+  // FYI, all code below here races on sudden shutdown because |extension_dict|,
+  // |app_sorting_|, |extension_pref_value_map_|, and |content_settings_store_|
+  // are updated non-transactionally. This is probably not fixable without
+  // nested transactional updates to pref dictionaries.
+  if (needs_sort_ordinal)
+    app_sorting_->EnsureValidOrdinals(extension_id, suggested_page_ordinal);
 
   bool is_enabled = false;
   int initial_state;

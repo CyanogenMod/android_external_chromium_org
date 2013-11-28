@@ -345,10 +345,8 @@ extern const char kClearSiteDataOnExit[];
 extern const char kDefaultZoomLevel[];
 extern const char kPerHostZoomLevels[];
 extern const char kAutofillDialogAutofillDefault[];
-extern const char kAutofillDialogHasPaidWithWallet[];
 extern const char kAutofillDialogPayWithoutWallet[];
 extern const char kAutofillDialogWalletLocationAcceptance[];
-extern const char kAutofillDialogShowCount[];
 extern const char kAutofillDialogSaveData[];
 extern const char kAutofillGeneratedCardBubbleTimesShown[];
 extern const char kAutofillDialogDefaults[];
@@ -405,6 +403,9 @@ extern const char kFullscreenAllowed[];
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
 extern const char kProfileResetPromptMemento[];
+
+extern const char kGCMUserAccountID[];
+extern const char kGCMUserToken[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -566,17 +567,19 @@ extern const char kExtensionInstallDenyList[];
 extern const char kExtensionInstallForceList[];
 extern const char kExtensionStorageGarbageCollect[];
 
-extern const char kNtpTipsResourceServer[];
-
+extern const char kNtpAppPageNames[];
 extern const char kNtpCollapsedForeignSessions[];
-extern const char kNtpMostVisitedURLsBlacklist[];
-extern const char kNtpPromoResourceCacheUpdate[];
+extern const char kNtpCollapsedRecentlyClosedTabs[];
+extern const char kNtpCollapsedSnapshotDocument[];
+extern const char kNtpCollapsedSyncPromo[];
 extern const char kNtpDateResourceServer[];
+extern const char kNtpMostVisitedURLsBlacklist[];
+extern const char kNtpPromoDesktopSessionFound[];
+extern const char kNtpPromoResourceCacheUpdate[];
 extern const char kNtpShownBookmarksFolder[];
 extern const char kNtpShownPage[];
-extern const char kNtpPromoDesktopSessionFound[];
+extern const char kNtpTipsResourceServer[];
 extern const char kNtpWebStoreEnabled[];
-extern const char kNtpAppPageNames[];
 
 extern const char kDevToolsAdbKey[];
 extern const char kDevToolsDisabled[];
@@ -600,6 +603,7 @@ extern const char kSpdyProxyAuthWasEnabledBefore[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kSigninAllowed[];
 extern const char kSyncLastSyncedTime[];
+extern const char kSyncHasAuthError[];
 extern const char kSyncHasSetupCompleted[];
 extern const char kSyncKeepEverythingSynced[];
 
@@ -638,13 +642,11 @@ extern const char kSyncUsingSecondaryPassphrase[];
 extern const char kSyncEncryptionBootstrapToken[];
 extern const char kSyncKeystoreEncryptionBootstrapToken[];
 extern const char kSyncAcknowledgedSyncTypes[];
-// Deprecated in favor of kInvalidatorMaxInvalidationVersions.
-extern const char kSyncMaxInvalidationVersions[];
 extern const char kSyncSessionsGUID[];
 
 extern const char kInvalidatorClientId[];
 extern const char kInvalidatorInvalidationState[];
-extern const char kInvalidatorMaxInvalidationVersions[];
+extern const char kInvalidatorSavedInvalidations[];
 
 extern const char kSignInPromoStartupCount[];
 extern const char kSignInPromoUserSkipped[];

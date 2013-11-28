@@ -24,9 +24,13 @@
 #include "ash/wm/window_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/test/event_generator.h"
+#include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/window.h"
 #include "ui/base/models/simple_menu_model.h"
+#include "ui/events/test/events_test_utils.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -387,18 +391,15 @@ TEST_F(ShellTest, LockScreenClosesActiveMenu) {
 }
 
 TEST_F(ShellTest, ManagedWindowModeBasics) {
-  Shell* shell = Shell::GetInstance();
-  Shell::TestApi test_api(shell);
-
   // We start with the usual window containers.
   ExpectAllContainers();
-  // Launcher is visible.
+  // Shelf is visible.
   ShelfWidget* launcher_widget = Launcher::ForPrimaryDisplay()->shelf_widget();
   EXPECT_TRUE(launcher_widget->IsVisible());
-  // Launcher is at bottom-left of screen.
+  // Shelf is at bottom-left of screen.
   EXPECT_EQ(0, launcher_widget->GetWindowBoundsInScreen().x());
-  EXPECT_EQ(
-      Shell::GetPrimaryRootWindow()->GetDispatcher()->GetHostSize().height(),
+  EXPECT_EQ(Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->
+      GetBounds().height(),
       launcher_widget->GetWindowBoundsInScreen().bottom());
   // We have a desktop background but not a bare layer.
   // TODO (antrim): enable once we find out why it fails component build.
@@ -456,21 +457,6 @@ TEST_F(ShellTest, FullscreenWindowHidesShelf) {
   widget->Close();
 }
 
-namespace {
-
-// Builds the list of parents from |window| to the root. The returned vector is
-// in reverse order (|window| is first).
-std::vector<aura::Window*> BuildPathToRoot(aura::Window* window) {
-  std::vector<aura::Window*> results;
-  while (window) {
-    results.push_back(window);
-    window = window->parent();
-  }
-  return results;
-}
-
-}  // namespace
-
 // Various assertions around SetShelfAutoHideBehavior() and
 // GetShelfAutoHideBehavior().
 TEST_F(ShellTest, ToggleAutoHide) {
@@ -507,12 +493,22 @@ TEST_F(ShellTest, ToggleAutoHide) {
 
 TEST_F(ShellTest, TestPreTargetHandlerOrder) {
   Shell* shell = Shell::GetInstance();
-  Shell::TestApi test_api(shell);
+  ui::EventTargetTestApi test_api(shell);
   test::ShellTestApi shell_test_api(shell);
 
   const ui::EventHandlerList& handlers = test_api.pre_target_handlers();
   EXPECT_EQ(handlers[0], shell->mouse_cursor_filter());
   EXPECT_EQ(handlers[1], shell_test_api.drag_drop_controller());
+}
+
+// Verifies an EventHandler added to Env gets notified from EventGenerator.
+TEST_F(ShellTest, EnvPreTargetHandler) {
+  aura::test::TestEventHandler event_handler;
+  aura::Env::GetInstance()->AddPreTargetHandler(&event_handler);
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  generator.MoveMouseBy(1, 1);
+  EXPECT_NE(0, event_handler.num_mouse_events());
+  aura::Env::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
 
 // This verifies WindowObservers are removed when a window is destroyed after

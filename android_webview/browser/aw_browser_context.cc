@@ -10,22 +10,17 @@
 #include "android_webview/browser/jni_dependency_factory.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
 #include "android_webview/browser/net/init_native_callback.h"
-#include "base/android/path_utils.h"
-#include "base/file_util.h"
-#include "base/files/file_path.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/prefs/pref_service_builder.h"
-#include "base/sequenced_task_runner.h"
-#include "base/threading/sequenced_worker_pool.h"
+#include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "net/cookies/cookie_store.h"
 #include "net/url_request/url_request_context.h"
 
 using base::FilePath;
@@ -71,35 +66,13 @@ class AwResourceContext : public content::ResourceContext {
 
 AwBrowserContext* g_browser_context = NULL;
 
-void ImportLegacyCookieStore(const FilePath& cookie_store_path) {
-  // We use the old cookie store to create the new cookie store only if the
-  // new cookie store does not exist.
-  if (base::PathExists(cookie_store_path))
-    return;
-
-  // WebViewClassic gets the database path from Context and appends a
-  // hardcoded name. (see https://android.googlesource.com/platform/frameworks/base/+/bf6f6f9de72c9fd15e6bd/core/java/android/webkit/JniUtil.java and
-  // https://android.googlesource.com/platform/external/webkit/+/7151ed0c74599/Source/WebKit/android/WebCoreSupport/WebCookieJar.cpp)
-  FilePath old_cookie_store_path;
-  base::android::GetDatabaseDirectory(&old_cookie_store_path);
-  old_cookie_store_path = old_cookie_store_path.Append(
-      FILE_PATH_LITERAL("webviewCookiesChromium.db"));
-  if (base::PathExists(old_cookie_store_path) &&
-      !base::Move(old_cookie_store_path, cookie_store_path)) {
-    LOG(WARNING) << "Failed to move old cookie store path from "
-                 << old_cookie_store_path.AsUTF8Unsafe() << " to "
-                 << cookie_store_path.AsUTF8Unsafe();
-  }
-}
-
 }  // namespace
 
 AwBrowserContext::AwBrowserContext(
     const FilePath path,
     JniDependencyFactory* native_factory)
     : context_storage_path_(path),
-      native_factory_(native_factory),
-      user_pref_service_ready_(false) {
+      native_factory_(native_factory) {
   DCHECK(g_browser_context == NULL);
   g_browser_context = this;
 
@@ -128,29 +101,9 @@ AwBrowserContext* AwBrowserContext::FromWebContents(
 }
 
 void AwBrowserContext::PreMainMessageLoopRun() {
-
-  FilePath cookie_store_path = GetPath().Append(FILE_PATH_LITERAL("Cookies"));
-  scoped_refptr<base::SequencedTaskRunner> background_task_runner =
-      BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
-          BrowserThread::GetBlockingPool()->GetSequenceToken());
-
-  background_task_runner->PostTask(
-      FROM_HERE,
-      base::Bind(ImportLegacyCookieStore, cookie_store_path));
-
-  cookie_store_ = content::CreatePersistentCookieStore(
-      cookie_store_path,
-      true,
-      NULL,
-      NULL,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-      background_task_runner);
-
-  cookie_store_->GetCookieMonster()->SetPersistSessionCookies(true);
+  cookie_store_ = CreateCookieStore(this);
   url_request_context_getter_ =
       new AwURLRequestContextGetter(GetPath(), cookie_store_.get());
-
-  DidCreateCookieMonster(cookie_store_->GetCookieMonster());
 
   visitedlink_master_.reset(
       new visitedlink::VisitedLinkMaster(this, this, false));
@@ -199,10 +152,9 @@ AwFormDatabaseService* AwBrowserContext::GetFormDatabaseService() {
 
 // Create user pref service for autofill functionality.
 void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
-  if (user_pref_service_ready_)
+  if (user_pref_service_)
     return;
 
-  user_pref_service_ready_ = true;
   PrefRegistrySimple* pref_registry = new PrefRegistrySimple();
   // We only use the autocomplete feature of the Autofill, which is
   // controlled via the manager_delegate. We don't use the rest
@@ -214,12 +166,12 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillNegativeUploadRate, 0.0);
 
-  PrefServiceBuilder pref_service_builder;
-  pref_service_builder.WithUserPrefs(new AwPrefStore());
-  pref_service_builder.WithReadErrorCallback(base::Bind(&HandleReadError));
+  base::PrefServiceFactory pref_service_factory;
+  pref_service_factory.set_user_prefs(make_scoped_refptr(new AwPrefStore()));
+  pref_service_factory.set_read_error_callback(base::Bind(&HandleReadError));
+  user_pref_service_ = pref_service_factory.Create(pref_registry).Pass();
 
-  user_prefs::UserPrefs::Set(this,
-                             pref_service_builder.Create(pref_registry));
+  user_prefs::UserPrefs::Set(this, user_pref_service_.get());
 }
 
 base::FilePath AwBrowserContext::GetPath() const {

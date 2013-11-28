@@ -8,12 +8,13 @@ import unittest
 from metrics import smoothness
 from metrics import statistics
 from metrics import rendering_stats
-from telemetry.core.backends.chrome.tracing_backend import RawTraceResultImpl
-from telemetry.core.backends.chrome.trace_result import TraceResult
+from telemetry.core.trace_result import TraceResult
+from telemetry.core.backends.chrome.tracing_backend import ChromeRawTraceResult
 from telemetry.page import page
 from telemetry.page.page_measurement_results import PageMeasurementResults
 
 SYNTHETIC_GESTURE_MARKER = 'SyntheticGestureController::running'
+RENDERER_PROCESS_MARKER = 'RendererProcessMarker'
 
 
 class MockTimer(object):
@@ -106,7 +107,7 @@ class SmoothnessMetricUnitTest(unittest.TestCase):
 
     # Append start trace events for the timeline marker and gesture marker,
     # with some amount of time in between them.
-    trace_events.append({'name': rendering_stats.RENDER_PROCESS_MARKER,
+    trace_events.append({'name': RENDERER_PROCESS_MARKER,
                          'tts': mock_timer.microseconds,
                          'args': {},
                          'pid': 20978,
@@ -157,7 +158,7 @@ class SmoothnessMetricUnitTest(unittest.TestCase):
                          'ph': 'F',  # Phase: finish.
                          'id': '0xabcde'})
     mock_timer.Advance()
-    trace_events.append({'name': rendering_stats.RENDER_PROCESS_MARKER,
+    trace_events.append({'name': RENDERER_PROCESS_MARKER,
                          'tts': mock_timer.microseconds,
                          'args': {},
                          'pid': 20978,
@@ -168,45 +169,54 @@ class SmoothnessMetricUnitTest(unittest.TestCase):
                          'id': '0x12345'})
 
     # Create a timeline object from the trace.
-    trace_impl = RawTraceResultImpl(trace_events)
-    trace_result = TraceResult(trace_impl)
+    trace_result = TraceResult(ChromeRawTraceResult(trace_events))
     timeline = trace_result.AsTimelineModel()
 
     # Find the timeline marker and gesture marker in the timeline,
     # and create a RenderingStats object.
-    render_process_marker = timeline.FindTimelineMarkers(
-        rendering_stats.RENDER_PROCESS_MARKER)
+    renderer_process_markers = timeline.FindTimelineMarkers(
+        RENDERER_PROCESS_MARKER)
+    self.assertEquals(len(renderer_process_markers), 1)
+    renderer_process = renderer_process_markers[0].start_thread.parent
     timeline_markers = timeline.FindTimelineMarkers(
         SYNTHETIC_GESTURE_MARKER)
-    stats = rendering_stats.RenderingStats(
-        render_process_marker, timeline_markers)
+    stats = rendering_stats.RenderingStats(renderer_process, timeline_markers)
 
     # Make a results object and add results to it from the smoothness metric.
     results = PageMeasurementResults()
-    results.WillMeasurePage(page.Page('http://foo.com/', None))
-    smoothness_metric = smoothness.SmoothnessMetric(stats)
+    p0 = page.Page('http://foo.com/', None)
+    results.WillMeasurePage(p0)
+    smoothness_metric = smoothness.SmoothnessMetric(None)
+    smoothness_metric.SetStats(stats)
     smoothness_metric.AddResults(None, results)
     results.DidMeasurePage()
 
+    frame_times = results.FindPageSpecificValuesForPage(p0, 'frame_times')[0]
     self.assertEquals(
         expected_frame_times,
-        results.page_results[0]['frame_times'].value)
+        frame_times.values)
+
+    mean_frame_time = results.FindPageSpecificValuesForPage(
+        p0, 'mean_frame_time')[0]
     self.assertAlmostEquals(
         1000.0 * (total_time_seconds / num_frames_sent),
-        results.page_results[0]['mean_frame_time'].value,
+        mean_frame_time.value,
         places=2)
 
     # We don't verify the correctness of the discrepancy computation itself,
     # because we have a separate unit test for that purpose.
+    jank = results.FindPageSpecificValuesForPage(p0, 'jank')[0]
     self.assertAlmostEquals(
         statistics.FrameDiscrepancy(stats.frame_timestamps, True),
-        results.page_results[0]['jank'].value,
+        jank.value,
         places=4)
 
     # We do not verify the correctness of Percentile here; Percentile should
     # have its own test.
     # The 17 here represents a threshold of 17 ms; this should match the value
     # in the smoothness metric.
+    mostly_smooth = results.FindPageSpecificValuesForPage(
+        p0, 'mostly_smooth')[0]
     self.assertEquals(
         statistics.Percentile(expected_frame_times, 95.0) < 17.0,
-        results.page_results[0]['mostly_smooth'].value)
+        mostly_smooth.value)

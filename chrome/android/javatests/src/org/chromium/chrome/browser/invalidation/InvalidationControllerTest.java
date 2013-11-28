@@ -35,6 +35,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import javax.annotation.Nullable;
+
 /**
  * Tests for the {@link InvalidationController}.
  */
@@ -60,7 +62,6 @@ public class InvalidationControllerTest extends InstrumentationTestCase {
         assertEquals(1, mContext.getNumStartedIntents());
         Intent intent = mContext.getStartedIntent(0);
         validateIntentComponent(intent);
-        assertNull(intent.getExtras());
     }
 
     @SmallTest
@@ -84,7 +85,6 @@ public class InvalidationControllerTest extends InstrumentationTestCase {
         assertEquals(1, mContext.getNumStartedIntents());
         Intent intent = mContext.getStartedIntent(0);
         validateIntentComponent(intent);
-        assertNull(intent.getExtras());
     }
 
     @SmallTest
@@ -350,4 +350,5 @@ public class InvalidationControllerTest extends InstrumentationTestCase {
             return getBaseContext().getPackageManager();
         }
     }
+
 }

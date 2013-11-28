@@ -3,12 +3,16 @@
 // found in the LICENSE file.
 
 #include <stdio.h>
+#include <string>
 
+#include "base/message_loop/message_loop.h"
+#include "mojo/common/bindings_support_impl.h"
+#include "mojo/examples/sample_app/native_viewport_client_impl.h"
+#include "mojo/public/bindings/lib/bindings_support.h"
 #include "mojo/public/system/core.h"
 #include "mojo/public/system/macros.h"
-#include "mojo/system/core_impl.h"
 
-#if defined(OS_WIN)
+#if defined(WIN32)
 #if !defined(CDECL)
 #define CDECL __cdecl
 #endif
@@ -18,59 +22,30 @@
 #define SAMPLE_APP_EXPORT __attribute__((visibility("default")))
 #endif
 
-char* ReadStringFromPipe(mojo::Handle pipe) {
-  uint32_t len = 0;
-  char* buf = NULL;
-  MojoResult result = mojo::ReadMessage(pipe, buf, &len, NULL, NULL,
-                                        MOJO_READ_MESSAGE_FLAG_NONE);
-  if (result == MOJO_RESULT_RESOURCE_EXHAUSTED) {
-    buf = new char[len];
-    result = mojo::ReadMessage(pipe, buf, &len, NULL, NULL,
-                               MOJO_READ_MESSAGE_FLAG_NONE);
-  }
-  if (result < MOJO_RESULT_OK) {
-    // Failure..
-    if (buf)
-      delete[] buf;
-    return NULL;
-  }
-  return buf;
+namespace mojo {
+namespace examples {
+
+void Start(ScopedMessagePipeHandle pipe) {
+  printf("Starting sample app.\n");
+  NativeViewportClientImpl client(pipe.Pass());
+  printf("Opening native viewport.\n");
+  client.service()->Open();
+
+  base::MessageLoop::current()->Run();
 }
 
-class SampleMessageWaiter {
- public:
-  explicit SampleMessageWaiter(mojo::Handle pipe) : pipe_(pipe) {}
-  ~SampleMessageWaiter() {}
+}  // examples
+}  // mojo
 
-  void Read() {
-    char* string = ReadStringFromPipe(pipe_);
-    if (string) {
-      printf("Read string from pipe: %s\n", string);
-      delete[] string;
-      string = NULL;
-    }
-  }
+extern "C" SAMPLE_APP_EXPORT MojoResult CDECL MojoMain(MojoHandle pipe) {
+  base::MessageLoop loop;
+  mojo::common::BindingsSupportImpl bindings_support;
+  mojo::BindingsSupport::Set(&bindings_support);
 
-  void WaitAndRead() {
-    for (int i = 0; i < 100;) {
-      MojoResult result = mojo::Wait(pipe_, MOJO_WAIT_FLAG_READABLE, 100);
-      if (result < MOJO_RESULT_OK) {
-        // Failure...
-        continue;
-      }
-      ++i;
-      Read();
-    }
-  }
+  mojo::ScopedMessagePipeHandle scoped_handle;
+  scoped_handle.reset(mojo::MessagePipeHandle(pipe));
+  mojo::examples::Start(scoped_handle.Pass());
 
- private:
-  mojo::Handle pipe_;
-
-  MOJO_DISALLOW_COPY_AND_ASSIGN(SampleMessageWaiter);
-};
-
-extern "C" SAMPLE_APP_EXPORT MojoResult CDECL MojoMain(
-    mojo::Handle pipe) {
-  SampleMessageWaiter(pipe).WaitAndRead();
+  mojo::BindingsSupport::Set(NULL);
   return MOJO_RESULT_OK;
 }

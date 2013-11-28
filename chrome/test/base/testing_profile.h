@@ -32,6 +32,7 @@ class URLRequestContextGetter;
 
 namespace policy {
 class ProfilePolicyConnector;
+class SchemaRegistryService;
 }
 
 namespace quota {
@@ -304,7 +305,6 @@ class TestingProfile : public Profile {
   }
   virtual void InitChromeOSPreferences() OVERRIDE {
   }
-  virtual bool IsLoginProfile() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
@@ -393,6 +393,9 @@ class TestingProfile : public Profile {
   // scoped_ptr<>.
   content::MockResourceContext* resource_context_;
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
+  scoped_ptr<policy::SchemaRegistryService> schema_registry_service_;
+#endif
   scoped_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;
 
   // Weak pointer to a delegate for indicating that a profile was created.

@@ -20,6 +20,7 @@
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
 #include "components/autofill/core/browser/autofill_type.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "grit/theme_resources.h"
 #import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -48,22 +49,6 @@ const size_t kDetailSectionInset = 10;
 
 // Vertical padding around the section header.
 const CGFloat kVerticalHeaderPadding = 6;
-
-// Break suggestion text into two lines. TODO(groby): Should be on delegate.
-void BreakSuggestionText(const string16& text,
-                         string16* line1,
-                         string16* line2) {
-  // TODO(estade): does this localize well?
-  string16 line_return(base::ASCIIToUTF16("\n"));
-  size_t position = text.find(line_return);
-  if (position == string16::npos) {
-    *line1 = text;
-    line2->clear();
-  } else {
-    *line1 = text.substr(0, position);
-    *line2 = text.substr(position + line_return.length());
-  }
-}
 
 // If the Autofill data comes from a credit card, make sure to overwrite the
 // CC comboboxes (even if they already have something in them). If the
@@ -106,15 +91,19 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 - (const autofill::DetailInput*)detailInputForType:
     (autofill::ServerFieldType)type;
 
-// Takes an NSArray of controls and builds a DetailOutputMap from them.
+// Takes an NSArray of controls and builds a FieldValueMap from them.
 // Translates between Cocoa code and delegate, essentially.
 // All controls must inherit from NSControl and conform to AutofillInputView.
-- (void)fillDetailOutputs:(autofill::DetailOutputMap*)outputs
+- (void)fillDetailOutputs:(autofill::FieldValueMap*)outputs
              fromControls:(NSArray*)controls;
 
 // Updates input fields based on delegate status. If |shouldClobber| is YES,
 // will clobber existing data and reset fields to the initial values.
 - (void)updateAndClobber:(BOOL)shouldClobber;
+
+// Return YES if this is a section that contains CC info. (And, more
+// importantly, a potential CVV field)
+- (BOOL)isCreditCardSection;
 
 // Create properly styled label for section. Autoreleased.
 - (NSTextField*)makeDetailSectionLabel:(NSString*)labelText;
@@ -136,7 +125,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 @synthesize validationDelegate = validationDelegate_;
 
 - (id)initWithDelegate:(autofill::AutofillDialogViewDelegate*)delegate
-              forSection:(autofill::DialogSection)section {
+            forSection:(autofill::DialogSection)section {
   if (self = [super init]) {
     section_ = section;
     delegate_ = delegate;
@@ -144,7 +133,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   return self;
 }
 
-- (void)getInputs:(autofill::DetailOutputMap*)output {
+- (void)getInputs:(autofill::FieldValueMap*)output {
   [self fillDetailOutputs:output fromControls:[inputs_ subviews]];
 }
 
@@ -162,7 +151,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
   [self updateSuggestionState];
 
-  // TODO(groby): "Save in Chrome" handling.
+  // TODO(groby): "Save in Chrome" handling. http://crbug.com/306203.
 
   if (![[self view] isHidden])
     [self validateFor:autofill::VALIDATE_EDIT];
@@ -183,8 +172,9 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
   inputs_.reset([[self makeInputControls] retain]);
   string16 labelText = delegate_->LabelForSection(section_);
-  label_.reset([[self makeDetailSectionLabel:
-                   base::SysUTF16ToNSString(labelText)] retain]);
+  label_.reset(
+      [[self makeDetailSectionLabel:base::SysUTF16ToNSString(labelText)]
+          retain]);
 
   suggestButton_.reset([[self makeSuggestionButton] retain]);
   suggestContainer_.reset([[AutofillSuggestionContainer alloc] init]);
@@ -194,12 +184,12 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   [[self view] setSubviews:
       @[label_, inputs_, [suggestContainer_ view], suggestButton_]];
 
-  if (section_ == autofill::SECTION_CC) {
-    // SECTION_CC *MUST* have a CREDIT_CARD_VERIFICATION_CODE input.
+  if ([self isCreditCardSection]) {
+    // Credit card sections *MUST* have a CREDIT_CARD_VERIFICATION_CODE input.
     DCHECK([self detailInputForType:autofill::CREDIT_CARD_VERIFICATION_CODE]);
     [[suggestContainer_ inputField] setTag:
         autofill::CREDIT_CARD_VERIFICATION_CODE];
-    [[suggestContainer_ inputField] setDelegate:self];
+    [[suggestContainer_ inputField] setInputDelegate:self];
   }
 
   [self modelChanged];
@@ -262,8 +252,25 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   [view_ setFrameSize:viewFrame.size];
 }
 
-- (void)fieldBecameFirstResponder:(NSControl<AutofillInputField>*)field {
+- (KeyEventHandled)keyEvent:(NSEvent*)event forInput:(id)sender {
+  content::NativeWebKeyboardEvent webEvent(event);
+
+  // Only handle keyDown, to handle key repeats without duplicates.
+  if (webEvent.type != content::NativeWebKeyboardEvent::KeyDown)
+    return kKeyEventNotHandled;
+
+  // Allow the delegate to intercept key messages.
+  if (delegate_->HandleKeyPressEventInInput(webEvent))
+    return kKeyEventHandled;
+  return kKeyEventNotHandled;
+}
+
+- (void)onMouseDown:(NSControl<AutofillInputField>*)field {
   [self textfieldEditedOrActivated:field edited:NO];
+  [validationDelegate_ updateMessageForField:field];
+}
+
+- (void)fieldBecameFirstResponder:(NSControl<AutofillInputField>*)field {
   [validationDelegate_ updateMessageForField:field];
 }
 
@@ -272,6 +279,8 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 }
 
 - (void)didEndEditing:(id)sender {
+  delegate_->FocusMoved();
+  [validationDelegate_ hideErrorBubble];
   [self validateFor:autofill::VALIDATE_EDIT];
 }
 
@@ -282,12 +291,9 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   const base::string16& text = suggestionState.horizontally_compact_text;
   showSuggestions_ = suggestionState.visible;
 
-  base::string16 line1;
-  base::string16 line2;
-  BreakSuggestionText(text, &line1, &line2);
-  [suggestContainer_ setSuggestionText:base::SysUTF16ToNSString(line1)
-                                 line2:base::SysUTF16ToNSString(line2)];
-  [suggestContainer_ setIcon:suggestionState.icon.AsNSImage()];
+  [suggestContainer_ setSuggestionText:base::SysUTF16ToNSString(text)
+                                  icon:suggestionState.icon.AsNSImage()];
+
   if (!suggestionState.extra_text.empty()) {
     NSString* extraText =
         base::SysUTF16ToNSString(suggestionState.extra_text);
@@ -337,8 +343,9 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   NSArray* fields = nil;
   if (![inputs_ isHidden]) {
     fields = [inputs_ subviews];
-  } else if (section_ == autofill::SECTION_CC) {
-    fields = @[ [suggestContainer_ inputField] ];
+  } else if ([self isCreditCardSection]) {
+    if (![[suggestContainer_ inputField] isHidden])
+      fields = @[ [suggestContainer_ inputField] ];
   }
 
   // Ensure only editable fields are validated.
@@ -348,15 +355,14 @@ bool CompareInputRows(const autofill::DetailInput* input1,
               return [field isEnabled];
           }]];
 
-  autofill::DetailOutputMap detailOutputs;
+  autofill::FieldValueMap detailOutputs;
   [self fillDetailOutputs:&detailOutputs fromControls:fields];
   autofill::ValidityMessages messages = delegate_->InputsAreValid(
       section_, detailOutputs);
 
   for (NSControl<AutofillInputField>* input in fields) {
-    const autofill::ServerFieldType type = [self fieldTypeForControl:input];
     const autofill::ValidityMessage& message =
-        messages.GetMessageOrDefault(type);
+        messages.GetMessageOrDefault([self fieldTypeForControl:input]);
     if (validationType != autofill::VALIDATE_FINAL && !message.sure)
       continue;
     [input setValidityMessage:base::SysUTF16ToNSString(message.text)];
@@ -368,6 +374,11 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
 - (NSString*)suggestionText {
   return showSuggestions_ ? [[suggestContainer_ inputField] stringValue] : nil;
+}
+
+- (void)addInputsToArray:(NSMutableArray*)array {
+  [array addObjectsFromArray:[inputs_ subviews]];
+  [array addObject:[suggestContainer_ inputField]];
 }
 
 #pragma mark Internal API for AutofillSectionContainer.
@@ -396,11 +407,11 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   gfx::Rect textFrameRect(NSRectToCGRect(textFrameInScreen));
 
   delegate_->UserEditedOrActivatedInput(section_,
-                                          [self detailInputForType:type],
-                                          [self view],
-                                          textFrameRect,
-                                          fieldValue,
-                                          edited);
+                                        type,
+                                        [self view],
+                                        textFrameRect,
+                                        fieldValue,
+                                        edited);
 
   // If the field is marked as invalid, check if the text is now valid.
   // Many fields (i.e. CC#) are invalid for most of the duration of editing,
@@ -409,8 +420,8 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   // result in validation - positive user feedback.
   if ([textfield invalid] && edited) {
     string16 message = delegate_->InputValidityMessage(section_,
-                                                         type,
-                                                         fieldValue);
+                                                       type,
+                                                       fieldValue);
     [textfield setValidityMessage:base::SysUTF16ToNSString(message)];
     [validationDelegate_ updateMessageForField:textfield];
 
@@ -441,16 +452,14 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   return NULL;
 }
 
-- (void)fillDetailOutputs:(autofill::DetailOutputMap*)outputs
+- (void)fillDetailOutputs:(autofill::FieldValueMap*)outputs
              fromControls:(NSArray*)controls {
   for (NSControl<AutofillInputField>* input in controls) {
     DCHECK([input isKindOfClass:[NSControl class]]);
     DCHECK([input conformsToProtocol:@protocol(AutofillInputField)]);
-    autofill::ServerFieldType fieldType = [self fieldTypeForControl:input];
-    DCHECK([self detailInputForType:fieldType]);
-    NSString* value = [input fieldValue];
-    outputs->insert(std::make_pair([self detailInputForType:fieldType],
-                                   base::SysNSStringToUTF16(value)));
+    outputs->insert(std::make_pair(
+        [self fieldTypeForControl:input],
+        base::SysNSStringToUTF16([input fieldValue])));
   }
 }
 
@@ -489,6 +498,11 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   }
   [self updateFieldIcons];
   [self modelChanged];
+}
+
+- (BOOL)isCreditCardSection {
+  return section_ == autofill::SECTION_CC ||
+      section_ == autofill::SECTION_CC_BILLING;
 }
 
 - (MenuButton*)makeSuggestionButton {
@@ -578,7 +592,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
     [control setFieldValue:base::SysUTF16ToNSString(input.initial_value)];
     [control sizeToFit];
     [control setTag:input.type];
-    [control setDelegate:self];
+    [control setInputDelegate:self];
     // Hide away fields that cannot be edited.
     if (kColumnSetId == -1) {
       [control setFrame:NSZeroRect];
@@ -638,6 +652,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
   NSControl<AutofillInputField>* field = [inputs_ viewWithTag:input.type];
   [[field window] makeFirstResponder:field];
+  [self textfieldEditedOrActivated:field edited:NO];
 }
 
 @end

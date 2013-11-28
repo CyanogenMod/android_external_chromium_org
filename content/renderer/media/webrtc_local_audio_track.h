@@ -11,6 +11,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
+#include "content/renderer/media/webrtc_local_audio_source_provider.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreamtrack.h"
@@ -65,6 +66,7 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
   void Stop();
 
   // Method called by the capturer to deliver the capture data.
+  // Call on the capture audio thread.
   void Capture(media::AudioBus* audio_source,
                int audio_delay_milliseconds,
                int volume,
@@ -72,8 +74,12 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
 
   // Method called by the capturer to set the audio parameters used by source
   // of the capture data..
-  // Can be called on different user threads.
+  // Call on the capture audio thread.
   void SetCaptureFormat(const media::AudioParameters& params);
+
+  blink::WebAudioSourceProvider* audio_source_provider() const {
+    return source_provider_.get();
+  }
 
  protected:
   WebRtcLocalAudioTrack(
@@ -114,21 +120,32 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
   // A list of sinks that the audio data is fed to.
   SinkList sinks_;
 
-  // Used to DCHECK that we are called on the correct thread.
-  base::ThreadChecker thread_checker_;
+  // A list of sinks that the track needs to notify the audio format has
+  // changed.
+  SinkList sinks_to_notify_format_;
+
+  // Used to DCHECK that some methods are called on the main render thread.
+  base::ThreadChecker main_render_thread_checker_;
+
+  // Used to DCHECK that some methods are called on the capture audio thread.
+  base::ThreadChecker capture_thread_checker_;
 
   // Protects |params_| and |sinks_|.
   mutable base::Lock lock_;
 
-  // A vector of WebRtc VoE channels that the capturer sends datat to.
+  // A vector of WebRtc VoE channels that the capturer sends data to.
   std::vector<int> voe_channels_;
 
   bool need_audio_processing_;
 
   // Buffers used for temporary storage during capture callbacks.
-  // Allocated during initialization.
+  // Allocated and accessed only on the capture audio thread.
   class ConfiguredBuffer;
-  scoped_refptr<ConfiguredBuffer> buffer_;
+  scoped_ptr<ConfiguredBuffer> buffer_;
+
+  // The source provider to feed the track data to other clients like
+  // WebAudio.
+  scoped_ptr<WebRtcLocalAudioSourceProvider> source_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcLocalAudioTrack);
 };

@@ -4,16 +4,15 @@
 
 package org.chromium.android_webview;
 
+import android.app.Activity;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Picture;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.net.http.SslCertificate;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -25,7 +24,6 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
@@ -40,8 +38,9 @@ import com.google.common.annotations.VisibleForTesting;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
+import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
+import org.chromium.components.navigation_interception.NavigationParams;
 import org.chromium.content.browser.ContentSettings;
-import org.chromium.content.browser.ContentVideoView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewStatics;
@@ -49,18 +48,17 @@ import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageTransitionTypes;
 import org.chromium.content.common.CleanupReference;
-import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
-import org.chromium.components.navigation_interception.NavigationParams;
-import org.chromium.net.GURLUtils;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.io.File;
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.concurrent.Callable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 /**
  * Exposes the native AwContents class, and together these classes wrap the ContentViewCore
@@ -144,6 +142,7 @@ public class AwContents {
     private final ViewGroup mContainerView;
     private ContentViewCore mContentViewCore;
     private final AwContentsClient mContentsClient;
+    private final AwContentViewClient mContentViewClient;
     private final AwContentsClientBridge mContentsClientBridge;
     private final AwWebContentsDelegate mWebContentsDelegate;
     private final AwContentsIoThreadClient mIoThreadClient;
@@ -172,7 +171,7 @@ public class AwContents {
     // Must call nativeUpdateLastHitTestData first to update this before use.
     private final HitTestData mPossiblyStaleHitTestData = new HitTestData();
 
-    private DefaultVideoPosterRequestHandler mDefaultVideoPosterRequestHandler;
+    private final DefaultVideoPosterRequestHandler mDefaultVideoPosterRequestHandler;
 
     // Bound method for suppling Picture instances to the AwContentsClient. Will be null if the
     // picture listener API has not yet been enabled, or if it is using invalidation-only mode.
@@ -195,7 +194,7 @@ public class AwContents {
     private ComponentCallbacks2 mComponentCallbacks;
 
     private static final class DestroyRunnable implements Runnable {
-        private int mNativeAwContents;
+        private final int mNativeAwContents;
         private DestroyRunnable(int nativeAwContents) {
             mNativeAwContents = nativeAwContents;
         }
@@ -474,63 +473,32 @@ public class AwContents {
      * @param browserContext the browsing context to associate this view contents with.
      * @param containerView the view-hierarchy item this object will be bound to.
      * @param internalAccessAdapter to access private methods on containerView.
-     * @param contentsClient will receive API callbacks from this WebView Contents
-     * @param isAccessFromFileURLsGrantedByDefault passed to AwSettings.
+     * @param contentsClient will receive API callbacks from this WebView Contents.
+     * @param awSettings AwSettings instance used to configure the AwContents.
      *
      * This constructor uses the default view sizing policy.
      */
     public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
             InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            boolean isAccessFromFileURLsGrantedByDefault) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient,
-                isAccessFromFileURLsGrantedByDefault, new AwLayoutSizer());
-    }
-
-    public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
-            InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            boolean isAccessFromFileURLsGrantedByDefault, AwLayoutSizer layoutSizer) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient,
-                isAccessFromFileURLsGrantedByDefault, layoutSizer, false);
-    }
-
-    private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
-            InternalAccessDelegate internalDispatcher, int nativeWebContents,
-            ContentViewCore.GestureStateListener pinchGestureStateListener,
-            ContentViewClient contentViewClient,
-            ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
-      ContentViewCore contentViewCore = new ContentViewCore(containerView.getContext());
-      // Note INPUT_EVENTS_DELIVERED_IMMEDIATELY is passed to avoid triggering vsync in the
-      // compositor, not because input events are delivered immediately.
-      contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents, null,
-                ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
-      contentViewCore.setGestureStateListener(pinchGestureStateListener);
-      contentViewCore.setContentViewClient(contentViewClient);
-      contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
-      return contentViewCore;
+            AwSettings awSettings) {
+        this(browserContext, containerView, internalAccessAdapter, contentsClient, awSettings,
+                new AwLayoutSizer());
     }
 
     /**
      * @param layoutSizer the AwLayoutSizer instance implementing the sizing policy for the view.
      *
      * This version of the constructor is used in test code to inject test versions of the above
-     * documented classes
+     * documented classes.
      */
     public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
             InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            boolean isAccessFromFileURLsGrantedByDefault, AwLayoutSizer layoutSizer,
-            boolean supportsLegacyQuirks) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient,
-                layoutSizer, new AwSettings(containerView.getContext(),
-                        isAccessFromFileURLsGrantedByDefault, supportsLegacyQuirks));
-    }
-
-    public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
-            InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            AwLayoutSizer layoutSizer, AwSettings settings) {
+            AwSettings settings, AwLayoutSizer layoutSizer) {
         mBrowserContext = browserContext;
         mContainerView = containerView;
         mInternalAccessAdapter = internalAccessAdapter;
         mContentsClient = contentsClient;
+        mContentViewClient = new AwContentViewClient(contentsClient, settings);
         mLayoutSizer = layoutSizer;
         mSettings = settings;
         mDIPScale = DeviceDisplayInfo.create(mContainerView.getContext()).getDIPScale();
@@ -570,6 +538,23 @@ public class AwContents {
         onWindowVisibilityChanged(mContainerView.getWindowVisibility());
     }
 
+    private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
+            InternalAccessDelegate internalDispatcher, int nativeWebContents,
+            ContentViewCore.GestureStateListener pinchGestureStateListener,
+            ContentViewClient contentViewClient,
+            ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
+        Context context = containerView.getContext();
+        ContentViewCore contentViewCore = new ContentViewCore(context);
+        contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
+                context instanceof Activity ?
+                        new ActivityWindowAndroid((Activity) context) :
+                        new WindowAndroid(context.getApplicationContext()));
+        contentViewCore.setGestureStateListener(pinchGestureStateListener);
+        contentViewCore.setContentViewClient(contentViewClient);
+        contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
+        return contentViewCore;
+    }
+
     /**
      * Common initialization routine for adopting a native AwContents instance into this
      * java instance.
@@ -597,8 +582,7 @@ public class AwContents {
         int nativeWebContents = nativeGetWebContents(mNativeAwContents);
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mInternalAccessAdapter, nativeWebContents,
-                new AwGestureStateListener(), mContentsClient.getContentViewClient(),
-                mZoomControls);
+                new AwGestureStateListener(), mContentViewClient, mZoomControls);
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
         mContentsClient.installWebContentsObserver(mContentViewCore);
@@ -836,6 +820,7 @@ public class AwContents {
     }
 
     private void syncOnNewPictureStateToNative() {
+        if (mNativeAwContents == 0) return;
         nativeEnableOnNewPicture(mNativeAwContents, mPictureListenerEnabled || mClearViewActive);
     }
 
@@ -1132,7 +1117,7 @@ public class AwContents {
      * @see android.webkit.WebView#reload()
      */
     public void reload() {
-        mContentViewCore.reload();
+        mContentViewCore.reload(true);
     }
 
     /**
@@ -1395,6 +1380,11 @@ public class AwContents {
         data.putString("url", mPossiblyStaleHitTestData.imgSrc);
         msg.setData(data);
         msg.sendToTarget();
+    }
+
+    @VisibleForTesting
+    public float getPageScaleFactor() {
+        return (float)mPageScaleFactor;
     }
 
     /**

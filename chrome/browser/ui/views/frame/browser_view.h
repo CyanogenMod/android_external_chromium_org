@@ -92,7 +92,6 @@ class BrowserView : public BrowserWindow,
                     public views::WidgetDelegate,
                     public views::WidgetObserver,
                     public views::ClientView,
-                    public ImmersiveModeController::Delegate,
                     public InfoBarContainer::Delegate,
                     public views::SingleSplitViewListener,
                     public gfx::SysColorChangeListener,
@@ -136,10 +135,6 @@ class BrowserView : public BrowserWindow,
   // background image is drawn -- slightly outside the "true" bounds
   // horizontally. Note that this returns the bounds for the toolbar area.
   gfx::Rect GetToolbarBounds() const;
-
-  // Returns the bounds of the content area, in the coordinates of the
-  // BrowserView's parent.
-  gfx::Rect GetClientAreaBounds() const;
 
   // Returns the constraining bounding box that should be used to lay out the
   // FindBar within. This is _not_ the size of the find bar, just the bounding
@@ -252,6 +247,11 @@ class BrowserView : public BrowserWindow,
     return window_switcher_button_;
   }
 
+  // Called after the widget's fullscreen state is changed without going through
+  // FullscreenController. This method does any processing which was skipped.
+  // Only exiting fullscreen in this way is currently supported.
+  void FullscreenStateChanged();
+
   // Called from BookmarkBarView/DownloadShelfView during their show/hide
   // animations.
   void ToolbarSizeChanged(bool is_animating);
@@ -277,6 +277,7 @@ class BrowserView : public BrowserWindow,
   virtual void UpdateDevTools() OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
+  virtual void SetTranslateIconToggled(bool is_lit) OVERRIDE;
   virtual void OnActiveTabChanged(content::WebContents* old_contents,
                                   content::WebContents* new_contents,
                                   int index,
@@ -427,12 +428,6 @@ class BrowserView : public BrowserWindow,
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
 
-  // ImmersiveModeController::Delegate overrides:
-  virtual FullscreenController* GetFullscreenController() OVERRIDE;
-  virtual void FullscreenStateChanged() OVERRIDE;
-  virtual void SetImmersiveStyle(bool immersive) OVERRIDE;
-  virtual content::WebContents* GetWebContents() OVERRIDE;
-
   // InfoBarContainer::Delegate overrides
   virtual SkColor GetInfoBarSeparatorColor() const OVERRIDE;
   virtual void InfoBarContainerStateChanged(bool is_animating) OVERRIDE;
@@ -576,12 +571,7 @@ class BrowserView : public BrowserWindow,
   // Calls |method| which is either RenderWidgetHost::Cut, ::Copy, or ::Paste,
   // first trying the content WebContents, then the devtools WebContents, and
   // lastly the Views::Textfield if one is focused.
-  // |windows_msg_id| is temporary until Win Aura is the default on Windows,
-  // since until then the omnibox doesn't use Views::Textfield.
   void DoCutCopyPaste(void (content::RenderWidgetHost::*method)(),
-#if defined(OS_WIN)
-                      int windows_msg_id,
-#endif
                       int command_id);
 
   // Calls |method| which is either RenderWidgetHost::Cut, ::Copy, or ::Paste on

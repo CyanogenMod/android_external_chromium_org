@@ -4,8 +4,11 @@
 
 #include "chrome/browser/drive/drive_api_util.h"
 
+#include "base/files/scoped_temp_dir.h"
+#include "base/md5.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
+#include "chrome/browser/google_apis/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -192,6 +195,33 @@ TEST(FileSystemUtilTest, ConvertAccountMetadataToAppList) {
   EXPECT_EQ("http://icon/url", icon.icon_url().spec());
 }
 
+TEST(FileSystemUtilTest, ConvertFileResourceToResource_Parents) {
+  google_apis::FileResource file_resource;
+
+  std::vector<GURL> expected_links;
+  expected_links.push_back(GURL("http://server/id1"));
+  expected_links.push_back(GURL("http://server/id2"));
+  expected_links.push_back(GURL("http://server/id3"));
+
+  ScopedVector<google_apis::ParentReference> parents;
+  for (size_t i = 0; i < expected_links.size(); ++i) {
+    google_apis::ParentReference* parent = new google_apis::ParentReference;
+    parent->set_parent_link(expected_links[i]);
+    parents.push_back(parent);
+  }
+  file_resource.set_parents(parents.Pass());
+
+  scoped_ptr<google_apis::ResourceEntry> entry(
+      ConvertFileResourceToResourceEntry(file_resource));
+  std::vector<GURL> actual_links;
+  for (size_t i = 0; i < entry->links().size(); ++i) {
+    if (entry->links()[i]->type() == google_apis::Link::LINK_PARENT)
+      actual_links.push_back(entry->links()[i]->href());
+  }
+
+  EXPECT_EQ(expected_links, actual_links);
+}
+
 TEST(FileSystemUtilTest, ConvertFileResourceToResourceEntryImageMediaMetadata) {
   google_apis::FileResource file_resource_all_fields;
   google_apis::FileResource file_resource_zero_fields;
@@ -284,6 +314,17 @@ TEST(FileSystemUtilTest, ConvertResourceEntryToFileResourceImageMediaMetadata) {
     EXPECT_EQ(-1, image_media_metadata.height());
     EXPECT_EQ(-1, image_media_metadata.rotation());
   }
+}
+
+TEST(DriveAPIUtilTest, GetMd5Digest) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  base::FilePath path = temp_dir.path().AppendASCII("test.txt");
+  const char kTestData[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(path, kTestData));
+
+  EXPECT_EQ(base::MD5String(kTestData), GetMd5Digest(path));
 }
 
 }  // namespace util

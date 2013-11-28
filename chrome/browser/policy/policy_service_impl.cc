@@ -9,15 +9,18 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
-#include "chrome/browser/policy/policy_domain_descriptor.h"
-#include "chrome/browser/policy/policy_map.h"
+#include "components/policy/core/common/policy_bundle.h"
+#include "components/policy/core/common/policy_map.h"
 
 namespace policy {
 
 typedef PolicyServiceImpl::Providers::const_iterator Iterator;
 
-PolicyServiceImpl::PolicyServiceImpl(const Providers& providers)
-    : update_task_ptr_factory_(this) {
+PolicyServiceImpl::PolicyServiceImpl(
+    const Providers& providers,
+    const PreprocessCallback& preprocess_callback)
+    : preprocess_callback_(preprocess_callback),
+      update_task_ptr_factory_(this) {
   for (int domain = 0; domain < POLICY_DOMAIN_SIZE; ++domain)
     initialization_complete_[domain] = true;
   providers_ = providers;
@@ -62,21 +65,9 @@ void PolicyServiceImpl::RemoveObserver(PolicyDomain domain,
   }
 }
 
-void PolicyServiceImpl::RegisterPolicyDomain(
-    scoped_refptr<const PolicyDomainDescriptor> descriptor) {
-  domain_descriptors_[descriptor->domain()] = descriptor;
-  for (Iterator it = providers_.begin(); it != providers_.end(); ++it)
-    (*it)->RegisterPolicyDomain(descriptor);
-}
-
 const PolicyMap& PolicyServiceImpl::GetPolicies(
     const PolicyNamespace& ns) const {
   return policy_bundle_.Get(ns);
-}
-
-scoped_refptr<const PolicyDomainDescriptor>
-PolicyServiceImpl::GetPolicyDomainDescriptor(PolicyDomain domain) const {
-  return domain_descriptors_[domain];
 }
 
 bool PolicyServiceImpl::IsInitializationComplete(PolicyDomain domain) const {
@@ -140,8 +131,13 @@ void PolicyServiceImpl::NotifyNamespaceUpdated(
 void PolicyServiceImpl::MergeAndTriggerUpdates() {
   // Merge from each provider in their order of priority.
   PolicyBundle bundle;
-  for (Iterator it = providers_.begin(); it != providers_.end(); ++it)
-    bundle.MergeFrom((*it)->policies());
+  for (Iterator it = providers_.begin(); it != providers_.end(); ++it) {
+    PolicyBundle provided_bundle;
+    provided_bundle.CopyFrom((*it)->policies());
+    if (!preprocess_callback_.is_null())
+      preprocess_callback_.Run(&provided_bundle);
+    bundle.MergeFrom(provided_bundle);
+  }
 
   // Swap first, so that observers that call GetPolicies() see the current
   // values.

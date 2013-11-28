@@ -43,6 +43,7 @@ class ExtensionSystem;
 namespace policy {
 class CloudPolicyManager;
 class ProfilePolicyConnector;
+class SchemaRegistryService;
 }
 
 namespace user_prefs {
@@ -135,7 +136,6 @@ class ProfileImpl : public Profile {
                                AppLocaleChangedVia) OVERRIDE;
   virtual void OnLogin() OVERRIDE;
   virtual void InitChromeOSPreferences() OVERRIDE;
-  virtual bool IsLoginProfile() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
@@ -166,9 +166,6 @@ class ProfileImpl : public Profile {
   void OnDefaultZoomLevelChanged();
   void OnZoomLevelChanged(
       const content::HostZoomMap::ZoomLevelChange& change);
-
-  void OnInitializationCompleted(PrefService* pref_service,
-                                 bool succeeded);
 
   // Does final prefs initialization and calls Init().
   void OnPrefsLoaded(bool success);
@@ -214,8 +211,10 @@ class ProfileImpl : public Profile {
   // TODO(mnissler, joaodasilva): The |profile_policy_connector_| provides the
   // PolicyService that the |prefs_| depend on, and must outlive |prefs_|.
   // This can be removed once |prefs_| becomes a BrowserContextKeyedService too.
-  // |profile_policy_connector_| in turn depends on |cloud_policy_manager_|.
+  // |profile_policy_connector_| in turn depends on |cloud_policy_manager_|,
+  // which depends on |schema_registry_service_|.
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  scoped_ptr<policy::SchemaRegistryService> schema_registry_service_;
   scoped_ptr<policy::CloudPolicyManager> cloud_policy_manager_;
 #endif
   scoped_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;

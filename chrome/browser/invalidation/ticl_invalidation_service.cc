@@ -133,15 +133,6 @@ void TiclInvalidationService::UnregisterInvalidationHandler(
   }
 }
 
-void TiclInvalidationService::AcknowledgeInvalidation(
-    const invalidation::ObjectId& id,
-    const syncer::AckHandle& ack_handle) {
-  DCHECK(CalledOnValidThread());
-  if (invalidator_) {
-    invalidator_->Acknowledge(id, ack_handle);
-  }
-}
-
 syncer::InvalidatorState TiclInvalidationService::GetInvalidatorState() const {
   DCHECK(CalledOnValidThread());
   if (invalidator_) {
@@ -222,6 +213,7 @@ void TiclInvalidationService::OnGetTokenFailure(
                        base::Unretained(this)));
       break;
     }
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS: {
       // This is a real auth error.
       // Report time since token was issued for invalid credentials error.
@@ -319,7 +311,8 @@ bool TiclInvalidationService::IsReadyToStart() {
 
   if (!oauth2_token_service_) {
     DVLOG(2)
-        << "Not starting TiclInvalidationService: TokenService unavailable.";
+        << "Not starting TiclInvalidationService: "
+        << "OAuth2TokenService unavailable.";
     return false;
   }
 
@@ -358,7 +351,7 @@ void TiclInvalidationService::StartInvalidator() {
   invalidator_.reset(new syncer::NonBlockingInvalidator(
           options,
           invalidator_storage_->GetInvalidatorClientId(),
-          invalidator_storage_->GetAllInvalidationStates(),
+          invalidator_storage_->GetSavedInvalidations(),
           invalidator_storage_->GetBootstrapData(),
           syncer::WeakHandle<syncer::InvalidationStateTracker>(
               invalidator_storage_->AsWeakPtr()),

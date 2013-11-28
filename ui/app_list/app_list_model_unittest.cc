@@ -5,6 +5,7 @@
 #include "ui/app_list/app_list_model.h"
 
 #include <map>
+#include <string>
 
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,7 +24,6 @@ class TestObserver : public AppListModelObserver,
  public:
   TestObserver()
       : status_changed_count_(0),
-        users_changed_count_(0),
         signin_changed_count_(0),
         items_added_(0),
         items_removed_(0),
@@ -35,10 +35,6 @@ class TestObserver : public AppListModelObserver,
   // AppListModelObserver
   virtual void OnAppListModelStatusChanged() OVERRIDE {
     ++status_changed_count_;
-  }
-
-  virtual void OnAppListModelUsersChanged() OVERRIDE {
-    ++users_changed_count_;
   }
 
   virtual void OnAppListModelSigninStatusChanged() OVERRIDE {
@@ -62,7 +58,6 @@ class TestObserver : public AppListModelObserver,
   }
 
   int status_changed_count() const { return status_changed_count_; }
-  int users_changed_count() const { return users_changed_count_; }
   int signin_changed_count() const { return signin_changed_count_; }
   size_t items_added() { return items_added_; }
   size_t items_removed() { return items_removed_; }
@@ -70,7 +65,6 @@ class TestObserver : public AppListModelObserver,
 
   void ResetCounts() {
     status_changed_count_ = 0;
-    users_changed_count_ = 0;
     signin_changed_count_ = 0;
     items_added_ = 0;
     items_removed_ = 0;
@@ -79,7 +73,6 @@ class TestObserver : public AppListModelObserver,
 
  private:
   int status_changed_count_;
-  int users_changed_count_;
   int signin_changed_count_;
   size_t items_added_;
   size_t items_removed_;
@@ -128,17 +121,6 @@ TEST_F(AppListModelTest, SetStatus) {
   // Set the same status, no change is expected.
   model_.SetStatus(AppListModel::STATUS_NORMAL);
   EXPECT_EQ(2, observer_.status_changed_count());
-}
-
-TEST_F(AppListModelTest, SetUsers) {
-  EXPECT_EQ(0u, model_.users().size());
-  AppListModel::Users users;
-  users.push_back(AppListModel::User());
-  users[0].name = UTF8ToUTF16("test");
-  model_.SetUsers(users);
-  EXPECT_EQ(1, observer_.users_changed_count());
-  ASSERT_EQ(1u, model_.users().size());
-  EXPECT_EQ(UTF8ToUTF16("test"), model_.users()[0].name);
 }
 
 TEST_F(AppListModelTest, SetSignedIn) {
@@ -277,7 +259,7 @@ TEST_F(AppListModelTest, AppOrder) {
 }
 
 TEST_F(AppListModelTest, FolderItem) {
-  AppListFolderItem* folder = new AppListFolderItem("folder1");
+  scoped_ptr<AppListFolderItem> folder(new AppListFolderItem("folder1"));
   const size_t num_folder_apps = 8;
   const size_t num_observed_apps = 4;
   for (int i = 0; static_cast<size_t>(i) < num_folder_apps; ++i) {
@@ -285,12 +267,13 @@ TEST_F(AppListModelTest, FolderItem) {
     folder->item_list()->AddItem(model_.CreateItem(name, name));
   }
   // Check that items 0 and 3 are observed.
-  EXPECT_TRUE(ItemObservedByFolder(folder, folder->item_list()->item_at(0)));
   EXPECT_TRUE(ItemObservedByFolder(
-      folder, folder->item_list()->item_at(num_observed_apps - 1)));
+      folder.get(), folder->item_list()->item_at(0)));
+  EXPECT_TRUE(ItemObservedByFolder(
+      folder.get(), folder->item_list()->item_at(num_observed_apps - 1)));
   // Check that item 4 is not observed.
   EXPECT_FALSE(ItemObservedByFolder(
-      folder, folder->item_list()->item_at(num_observed_apps)));
+      folder.get(), folder->item_list()->item_at(num_observed_apps)));
   folder->item_list()->MoveItem(num_observed_apps, 0);
   // Confirm that everything was moved where expected.
   EXPECT_EQ(model_.GetItemName(num_observed_apps),
@@ -300,12 +283,13 @@ TEST_F(AppListModelTest, FolderItem) {
   EXPECT_EQ(model_.GetItemName(num_observed_apps - 1),
             folder->item_list()->item_at(num_observed_apps)->id());
   // Check that items 0 and 3 are observed.
-  EXPECT_TRUE(ItemObservedByFolder(folder, folder->item_list()->item_at(0)));
   EXPECT_TRUE(ItemObservedByFolder(
-      folder, folder->item_list()->item_at(num_observed_apps - 1)));
+      folder.get(), folder->item_list()->item_at(0)));
+  EXPECT_TRUE(ItemObservedByFolder(
+      folder.get(), folder->item_list()->item_at(num_observed_apps - 1)));
   // Check that item 4 is not observed.
   EXPECT_FALSE(ItemObservedByFolder(
-      folder, folder->item_list()->item_at(num_observed_apps)));
+      folder.get(), folder->item_list()->item_at(num_observed_apps)));
 }
 
 }  // namespace app_list

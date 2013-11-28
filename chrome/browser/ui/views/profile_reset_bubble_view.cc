@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/profile_reset_bubble.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
@@ -113,8 +113,10 @@ class FeedbackView : public views::View {
       if (!dictionary->GetString("value", &value))
         continue;
 
-      // The key is shown on the left, single line, right-aligned.
+      // The key is shown on the left, multi-line (required to allow wrapping in
+      // case the key name does not fit), and right-aligned.
       views::Label* left_text_label = new views::Label(key);
+      left_text_label->SetMultiLine(true);
       left_text_label->SetEnabledColor(SK_ColorGRAY);
       left_text_label->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
 
@@ -377,8 +379,8 @@ void ProfileResetBubbleView::ButtonPressed(views::Button* sender,
                                            const ui::Event& event) {
   if (sender == controls_.reset_button) {
     DCHECK(!resetting_);
-    content::RecordAction(content::UserMetricsAction(
-        "SettingsResetBubble.Reset"));
+    content::RecordAction(
+        content::UserMetricsAction("SettingsResetBubble.Reset"));
 
     // Remember that the user chose to reset, and that resetting is underway.
     chose_to_reset_ = true;
@@ -395,8 +397,8 @@ void ProfileResetBubbleView::ButtonPressed(views::Button* sender,
     }
   } else if (sender == controls_.no_thanks_button) {
     DCHECK(!resetting_);
-    content::RecordAction(content::UserMetricsAction(
-        "SettingsResetBubble.NoThanks"));
+    content::RecordAction(
+        content::UserMetricsAction("SettingsResetBubble.NoThanks"));
 
     if (global_error_)
       global_error_->OnBubbleViewNoThanksButtonPressed();
@@ -411,8 +413,8 @@ void ProfileResetBubbleView::ButtonPressed(views::Button* sender,
 }
 
 void ProfileResetBubbleView::LinkClicked(views::Link* source, int flags) {
-  content::RecordAction(content::UserMetricsAction(
-      "SettingsResetBubble.LearnMore"));
+  content::RecordAction(
+      content::UserMetricsAction("SettingsResetBubble.LearnMore"));
   navigator_->OpenURL(content::OpenURLParams(
       GURL(chrome::kResetProfileSettingsLearnMoreURL), content::Referrer(),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false));

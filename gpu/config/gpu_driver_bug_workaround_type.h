@@ -14,8 +14,6 @@
          clear_alpha_in_readpixels)                          \
   GPU_OP(CLEAR_UNIFORMS_BEFORE_PROGRAM_USE,                  \
          clear_uniforms_before_program_use)                  \
-  GPU_OP(DISABLE_ANGLE_FRAMEBUFFER_MULTISAMPLE,              \
-         disable_angle_framebuffer_multisample)              \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
          disable_angle_instanced_arrays)                     \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
@@ -30,6 +28,8 @@
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
+  GPU_OP(DISABLE_FRAMEBUFFER_MULTISAMPLE,                    \
+         disable_framebuffer_multisample)                    \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
@@ -38,6 +38,10 @@
          enable_chromium_fast_npot_mo8_textures)             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
+  GPU_OP(FORCE_DISCRETE_GPU,                                 \
+         force_discrete_gpu)                                 \
+  GPU_OP(FORCE_INTEGRATED_GPU,                               \
+         force_integrated_gpu)                               \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
@@ -52,6 +56,8 @@
          needs_glsl_built_in_function_emulation)             \
   GPU_OP(NEEDS_OFFSCREEN_BUFFER_WORKAROUND,                  \
          needs_offscreen_buffer_workaround)                  \
+  GPU_OP(RELEASE_IMAGE_AFTER_USE,                            \
+         release_image_after_use)                            \
   GPU_OP(RESTORE_SCISSOR_ON_FBO_CHANGE,                      \
          restore_scissor_on_fbo_change)                      \
   GPU_OP(REVERSE_POINT_SPRITE_COORD_ORIGIN,                  \
@@ -60,6 +66,8 @@
          set_texture_filter_before_generating_mipmap)        \
   GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \
          swizzle_rgba_for_async_readpixels)                  \
+  GPU_OP(TEXSUBIMAGE2D_FASTER_THAN_TEXIMAGE2D,               \
+         texsubimage2d_faster_than_teximage2d)               \
   GPU_OP(UNBIND_FBO_ON_CONTEXT_SWITCH,                       \
          unbind_fbo_on_context_switch)                       \
   GPU_OP(UNFOLD_SHORT_CIRCUIT_AS_TERNARY_OPERATION,          \
@@ -74,6 +82,8 @@
          use_virtualized_gl_contexts)                        \
   GPU_OP(VALIDATE_MULTISAMPLE_BUFFER_ALLOCATION,             \
          validate_multisample_buffer_allocation)             \
+  GPU_OP(WAKE_UP_GPU_BEFORE_DRAWING,                         \
+         wake_up_gpu_before_drawing)                         \
 
 namespace gpu {
 

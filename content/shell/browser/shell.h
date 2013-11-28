@@ -27,14 +27,14 @@ typedef struct _GtkToolItem GtkToolItem;
 #include "base/android/scoped_java_ref.h"
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-namespace shell {
-class MinimalShell;
-}  // namespace shell
+namespace wm {
+class WMTestHelper;
+}
 #endif  // defined(OS_CHROMEOS)
 namespace views {
 class Widget;
 class ViewsDelegate;
-}  // namespace views
+}
 #endif  // defined(USE_AURA)
 
 class GURL;
@@ -72,7 +72,7 @@ class Shell : public WebContentsDelegate,
 #if (defined(OS_WIN) && !defined(USE_AURA)) || \
     defined(TOOLKIT_GTK) || defined(OS_MACOSX)
   // Resizes the main window to the given dimensions.
-  void SizeTo(int width, int height);
+  void SizeTo(const gfx::Size& content_size);
 #endif
 
   // Do one time initialization at application startup.
@@ -92,9 +92,6 @@ class Shell : public WebContentsDelegate,
 
   // Closes all windows and returns. This runs a message loop.
   static void CloseAllWindows();
-
-  // Closes all windows and exits.
-  static void PlatformExit();
 
   // Used for content_browsertests. Called once.
   static void SetShellCreatedCallback(
@@ -170,6 +167,8 @@ class Shell : public WebContentsDelegate,
 
   // Helper for one time initialization of application
   static void PlatformInitialize(const gfx::Size& default_window_size);
+  // Helper for one time deinitialization of platform specific state.
+  static void PlatformExit();
 
   // Adjust the size when Blink sends 0 for width and/or height.
   // This happens when Blink requests a default-sized window.
@@ -241,6 +240,8 @@ class Shell : public WebContentsDelegate,
   gfx::NativeWindow window_;
   gfx::NativeEditView url_edit_view_;
 
+  gfx::Size content_size_;
+
 #if defined(OS_WIN) && !defined(USE_AURA)
   WNDPROC default_edit_wnd_proc_;
   static HINSTANCE instance_handle_;
@@ -255,14 +256,12 @@ class Shell : public WebContentsDelegate,
   GtkWidget* spinner_;
   GtkToolItem* spinner_item_;
 
-  int content_width_;
-  int content_height_;
   int ui_elements_height_; // height of menubar, toolbar, etc.
 #elif defined(OS_ANDROID)
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-  static shell::MinimalShell* minimal_shell_;
+  static wm::WMTestHelper* wm_test_helper_;
 #endif
 #if defined(TOOLKIT_VIEWS)
   static views::ViewsDelegate* views_delegate_;
@@ -271,9 +270,6 @@ class Shell : public WebContentsDelegate,
 #else // defined(TOOLKIT_VIEWS)
   static ShellAuraPlatformData* platform_;
 #endif // defined(TOOLKIT_VIEWS)
-#elif defined(OS_MACOSX)
-  int content_width_;
-  int content_height_;
 #endif
 
   bool headless_;

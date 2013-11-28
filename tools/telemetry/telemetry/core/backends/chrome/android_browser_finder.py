@@ -48,7 +48,7 @@ CHROME_PACKAGE_NAMES = {
        None]
 }
 
-ALL_BROWSER_TYPES = ','.join(CHROME_PACKAGE_NAMES.keys())
+ALL_BROWSER_TYPES = CHROME_PACKAGE_NAMES.keys()
 
 # adb shell pm list packages
 # adb
@@ -60,6 +60,8 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
   def __init__(self, browser_type, finder_options, backend_settings, apk_name):
     super(PossibleAndroidBrowser, self).__init__(browser_type, finder_options)
+    assert browser_type in ALL_BROWSER_TYPES, \
+        'Please add %s to ALL_BROWSER_TYPES' % browser_type
     self._backend_settings = backend_settings
     self._local_apk = None
 
@@ -196,18 +198,12 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
         if ret:
           logging.warn('Failed to taskset %d (%s)', pid, ret)
 
-    # Experimental device side workaround for crbug.com/268450 (adb instability)
-    # The /sbin/adbd process on the device appears to hang which causes adb to
-    # report that the device is offline. Our working theory is that killing
-    # the process and allowing it to be automatically relaunched will allow us
-    # to run for longer before it hangs.
-    if not finder_options.keep_test_server_ports:
-      # This would break forwarder connections, so we cannot do this if
-      # instructed to keep server ports open.
-      logging.info('Killing adbd on device')
-      adb.KillAll('adbd')
-      logging.info('Waiting for adbd to restart')
-      adb.Adb().Adb().SendCommand('wait-for-device')
+    if not os.environ.get('BUILDBOT_BUILDERNAME'):
+      # Killing adbd before running tests has proven to make them less likely to
+      # flake out during the test. We skip this if Telemetry is running under a
+      # buildbot because build/android/test_runner.py wrapper already took care
+      # of it before starting the shards.
+      adb.RestartAdbdOnDevice()
 
   packages = adb.RunShellCommand('pm list packages')
   possible_browsers = []
@@ -223,16 +219,13 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
     if 'package:' + package in packages or b.HaveLocalAPK():
       possible_browsers.append(b)
 
-  # See if the "forwarder" is installed -- we need this to host content locally
-  # but make it accessible to the device.
-  if (len(possible_browsers) and not finder_options.android_rndis and
-      not adb_commands.HasForwarder()):
-    logging.warn('telemetry detected an android device. However,')
-    logging.warn('Chrome\'s port-forwarder app is not available.')
-    logging.warn('Falling back to prebuilt binaries, but to build locally: ')
-    logging.warn('  ninja -C out/Release forwarder2 md5sum')
-    logging.warn('')
-    logging.warn('')
-    if not adb_commands.SetupPrebuiltTools(device):
+  if possible_browsers:
+    installed_prebuilt_tools = adb_commands.SetupPrebuiltTools(adb)
+    if not installed_prebuilt_tools:
+      logging.error(
+          'Android device detected, however prebuilt android tools could not '
+          'be used. To run on Android you must build them first:\n'
+          '  $ ninja -C out/Release android_tools')
       return []
+
   return possible_browsers

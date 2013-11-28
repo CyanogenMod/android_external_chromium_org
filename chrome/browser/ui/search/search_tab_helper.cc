@@ -37,8 +37,6 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_type.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -69,7 +67,7 @@ void RecordCacheableNTPLoadHistogram(bool succeeded) {
 
 bool IsCacheableNTP(const content::WebContents* contents) {
   const content::NavigationEntry* entry =
-      contents->GetController().GetActiveEntry();
+      contents->GetController().GetLastCommittedEntry();
   return chrome::ShouldUseCacheableNTP() &&
       chrome::NavEntryIsInstantNTP(contents, entry) &&
       entry->GetURL() != GURL(chrome::kChromeSearchLocalNtpUrl);
@@ -138,15 +136,6 @@ SearchTabHelper::SearchTabHelper(content::WebContents* web_contents)
       instant_service_(NULL) {
   if (!is_search_enabled_)
     return;
-
-  // Observe NOTIFICATION_NAV_ENTRY_COMMITTED events so we can reset state
-  // associated with the WebContents  (such as mode, last known most visited
-  // items, instant support state etc).
-  registrar_.Add(
-      this,
-      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<content::NavigationController>(
-          &web_contents->GetController()));
 
   instant_service_ =
       InstantServiceFactory::GetForProfile(
@@ -223,62 +212,26 @@ void SearchTabHelper::OnTabDeactivated() {
   ipc_router_.OnTabDeactivated();
 }
 
-void SearchTabHelper::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(content::NOTIFICATION_NAV_ENTRY_COMMITTED, type);
-  content::LoadCommittedDetails* load_details =
-      content::Details<content::LoadCommittedDetails>(details).ptr();
-  if (!load_details->is_main_frame)
-    return;
-
-  // TODO(kmadhusu): Set the page initial states (such as omnibox margin, etc)
-  // from here. Please refer to crbug.com/247517 for more details.
-  if (chrome::ShouldAssignURLToInstantRenderer(web_contents_->GetURL(),
-                                               profile())) {
-    ipc_router_.SetDisplayInstantResults();
-  }
-
-  UpdateMode(true, false);
-
-  content::NavigationEntry* entry =
-      web_contents_->GetController().GetVisibleEntry();
-  DCHECK(entry);
-
-  // Already determined the instant support state for this page, do not reset
-  // the instant support state.
-  //
-  // When we get a navigation entry committed event, there seem to be two ways
-  // to tell whether the navigation was "in-page". Ideally, when
-  // LoadCommittedDetails::is_in_page is true, we should have
-  // LoadCommittedDetails::type to be NAVIGATION_TYPE_IN_PAGE. Unfortunately,
-  // they are different in some cases. To workaround this bug, we are checking
-  // (is_in_page || type == NAVIGATION_TYPE_IN_PAGE). Please refer to
-  // crbug.com/251330 for more details.
-  if (load_details->is_in_page ||
-      load_details->type == content::NAVIGATION_TYPE_IN_PAGE) {
-    // When an "in-page" navigation happens, we will not receive a
-    // DidFinishLoad() event. Therefore, we will not determine the Instant
-    // support for the navigated page. So, copy over the Instant support from
-    // the previous entry. If the page does not support Instant, update the
-    // location bar from here to turn off search terms replacement.
-    chrome::SetInstantSupportStateInNavigationEntry(model_.instant_support(),
-                                                    entry);
-    if (model_.instant_support() == INSTANT_SUPPORT_NO)
-      UpdateLocationBar(web_contents_);
-    return;
-  }
-
-  model_.SetInstantSupportState(INSTANT_SUPPORT_UNKNOWN);
-  model_.SetVoiceSearchSupported(false);
-  chrome::SetInstantSupportStateInNavigationEntry(model_.instant_support(),
-                                                  entry);
+void SearchTabHelper::ToggleVoiceSearch() {
+  ipc_router_.ToggleVoiceSearch();
 }
 
 void SearchTabHelper::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
   ipc_router_.SetPromoInformation(IsAppLauncherEnabled());
+}
+
+void SearchTabHelper::DidStartNavigationToPendingEntry(
+    const GURL& url,
+    content::NavigationController::ReloadType /* reload_type */) {
+  if (chrome::IsNTPURL(url, profile())) {
+    // Set the title on any pending entry corresponding to the NTP. This
+    // prevents any flickering of the tab title.
+    content::NavigationEntry* entry =
+        web_contents_->GetController().GetPendingEntry();
+    if (entry)
+      entry->SetTitle(l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
+  }
 }
 
 void SearchTabHelper::DidNavigateMainFrame(
@@ -304,7 +257,7 @@ void SearchTabHelper::DidNavigateMainFrame(
   // also a race condition between this code and the page's SetTitle call which
   // this rule avoids.
   content::NavigationEntry* entry =
-      web_contents_->GetController().GetActiveEntry();
+      web_contents_->GetController().GetLastCommittedEntry();
   if (entry && entry->GetTitle().empty() &&
       (entry->GetVirtualURL() == GURL(chrome::kChromeUINewTabURL) ||
        chrome::NavEntryIsInstantNTP(web_contents_, entry))) {
@@ -316,11 +269,16 @@ void SearchTabHelper::DidFailProvisionalLoad(
     int64 /* frame_id */,
     const string16& frame_unique_name,
     bool is_main_frame,
-    const GURL& /* validated_url */,
+    const GURL& validated_url,
     int /* error_code */,
     const string16& /* error_description */,
     content::RenderViewHost* /* render_view_host */) {
-  if (is_main_frame && IsCacheableNTP(web_contents_)) {
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
+  if (is_main_frame &&
+      chrome::ShouldUseCacheableNTP() &&
+      validated_url != GURL(chrome::kChromeSearchLocalNtpUrl) &&
+      chrome::IsNTPURL(validated_url, profile)) {
     RedirectToLocalNTP();
     RecordCacheableNTPLoadHistogram(false);
   }
@@ -333,6 +291,57 @@ void SearchTabHelper::DidFinishLoad(
     content::RenderViewHost* /* render_view_host */) {
   if (is_main_frame)
     DetermineIfPageSupportsInstant();
+}
+
+void SearchTabHelper::NavigationEntryCommitted(
+    const content::LoadCommittedDetails& load_details) {
+  if (!is_search_enabled_)
+    return;
+
+  if (!load_details.is_main_frame)
+    return;
+
+  // TODO(kmadhusu): Set the page initial states (such as omnibox margin, etc)
+  // from here. Please refer to crbug.com/247517 for more details.
+  if (chrome::ShouldAssignURLToInstantRenderer(web_contents_->GetURL(),
+                                               profile())) {
+    ipc_router_.SetDisplayInstantResults();
+  }
+
+  UpdateMode(true, false);
+
+  content::NavigationEntry* entry =
+      web_contents_->GetController().GetVisibleEntry();
+  DCHECK(entry);
+
+  // Already determined the instant support state for this page, do not reset
+  // the instant support state.
+  //
+  // When we get a navigation entry committed event, there seem to be two ways
+  // to tell whether the navigation was "in-page". Ideally, when
+  // LoadCommittedDetails::is_in_page is true, we should have
+  // LoadCommittedDetails::type to be NAVIGATION_TYPE_IN_PAGE. Unfortunately,
+  // they are different in some cases. To workaround this bug, we are checking
+  // (is_in_page || type == NAVIGATION_TYPE_IN_PAGE). Please refer to
+  // crbug.com/251330 for more details.
+  if (load_details.is_in_page ||
+      load_details.type == content::NAVIGATION_TYPE_IN_PAGE) {
+    // When an "in-page" navigation happens, we will not receive a
+    // DidFinishLoad() event. Therefore, we will not determine the Instant
+    // support for the navigated page. So, copy over the Instant support from
+    // the previous entry. If the page does not support Instant, update the
+    // location bar from here to turn off search terms replacement.
+    chrome::SetInstantSupportStateInNavigationEntry(model_.instant_support(),
+                                                    entry);
+    if (model_.instant_support() == INSTANT_SUPPORT_NO)
+      UpdateLocationBar(web_contents_);
+    return;
+  }
+
+  model_.SetInstantSupportState(INSTANT_SUPPORT_UNKNOWN);
+  model_.SetVoiceSearchSupported(false);
+  chrome::SetInstantSupportStateInNavigationEntry(model_.instant_support(),
+                                                  entry);
 }
 
 void SearchTabHelper::OnInstantSupportDetermined(bool supports_instant) {
@@ -393,8 +402,7 @@ void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
   if (!browser)
     return;
 
-  OmniboxView* omnibox_view = browser->window()->GetLocationBar()->
-      GetLocationEntry();
+  OmniboxView* omnibox = browser->window()->GetLocationBar()->GetOmniboxView();
   // Do not add a default case in the switch block for the following reasons:
   // (1) Explicitly handle the new states. If new states are added in the
   // OmniboxFocusState, the compiler will warn the developer to handle the new
@@ -404,24 +412,24 @@ void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
   // doing nothing instead of crashing the browser process (intentional no-op).
   switch (state) {
     case OMNIBOX_FOCUS_VISIBLE:
-      omnibox_view->SetFocus();
-      omnibox_view->model()->SetCaretVisibility(true);
+      omnibox->SetFocus();
+      omnibox->model()->SetCaretVisibility(true);
       break;
     case OMNIBOX_FOCUS_INVISIBLE:
-      omnibox_view->SetFocus();
-      omnibox_view->model()->SetCaretVisibility(false);
+      omnibox->SetFocus();
+      omnibox->model()->SetCaretVisibility(false);
       // If the user clicked on the fakebox, any text already in the omnibox
       // should get cleared when they start typing. Selecting all the existing
       // text is a convenient way to accomplish this. It also gives a slight
       // visual cue to users who really understand selection state about what
       // will happen if they start typing.
-      omnibox_view->SelectAll(false);
+      omnibox->SelectAll(false);
       break;
     case OMNIBOX_FOCUS_NONE:
       // Remove focus only if the popup is closed. This will prevent someone
       // from changing the omnibox value and closing the popup without user
       // interaction.
-      if (!omnibox_view->model()->popup_model()->IsOpen())
+      if (!omnibox->model()->popup_model()->IsOpen())
         web_contents()->GetView()->Focus();
       break;
   }
@@ -488,25 +496,24 @@ void SearchTabHelper::PasteIntoOmnibox(const string16& text) {
   if (!browser)
     return;
 
-  OmniboxView* omnibox_view = browser->window()->GetLocationBar()->
-      GetLocationEntry();
+  OmniboxView* omnibox = browser->window()->GetLocationBar()->GetOmniboxView();
   // The first case is for right click to paste, where the text is retrieved
   // from the clipboard already sanitized. The second case is needed to handle
   // drag-and-drop value and it has to be sanitazed before setting it into the
   // omnibox.
-  string16 text_to_paste = text.empty() ? omnibox_view->GetClipboardText() :
-      omnibox_view->SanitizeTextForPaste(text);
+  string16 text_to_paste = text.empty() ? omnibox->GetClipboardText() :
+      omnibox->SanitizeTextForPaste(text);
 
   if (text_to_paste.empty())
     return;
 
-  if (!omnibox_view->model()->has_focus())
-    omnibox_view->SetFocus();
+  if (!omnibox->model()->has_focus())
+    omnibox->SetFocus();
 
-  omnibox_view->OnBeforePossibleChange();
-  omnibox_view->model()->on_paste();
-  omnibox_view->SetUserText(text_to_paste);
-  omnibox_view->OnAfterPossibleChange();
+  omnibox->OnBeforePossibleChange();
+  omnibox->model()->OnPaste();
+  omnibox->SetUserText(text_to_paste);
+  omnibox->OnAfterPossibleChange();
 #endif
 }
 

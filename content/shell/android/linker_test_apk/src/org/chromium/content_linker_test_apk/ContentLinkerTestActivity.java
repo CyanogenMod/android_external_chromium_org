@@ -12,16 +12,18 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 
+import org.chromium.base.BaseSwitches;
+import org.chromium.base.CommandLine;
 import org.chromium.content.app.LibraryLoader;
 import org.chromium.content.app.Linker;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewClient;
-import org.chromium.content.common.CommandLine;
 import org.chromium.content.common.ProcessInitException;
 import org.chromium.content_shell.Shell;
 import org.chromium.content_shell.ShellManager;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 public class ContentLinkerTestActivity extends Activity {
     public static final String COMMAND_LINE_FILE =
@@ -94,7 +96,7 @@ public class ContentLinkerTestActivity extends Activity {
                 (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         View view = inflater.inflate(R.layout.test_activity, null);
         mShellManager = (ShellManager) view.findViewById(R.id.shell_container);
-        mWindowAndroid = new WindowAndroid(this);
+        mWindowAndroid = new ActivityWindowAndroid(this);
         mShellManager.setWindow(mWindowAndroid);
 
         mShellManager.setStartupUrl("about:blank");
@@ -134,7 +136,7 @@ public class ContentLinkerTestActivity extends Activity {
     }
 
     private void waitForDebuggerIfNeeded() {
-        if (CommandLine.getInstance().hasSwitch(CommandLine.WAIT_FOR_JAVA_DEBUGGER)) {
+        if (CommandLine.getInstance().hasSwitch(BaseSwitches.WAIT_FOR_JAVA_DEBUGGER)) {
             Log.e(TAG, "Waiting for Java debugger to connect...");
             android.os.Debug.waitForDebugger();
             Log.e(TAG, "Java debugger connected. Resuming execution.");

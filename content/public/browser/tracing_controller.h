@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_TRACING_CONTROLLER_H_
 #define CONTENT_PUBLIC_BROWSER_TRACING_CONTROLLER_H_
 
+#include <set>
+
 #include "base/debug/trace_event.h"
 #include "content/common/content_export.h"
 
@@ -25,6 +27,7 @@ class TracingController {
   enum Options {
     ENABLE_SYSTRACE = 1 << 0,
     ENABLE_SAMPLING = 1 << 1,
+    RECORD_CONTINUOUSLY = 1 << 2,  // For EnableRecording() only.
   };
 
   CONTENT_EXPORT static TracingController* GetInstance();
@@ -75,9 +78,16 @@ class TracingController {
   // Once all child processes have acked to the DisableRecording request,
   // TracingFileResultCallback will be called back with a file that contains
   // the traced data.
-  typedef base::Callback<void(scoped_ptr<base::FilePath>)>
-      TracingFileResultCallback;
-  virtual bool DisableRecording(const TracingFileResultCallback& callback) = 0;
+  //
+  // Trace data will be written into |result_file_path| if it is not empty, or
+  // into a temporary file. The actual file path will be passed to |callback| if
+  // it's not null.
+  //
+  // If |result_file_path| is empty and |callback| is null, trace data won't be
+  // written to any file.
+  typedef base::Callback<void(const base::FilePath&)> TracingFileResultCallback;
+  virtual bool DisableRecording(const base::FilePath& result_file_path,
+                                const TracingFileResultCallback& callback) = 0;
 
   // Start monitoring on all processes.
   //
@@ -119,8 +129,22 @@ class TracingController {
   // Once all child processes have acked to the CaptureMonitoringSnapshot
   // request, TracingFileResultCallback will be called back with a file that
   // contains the traced data.
+  //
+  // Trace data will be written into |result_file_path| if it is not empty, or
+  // into a temporary file. The actual file path will be passed to |callback|.
+  //
+  // If |result_file_path| is empty and |callback| is null, trace data won't be
+  // written to any file.
   virtual void CaptureMonitoringSnapshot(
+      const base::FilePath& result_file_path,
       const TracingFileResultCallback& callback) = 0;
+
+  // Get the maximum across processes of trace buffer percent full state.
+  // When the TraceBufferPercentFull value is determined, the callback is
+  // called.
+  typedef base::Callback<void(float)> GetTraceBufferPercentFullCallback;
+  virtual bool GetTraceBufferPercentFull(
+      const GetTraceBufferPercentFullCallback& callback) = 0;
 
  protected:
   virtual ~TracingController() {}

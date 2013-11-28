@@ -21,7 +21,7 @@
 #include "ui/gfx/rect_f.h"
 #endif
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 }
 
@@ -94,13 +94,14 @@ class RendererMediaPlayerManager : public RenderViewObserver {
                      const std::vector<uint8>& uuid,
                      const GURL& frame_url);
   void GenerateKeyRequest(int media_keys_id,
+                          uint32 reference_id,
                           const std::string& type,
                           const std::vector<uint8>& init_data);
   void AddKey(int media_keys_id,
+              uint32 reference_id,
               const std::vector<uint8>& key,
-              const std::vector<uint8>& init_data,
-              const std::string& session_id);
-  void CancelKeyRequest(int media_keys_id, const std::string& session_id);
+              const std::vector<uint8>& init_data);
+  void CancelKeyRequest(int media_keys_id, uint32 reference_id);
 
   // Registers and unregisters a WebMediaPlayerAndroid object.
   int RegisterMediaPlayer(WebMediaPlayerAndroid* player);
@@ -117,14 +118,14 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   void ReleaseVideoResources();
 
   // Checks whether a player can enter fullscreen.
-  bool CanEnterFullscreen(WebKit::WebFrame* frame);
+  bool CanEnterFullscreen(blink::WebFrame* frame);
 
   // Called when a player entered or exited fullscreen.
-  void DidEnterFullscreen(WebKit::WebFrame* frame);
+  void DidEnterFullscreen(blink::WebFrame* frame);
   void DidExitFullscreen();
 
   // Checks whether the Webframe is in fullscreen.
-  bool IsInFullscreen(WebKit::WebFrame* frame);
+  bool IsInFullscreen(blink::WebFrame* frame);
 
   // Gets the pointer to WebMediaPlayerAndroid given the |player_id|.
   WebMediaPlayerAndroid* GetMediaPlayer(int player_id);
@@ -158,15 +159,19 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   void OnDidEnterFullscreen(int player_id);
   void OnPlayerPlay(int player_id);
   void OnPlayerPause(int player_id);
-  void OnKeyAdded(int media_keys_id, const std::string& session_id);
+  void OnRequestFullscreen(int player_id);
+  void OnKeyAdded(int media_keys_id, uint32 reference_id);
   void OnKeyError(int media_keys_id,
-                  const std::string& session_id,
+                  uint32 reference_id,
                   media::MediaKeys::KeyError error_code,
                   int system_code);
   void OnKeyMessage(int media_keys_id,
-                    const std::string& session_id,
+                    uint32 reference_id,
                     const std::vector<uint8>& message,
                     const std::string& destination_url);
+  void OnSetSessionId(int media_keys_id,
+                      uint32 reference_id,
+                      const std::string& session_id);
 
   // Info for all available WebMediaPlayerAndroid on a page; kept so that
   // we can enumerate them to send updates about tab focus and visibility.
@@ -179,7 +184,7 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   int next_media_player_id_;
 
   // WebFrame of the fullscreen video.
-  WebKit::WebFrame* fullscreen_frame_;
+  blink::WebFrame* fullscreen_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererMediaPlayerManager);
 };

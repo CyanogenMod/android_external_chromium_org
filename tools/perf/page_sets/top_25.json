@@ -104,17 +104,9 @@
       ]
     },
     {
-      "url": "https://drive.google.com",
-      "why": "productivity, top google properties",
-      "credentials": "google",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "javascript": "document.getElementsByClassName('doclistview-list').length" }
-      ],
-      "smoothness": {
-        "action": "scroll",
-        "scrollable_element_function": "function(callback) { callback(document.getElementsByClassName('doclistview-list')[0]); }"
-      }
+      "url": "https://www.google.com/search?q=cats&tbm=isch",
+      "why": "tough image case; top google properties",
+      "credentials": "google"
     },
     {
       "name": "Docs  (1 open document tab)",
@@ -181,19 +173,15 @@
       "stress_memory": [
         { "action": "click_element", "text": "accessibility" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "advanced" },
         { "action": "scroll" },
         { "action": "click_element", "text": "advanced" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "beginner" },
         { "action": "scroll" },
         { "action": "click_element", "text": "beginner" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "Home" },
         { "action": "scroll" },
         { "action": "click_element", "text": "Home" },
-        { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "Home" }
+        { "action": "wait", "condition": "navigate" }
       ]
     },
     {
@@ -208,15 +196,12 @@
         { "action": "scroll" },
         { "action": "click_element", "selector": "a[href=\"http://en.blog.wordpress.com/2012/08/30/new-themes-able-and-sight/\"]" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text":  "Features" },
         { "action": "scroll" },
         { "action": "click_element", "text": "Features" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text":  "News" },
         { "action": "scroll" },
         { "action": "click_element", "text": "News" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "News" },
         { "action": "scroll" }
       ]
     },
@@ -235,21 +220,17 @@
       },
       "stress_memory": [
         { "action": "click_element", "text": "About" },
-        { "action": "wait", "condition": "element", "text": "The Audacity of Hope" },
+        { "action": "wait", "condition": "navigate" },
         { "action": "click_element", "text": "The Audacity of Hope" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "Back to Barack Obama's Timeline" },
         { "action": "click_element", "text": "Back to Barack Obama's Timeline" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "About" },
         { "action": "click_element", "text": "About" },
-        { "action": "wait", "condition": "element", "text": "Elected to U.S. Senate" },
+        { "action": "wait", "condition": "navigate" },
         { "action": "click_element", "text": "Elected to U.S. Senate" },
         { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "Home" },
         { "action": "click_element", "text": "Home" },
-        { "action": "wait", "condition": "navigate" },
-        { "action": "wait", "condition": "element", "text": "Home" }
+        { "action": "wait", "condition": "navigate" }
       ]
     },
     {

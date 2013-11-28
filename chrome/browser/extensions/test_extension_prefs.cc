@@ -19,11 +19,12 @@
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/prefs/pref_service_mock_builder.h"
+#include "chrome/browser/prefs/pref_service_mock_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
-#include "chrome/common/extensions/extension.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -103,16 +104,17 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
   }
 
   extension_pref_value_map_.reset(new ExtensionPrefValueMap);
-  PrefServiceMockBuilder builder;
-  builder.WithUserFilePrefs(preferences_file_, task_runner_.get());
-  builder.WithExtensionPrefs(
+  PrefServiceMockFactory factory;
+  factory.SetUserPrefsFile(preferences_file_, task_runner_.get());
+  factory.set_extension_prefs(
       new ExtensionPrefStore(extension_pref_value_map_.get(), false));
-  pref_service_.reset(builder.CreateSyncable(pref_registry_.get()));
+  pref_service_ = factory.CreateSyncable(pref_registry_.get()).Pass();
 
   prefs_.reset(ExtensionPrefs::Create(
       pref_service_.get(),
       temp_dir_.path(),
       extension_pref_value_map_.get(),
+      ExtensionsBrowserClient::Get()->CreateAppSorting().Pass(),
       extensions_disabled_,
       // Guarantee that no two extensions get the same installation time
       // stamp and we can reliably assert the installation order in the tests.
@@ -160,7 +162,7 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
   EXPECT_TRUE(Extension::IdIsValid(extension->id()));
   prefs_->OnExtensionInstalled(extension.get(),
                                Extension::ENABLED,
-                               Blacklist::NOT_BLACKLISTED,
+                               false,
                                syncer::StringOrdinal::CreateInitialOrdinal());
   return extension;
 }

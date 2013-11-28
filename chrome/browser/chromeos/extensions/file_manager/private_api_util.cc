@@ -80,14 +80,14 @@ void GetSelectedFileInfoInternal(Profile* profile,
               ui::SelectedFileInfo(file_path, base::FilePath()));
           break;
         case NEED_LOCAL_PATH_FOR_OPENING:
-          file_system->GetFileByPath(
+          file_system->GetFile(
               drive::util::ExtractDrivePath(file_path),
               base::Bind(&ContinueGetSelectedFileInfo,
                          profile,
                          base::Passed(&params)));
           return;  // Remaining work is done in ContinueGetSelectedFileInfo.
         case NEED_LOCAL_PATH_FOR_SAVING:
-          file_system->GetFileByPathForSaving(
+          file_system->GetFileForSaving(
               drive::util::ExtractDrivePath(file_path),
               base::Bind(&ContinueGetSelectedFileInfo,
                          profile,
@@ -127,16 +127,18 @@ void VolumeInfoToVolumeMetadata(
     const VolumeInfo& volume_info,
     file_browser_private::VolumeMetadata* volume_metadata) {
   DCHECK(volume_metadata);
+  DCHECK(!volume_info.mount_path.empty());
 
-  if (!volume_info.mount_path.empty()) {
-    // Convert mount point path to relative path with the external file system
-    // exposed within File API.
-    base::FilePath relative_mount_path;
-    if (ConvertAbsoluteFilePathToRelativeFileSystemPath(
-            profile, kFileManagerAppId, base::FilePath(volume_info.mount_path),
-            &relative_mount_path))
-      volume_metadata->mount_path = "/" + relative_mount_path.AsUTF8Unsafe();
+  // Convert mount point path to relative path with the external file system
+  // exposed within File API.
+  base::FilePath relative_mount_path;
+  if (ConvertAbsoluteFilePathToRelativeFileSystemPath(
+          profile, kFileManagerAppId, base::FilePath(volume_info.mount_path),
+          &relative_mount_path)) {
+    volume_metadata->mount_path = "/" + relative_mount_path.AsUTF8Unsafe();
   }
+
+  volume_metadata->volume_id = volume_info.volume_id;
 
   if (!volume_info.source_path.empty()) {
     volume_metadata->source_path.reset(
@@ -230,7 +232,8 @@ content::WebContents* GetWebContents(ExtensionFunctionDispatcher* dispatcher) {
 
 int32 GetTabId(ExtensionFunctionDispatcher* dispatcher) {
   content::WebContents* web_contents = GetWebContents(dispatcher);
-  return web_contents ? ExtensionTabUtil::GetTabId(web_contents) : 0;
+  return web_contents ?
+      extensions::ExtensionTabUtil::GetTabId(web_contents) : 0;
 }
 
 base::FilePath GetLocalPathFromURL(

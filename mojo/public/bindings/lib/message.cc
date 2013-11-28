@@ -6,6 +6,8 @@
 
 #include <stdlib.h>
 
+#include <algorithm>
+
 namespace mojo {
 
 Message::Message()
@@ -14,6 +16,14 @@ Message::Message()
 
 Message::~Message() {
   free(data);
+  // TODO(davemoore): We don't close the handles because they're typically
+  // owned by the Connection. This could result in some Handle leaks. This will
+  // be fixed by a later cl.
+}
+
+void Message::Swap(Message* other) {
+  std::swap(data, other->data);
+  std::swap(handles, other->handles);
 }
 
 }  // namespace mojo

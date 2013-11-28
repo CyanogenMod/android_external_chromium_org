@@ -19,7 +19,7 @@
 
 namespace content {
 
-class WebSocketBridge : public WebKit::WebSocketHandle {
+class WebSocketBridge : public blink::WebSocketHandle {
  public:
   WebSocketBridge();
 
@@ -27,17 +27,17 @@ class WebSocketBridge : public WebKit::WebSocketHandle {
   bool OnMessageReceived(const IPC::Message& message);
 
   // WebSocketHandle functions.
-  virtual void connect(const WebKit::WebURL& url,
-                       const WebKit::WebVector<WebKit::WebString>& protocols,
-                       const WebKit::WebString& origin,
-                       WebKit::WebSocketHandleClient* client) OVERRIDE;
+  virtual void connect(const blink::WebURL& url,
+                       const blink::WebVector<blink::WebString>& protocols,
+                       const blink::WebString& origin,
+                       blink::WebSocketHandleClient* client) OVERRIDE;
   virtual void send(bool fin,
                     WebSocketHandle::MessageType type,
                     const char* data,
                     size_t size) OVERRIDE;
   virtual void flowControl(int64_t quota) OVERRIDE;
   virtual void close(unsigned short code,
-                     const WebKit::WebString& reason) OVERRIDE;
+                     const blink::WebString& reason) OVERRIDE;
 
   virtual void Disconnect();
 
@@ -47,14 +47,17 @@ class WebSocketBridge : public WebKit::WebSocketHandle {
   void DidConnect(bool fail,
                   const std::string& selected_protocol,
                   const std::string& extensions);
+  void DidStartOpeningHandshake(const WebSocketHandshakeRequest& request);
+  void DidFinishOpeningHandshake(const WebSocketHandshakeResponse& response);
+  void DidFail(const std::string& message);
   void DidReceiveData(bool fin,
                       WebSocketMessageType type,
                       const std::vector<char>& data);
   void DidReceiveFlowControl(int64_t quota);
-  void DidClose(unsigned short code, const std::string& reason);
+  void DidClose(bool was_clean, unsigned short code, const std::string& reason);
 
   int channel_id_;
-  WebKit::WebSocketHandleClient* client_;
+  blink::WebSocketHandleClient* client_;
 
   static const int kInvalidChannelId = -1;
 };

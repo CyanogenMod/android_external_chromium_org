@@ -18,19 +18,6 @@ class NewAvatarButton;
 // Browser-specific methods.
 class BrowserNonClientFrameView : public views::NonClientFrameView {
  public:
-  // Insets around the tabstrip.
-  struct TabStripInsets {
-    TabStripInsets() : top(0), left(0), right(0) {}
-    TabStripInsets(int top, int left, int right)
-        : top(top),
-          left(left),
-          right(right) {}
-
-    int top;
-    int left;
-    int right;
-  };
-
   BrowserNonClientFrameView(BrowserFrame* frame, BrowserView* browser_view);
   virtual ~BrowserNonClientFrameView();
 
@@ -40,13 +27,15 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
 
   AvatarLabel* avatar_label() const { return avatar_label_; }
 
-  // Returns the bounds within which the TabStrip should be laid out.
+  // Retrieves the bounds, in non-client view coordinates within which the
+  // TabStrip should be laid out.
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const = 0;
 
-  // Returns the TabStripInsets within the window at which the tab strip is
-  // positioned. If |as_restored| is true, this is calculated as if we were in
-  // restored mode regardless of the current mode.
-  virtual TabStripInsets GetTabStripInsets(bool force_restored) const = 0;
+  // Returns the inset of the topmost view in the client view from the top of
+  // the non-client view. The topmost view depends on the window type. The
+  // topmost view is the tab strip for tabbed browser windows, the toolbar for
+  // popups, the web contents for app windows and varies for fullscreen windows.
+  virtual int GetTopInset() const = 0;
 
   // Returns the amount that the theme background should be inset.
   virtual int GetThemeBackgroundXInset() const = 0;
@@ -71,10 +60,6 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   // |listener| when it is clicked.
   void UpdateNewStyleAvatarInfo(views::ButtonListener* listener,
                                 const NewAvatarButton::AvatarButtonStyle style);
-
-  // Anchor and show the ProfileChooser bubble under the avatar button in
-  // the caption area.
-  void ShowProfileChooserViewBubble();
 
  private:
   // The frame that hosts this view.

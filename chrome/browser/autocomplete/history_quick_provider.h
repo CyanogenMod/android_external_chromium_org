@@ -16,10 +16,9 @@
 #include "chrome/browser/history/in_memory_url_index.h"
 
 class Profile;
-class TermMatches;
 
 namespace history {
-struct ScoredHistoryMatch;
+class ScoredHistoryMatch;
 }  // namespace history
 
 // This class is an autocomplete provider (a pseudo-internal component of
@@ -63,13 +62,6 @@ class HistoryQuickProvider : public HistoryProvider {
 
   // Returns the index that should be used for history lookups.
   history::InMemoryURLIndex* GetIndex();
-
-  // Fill and return an ACMatchClassifications structure given the term
-  // matches (|matches|) to highlight where terms were found.
-  static ACMatchClassifications SpansFromTermMatch(
-      const history::TermMatches& matches,
-      size_t text_length,
-      bool is_url);
 
   // Only for use in unittests.  Takes ownership of |index|.
   void set_index(history::InMemoryURLIndex* index) {

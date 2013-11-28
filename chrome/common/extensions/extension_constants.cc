@@ -98,9 +98,6 @@ namespace extension_misc {
 
 const char kBookmarkManagerId[] = "eemcgdkfndhakfknompkggombfjjjeno";
 const char kChromeAppId[] = "mgndgikekgjfcpckkfioiadnlibdjbkf";
-const char kCitrixReceiverAppId[] = "haiffjcadagjlijoggckpgfnoeiflnem";
-const char kCitrixReceiverAppBetaId[] = "gnedhmakppccajfpfiihfcdlnpgomkcf";
-const char kCitrixReceiverAppDevId[] = "fjcibdnjlbfnbfdjneajpipnlcppleek";
 const char kCloudPrintAppId[] = "mfehgcgbbipciphmccgaenjidiccnmng";
 const char kEnterpriseWebStoreAppId[] = "afchcafgojfnemjkcbhfekplkmjaldaa";
 const char kGmailAppId[] = "pjkljhegncpnkpknbcohdijeoejaedia";
@@ -123,6 +120,7 @@ const char kStreamsPrivateTestExtensionId[] =
 const char kWebStoreAppId[] = "ahfgeienlihckogmohjhadlkjgocpleb";
 const char kYoutubeAppId[] = "blpcfgokakmgnkcojhhkbfbldkacnbeo";
 const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
+const char kTipsAndTricksAppId[] = "hkhhlkdconhgemhegnplaldnmnmkaemd";
 
 const char kAppLaunchHistogram[] = "Extensions.AppLaunch";
 const char kPlatformAppLaunchHistogram[] = "Apps.AppLaunch";

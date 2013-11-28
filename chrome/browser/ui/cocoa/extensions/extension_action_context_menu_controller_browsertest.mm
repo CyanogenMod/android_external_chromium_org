@@ -21,10 +21,10 @@
 #include "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
@@ -58,7 +58,7 @@ class ExtensionActionContextMenuControllerTest : public ExtensionBrowserTest {
 
     content::WebContents* contents =
         browser()->tab_strip_model()->GetActiveWebContents();
-    action_->SetAppearance(ExtensionTabUtil::GetTabId(contents),
+    action_->SetAppearance(extensions::ExtensionTabUtil::GetTabId(contents),
                            ExtensionAction::ACTIVE);
 
     BrowserWindowCocoa* window =

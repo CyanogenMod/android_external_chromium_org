@@ -38,7 +38,8 @@ LOCAL_SRC_FILES := \
 	base/i18n/rtl.cc \
 	base/i18n/string_compare.cc \
 	base/i18n/string_search.cc \
-	base/i18n/time_formatting.cc
+	base/i18n/time_formatting.cc \
+	base/i18n/timezone.cc
 
 
 # Flags passed to both C and C++ files.
@@ -87,6 +88,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DBASE_I18N_IMPLEMENTATION' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -172,6 +174,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DBASE_I18N_IMPLEMENTATION' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \

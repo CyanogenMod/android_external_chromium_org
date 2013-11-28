@@ -47,12 +47,9 @@ void InputMethodBase::SetFocusedTextInputClient(TextInputClient* client) {
 }
 
 void InputMethodBase::DetachTextInputClient(TextInputClient* client) {
-  if (text_input_client_ == client) {
-    OnWillChangeFocusedClient(client, NULL);
-    text_input_client_ = NULL;
-    OnDidChangeFocusedClient(client, NULL);
-    NotifyTextInputStateChanged(text_input_client_);
-  }
+  if (text_input_client_ != client)
+    return;
+  SetFocusedTextInputClientInternal(NULL);
 }
 
 TextInputClient* InputMethodBase::GetTextInputClient() const {
@@ -63,20 +60,6 @@ void InputMethodBase::OnTextInputTypeChanged(const TextInputClient* client) {
   if (!IsTextInputClientFocused(client))
     return;
   NotifyTextInputStateChanged(client);
-}
-
-void InputMethodBase::OnCaretBoundsChanged(const TextInputClient* client) {
-  if (!IsTextInputClientFocused(client))
-    return;
-  FOR_EACH_OBSERVER(InputMethodObserver,
-                    observer_list_,
-                    OnCaretBoundsChanged(client));
-}
-
-void InputMethodBase::OnInputLocaleChanged() {
-  FOR_EACH_OBSERVER(InputMethodObserver,
-                    observer_list_,
-                    OnInputLocaleChanged());
 }
 
 TextInputType InputMethodBase::GetTextInputType() const {

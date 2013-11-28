@@ -13,7 +13,7 @@ namespace views {
 DesktopCaptureClient::CaptureClients*
 DesktopCaptureClient::capture_clients_ = NULL;
 
-DesktopCaptureClient::DesktopCaptureClient(aura::RootWindow* root)
+DesktopCaptureClient::DesktopCaptureClient(aura::Window* root)
     : root_(root),
       capture_window_(NULL) {
   if (!capture_clients_)
@@ -52,7 +52,7 @@ void DesktopCaptureClient::SetCapture(aura::Window* new_capture_window) {
 
   capture_window_ = new_capture_window;
 
-  aura::client::CaptureDelegate* delegate = root_;
+  aura::client::CaptureDelegate* delegate = root_->GetDispatcher();
   delegate->UpdateCapture(old_capture_window, new_capture_window);
 
   // Initiate native capture updating.
@@ -67,7 +67,7 @@ void DesktopCaptureClient::SetCapture(aura::Window* new_capture_window) {
     for (CaptureClients::iterator i = capture_clients.begin();
          i != capture_clients.end(); ++i) {
       if (*i != this) {
-        aura::client::CaptureDelegate* delegate = (*i)->root_;
+        aura::client::CaptureDelegate* delegate = (*i)->root_->GetDispatcher();
         delegate->OnOtherRootGotCapture();
       }
     }
@@ -82,6 +82,15 @@ void DesktopCaptureClient::ReleaseCapture(aura::Window* window) {
 
 aura::Window* DesktopCaptureClient::GetCaptureWindow() {
   return capture_window_;
+}
+
+aura::Window* DesktopCaptureClient::GetGlobalCaptureWindow() {
+  for (CaptureClients::iterator i = capture_clients_->begin();
+       i != capture_clients_->end(); ++i) {
+    if ((*i)->capture_window_)
+      return (*i)->capture_window_;
+  }
+  return NULL;
 }
 
 }  // namespace views

@@ -97,7 +97,7 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
       P2PSocketDispatcher* socket_dispatcher,
       talk_base::NetworkManager* network_manager,
       talk_base::PacketSocketFactory* socket_factory,
-      WebKit::WebFrame* web_frame)
+      blink::WebFrame* web_frame)
       : socket_dispatcher_(socket_dispatcher),
         network_manager_(network_manager),
         socket_factory_(socket_factory),
@@ -146,14 +146,14 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   talk_base::NetworkManager* network_manager_;
   talk_base::PacketSocketFactory* socket_factory_;
   // Raw ptr to the WebFrame that created the P2PPortAllocatorFactory.
-  WebKit::WebFrame* web_frame_;
+  blink::WebFrame* web_frame_;
 };
 
 // SourceStateObserver is a help class used for observing the startup state
 // transition of webrtc media sources such as a camera or microphone.
 // An instance of the object deletes itself after use.
 // Usage:
-// 1. Create an instance of the object with the WebKit::WebMediaStream
+// 1. Create an instance of the object with the blink::WebMediaStream
 //    the observed sources belongs to a callback.
 // 2. Add the sources to the observer using AddSource.
 // 3. Call StartObserving()
@@ -163,7 +163,7 @@ class SourceStateObserver : public webrtc::ObserverInterface,
                             public base::NonThreadSafe {
  public:
   SourceStateObserver(
-      WebKit::WebMediaStream* web_stream,
+      blink::WebMediaStream* web_stream,
       const MediaStreamDependencyFactory::MediaSourcesCreatedCallback& callback)
      : web_stream_(web_stream),
        ready_callback_(callback),
@@ -217,7 +217,7 @@ class SourceStateObserver : public webrtc::ObserverInterface,
     }
   }
 
-  WebKit::WebMediaStream* web_stream_;
+  blink::WebMediaStream* web_stream_;
   MediaStreamDependencyFactory::MediaSourcesCreatedCallback ready_callback_;
   bool live_;
   typedef std::vector<scoped_refptr<webrtc::MediaSourceInterface> >
@@ -243,9 +243,9 @@ MediaStreamDependencyFactory::~MediaStreamDependencyFactory() {
   CleanupPeerConnectionFactory();
 }
 
-WebKit::WebRTCPeerConnectionHandler*
+blink::WebRTCPeerConnectionHandler*
 MediaStreamDependencyFactory::CreateRTCPeerConnectionHandler(
-    WebKit::WebRTCPeerConnectionHandlerClient* client) {
+    blink::WebRTCPeerConnectionHandlerClient* client) {
   // Save histogram data so we can see how much PeerConnetion is used.
   // The histogram counts the number of calls to the JS API
   // webKitRTCPeerConnection.
@@ -259,9 +259,9 @@ MediaStreamDependencyFactory::CreateRTCPeerConnectionHandler(
 
 void MediaStreamDependencyFactory::CreateNativeMediaSources(
     int render_view_id,
-    const WebKit::WebMediaConstraints& audio_constraints,
-    const WebKit::WebMediaConstraints& video_constraints,
-    WebKit::WebMediaStream* web_stream,
+    const blink::WebMediaConstraints& audio_constraints,
+    const blink::WebMediaConstraints& video_constraints,
+    blink::WebMediaStream* web_stream,
     const MediaSourcesCreatedCallback& sources_created) {
   DVLOG(1) << "MediaStreamDependencyFactory::CreateNativeMediaSources()";
   if (!EnsurePeerConnectionFactory()) {
@@ -276,10 +276,10 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
 
   // Create local video sources.
   RTCMediaConstraints native_video_constraints(video_constraints);
-  WebKit::WebVector<WebKit::WebMediaStreamTrack> video_tracks;
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
   web_stream->videoTracks(video_tracks);
   for (size_t i = 0; i < video_tracks.size(); ++i) {
-    const WebKit::WebMediaStreamSource& source = video_tracks[i].source();
+    const blink::WebMediaStreamSource& source = video_tracks[i].source();
     MediaStreamSourceExtraData* source_data =
         static_cast<MediaStreamSourceExtraData*>(source.extraData());
 
@@ -303,10 +303,10 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
   // microphone or tab audio.
   RTCMediaConstraints native_audio_constraints(audio_constraints);
   ApplyFixedAudioConstraints(&native_audio_constraints);
-  WebKit::WebVector<WebKit::WebMediaStreamTrack> audio_tracks;
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
   web_stream->audioTracks(audio_tracks);
   for (size_t i = 0; i < audio_tracks.size(); ++i) {
-    const WebKit::WebMediaStreamSource& source = audio_tracks[i].source();
+    const blink::WebMediaStreamSource& source = audio_tracks[i].source();
     MediaStreamSourceExtraData* source_data =
         static_cast<MediaStreamSourceExtraData*>(source.extraData());
 
@@ -344,7 +344,7 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
 }
 
 void MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
-    WebKit::WebMediaStream* web_stream) {
+    blink::WebMediaStream* web_stream) {
   DVLOG(1) << "MediaStreamDependencyFactory::CreateNativeLocalMediaStream()";
   if (!EnsurePeerConnectionFactory()) {
     DVLOG(1) << "EnsurePeerConnectionFactory() failed!";
@@ -359,14 +359,14 @@ void MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
   web_stream->setExtraData(extra_data);
 
   // Add audio tracks.
-  WebKit::WebVector<WebKit::WebMediaStreamTrack> audio_tracks;
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
   web_stream->audioTracks(audio_tracks);
   for (size_t i = 0; i < audio_tracks.size(); ++i) {
     AddNativeMediaStreamTrack(*web_stream, audio_tracks[i]);
   }
 
   // Add video tracks.
-  WebKit::WebVector<WebKit::WebMediaStreamTrack> video_tracks;
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
   web_stream->videoTracks(video_tracks);
   for (size_t i = 0; i < video_tracks.size(); ++i) {
     AddNativeMediaStreamTrack(*web_stream, video_tracks[i]);
@@ -374,7 +374,7 @@ void MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
 }
 
 void MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
-    WebKit::WebMediaStream* web_stream,
+    blink::WebMediaStream* web_stream,
     const MediaStreamExtraData::StreamStopCallback& stream_stop) {
   CreateNativeLocalMediaStream(web_stream);
 
@@ -383,15 +383,11 @@ void MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
   extra_data->SetLocalStreamStopCallback(stream_stop);
 }
 
-bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
-    const WebKit::WebMediaStream& stream,
-    const WebKit::WebMediaStreamTrack& track) {
-  MediaStreamExtraData* extra_data =
-     static_cast<MediaStreamExtraData*>(stream.extraData());
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
-  DCHECK(native_stream);
-
-  WebKit::WebMediaStreamSource source = track.source();
+scoped_refptr<webrtc::AudioTrackInterface>
+MediaStreamDependencyFactory::CreateNativeAudioMediaStreamTrack(
+    const blink::WebMediaStreamTrack& track) {
+  blink::WebMediaStreamSource source = track.source();
+  DCHECK_EQ(source.type(), blink::WebMediaStreamSource::TypeAudio);
   MediaStreamSourceExtraData* source_data =
       static_cast<MediaStreamSourceExtraData*>(source.extraData());
 
@@ -399,15 +395,9 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
   // right now they're on the source, so we fetch them from there.
   RTCMediaConstraints track_constraints(source.constraints());
 
-  WebKit::WebMediaStreamSource::Type type = track.source().type();
-  DCHECK(type == WebKit::WebMediaStreamSource::TypeAudio ||
-         type == WebKit::WebMediaStreamSource::TypeVideo);
-
-  if (type == WebKit::WebMediaStreamSource::TypeAudio) {
-    // Apply default audio constraints that enable echo cancellation,
-    // automatic gain control, noise suppression and high-pass filter.
-    ApplyFixedAudioConstraints(&track_constraints);
-  }
+  // Apply default audio constraints that enable echo cancellation,
+  // automatic gain control, noise suppression and high-pass filter.
+  ApplyFixedAudioConstraints(&track_constraints);
 
   scoped_refptr<WebAudioCapturerSource> webaudio_source;
   if (!source_data) {
@@ -421,43 +411,111 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
       // TODO(perkj): Implement support for sources from
       // remote MediaStreams.
       NOTIMPLEMENTED();
-      return false;
+      return NULL;
     }
   }
 
   std::string track_id = UTF16ToUTF8(track.id());
-  if (source.type() == WebKit::WebMediaStreamSource::TypeAudio) {
-    scoped_refptr<WebRtcAudioCapturer> capturer;
-    if (GetWebRtcAudioDevice())
-      capturer = GetWebRtcAudioDevice()->GetDefaultCapturer();
+  scoped_refptr<WebRtcAudioCapturer> capturer;
+  if (GetWebRtcAudioDevice())
+    capturer = GetWebRtcAudioDevice()->GetDefaultCapturer();
 
-    scoped_refptr<webrtc::AudioTrackInterface> audio_track(
-        CreateLocalAudioTrack(track_id,
-                              capturer,
-                              webaudio_source.get(),
-                              source_data->local_audio_source(),
-                              &track_constraints));
-    AddNativeTrackToBlinkTrack(audio_track.get(), track);
+  scoped_refptr<webrtc::AudioTrackInterface> audio_track(
+      CreateLocalAudioTrack(track_id,
+                            capturer,
+                            webaudio_source.get(),
+                            source_data->local_audio_source(),
+                            &track_constraints));
+  AddNativeTrackToBlinkTrack(audio_track.get(), track);
 
-    audio_track->set_enabled(track.isEnabled());
-    if (capturer.get()) {
-      WebKit::WebMediaStreamTrack writable_track = track;
-      writable_track.setSourceProvider(capturer->audio_source_provider());
-    }
-    return native_stream->AddTrack(audio_track.get());
-  } else {
-    DCHECK(source.type() == WebKit::WebMediaStreamSource::TypeVideo);
-    scoped_refptr<webrtc::VideoTrackInterface> video_track(
-        CreateLocalVideoTrack(track_id, source_data->video_source()));
-    AddNativeTrackToBlinkTrack(video_track.get(), track);
-    video_track->set_enabled(track.isEnabled());
-    return native_stream->AddTrack(video_track.get());
+  audio_track->set_enabled(track.isEnabled());
+
+  // Pass the pointer of the source provider to the blink audio track.
+  blink::WebMediaStreamTrack writable_track = track;
+  writable_track.setSourceProvider(static_cast<WebRtcLocalAudioTrack*>(
+      audio_track.get())->audio_source_provider());
+
+  return audio_track;
+}
+
+scoped_refptr<webrtc::VideoTrackInterface>
+MediaStreamDependencyFactory::CreateNativeVideoMediaStreamTrack(
+    const blink::WebMediaStreamTrack& track) {
+  blink::WebMediaStreamSource source = track.source();
+  DCHECK_EQ(source.type(), blink::WebMediaStreamSource::TypeVideo);
+  MediaStreamSourceExtraData* source_data =
+      static_cast<MediaStreamSourceExtraData*>(source.extraData());
+
+  if (!source_data) {
+    // TODO(perkj): Implement support for sources from
+    // remote MediaStreams.
+    NOTIMPLEMENTED();
+    return NULL;
   }
+
+  std::string track_id = UTF16ToUTF8(track.id());
+  scoped_refptr<webrtc::VideoTrackInterface> video_track(
+      CreateLocalVideoTrack(track_id, source_data->video_source()));
+  AddNativeTrackToBlinkTrack(video_track.get(), track);
+
+  video_track->set_enabled(track.isEnabled());
+
+  return video_track;
+}
+
+void MediaStreamDependencyFactory::CreateNativeMediaStreamTrack(
+    const blink::WebMediaStreamTrack& track) {
+  DCHECK(!track.isNull() && !track.extraData());
+  DCHECK(!track.source().isNull());
+
+  switch (track.source().type()) {
+    case blink::WebMediaStreamSource::TypeAudio:
+      CreateNativeAudioMediaStreamTrack(track);
+      break;
+    case blink::WebMediaStreamSource::TypeVideo:
+      CreateNativeVideoMediaStreamTrack(track);
+      break;
+  }
+}
+
+bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
+    const blink::WebMediaStream& stream,
+    const blink::WebMediaStreamTrack& track) {
+  webrtc::MediaStreamInterface* native_stream = GetNativeMediaStream(stream);
+  DCHECK(native_stream);
+
+  switch (track.source().type()) {
+    case blink::WebMediaStreamSource::TypeAudio: {
+      scoped_refptr<webrtc::AudioTrackInterface> native_audio_track;
+      if (!track.extraData()) {
+        native_audio_track = CreateNativeAudioMediaStreamTrack(track);
+      } else {
+        native_audio_track = static_cast<webrtc::AudioTrackInterface*>(
+            GetNativeMediaStreamTrack(track));
+      }
+
+      return native_audio_track.get() &&
+          native_stream->AddTrack(native_audio_track);
+    }
+    case blink::WebMediaStreamSource::TypeVideo: {
+      scoped_refptr<webrtc::VideoTrackInterface> native_video_track;
+      if (!track.extraData()) {
+        native_video_track = CreateNativeVideoMediaStreamTrack(track);
+      } else {
+        native_video_track = static_cast<webrtc::VideoTrackInterface*>(
+            GetNativeMediaStreamTrack(track));
+      }
+
+      return native_video_track.get() &&
+          native_stream->AddTrack(native_video_track);
+    }
+  }
+  return false;
 }
 
 bool MediaStreamDependencyFactory::AddNativeVideoMediaTrack(
     const std::string& track_id,
-    WebKit::WebMediaStream* stream,
+    blink::WebMediaStream* stream,
     cricket::VideoCapturer* capturer) {
   if (!stream) {
     LOG(ERROR) << "AddNativeVideoMediaTrack called with null WebMediaStream.";
@@ -469,18 +527,17 @@ bool MediaStreamDependencyFactory::AddNativeVideoMediaTrack(
       CreateLocalVideoTrack(track_id, capturer);
 
   // Add the native track to native stream
-  MediaStreamExtraData* extra_data =
-      static_cast<MediaStreamExtraData*>(stream->extraData());
-  DCHECK(extra_data);
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
+  webrtc::MediaStreamInterface* native_stream =
+      GetNativeMediaStream(*stream);
+  DCHECK(native_stream);
   native_stream->AddTrack(native_track.get());
 
   // Create a new webkit video track.
-  WebKit::WebMediaStreamTrack webkit_track;
-  WebKit::WebMediaStreamSource webkit_source;
-  WebKit::WebString webkit_track_id(UTF8ToUTF16(track_id));
-  WebKit::WebMediaStreamSource::Type type =
-      WebKit::WebMediaStreamSource::TypeVideo;
+  blink::WebMediaStreamTrack webkit_track;
+  blink::WebMediaStreamSource webkit_source;
+  blink::WebString webkit_track_id(UTF8ToUTF16(track_id));
+  blink::WebMediaStreamSource::Type type =
+      blink::WebMediaStreamSource::TypeVideo;
   webkit_source.initialize(webkit_track_id, type, webkit_track_id);
 
   webkit_track.initialize(webkit_track_id, webkit_source);
@@ -492,29 +549,22 @@ bool MediaStreamDependencyFactory::AddNativeVideoMediaTrack(
 }
 
 bool MediaStreamDependencyFactory::RemoveNativeMediaStreamTrack(
-    const WebKit::WebMediaStream& stream,
-    const WebKit::WebMediaStreamTrack& track) {
+    const blink::WebMediaStream& stream,
+    const blink::WebMediaStreamTrack& track) {
   MediaStreamExtraData* extra_data =
       static_cast<MediaStreamExtraData*>(stream.extraData());
   webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
   DCHECK(native_stream);
-
-  WebKit::WebMediaStreamSource::Type type = track.source().type();
-  DCHECK(type == WebKit::WebMediaStreamSource::TypeAudio ||
-         type == WebKit::WebMediaStreamSource::TypeVideo);
-
-  WebKit::WebMediaStreamTrack writable_track = track;
-  writable_track.setExtraData(NULL);
-
   std::string track_id = UTF16ToUTF8(track.id());
-  if (type == WebKit::WebMediaStreamSource::TypeAudio) {
-    // Remove the source provider as the track is going away.
-    writable_track.setSourceProvider(NULL);
-    return native_stream->RemoveTrack(native_stream->FindAudioTrack(track_id));
+  switch (track.source().type()) {
+    case blink::WebMediaStreamSource::TypeAudio:
+      return native_stream->RemoveTrack(
+          native_stream->FindAudioTrack(track_id));
+    case blink::WebMediaStreamSource::TypeVideo:
+      return native_stream->RemoveTrack(
+          native_stream->FindVideoTrack(track_id));
   }
-
-  CHECK_EQ(type, WebKit::WebMediaStreamSource::TypeVideo);
-  return native_stream->RemoveTrack(native_stream->FindVideoTrack(track_id));
+  return false;
 }
 
 bool MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
@@ -578,7 +628,7 @@ scoped_refptr<webrtc::PeerConnectionInterface>
 MediaStreamDependencyFactory::CreatePeerConnection(
     const webrtc::PeerConnectionInterface::IceServers& ice_servers,
     const webrtc::MediaConstraintsInterface* constraints,
-    WebKit::WebFrame* web_frame,
+    blink::WebFrame* web_frame,
     webrtc::PeerConnectionObserver* observer) {
   CHECK(web_frame);
   CHECK(observer);
@@ -631,7 +681,7 @@ MediaStreamDependencyFactory::CreateLocalVideoSource(
 
 scoped_refptr<WebAudioCapturerSource>
 MediaStreamDependencyFactory::CreateWebAudioSource(
-    WebKit::WebMediaStreamSource* source,
+    blink::WebMediaStreamSource* source,
     RTCMediaConstraints* constraints) {
   DVLOG(1) << "MediaStreamDependencyFactory::CreateWebAudioSource()";
   DCHECK(GetWebRtcAudioDevice());
@@ -861,15 +911,15 @@ MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
 
 void MediaStreamDependencyFactory::AddNativeTrackToBlinkTrack(
     webrtc::MediaStreamTrackInterface* native_track,
-    const WebKit::WebMediaStreamTrack& webkit_track) {
+    const blink::WebMediaStreamTrack& webkit_track) {
   DCHECK(!webkit_track.isNull() && !webkit_track.extraData());
-  WebKit::WebMediaStreamTrack track = webkit_track;
+  blink::WebMediaStreamTrack track = webkit_track;
   track.setExtraData(new MediaStreamTrackExtraData(native_track));
 }
 
 webrtc::MediaStreamInterface*
 MediaStreamDependencyFactory::GetNativeMediaStream(
-    const WebKit::WebMediaStream& stream) {
+    const blink::WebMediaStream& stream) {
   if (stream.isNull())
     return NULL;
   MediaStreamExtraData* extra_data =
@@ -879,7 +929,7 @@ MediaStreamDependencyFactory::GetNativeMediaStream(
 
 webrtc::MediaStreamTrackInterface*
 MediaStreamDependencyFactory::GetNativeMediaStreamTrack(
-      const WebKit::WebMediaStreamTrack& track) {
+      const blink::WebMediaStreamTrack& track) {
   if (track.isNull())
     return NULL;
   MediaStreamTrackExtraData* extra_data =

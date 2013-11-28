@@ -28,15 +28,17 @@ class AwContentRendererClient : public content::ContentRendererClient {
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain) OVERRIDE;
   virtual void GetNavigationErrorStrings(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& failed_request,
-      const WebKit::WebURLError& error,
+      blink::WebFrame* frame,
+      const blink::WebURLRequest& failed_request,
+      const blink::WebURLError& error,
       const std::string& accept_languages,
       std::string* error_html,
       string16* error_description) OVERRIDE;
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length) OVERRIDE;
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
+  virtual void AddKeySystems(
+      std::vector<content::KeySystemInfo>* key_systems) OVERRIDE;
 
  private:
   scoped_ptr<AwRenderProcessObserver> aw_render_process_observer_;

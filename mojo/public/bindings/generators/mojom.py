@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -104,8 +104,9 @@ class Method(object):
 
 
 class Interface(object):
-  def __init__(self, name = None):
+  def __init__(self, name = None, peer = None):
     self.name = name
+    self.peer = peer
     self.methods = []
 
   def AddMethod(self, name, ordinal = None):

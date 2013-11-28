@@ -11,16 +11,14 @@
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 #include "content/browser/indexed_db/indexed_db_metadata.h"
+#include "content/common/indexed_db/indexed_db_constants.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "webkit/browser/quota/quota_manager.h"
-
-using WebKit::WebIDBCallbacks;
 
 namespace content {
 
 namespace {
 const int32 kNoCursor = -1;
-const int32 kNoDatabase = -1;
 const int32 kNoDatabaseCallbacks = -1;
 const int64 kNoTransaction = -1;
 }
@@ -107,7 +105,7 @@ void IndexedDBCallbacks::OnUpgradeNeeded(
     int64 old_version,
     scoped_ptr<IndexedDBConnection> connection,
     const IndexedDBDatabaseMetadata& metadata,
-    WebIDBCallbacks::DataLoss data_loss,
+    blink::WebIDBDataLoss data_loss,
     std::string data_loss_message) {
   DCHECK(dispatcher_host_.get());
 
@@ -145,8 +143,9 @@ void IndexedDBCallbacks::OnSuccess(scoped_ptr<IndexedDBConnection> connection,
 
   scoped_refptr<IndexedDBCallbacks> self(this);
 
-  int32 ipc_object_id = ipc_database_id_;
-  if (ipc_object_id == kNoDatabase) {
+  int32 ipc_object_id = kNoDatabase;
+  // Only register if the connection was not previously sent in OnUpgradeNeeded.
+  if (ipc_database_id_ == kNoDatabase) {
     ipc_object_id = dispatcher_host_->Add(
         connection.release(), ipc_thread_id_, origin_url_);
   }

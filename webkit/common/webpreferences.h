@@ -5,7 +5,7 @@
 // A struct for managing webkit's settings.
 //
 // Adding new values to this class probably involves updating
-// WebKit::WebSettings, content/common/view_messages.h, browser/tab_contents/
+// blink::WebSettings, content/common/view_messages.h, browser/tab_contents/
 // render_view_host_delegate_helper.cc, and browser/profiles/profile.cc.
 
 #ifndef WEBKIT_COMMON_WEBPREFERENCES_H__
@@ -19,7 +19,7 @@
 #include "url/gurl.h"
 #include "webkit/common/webkit_common_export.h"
 
-namespace WebKit {
+namespace blink {
 class WebView;
 }
 
@@ -91,9 +91,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool caret_browsing_enabled;
   bool hyperlink_auditing_enabled;
   bool is_online;
-  bool user_style_sheet_enabled;
-  GURL user_style_sheet_location;
-  bool author_and_user_styles_enabled;
   bool allow_universal_access_from_file_urls;
   bool allow_file_access_from_file_urls;
   bool webaudio_enabled;
@@ -109,6 +106,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool accelerated_compositing_for_scrollable_frames_enabled;
   bool composited_scrolling_for_frames_enabled;
   bool mock_scrollbars_enabled;
+  bool layer_squashing_enabled;
   bool threaded_html_parser;
   bool show_paint_rects;
   bool asynchronous_spell_checking_enabled;
@@ -149,6 +147,8 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   webkit_glue::EditingBehavior editing_behavior;
   bool supports_multiple_windows;
   bool viewport_enabled;
+  bool viewport_meta_enabled;
+  bool main_frame_resizes_are_orientation_changes;
   bool initialize_at_minimum_page_scale;
   bool smart_insert_delete_enabled;
   bool spatial_navigation_enabled;
@@ -180,7 +180,9 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool use_wide_viewport;
   bool viewport_meta_layout_size_quirk;
   bool viewport_meta_merge_content_quirk;
+  bool viewport_meta_non_user_scalable_quirk;
   bool viewport_meta_zero_values_quirk;
+  bool clobber_user_agent_initial_scale_quirk;
   bool ignore_main_frame_overflow_hidden_quirk;
   bool report_screen_size_in_physical_pixels_quirk;
 #endif

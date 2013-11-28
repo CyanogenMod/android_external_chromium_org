@@ -8,20 +8,17 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
-#include "chromeos/dbus/ibus/ibus_engine_factory_service.h"
-#include "chromeos/dbus/ibus/ibus_engine_service.h"
-#include "chromeos/ime/ibus_bridge.h"
-#include "dbus/object_path.h"
+#include "ui/base/ime/chromeos/ibus_bridge.h"
 
 namespace chromeos {
 
-class IBusComponent;
 class IBusText;
 
-class IBusEngineService;
 namespace input_method {
 class CandidateWindow;
+struct InputMethodProperty;
 struct KeyEventHandle;
 }  // namespace input_method
 
@@ -41,6 +38,7 @@ class InputMethodEngineIBus : public InputMethodEngine,
       const std::vector<std::string>& languages,
       const std::vector<std::string>& layouts,
       const GURL& options_page,
+      const GURL& input_view,
       std::string* error);
 
   // InputMethodEngine overrides.
@@ -79,14 +77,12 @@ class InputMethodEngineIBus : public InputMethodEngine,
                                      std::string* error) OVERRIDE;
 
   // IBusEngineHandlerInterface overrides.
-  virtual void FocusIn(ibus::TextInputType text_input_type) OVERRIDE;
+  virtual void FocusIn(
+      const IBusEngineHandlerInterface::InputContext& input_context) OVERRIDE;
   virtual void FocusOut() OVERRIDE;
   virtual void Enable() OVERRIDE;
   virtual void Disable() OVERRIDE;
   virtual void PropertyActivate(const std::string& property_name) OVERRIDE;
-  virtual void PropertyShow(const std::string& property_name) OVERRIDE;
-  virtual void PropertyHide(const std::string& property_name) OVERRIDE;
-  virtual void SetCapability(IBusCapability capability) OVERRIDE;
   virtual void Reset() OVERRIDE;
   virtual void ProcessKeyEvent(uint32 keysym, uint32 keycode, uint32 state,
                                const KeyEventDoneCallback& callback) OVERRIDE;
@@ -95,16 +91,7 @@ class InputMethodEngineIBus : public InputMethodEngine,
   virtual void SetSurroundingText(const std::string& text, uint32 cursor_pos,
                                   uint32 anchor_pos) OVERRIDE;
 
-  // Called when the connection with ibus-daemon is connected.
-  void OnConnected();
-
-  // Called whtn the connection with ibus-daemon is disconnected.
-  void OnDisconnected();
-
  private:
-  // Returns true if the connection to ibus-daemon is avaiable.
-  bool IsConnected();
-
   // Converts MenuItem to InputMethodProperty.
   void MenuItemToProperty(const MenuItem& item,
                           input_method::InputMethodProperty* property);
@@ -112,20 +99,9 @@ class InputMethodEngineIBus : public InputMethodEngine,
   // Registers the engine component.
   void RegisterComponent();
 
-  // Called when the RegisterComponent is failed.
-  void OnComponentRegistrationFailed();
-
-  // Called when the RegisterComponent is succeeded.
-  void OnComponentRegistered();
-
-  // Called when the ibus-daemon sends CreateEngine message with corresponding
-  // engine id.
-  void CreateEngineHandler(
-      const IBusEngineFactoryService::CreateEngineResponseSender& sender);
-
-  // Returns current IBusEngineService, if there is no available service, this
-  // function returns NULL.
-  IBusEngineService* GetCurrentService();
+  // Called when the IBusBrige executes CreateEngine with
+  // corresponding engine id.
+  void CreateEngineHandler();
 
   // True if the current context has focus.
   bool focused_;
@@ -145,9 +121,6 @@ class InputMethodEngineIBus : public InputMethodEngine,
   // This IME ID in ibus.
   std::string ibus_id_;
 
-  // The current object path.
-  dbus::ObjectPath object_path_;
-
   // The current auxialy text and it's visiblity.
   scoped_ptr<IBusText> aux_text_;
   bool aux_text_visible_;
@@ -158,9 +131,6 @@ class InputMethodEngineIBus : public InputMethodEngine,
   // The current preedit text, and it's cursor position.
   scoped_ptr<IBusText> preedit_text_;
   int preedit_cursor_;
-
-  // The current engine component.
-  scoped_ptr<IBusComponent> component_;
 
   // The current candidate window.
   scoped_ptr<input_method::CandidateWindow> candidate_window_;

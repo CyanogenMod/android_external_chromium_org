@@ -71,7 +71,7 @@ class ContentProvider(object):
       content = text
     return ContentAndType(content, mimetype)
 
-  def GetContentAndType(self, host, path):
+  def GetContentAndType(self, path):
     path = path.lstrip('/')
     base, ext = os.path.splitext(path)
 
@@ -84,5 +84,11 @@ class ContentProvider(object):
     return self._content_cache.GetFromFile(path, binary=True)
 
   def Cron(self):
-    # TODO(kalman): Implement.
-    pass
+    # Running Refresh() on the file system is enough to pull GitHub content,
+    # which is all we need for now while the full render-every-page cron step
+    # is in effect.
+    # TODO(kalman): Walk over the whole filesystem and compile the content.
+    return self.file_system.Refresh()
+
+  def __repr__(self):
+    return 'ContentProvider of <%s>' % repr(self.file_system)

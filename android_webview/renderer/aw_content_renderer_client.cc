@@ -6,6 +6,7 @@
 
 #include "android_webview/common/aw_resource.h"
 #include "android_webview/common/url_constants.h"
+#include "android_webview/renderer/aw_key_systems.h"
 #include "android_webview/renderer/aw_render_view_ext.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,13 +31,13 @@ AwContentRendererClient::~AwContentRendererClient() {
 }
 
 void AwContentRendererClient::RenderThreadStarted() {
-  WebKit::WebString content_scheme(
+  blink::WebString content_scheme(
       ASCIIToUTF16(android_webview::kContentScheme));
-  WebKit::WebSecurityPolicy::registerURLSchemeAsLocal(content_scheme);
+  blink::WebSecurityPolicy::registerURLSchemeAsLocal(content_scheme);
 
-  WebKit::WebString aw_scheme(
+  blink::WebString aw_scheme(
       ASCIIToUTF16(android_webview::kAndroidWebViewVideoPosterScheme));
-  WebKit::WebSecurityPolicy::registerURLSchemeAsSecure(aw_scheme);
+  blink::WebSecurityPolicy::registerURLSchemeAsSecure(aw_scheme);
 
   content::RenderThread* thread = content::RenderThread::Get();
 
@@ -68,9 +69,9 @@ bool AwContentRendererClient::HasErrorPage(int http_status_code,
 }
 
 void AwContentRendererClient::GetNavigationErrorStrings(
-    WebKit::WebFrame* /* frame */,
-    const WebKit::WebURLRequest& failed_request,
-    const WebKit::WebURLError& error,
+    blink::WebFrame* /* frame */,
+    const blink::WebURLRequest& failed_request,
+    const blink::WebURLError& error,
     const std::string& accept_languages,
     std::string* error_html,
     string16* error_description) {
@@ -105,6 +106,11 @@ unsigned long long AwContentRendererClient::VisitedLinkHash(
 
 bool AwContentRendererClient::IsLinkVisited(unsigned long long link_hash) {
   return visited_link_slave_->IsVisited(link_hash);
+}
+
+void AwContentRendererClient::AddKeySystems(
+    std::vector<content::KeySystemInfo>* key_systems) {
+  AwAddKeySystems(key_systems);
 }
 
 }  // namespace android_webview

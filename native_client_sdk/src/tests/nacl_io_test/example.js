@@ -44,9 +44,8 @@ function endCommand(testName, testResult) {
   testResultEl.textContent = testResult;
 }
 
-function testendCommand() {
+function testendCommand(exitCode) {
   testsFinished = true;
-  common.removeModule();
 
   if (failedTests) {
     common.updateStatus('FAILED');

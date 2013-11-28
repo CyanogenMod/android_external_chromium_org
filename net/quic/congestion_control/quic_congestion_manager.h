@@ -16,6 +16,9 @@
 #include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_protocol.h"
 
+NET_EXPORT_PRIVATE extern bool FLAGS_limit_rto_increase_for_tests;
+NET_EXPORT_PRIVATE extern bool FLAGS_enable_quic_pacing;
+
 namespace net {
 
 namespace test {
@@ -34,9 +37,13 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
 
   virtual void SetFromConfig(const QuicConfig& config, bool is_server);
 
+  virtual void SetMaxPacketSize(QuicByteCount max_packet_size);
+
   // Called when we have received an ack frame from peer.
-  virtual void OnIncomingAckFrame(const QuicAckFrame& frame,
-                                  QuicTime ack_receive_time);
+  // Returns a set containing all the sequence numbers to be nack retransmitted
+  // as a result of the ack.
+  virtual SequenceNumberSet OnIncomingAckFrame(const QuicAckFrame& frame,
+                                               QuicTime ack_receive_time);
 
   // Called when a congestion feedback frame is received from peer.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
@@ -51,7 +58,15 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
                             TransmissionType transmission_type,
                             HasRetransmittableData has_retransmittable_data);
 
-  // Called when a packet is timed out.
+  // Called when the retransmission timer expires.
+  virtual void OnRetransmissionTimeout();
+
+  // Called when the least unacked sequence number increases, indicating the
+  // consecutive rto count should be reset to 0.
+  virtual void OnLeastUnackedIncreased();
+
+  // Called when a packet is timed out, such as an RTO.  Removes the bytes from
+  // the congestion manager, but does not change the congestion window size.
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number);
 
   // Calculate the time until we can send the next packet to the wire.
@@ -87,41 +102,48 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
   // Returns amount of time for delayed ack timer.
   const QuicTime::Delta DelayedAckTime();
 
-  const QuicTime::Delta GetRetransmissionDelay(
-      size_t unacked_packets_count,
-      size_t number_retransmissions);
+  // Returns the current RTO delay.
+  const QuicTime::Delta GetRetransmissionDelay() const;
 
   // Returns the estimated smoothed RTT calculated by the congestion algorithm.
-  const QuicTime::Delta SmoothedRtt();
+  const QuicTime::Delta SmoothedRtt() const;
 
   // Returns the estimated bandwidth calculated by the congestion algorithm.
-  QuicBandwidth BandwidthEstimate();
+  QuicBandwidth BandwidthEstimate() const;
 
-  // Returns the size of the current congestion window.  Note, this
-  // is not the *available* window.  Some send algorithms may not use a
-  // congestion window and will return 0.
-  QuicByteCount GetCongestionWindow();
+  // Returns the size of the current congestion window in bytes.  Note, this is
+  // not the *available* window.  Some send algorithms may not use a congestion
+  // window and will return 0.
+  QuicByteCount GetCongestionWindow() const;
 
   // Sets the value of the current congestion window to |window|.
   void SetCongestionWindow(QuicByteCount window);
 
+  // Enables pacing if it has not already been enabled, and if
+  // FLAGS_enable_quic_pacing is set.
+  void MaybeEnablePacing();
+
+  bool using_pacing() const { return using_pacing_; }
+
  private:
   friend class test::QuicConnectionPeer;
   friend class test::QuicCongestionManagerPeer;
-  typedef std::map<QuicPacketSequenceNumber, size_t> PendingPacketsMap;
-
-  // Get the current(last) rtt. Infinite is returned if invalid.
-  const QuicTime::Delta rtt();
 
   void CleanupPacketHistory();
 
   const QuicClock* clock_;
   scoped_ptr<ReceiveAlgorithmInterface> receive_algorithm_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
+  // Tracks the send time, size, and nack count of sent packets.  Packets are
+  // removed after 5 seconds and they've been removed from pending_packets_.
   SendAlgorithmInterface::SentPacketsMap packet_history_map_;
-  PendingPacketsMap pending_packets_;
+  // Packets that are outstanding and have not been abandoned or lost.
+  SequenceNumberSet pending_packets_;
   QuicPacketSequenceNumber largest_missing_;
-  QuicTime::Delta current_rtt_;
+  QuicTime::Delta rtt_sample_;  // RTT estimate from the most recent ACK.
+  // Number of times the RTO timer has fired in a row without receiving an ack.
+  size_t consecutive_rto_count_;
+  bool using_pacing_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCongestionManager);
 };

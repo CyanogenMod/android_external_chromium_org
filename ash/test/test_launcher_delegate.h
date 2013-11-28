@@ -14,7 +14,7 @@
 
 namespace ash {
 
-class LauncherModel;
+class ShelfModel;
 
 namespace test {
 
@@ -23,7 +23,7 @@ namespace test {
 class TestLauncherDelegate : public LauncherDelegate,
                              public aura::WindowObserver {
  public:
-  explicit TestLauncherDelegate(LauncherModel* model);
+  explicit TestLauncherDelegate(ShelfModel* model);
   virtual ~TestLauncherDelegate();
 
   void AddLauncherItem(aura::Window* window);
@@ -38,7 +38,6 @@ class TestLauncherDelegate : public LauncherDelegate,
       const HierarchyChangeParams& params) OVERRIDE;
 
   // LauncherDelegate implementation.
-  virtual ash::LauncherID GetIDByWindow(aura::Window* window) OVERRIDE;
   virtual void OnLauncherCreated(Launcher* launcher) OVERRIDE;
   virtual void OnLauncherDestroyed(Launcher* launcher) OVERRIDE;
   virtual LauncherID GetLauncherIDForAppID(const std::string& app_id) OVERRIDE;
@@ -49,15 +48,9 @@ class TestLauncherDelegate : public LauncherDelegate,
   virtual void UnpinAppWithID(const std::string& app_id) OVERRIDE;
 
  private:
-  typedef std::map<aura::Window*, ash::LauncherID> WindowToID;
-  typedef std::set<aura::Window*> ObservedWindows;
-
   static TestLauncherDelegate* instance_;
 
-  LauncherModel* model_;
-
-  // Maps from window to the id we gave it.
-  WindowToID window_to_id_;
+  ShelfModel* model_;
 
   DISALLOW_COPY_AND_ASSIGN(TestLauncherDelegate);
 };

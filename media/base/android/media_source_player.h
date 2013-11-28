@@ -100,14 +100,18 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // Handle pending events when all the decoder jobs finished.
   void ProcessPendingEvents();
 
-  // Helper method to configure the decoder jobs.
+  // Helper method to clear any pending |SURFACE_CHANGE_EVENT_PENDING|
+  // and reset |video_decoder_job_| to null.
+  void ResetVideoDecoderJob();
+
+  // Helper methods to configure the decoder jobs.
   void ConfigureVideoDecoderJob();
   void ConfigureAudioDecoderJob();
 
   // Flush the decoders and clean up all the data needs to be decoded.
   void ClearDecodingData();
 
-  // Called to decoder more data.
+  // Called to decode more data.
   void DecodeMoreAudio();
   void DecodeMoreVideo();
 

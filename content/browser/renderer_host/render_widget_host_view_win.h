@@ -25,7 +25,6 @@
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_bridge.h"
-#include "ui/base/win/extra_sdk_defines.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/native_widget_types.h"
@@ -49,7 +48,7 @@ class IMM32Manager;
 class ViewProp;
 }
 
-namespace WebKit {
+namespace blink {
 struct WebScreenInfo;
 }
 
@@ -215,13 +214,15 @@ class RenderWidgetHostViewWin
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
+  virtual void AcceleratedSurfaceInitialized(int host_id,
+                                             int route_id) OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE;
@@ -291,6 +292,9 @@ class RenderWidgetHostViewWin
       base::i18n::TextDirection direction) OVERRIDE;
   virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void OnCandidateWindowShown() OVERRIDE;
+  virtual void OnCandidateWindowUpdated() OVERRIDE;
+  virtual void OnCandidateWindowHidden() OVERRIDE;
 
  protected:
   friend class RenderWidgetHostView;
@@ -579,12 +583,11 @@ class RenderWidgetHostViewWin
   // A cached latest caret rectangle sent from renderer.
   gfx::Rect caret_rect_;
 
-  // TODO(ananta)
-  // The WM_POINTERDOWN and touch related members should be moved to an
+  // TODO(ananta): The pointer and touch related members should be moved to an
   // independent class to reduce the clutter. This includes members
-  // pointer_down_context_ and last_touch_location_;
+  // pointer_down_context_ and last_touch_location_.
 
-  // Set to true if we are in the context of a WM_POINTERDOWN message
+  // Set to true if we are in the context of a pointer down message.
   bool pointer_down_context_;
 
   // The global x, y coordinates of the last point a touch event was

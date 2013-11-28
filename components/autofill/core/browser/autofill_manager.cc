@@ -43,7 +43,6 @@
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/user_prefs/pref_registry_syncable.h"
-#include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/component_strings.h"
@@ -58,7 +57,7 @@ typedef PersonalDataManager::GUIDPair GUIDPair;
 
 using base::TimeTicks;
 using content::RenderViewHost;
-using WebKit::WebFormElement;
+using blink::WebFormElement;
 
 namespace {
 
@@ -166,16 +165,6 @@ void DeterminePossibleFieldTypesForUpload(
   }
 }
 
-// Returns true if server returned known field types to one or more fields in
-// this form.
-bool HasServerSpecifiedFieldTypes(const FormStructure& form_structure) {
-  for (size_t i = 0; i < form_structure.field_count(); ++i) {
-    if (form_structure.field(i)->server_type() != NO_SERVER_DATA)
-      return true;
-  }
-  return false;
-}
-
 }  // namespace
 
 AutofillManager::AutofillManager(
@@ -201,8 +190,9 @@ AutofillManager::AutofillManager(
       weak_ptr_factory_(this) {
   if (enable_download_manager == ENABLE_AUTOFILL_DOWNLOAD_MANAGER) {
     download_manager_.reset(
-        new AutofillDownloadManager(
-            driver->GetWebContents()->GetBrowserContext(), this));
+        new AutofillDownloadManager(driver,
+                                    manager_delegate_->GetPrefs(),
+                                    this));
   }
 }
 
@@ -416,7 +406,7 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
         labels.assign(1, base::string16());
         icons.assign(1, base::string16());
         unique_ids.assign(1,
-                          WebKit::WebAutofillClient::MenuItemIDWarningMessage);
+                          blink::WebAutofillClient::MenuItemIDWarningMessage);
       } else {
         bool section_is_autofilled =
             SectionIsAutofilled(*form_structure, form,
@@ -705,7 +695,7 @@ bool AutofillManager::IsAutofillEnabled() const {
 }
 
 void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
-  const CreditCard* imported_credit_card;
+  scoped_ptr<CreditCard> imported_credit_card;
   if (!personal_data_->ImportFormData(submitted_form, &imported_credit_card))
     return;
 
@@ -714,7 +704,6 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
   if (imported_credit_card) {
     manager_delegate_->ConfirmSaveCreditCard(
         *metric_logger_,
-        *imported_credit_card,
         base::Bind(
             base::IgnoreResult(&PersonalDataManager::SaveImportedCreditCard),
             base::Unretained(personal_data_), *imported_credit_card));
@@ -1168,7 +1157,7 @@ bool AutofillManager::ShouldUploadForm(const FormStructure& form) {
   if (!IsAutofillEnabled())
     return false;
 
-  if (driver_->GetWebContents()->GetBrowserContext()->IsOffTheRecord())
+  if (driver_->IsOffTheRecord())
     return false;
 
   // Disregard forms that we wouldn't ever autofill in the first place.

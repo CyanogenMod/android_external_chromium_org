@@ -15,14 +15,13 @@
 #include "base/sequenced_task_runner.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_bundle.h"
-#include "chrome/browser/policy/policy_domain_descriptor.h"
 #include "chrome/browser/policy/policy_load_status.h"
-#include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/preferences_mac.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_bundle.h"
+#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/schema.h"
-#include "policy/policy_constants.h"
+#include "components/policy/core/common/schema_map.h"
 
 using base::mac::CFCast;
 using base::ScopedCFTypeRef;
@@ -61,11 +60,9 @@ void ArrayEntryToValue(const void* value, void* context) {
 
 PolicyLoaderMac::PolicyLoaderMac(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const PolicyDefinitionList* policy_list,
     const base::FilePath& managed_policy_path,
     MacPreferences* preferences)
     : AsyncPolicyLoader(task_runner),
-      policy_list_(policy_list),
       preferences_(preferences),
       managed_policy_path_(managed_policy_path) {}
 
@@ -84,17 +81,17 @@ scoped_ptr<PolicyBundle> PolicyLoaderMac::Load() {
   scoped_ptr<PolicyBundle> bundle(new PolicyBundle());
 
   // Load Chrome's policy.
-  // TODO(joaodasilva): use a schema for Chrome once it's generated and
-  // available from a PolicyDomainDescriptor.
   PolicyMap& chrome_policy =
       bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
 
   PolicyLoadStatusSample status;
   bool policy_present = false;
-  const PolicyDefinitionList::Entry* current;
-  for (current = policy_list_->begin; current != policy_list_->end; ++current) {
+  const Schema* schema =
+      schema_map()->GetSchema(PolicyNamespace(POLICY_DOMAIN_CHROME, ""));
+  for (Schema::Iterator it = schema->GetPropertiesIterator();
+       !it.IsAtEnd(); it.Advance()) {
     base::ScopedCFTypeRef<CFStringRef> name(
-        base::SysUTF8ToCFStringRef(current->name));
+        base::SysUTF8ToCFStringRef(it.key()));
     base::ScopedCFTypeRef<CFPropertyListRef> value(
         preferences_->CopyAppValue(name, kCFPreferencesCurrentApplication));
     if (!value.get())
@@ -107,7 +104,7 @@ scoped_ptr<PolicyBundle> PolicyLoaderMac::Load() {
     // TODO(joaodasilva): figure the policy scope.
     base::Value* policy = CreateValueFromProperty(value);
     if (policy)
-      chrome_policy.Set(current->name, level, POLICY_SCOPE_USER, policy, NULL);
+      chrome_policy.Set(it.key(), level, POLICY_SCOPE_USER, policy, NULL);
     else
       status.Add(POLICY_LOAD_STATUS_PARSE_ERROR);
   }
@@ -116,20 +113,7 @@ scoped_ptr<PolicyBundle> PolicyLoaderMac::Load() {
     status.Add(POLICY_LOAD_STATUS_NO_POLICY);
 
   // Load policy for the registered components.
-  static const struct {
-    PolicyDomain domain;
-    const char* domain_name;
-  } kSupportedDomains[] = {
-    { POLICY_DOMAIN_EXTENSIONS, "extensions" },
-  };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kSupportedDomains); ++i) {
-    DescriptorMap::const_iterator it =
-        descriptor_map().find(kSupportedDomains[i].domain);
-    if (it != descriptor_map().end()) {
-      LoadPolicyForDomain(
-          it->second, kSupportedDomains[i].domain_name, bundle.get());
-    }
-  }
+  LoadPolicyForDomain(POLICY_DOMAIN_EXTENSIONS, "extensions", bundle.get());
 
   return bundle.Pass();
 }
@@ -189,30 +173,30 @@ base::Value* PolicyLoaderMac::CreateValueFromProperty(
 }
 
 void PolicyLoaderMac::LoadPolicyForDomain(
-    scoped_refptr<const PolicyDomainDescriptor> descriptor,
+    PolicyDomain domain,
     const std::string& domain_name,
     PolicyBundle* bundle) {
   std::string id_prefix(base::mac::BaseBundleID());
   id_prefix.append(".").append(domain_name).append(".");
 
-  for (PolicyDomainDescriptor::SchemaMap::const_iterator it_schema =
-           descriptor->components().begin();
-       it_schema != descriptor->components().end(); ++it_schema) {
+  const ComponentMap* components = schema_map()->GetComponents(domain);
+  if (!components)
+    return;
+
+  for (ComponentMap::const_iterator it = components->begin();
+       it != components->end(); ++it) {
     PolicyMap policy;
-    LoadPolicyForComponent(
-        id_prefix + it_schema->first, it_schema->second, &policy);
-    if (!policy.empty()) {
-      bundle->Get(PolicyNamespace(descriptor->domain(), it_schema->first))
-          .Swap(&policy);
-    }
+    LoadPolicyForComponent(id_prefix + it->first, it->second, &policy);
+    if (!policy.empty())
+      bundle->Get(PolicyNamespace(domain, it->first)).Swap(&policy);
   }
 }
 
 void PolicyLoaderMac::LoadPolicyForComponent(
     const std::string& bundle_id_string,
-    Schema schema,
+    const Schema& schema,
     PolicyMap* policy) {
-  // TODO(joaodasilva): extensions may be registered in a PolicyDomainDescriptor
+  // TODO(joaodasilva): Extensions may be registered in a ComponentMap
   // without a schema, to allow a graceful update of the Legacy Browser Support
   // extension on Windows. Remove this check once that support is removed.
   if (!schema.valid())

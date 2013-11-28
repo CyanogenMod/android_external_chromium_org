@@ -6,13 +6,13 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/options/options_ui_browsertest.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -27,7 +27,6 @@
 #include "crypto/nss_util.h"
 #endif
 
-using testing::AnyNumber;
 using testing::Return;
 using testing::_;
 
@@ -44,7 +43,6 @@ class CertificateManagerBrowserTest : public options::OptionsUIBrowserTest {
     // Setup the policy provider for injecting certs through ONC policy.
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
 

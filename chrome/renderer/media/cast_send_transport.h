@@ -10,25 +10,22 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-
-namespace WebKit {
-class WebMediaStreamTrack;
-}  // namespace WebKit
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 
 class CastSession;
 class CastUdpTransport;
 
 // A key value pair structure for codec specific parameters.
-struct CastCodecSpecificParam {
+struct CastCodecSpecificParams {
   std::string key;
   std::string value;
 
-  CastCodecSpecificParam();
-  ~CastCodecSpecificParam();
+  CastCodecSpecificParams();
+  ~CastCodecSpecificParams();
 };
 
 // Defines the basic properties of a payload supported by cast transport.
-struct CastRtpPayloadParam {
+struct CastRtpPayloadParams {
   // RTP specific field that identifies the content type.
   int payload_type;
 
@@ -38,8 +35,11 @@ struct CastRtpPayloadParam {
   // Update frequency of payload sample.
   int clock_rate;
 
-  // Uncompressed bitrate.
-  int bitrate;
+  // Maximum bitrate.
+  int max_bitrate;
+
+  // Minimum bitrate.
+  int min_bitrate;
 
   // Number of audio channels.
   int channels;
@@ -52,22 +52,22 @@ struct CastRtpPayloadParam {
   std::string codec_name;
 
   // List of codec specific parameters.
-  std::vector<CastCodecSpecificParam> codec_specific_params;
+  std::vector<CastCodecSpecificParams> codec_specific_params;
 
-  CastRtpPayloadParam();
-  ~CastRtpPayloadParam();
+  CastRtpPayloadParams();
+  ~CastRtpPayloadParams();
 };
 
 // Defines the capabilities of the transport.
 struct CastRtpCaps {
   // Defines a list of supported payloads.
-  std::vector<CastRtpPayloadParam> payloads;
+  std::vector<CastRtpPayloadParams> payloads;
 
   // Names of supported RTCP features.
   std::vector<std::string> rtcp_features;
 
   // Names of supported FEC (Forward Error Correction) mechanisms.
-  std::vector<std::string> fec_mechanism;
+  std::vector<std::string> fec_mechanisms;
 
   CastRtpCaps();
   ~CastRtpCaps();
@@ -81,31 +81,31 @@ typedef CastRtpCaps CastRtpParams;
 // stream.
 class CastSendTransport {
  public:
-  explicit CastSendTransport(CastUdpTransport* udp_transport);
+  CastSendTransport(CastUdpTransport* udp_transport,
+                    const blink::WebMediaStreamTrack& track);
   ~CastSendTransport();
 
-  // Return capabilities currently spported by this transport.
+  // Return capabilities currently supported by this transport.
   CastRtpCaps GetCaps();
 
   // Return parameters set to this transport.
   CastRtpParams GetParams();
 
-  // Return the best parameters given the capabilities of remote peer.
-  CastRtpParams CreateParams(CastRtpCaps remote_caps);
-
-  // Begin encoding of media stream from |audio_track| and |video_track|
-  // and then submit the encoded streams to underlying transport.
-  // Either stream can be NULL but it is invalid for both streams to be
-  // NULL.
-  void Start(WebKit::WebMediaStreamTrack* audio_track,
-             WebKit::WebMediaStreamTrack* video_track,
-             CastRtpParams params);
+  // Begin encoding of media stream and then submit the encoded streams
+  // to underlying transport.
+  void Start(const CastRtpParams& params);
 
   // Stop encoding.
   void Stop();
 
  private:
+  // Return true if this track is an audio track. Return false if this
+  // track is a video track.
+  bool IsAudio() const;
+
   const scoped_refptr<CastSession> cast_session_;
+  blink::WebMediaStreamTrack track_;
+  CastRtpParams params_;
 
   DISALLOW_COPY_AND_ASSIGN(CastSendTransport);
 };

@@ -42,10 +42,6 @@ GFX_EXPORT extern const char16 kEllipsisUTF16[];
 GFX_EXPORT string16 ElideEmail(const string16& email,
                                const gfx::FontList& font_list,
                                float available_pixel_width);
-// Obsolete version.  Use the above version which takes gfx::FontList.
-GFX_EXPORT string16 ElideEmail(const string16& email,
-                               const gfx::Font& font,
-                               float available_pixel_width);
 
 // This function takes a GURL object and elides it. It returns a string
 // which composed of parts from subdomain, domain, path, filename and query.
@@ -63,11 +59,6 @@ GFX_EXPORT string16 ElideEmail(const string16& email,
 // http://crbug.com/6487 for more information.
 GFX_EXPORT string16 ElideUrl(const GURL& url,
                              const gfx::FontList& font_list,
-                             float available_pixel_width,
-                             const std::string& languages);
-// Obsolete version.  Use the above version which takes gfx::FontList.
-GFX_EXPORT string16 ElideUrl(const GURL& url,
-                             const gfx::Font& font,
                              float available_pixel_width,
                              const std::string& languages);
 
@@ -100,10 +91,6 @@ GFX_EXPORT string16 ElideText(const string16& text,
 // PDF (Pop Directional Formatting) mark.
 GFX_EXPORT string16 ElideFilename(const base::FilePath& filename,
                                   const gfx::FontList& font_list,
-                                  float available_pixel_width);
-// Obsolete version.  Use the above version which takes gfx::FontList.
-GFX_EXPORT string16 ElideFilename(const base::FilePath& filename,
-                                  const gfx::Font& font,
                                   float available_pixel_width);
 
 // SortedDisplayURL maintains a string from a URL suitable for display to the
@@ -208,13 +195,6 @@ enum ReformattingResultFlags {
 // leading to elision or truncation (and not just reformatting).
 GFX_EXPORT int ElideRectangleText(const string16& text,
                                   const gfx::FontList& font_list,
-                                  float available_pixel_width,
-                                  int available_pixel_height,
-                                  WordWrapBehavior wrap_behavior,
-                                  std::vector<string16>* lines);
-// Obsolete version.  Use the above version which takes gfx::FontList.
-GFX_EXPORT int ElideRectangleText(const string16& text,
-                                  const gfx::Font& font,
                                   float available_pixel_width,
                                   int available_pixel_height,
                                   WordWrapBehavior wrap_behavior,

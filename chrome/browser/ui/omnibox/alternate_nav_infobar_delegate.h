@@ -7,14 +7,17 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
-#include "url/gurl.h"
 
 class AlternateNavInfoBarDelegate : public InfoBarDelegate {
  public:
-  // Creates an alternate nav infobar delegate and adds it to |infobar_service|.
-  static void Create(InfoBarService* infobar_service,
-                     const GURL& alternate_nav_url);
+  // Creates an alternate nav infobar delegate and adds it to the infobar
+  // service for |web_contents|.
+  static void Create(content::WebContents* web_contents,
+                     const string16& text,
+                     const AutocompleteMatch& match,
+                     const GURL& search_url);
 
   string16 GetMessageTextWithOffset(size_t* link_offset) const;
   string16 GetLinkText() const;
@@ -22,7 +25,10 @@ class AlternateNavInfoBarDelegate : public InfoBarDelegate {
 
  private:
   AlternateNavInfoBarDelegate(InfoBarService* owner,
-                              const GURL& alternate_nav_url);
+                              Profile* profile,
+                              const string16& text,
+                              const AutocompleteMatch& match,
+                              const GURL& search_url);
   virtual ~AlternateNavInfoBarDelegate();
 
   // InfoBarDelegate:
@@ -30,7 +36,10 @@ class AlternateNavInfoBarDelegate : public InfoBarDelegate {
   virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
 
-  GURL alternate_nav_url_;
+  Profile* profile_;
+  const string16 text_;
+  const AutocompleteMatch match_;
+  const GURL search_url_;
 
   DISALLOW_COPY_AND_ASSIGN(AlternateNavInfoBarDelegate);
 };

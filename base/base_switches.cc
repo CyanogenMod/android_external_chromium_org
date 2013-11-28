@@ -54,4 +54,19 @@ const char kWaitForDebugger[]               = "wait-for-debugger";
 // Sends a pretty-printed version of tracing info to the console.
 const char kTraceToConsole[]                = "trace-to-console";
 
+#if defined(OS_POSIX)
+// Used for turning on Breakpad crash reporting in a debug environment where
+// crash reporting is typically compiled but disabled.
+const char kEnableCrashReporterForTesting[] =
+    "enable-crash-reporter-for-testing";
+#endif
+
+#if defined(OS_ANDROID)
+// Overrides low-end device detection, disabling low-end device optimizations.
+const char kDisableLowEndDeviceMode[]       = "disable-low-end-device-mode";
+
+// Overrides low-end device detection, enabling low-end device optimizations.
+const char kEnableLowEndDeviceMode[]        = "enable-low-end-device-mode";
+#endif
+
 }  // namespace switches

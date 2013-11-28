@@ -17,14 +17,14 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 
 namespace extensions {
 

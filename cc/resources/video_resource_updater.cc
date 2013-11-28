@@ -77,8 +77,7 @@ bool VideoResourceUpdater::VerifyFrame(
 
     // Unacceptable inputs. ¯\(°_o)/¯
     case media::VideoFrame::UNKNOWN:
-    case media::VideoFrame::RGB32:
-    case media::VideoFrame::EMPTY:
+    case media::VideoFrame::HISTOGRAM_MAX:
     case media::VideoFrame::I420:
       break;
   }
@@ -105,10 +104,9 @@ static gfx::Size SoftwarePlaneDimension(
         return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 1.f));
 
       case media::VideoFrame::UNKNOWN:
-      case media::VideoFrame::RGB32:
-      case media::VideoFrame::EMPTY:
       case media::VideoFrame::I420:
       case media::VideoFrame::NATIVE_TEXTURE:
+      case media::VideoFrame::HISTOGRAM_MAX:
 #if defined(GOOGLE_TV)
       case media::VideoFrame::HOLE:
 #endif
@@ -203,7 +201,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
       if (!software_compositor) {
         DCHECK(context_provider_);
 
-        WebKit::WebGraphicsContext3D* context =
+        blink::WebGraphicsContext3D* context =
             context_provider_->Context3d();
 
         GLC(context, context->genMailboxCHROMIUM(mailbox.name));

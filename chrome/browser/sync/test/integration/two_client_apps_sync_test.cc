@@ -4,17 +4,19 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_sorting.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/apps_helper.h"
 #include "chrome/browser/sync/test/integration/sync_app_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "extensions/browser/app_sorting.h"
 #include "sync/api/string_ordinal.h"
 
 using apps_helper::AllProfilesHaveSameAppsAsVerifier;
 using apps_helper::CopyNTPOrdinals;
+using apps_helper::DisableApp;
+using apps_helper::EnableApp;
 using apps_helper::FixNTPOrdinalCollisions;
 using apps_helper::GetAppLaunchOrdinalForApp;
 using apps_helper::HasSameAppsAsVerifier;
@@ -214,8 +216,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UninstallThenInstall) {
 }
 
 // TCM ID - 3699295.
-// Flaky: http://crbug.com/226055
-IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, DISABLED_Merge) {
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, Merge) {
   ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 
@@ -237,6 +238,34 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, DISABLED_Merge) {
   ASSERT_TRUE(AwaitQuiescence());
   InstallAppsPendingForSync(GetProfile(0));
   InstallAppsPendingForSync(GetProfile(1));
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+}
+
+// TCM ID - 7723126.
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateEnableDisableApp) {
+  ASSERT_TRUE(SetupSync());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  InstallApp(GetProfile(0), 0);
+  InstallApp(GetProfile(1), 0);
+  InstallApp(verifier(), 0);
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  DisableApp(GetProfile(0), 0);
+  DisableApp(verifier(), 0);
+  ASSERT_TRUE(HasSameAppsAsVerifier(0));
+  ASSERT_FALSE(HasSameAppsAsVerifier(1));
+
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  EnableApp(GetProfile(1), 0);
+  EnableApp(verifier(), 0);
+  ASSERT_TRUE(HasSameAppsAsVerifier(1));
+  ASSERT_FALSE(HasSameAppsAsVerifier(0));
+
+  ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 }
 
@@ -366,12 +395,12 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateCWSOrdinals) {
   // Change the app launch ordinal.
   syncer::StringOrdinal cws_app_launch_ordinal =
       GetProfile(0)->GetExtensionService()->
-      extension_prefs()->extension_sorting()->GetAppLaunchOrdinal(
+      extension_prefs()->app_sorting()->GetAppLaunchOrdinal(
           extension_misc::kWebStoreAppId);
-  GetProfile(0)->GetExtensionService()->extension_prefs()->extension_sorting()->
+  GetProfile(0)->GetExtensionService()->extension_prefs()->app_sorting()->
       SetAppLaunchOrdinal(
           extension_misc::kWebStoreAppId, cws_app_launch_ordinal.CreateAfter());
-  verifier()->GetExtensionService()->extension_prefs()->extension_sorting()->
+  verifier()->GetExtensionService()->extension_prefs()->app_sorting()->
       SetAppLaunchOrdinal(
           extension_misc::kWebStoreAppId, cws_app_launch_ordinal.CreateAfter());
   ASSERT_TRUE(AwaitQuiescence());
@@ -380,14 +409,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateCWSOrdinals) {
   // Change the page ordinal.
   syncer::StringOrdinal cws_page_ordinal =
       GetProfile(1)->GetExtensionService()->
-      extension_prefs()->extension_sorting()->GetPageOrdinal(
+      extension_prefs()->app_sorting()->GetPageOrdinal(
           extension_misc::kWebStoreAppId);
   GetProfile(1)->GetExtensionService()->extension_prefs()->
-      extension_sorting()->SetPageOrdinal(extension_misc::kWebStoreAppId,
-                                          cws_page_ordinal.CreateAfter());
+      app_sorting()->SetPageOrdinal(extension_misc::kWebStoreAppId,
+                                    cws_page_ordinal.CreateAfter());
   verifier()->GetExtensionService()->extension_prefs()->
-      extension_sorting()->SetPageOrdinal(extension_misc::kWebStoreAppId,
-                                          cws_page_ordinal.CreateAfter());
+      app_sorting()->SetPageOrdinal(extension_misc::kWebStoreAppId,
+                                    cws_page_ordinal.CreateAfter());
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 }

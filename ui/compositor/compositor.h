@@ -13,6 +13,7 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/compositor_observer.h"
@@ -45,7 +46,7 @@ class Rect;
 class Size;
 }
 
-namespace WebKit {
+namespace blink {
 class WebGraphicsContext3D;
 }
 
@@ -127,7 +128,7 @@ class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
   float device_scale_factor() const { return device_scale_factor_; }
 
   virtual unsigned int PrepareTexture() = 0;
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() = 0;
+  virtual blink::WebGraphicsContext3D* HostContext3D() = 0;
 
   // Replaces the texture with the texture from the specified mailbox.
   virtual void Consume(const std::string& mailbox_name,
@@ -219,6 +220,7 @@ class COMPOSITOR_EXPORT DrawWaiterForTest : public ui::CompositorObserver {
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient),
       public base::SupportsWeakPtr<Compositor> {
  public:
   explicit Compositor(gfx::AcceleratedWidget widget);
@@ -308,7 +310,7 @@ class COMPOSITOR_EXPORT Compositor
                                base::TimeDelta interval);
 
   // LayerTreeHostClient implementation.
-  virtual void WillBeginMainFrame() OVERRIDE {}
+  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
   virtual void DidBeginMainFrame() OVERRIDE {}
   virtual void Animate(double frame_begin_time) OVERRIDE {}
   virtual void Layout() OVERRIDE;
@@ -321,9 +323,14 @@ class COMPOSITOR_EXPORT Compositor
   virtual void DidCommit() OVERRIDE;
   virtual void DidCommitAndDrawFrame() OVERRIDE;
   virtual void DidCompleteSwapBuffers() OVERRIDE;
-  virtual void ScheduleComposite() OVERRIDE;
   virtual scoped_refptr<cc::ContextProvider>
       OffscreenContextProvider() OVERRIDE;
+
+  // cc::LayerTreeHostSingleThreadClient implementation.
+  virtual void ScheduleComposite() OVERRIDE;
+  virtual void ScheduleAnimation() OVERRIDE;
+  virtual void DidPostSwapBuffers() OVERRIDE;
+  virtual void DidAbortSwapBuffers() OVERRIDE;
 
   int last_started_frame() { return last_started_frame_; }
   int last_ended_frame() { return last_ended_frame_; }

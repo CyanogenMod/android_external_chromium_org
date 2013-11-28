@@ -232,33 +232,6 @@ void LogDuplicatesHistogram(
   UMA_HISTOGRAM_COUNTS_100("Search.SearchEngineDuplicateCounts", num_dupes);
 }
 
-typedef std::vector<TemplateURLService::ExtensionKeyword> ExtensionKeywords;
-
-#if !defined(OS_ANDROID)
-// Extract all installed Omnibox Extensions.
-ExtensionKeywords GetExtensionKeywords(Profile* profile) {
-  DCHECK(profile);
-  ExtensionService* extension_service = profile->GetExtensionService();
-  DCHECK(extension_service);
-  const ExtensionSet* extensions = extension_service->extensions();
-  ExtensionKeywords extension_keywords;
-  for (ExtensionSet::const_iterator it = extensions->begin();
-       it != extensions->end(); ++it) {
-    const std::string& keyword = extensions::OmniboxInfo::GetKeyword(*it);
-    if (!keyword.empty()) {
-      extension_keywords.push_back(TemplateURLService::ExtensionKeyword(
-          (*it)->id(), (*it)->name(), keyword));
-    }
-  }
-  return extension_keywords;
-}
-#else
-// Extensions are not supported.
-ExtensionKeywords GetExtensionKeywords(Profile* profile) {
-  return ExtensionKeywords();
-}
-#endif
-
 }  // namespace
 
 
@@ -550,6 +523,9 @@ void TemplateURLService::AddExtensionControlledTURL(
       TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION));
 
   if (AddNoNotify(template_url, true)) {
+    // Note that we can't call CanMakeDefault() here, since it would return
+    // false when another extension is already controlling the default search
+    // engine, and we want to allow new extensions to take over.
     if (template_url->extension_info_->wants_to_be_default_engine &&
         !is_default_search_managed()) {
       TemplateURL* default_candidate = FindExtensionDefaultSearchEngine();
@@ -684,8 +660,10 @@ void TemplateURLService::ResetTemplateURL(TemplateURL* url,
 }
 
 bool TemplateURLService::CanMakeDefault(const TemplateURL* url) {
-  return url != GetDefaultSearchProvider() &&
-      url->url_ref().SupportsReplacement() && !is_default_search_managed() &&
+  return  !is_default_search_managed() &&
+      !IsExtensionControlledDefaultSearch() &&
+      (url != GetDefaultSearchProvider()) &&
+      url->url_ref().SupportsReplacement() &&
       (url->GetType() == TemplateURL::NORMAL);
 }
 
@@ -713,6 +691,12 @@ bool TemplateURLService::IsSearchResultsPageFromDefaultSearchProvider(
     const GURL& url) {
   TemplateURL* default_provider = GetDefaultSearchProvider();
   return default_provider && default_provider->IsSearchURL(url);
+}
+
+bool TemplateURLService::IsExtensionControlledDefaultSearch() {
+  const TemplateURL* default_provider = GetDefaultSearchProvider();
+  return default_provider && (default_provider->GetType() ==
+      TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION);
 }
 
 TemplateURL* TemplateURLService::FindNewDefaultSearchProvider() {

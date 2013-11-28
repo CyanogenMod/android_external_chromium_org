@@ -9,7 +9,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/test_management_policy.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -18,6 +17,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/test_management_policy.h"
 #include "extensions/common/manifest.h"
 
 using extensions::Extension;
@@ -219,7 +219,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, DISABLED_LaunchPanelApp) {
   // Set a pref indicating that the user wants to launch in a regular tab.
   // This should be ignored, because panel apps always load in a popup.
   service->extension_prefs()->SetLaunchType(
-      app_id, extensions::ExtensionPrefs::LAUNCH_REGULAR);
+      app_id, extensions::ExtensionPrefs::LAUNCH_TYPE_REGULAR);
 
   // Load the extension again.
   std::string app_id_new;
@@ -279,7 +279,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchTabApp) {
 
   // Set a pref indicating that the user wants to launch in a window.
   service->extension_prefs()->SetLaunchType(
-      app_id, extensions::ExtensionPrefs::LAUNCH_WINDOW);
+      app_id, extensions::ExtensionPrefs::LAUNCH_TYPE_WINDOW);
 
   std::string app_id_new;
   LoadAndWaitForLaunch("management/launch_app_tab", &app_id_new);

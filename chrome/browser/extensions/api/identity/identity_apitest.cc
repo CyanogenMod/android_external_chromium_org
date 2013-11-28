@@ -188,11 +188,6 @@ class TestOAuth2MintTokenFlow : public OAuth2MintTokenFlow {
   OAuth2MintTokenFlow::Delegate* delegate_;
 };
 
-BrowserContextKeyedService* IdentityAPITestFactory(
-    content::BrowserContext* profile) {
-  return new IdentityAPI(static_cast<Profile*>(profile));
-}
-
 // Waits for a specific GURL to generate a NOTIFICATION_LOAD_STOP event and
 // saves a pointer to the window embedding the WebContents, which can be later
 // closed.
@@ -715,9 +710,12 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
         new MockGetAuthTokenFunction());
     func->set_extension(extension.get());
     EXPECT_CALL(*func.get(), HasLoginToken()).WillOnce(Return(true));
+    // Make sure we don't get a cached issue_advice result, which would cause
+    // flow to be leaked.
+    id_api()->EraseAllCachedTokens();
     TestOAuth2MintTokenFlow* flow = new TestOAuth2MintTokenFlow(
         TestOAuth2MintTokenFlow::ISSUE_ADVICE_SUCCESS, func.get());
-    ON_CALL(*func.get(), CreateMintTokenFlow(_)).WillByDefault(Return(flow));
+    EXPECT_CALL(*func.get(), CreateMintTokenFlow(_)).WillOnce(Return(flow));
     func->set_scope_ui_oauth_error(it->first);
     std::string error = utils::RunFunctionAndReturnError(
         func.get(), "[{\"interactive\": true}]", browser());
@@ -1240,3 +1238,8 @@ IN_PROC_BROWSER_TEST_F(
 }
 
 }  // namespace extensions
+
+// Tests the chrome.identity API implemented by custom JS bindings .
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ChromeIdentityJsBindings) {
+  ASSERT_TRUE(RunExtensionTest("identity/js_bindings")) << message_;
+}

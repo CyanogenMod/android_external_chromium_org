@@ -78,6 +78,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSNAPSHOT_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -85,6 +86,7 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -107,6 +109,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/ui \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -117,8 +121,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
@@ -189,6 +191,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSNAPSHOT_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -196,6 +199,7 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -219,6 +223,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/ui \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -229,8 +235,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \

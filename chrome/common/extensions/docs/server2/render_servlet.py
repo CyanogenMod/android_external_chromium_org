@@ -10,18 +10,18 @@ import traceback
 from urlparse import urlsplit
 
 from data_source_registry import CreateDataSources
+from environment import IsPreviewServer
 from file_system import FileNotFoundError
 from redirector import Redirector
 from servlet import Servlet, Response
-from svn_constants import DOCS_PATH, PUBLIC_TEMPLATE_PATH
 from third_party.handlebar import Handlebar
 
 
 def _MakeHeaders(content_type):
   return {
-    'x-frame-options': 'sameorigin',
-    'content-type': content_type,
-    'cache-control': 'max-age=300',
+    'X-Frame-Options': 'sameorigin',
+    'Content-Type': content_type,
+    'Cache-Control': 'max-age=300',
   }
 
 
@@ -48,6 +48,8 @@ class RenderServlet(Servlet):
     try:
       return self._GetSuccessResponse(path, server_instance)
     except FileNotFoundError:
+      if IsPreviewServer():
+        logging.error(traceback.format_exc())
       # Maybe it didn't find the file because its canonical location is
       # somewhere else; this is distinct from "redirects", which are typically
       # explicit. This is implicit.
@@ -71,7 +73,7 @@ class RenderServlet(Servlet):
           return Response.NotFound(response.content.ToString(),
                                    headers=response.headers)
         except FileNotFoundError: continue
-      logging.error('No 404.html found in %s' % path)
+      logging.warning('No 404.html found in %s' % path)
       return Response.NotFound('Not Found', headers=_MakeHeaders('text/plain'))
 
   def _GetSuccessResponse(self, path, server_instance):
@@ -90,14 +92,22 @@ class RenderServlet(Servlet):
     if redirect is not None:
       return Response.Redirect(redirect, permanent=False)
 
-    content_and_type = content_provider.GetContentAndType(
-        self._request.host, path).Get()
+    content_and_type = content_provider.GetContentAndType(path).Get()
     if not content_and_type.content:
       logging.error('%s had empty content' % path)
 
-    if isinstance(content_and_type.content, Handlebar):
-      content_and_type.content = server_instance.template_renderer.Render(
-          content_and_type.content, self._request)
+    content = content_and_type.content
+    if isinstance(content, Handlebar):
+      # HACK: the Google ID thing (google2ed...) doesn't have a title.
+      content, warnings = server_instance.document_renderer.Render(
+          server_instance.template_renderer.Render(content, self._request),
+          render_title=path != 'google2ed1af765c529f57.html')
+      if warnings:
+        logging.warning('\n'.join(warnings))
 
-    return Response.Ok(content_and_type.content,
-                       headers=_MakeHeaders(content_and_type.content_type))
+    content_type = content_and_type.content_type
+    if isinstance(content, unicode):
+      content = content.encode('utf-8')
+      content_type += '; charset=utf-8'
+
+    return Response.Ok(content, headers=_MakeHeaders(content_type))

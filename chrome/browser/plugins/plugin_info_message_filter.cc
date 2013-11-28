@@ -32,7 +32,6 @@
 #include "base/win/metro.h"
 #endif
 
-using chrome::ChromeContentClient;
 using content::PluginService;
 using content::WebPluginInfo;
 
@@ -261,7 +260,7 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
       group_policy != PluginPrefs::POLICY_ENABLED &&
       !ChromePluginServiceFilter::GetInstance()->IsPluginRestricted(
           plugin.path)) {
-    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kBlocked;
+    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
     return;
   }
 

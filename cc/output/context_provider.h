@@ -10,7 +10,7 @@
 #include "cc/base/cc_export.h"
 
 class GrContext;
-namespace WebKit { class WebGraphicsContext3D; }
+namespace blink { class WebGraphicsContext3D; }
 namespace gpu { class ContextSupport; }
 
 namespace cc {
@@ -24,12 +24,11 @@ class ContextProvider : public base::RefCountedThreadSafe<ContextProvider> {
   // from the same thread.
   virtual bool BindToCurrentThread() = 0;
 
-  virtual WebKit::WebGraphicsContext3D* Context3d() = 0;
+  virtual blink::WebGraphicsContext3D* Context3d() = 0;
   virtual gpu::ContextSupport* ContextSupport() = 0;
   virtual class GrContext* GrContext() = 0;
 
   struct Capabilities {
-    bool bind_uniform_location;
     bool discard_backbuffer;
     bool egl_image_external;
     bool fast_npot_mo8_textures;
@@ -52,6 +51,9 @@ class ContextProvider : public base::RefCountedThreadSafe<ContextProvider> {
   };
   // Returns the capabilities of the currently bound 3d context.
   virtual Capabilities ContextCapabilities() = 0;
+
+  // Checks if the context is currently known to be lost.
+  virtual bool IsContextLost() = 0;
 
   // Ask the provider to check if the contexts are valid or lost. If they are,
   // this should invalidate the provider so that it can be replaced with a new

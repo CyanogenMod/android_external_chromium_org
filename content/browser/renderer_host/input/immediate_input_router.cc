@@ -30,11 +30,11 @@
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
 
 namespace content {
 namespace {
@@ -96,9 +96,7 @@ ImmediateInputRouter::ImmediateInputRouter(IPC::Sender* sender,
 ImmediateInputRouter::~ImmediateInputRouter() {
 }
 
-void ImmediateInputRouter::Flush() {
-  NOTREACHED() << "ImmediateInputRouter will never request a flush.";
-}
+void ImmediateInputRouter::Flush() {}
 
 bool ImmediateInputRouter::SendInput(scoped_ptr<IPC::Message> message) {
   DCHECK(IPC_MESSAGE_ID_CLASS(message->type()) == InputMsgStart);
@@ -339,6 +337,14 @@ void ImmediateInputRouter::OfferToHandlers(const WebInputEvent& input_event,
     return;
 
   OfferToRenderer(input_event, latency_info, is_keyboard_shortcut);
+
+  // If we don't care about the ack disposition, send the ack immediately.
+  if (WebInputEventTraits::IgnoresAckDisposition(input_event.type)) {
+    ProcessInputEventAck(input_event.type,
+                         INPUT_EVENT_ACK_STATE_IGNORED,
+                         latency_info,
+                         IGNORING_DISPOSITION);
+  }
 }
 
 bool ImmediateInputRouter::OfferToOverscrollController(
@@ -355,8 +361,8 @@ bool ImmediateInputRouter::OfferToOverscrollController(
 
   if (disposition == OverscrollController::SHOULD_FORWARD_TO_GESTURE_FILTER) {
     DCHECK(WebInputEvent::isGestureEventType(input_event.type));
-    const WebKit::WebGestureEvent& gesture_event =
-        static_cast<const WebKit::WebGestureEvent&>(input_event);
+    const blink::WebGestureEvent& gesture_event =
+        static_cast<const blink::WebGestureEvent&>(input_event);
     // An ACK is expected for the event, so mark it as consumed.
     consumed = !gesture_event_filter_->ShouldForward(
         GestureEventWithLatencyInfo(gesture_event, latency_info));
@@ -423,6 +429,10 @@ void ImmediateInputRouter::OnInputEventAck(
   UMA_HISTOGRAM_TIMES("MPArch.IIR_InputEventDelta", delta);
 
   client_->DecrementInFlightEventCount();
+
+  // A synthetic ack will already have been sent for this event.
+  if (WebInputEventTraits::IgnoresAckDisposition(event_type))
+    return;
 
   ProcessInputEventAck(event_type, ack_result, latency_info, RENDERER);
   // WARNING: |this| may be deleted at this point.
@@ -497,7 +507,7 @@ void ImmediateInputRouter::ProcessInputEventAck(
 }
 
 void ImmediateInputRouter::ProcessKeyboardAck(
-    WebKit::WebInputEvent::Type type,
+    blink::WebInputEvent::Type type,
     InputEventAckState ack_result) {
   if (key_queue_.empty()) {
     ack_handler_->OnUnexpectedEventAck(InputAckHandler::UNEXPECTED_ACK);
@@ -518,7 +528,7 @@ void ImmediateInputRouter::ProcessKeyboardAck(
   }
 }
 
-void ImmediateInputRouter::ProcessMouseAck(WebKit::WebInputEvent::Type type,
+void ImmediateInputRouter::ProcessMouseAck(blink::WebInputEvent::Type type,
                                            InputEventAckState ack_result) {
   if (type != WebInputEvent::MouseMove)
     return;

@@ -7,6 +7,9 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -50,15 +53,20 @@ TabRendererData::NetworkState TabContentsNetworkState(
   return TabRendererData::NETWORK_STATE_LOADING;
 }
 
-TabStripLayoutType DetermineTabStripLayout(PrefService* prefs,
-                                           bool* adjust_layout) {
+TabStripLayoutType DetermineTabStripLayout(
+    PrefService* prefs,
+    chrome::HostDesktopType host_desktop_type,
+    bool* adjust_layout) {
   *adjust_layout = false;
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableStackedTabStrip)) {
     return TAB_STRIP_LAYOUT_STACKED;
   }
   // For chromeos always allow entering stacked mode.
-#if !defined(OS_CHROMEOS)
+#if defined(USE_AURA)
+  if (host_desktop_type != chrome::HOST_DESKTOP_TYPE_ASH)
+    return TAB_STRIP_LAYOUT_SHRINK;
+#else
   if (ui::GetDisplayLayout() != ui::LAYOUT_TOUCH)
     return TAB_STRIP_LAYOUT_SHRINK;
 #endif
@@ -345,7 +353,18 @@ bool BrowserTabStripController::IsCompatibleWith(TabStrip* other) const {
 }
 
 void BrowserTabStripController::CreateNewTab() {
-  model_->delegate()->AddBlankTabAt(-1, true);
+  model_->delegate()->AddTabAt(GURL(), -1, true);
+}
+
+void BrowserTabStripController::CreateNewTabWithLocation(
+    const base::string16& location) {
+  // Use autocomplete to clean up the text, going so far as to turn it into
+  // a search query if necessary.
+  AutocompleteMatch match;
+  AutocompleteClassifierFactory::GetForProfile(profile())->Classify(
+      location, false, false, &match, NULL);
+  if (match.destination_url.is_valid())
+    model_->delegate()->AddTabAt(match.destination_url, -1, true);
 }
 
 bool BrowserTabStripController::IsIncognito() {
@@ -355,7 +374,8 @@ bool BrowserTabStripController::IsIncognito() {
 void BrowserTabStripController::LayoutTypeMaybeChanged() {
   bool adjust_layout = false;
   TabStripLayoutType layout_type =
-      DetermineTabStripLayout(g_browser_process->local_state(), &adjust_layout);
+      DetermineTabStripLayout(g_browser_process->local_state(),
+                              browser_->host_desktop_type(), &adjust_layout);
   if (!adjust_layout || layout_type == tabstrip_->layout_type())
     return;
 
@@ -522,6 +542,7 @@ void BrowserTabStripController::AddTab(WebContents* contents,
 void BrowserTabStripController::UpdateLayoutType() {
   bool adjust_layout = false;
   TabStripLayoutType layout_type =
-      DetermineTabStripLayout(g_browser_process->local_state(), &adjust_layout);
+      DetermineTabStripLayout(g_browser_process->local_state(),
+                              browser_->host_desktop_type(), &adjust_layout);
   tabstrip_->SetLayoutType(layout_type, adjust_layout);
 }

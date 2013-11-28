@@ -64,11 +64,6 @@ class LauncherItemController : public ash::LauncherItemDelegate {
     image_set_by_controller_ = image_set_by_controller;
   }
 
-  // Returns true if this item controls |window|.
-  // When this |window| has multiple applications/tabs, it only returns true
-  // it controls the currently visible app/tab.
-  virtual bool IsCurrentlyShownInWindow(aura::Window* window) const = 0;
-
   // Returns true if this item is open.
   virtual bool IsOpen() const = 0;
 
@@ -80,7 +75,8 @@ class LauncherItemController : public ash::LauncherItemDelegate {
 
   // Shows and activates the most-recently-active window associated with the
   // item, or launches the item if it is not currently open.
-  virtual void Activate(ash::LaunchSource source) = 0;
+  // Returns true when a new item got created.
+  virtual bool Activate(ash::LaunchSource source) = 0;
 
   // Closes all windows associated with this item.
   virtual void Close() = 0;

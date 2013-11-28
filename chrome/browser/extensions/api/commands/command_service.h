@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/common/extensions/command.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 
 class Profile;
 
@@ -66,6 +66,11 @@ class CommandService : public ProfileKeyedAPI,
 
   // Convenience method to get the CommandService for a profile.
   static CommandService* Get(Profile* profile);
+
+  // Return true if the specified accelerator is one of the following multimedia
+  // keys: Next Track key, Previous Track key, Stop Media key, Play/Pause Media
+  // key, without any modifiers.
+  static bool IsMediaKey(const ui::Accelerator& accelerator);
 
   // Gets the command (if any) for the browser action of an extension given
   // its |extension_id|. The function consults the master list to see if

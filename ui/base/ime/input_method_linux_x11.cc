@@ -4,6 +4,7 @@
 
 #include "ui/base/ime/input_method_linux_x11.h"
 
+#include "base/environment.h"
 #include "ui/base/ime/linux/linux_input_method_context_factory.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event.h"
@@ -19,6 +20,34 @@ InputMethodLinuxX11::InputMethodLinuxX11(
 }
 
 InputMethodLinuxX11::~InputMethodLinuxX11() {}
+
+// static
+void InputMethodLinuxX11::Initialize() {
+  // Force a IBus IM context to run in synchronous mode.
+  //
+  // Background: IBus IM context runs by default in asynchronous mode.  In
+  // this mode, gtk_im_context_filter_keypress() consumes all the key events
+  // and returns true while asynchronously sending the event to an underlying
+  // IME implementation.  When the event has not actually been consumed by
+  // the underlying IME implementation, the context pushes the event back to
+  // the GDK event queue marking the event as already handled by the IBus IM
+  // context.
+  //
+  // The problem here is that those pushed-back GDK events are never handled
+  // when base::MessagePumpX11 is used, which only handles X events.  So, we
+  // make a IBus IM context run in synchronous mode by setting an environment
+  // variable.  This is only the interface to change the mode.
+  //
+  // Another possible solution is to use GDK event loop instead of X event
+  // loop.
+  //
+  // Since there is no reentrant version of setenv(3C), it's a caller's duty
+  // to avoid race conditions.  This function should be called in the main
+  // thread on a very early stage, and supposed to be called from
+  // ui::InitializeInputMethod().
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  env->SetVar("IBUS_ENABLE_SYNC_MODE", "1");
+}
 
 // Overriden from InputMethod.
 
@@ -45,50 +74,28 @@ bool InputMethodLinuxX11::OnUntranslatedIMEMessage(
   return false;
 }
 
-bool InputMethodLinuxX11::DispatchKeyEvent(
-    const base::NativeEvent& native_key_event) {
-  EventType event_type = EventTypeFromNative(native_key_event);
-  DCHECK(event_type == ET_KEY_PRESSED || event_type == ET_KEY_RELEASED);
+bool InputMethodLinuxX11::DispatchKeyEvent(const ui::KeyEvent& event) {
+  DCHECK(event.type() == ET_KEY_PRESSED || event.type() == ET_KEY_RELEASED);
   DCHECK(system_toplevel_window_focused());
 
+  if (!event.HasNativeEvent())
+    return DispatchFabricatedKeyEvent(event);
+
   // If no text input client, do nothing.
+  const base::NativeEvent& native_key_event = event.native_event();
   if (!GetTextInputClient())
     return DispatchKeyEventPostIME(native_key_event);
 
   // Let an IME handle the key event first.
   if (input_method_context_->DispatchKeyEvent(native_key_event)) {
-    if (event_type == ET_KEY_PRESSED)
+    if (event.type() == ET_KEY_PRESSED)
       DispatchFabricatedKeyEventPostIME(ET_KEY_PRESSED, VKEY_PROCESSKEY,
-                                        EventFlagsFromNative(native_key_event));
+                                        event.flags());
     return true;
   }
 
   // Otherwise, insert the character.
   const bool handled = DispatchKeyEventPostIME(native_key_event);
-  if (event_type == ET_KEY_PRESSED && GetTextInputClient()) {
-    uint16 ch = 0;
-    const int flags = EventFlagsFromNative(native_key_event);
-    if (!(flags & EF_CONTROL_DOWN))
-      ch = GetCharacterFromXEvent(native_key_event);
-    if (!ch)
-      ch = GetCharacterFromKeyCode(KeyboardCodeFromNative(native_key_event),
-                                   flags);
-    if (ch) {
-      GetTextInputClient()->InsertChar(ch, flags);
-      return true;
-    }
-  }
-  return handled;
-}
-
-bool InputMethodLinuxX11::DispatchFabricatedKeyEvent(
-    const ui::KeyEvent& event) {
-  // Let a post IME handler handle the key event.
-  if (DispatchFabricatedKeyEventPostIME(event.type(), event.key_code(),
-                                        event.flags()))
-    return true;
-
-  // Otherwise, insert the character.
   if (event.type() == ET_KEY_PRESSED && GetTextInputClient()) {
     const uint16 ch = event.GetCharacter();
     if (ch) {
@@ -96,38 +103,33 @@ bool InputMethodLinuxX11::DispatchFabricatedKeyEvent(
       return true;
     }
   }
-
-  return false;
+  return handled;
 }
 
 void InputMethodLinuxX11::OnTextInputTypeChanged(
     const TextInputClient* client) {
-  if (IsTextInputClientFocused(client)) {
-    input_method_context_->Reset();
-    // TODO(yoichio): Support inputmode HTML attribute.
-    input_method_context_->OnTextInputTypeChanged(client->GetTextInputType());
-  }
-  InputMethodBase::OnTextInputTypeChanged(client);
+  if (!IsTextInputClientFocused(client))
+    return;
+  input_method_context_->Reset();
+  // TODO(yoichio): Support inputmode HTML attribute.
+  input_method_context_->OnTextInputTypeChanged(client->GetTextInputType());
 }
 
 void InputMethodLinuxX11::OnCaretBoundsChanged(const TextInputClient* client) {
-  if (IsTextInputClientFocused(client)) {
-    input_method_context_->OnCaretBoundsChanged(
-        GetTextInputClient()->GetCaretBounds());
-  }
-  InputMethodBase::OnCaretBoundsChanged(client);
+  if (!IsTextInputClientFocused(client))
+    return;
+  input_method_context_->OnCaretBoundsChanged(
+      GetTextInputClient()->GetCaretBounds());
 }
 
 void InputMethodLinuxX11::CancelComposition(const TextInputClient* client) {
   if (!IsTextInputClientFocused(client))
     return;
-
   input_method_context_->Reset();
   input_method_context_->OnTextInputTypeChanged(client->GetTextInputType());
 }
 
 void InputMethodLinuxX11::OnInputLocaleChanged() {
-  InputMethodBase::OnInputLocaleChanged();
 }
 
 std::string InputMethodLinuxX11::GetInputLocale() {
@@ -181,6 +183,27 @@ void InputMethodLinuxX11::OnDidChangeFocusedClient(
       focused ? focused->GetTextInputType() : TEXT_INPUT_TYPE_NONE);
 
   InputMethodBase::OnDidChangeFocusedClient(focused_before, focused);
+}
+
+// private
+
+bool InputMethodLinuxX11::DispatchFabricatedKeyEvent(
+    const ui::KeyEvent& event) {
+  // Let a post IME handler handle the key event.
+  if (DispatchFabricatedKeyEventPostIME(event.type(), event.key_code(),
+                                        event.flags()))
+    return true;
+
+  // Otherwise, insert the character.
+  if (event.type() == ET_KEY_PRESSED && GetTextInputClient()) {
+    const uint16 ch = event.GetCharacter();
+    if (ch) {
+      GetTextInputClient()->InsertChar(ch, event.flags());
+      return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace ui

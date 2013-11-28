@@ -25,6 +25,7 @@
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/url_prefix.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
@@ -35,6 +36,8 @@
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
@@ -46,6 +49,7 @@
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher.h"
@@ -869,6 +873,13 @@ void SearchProvider::ClearAllResults() {
 }
 
 void SearchProvider::RemoveAllStaleResults() {
+  // We only need to remove stale results (which ensures the top-scoring
+  // match is inlineable) if the user is not in reorder mode.  In reorder
+  // mode, the autocomplete system will reorder results to make sure the
+  // top result is inlineable.
+  const bool omnibox_will_reorder_for_legal_default_match =
+      OmniboxFieldTrial::ReorderForLegalDefaultMatch(
+          input_.current_page_classification());
   // In theory it would be better to run an algorithm like that in
   // RemoveStaleResults(...) below that uses all four results lists
   // and both verbatim scores at once.  However, that will be much
@@ -876,14 +887,18 @@ void SearchProvider::RemoveAllStaleResults() {
   // and ease in reasoning about the invariants involved, this code
   // removes stales results from the keyword provider and default
   // provider independently.
-  RemoveStaleResults(input_.text(), GetVerbatimRelevance(NULL),
-                     &default_results_.suggest_results,
-                     &default_results_.navigation_results);
-  if (!keyword_input_.text().empty()) {
-    RemoveStaleResults(keyword_input_.text(), GetKeywordVerbatimRelevance(NULL),
-                       &keyword_results_.suggest_results,
-                       &keyword_results_.navigation_results);
-  } else {
+  if (!omnibox_will_reorder_for_legal_default_match) {
+    RemoveStaleResults(input_.text(), GetVerbatimRelevance(NULL),
+                       &default_results_.suggest_results,
+                       &default_results_.navigation_results);
+    if (!keyword_input_.text().empty()) {
+      RemoveStaleResults(keyword_input_.text(),
+                         GetKeywordVerbatimRelevance(NULL),
+                         &keyword_results_.suggest_results,
+                         &keyword_results_.navigation_results);
+    }
+  }
+  if (keyword_input_.text().empty()) {
     // User is either in keyword mode with a blank input or out of
     // keyword mode entirely.
     keyword_results_.Clear();
@@ -920,6 +935,69 @@ void SearchProvider::ApplyCalculatedNavigationRelevance(
   }
 }
 
+bool SearchProvider::CanSendURL(
+    const GURL& current_page_url,
+    const GURL& suggest_url,
+    const TemplateURL* template_url,
+    AutocompleteInput::PageClassification page_classification,
+    Profile* profile) {
+  if (!current_page_url.is_valid())
+    return false;
+
+  // TODO(hfung): Show Most Visited on NTP with appropriate verbatim
+  // description when the user actively focuses on the omnibox as discussed in
+  // crbug/305366 if Most Visited (or something similar) will launch.
+  if ((page_classification ==
+       AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS) ||
+      (page_classification ==
+       AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS))
+    return false;
+
+  // Only allow HTTP URLs or HTTPS URLs for the same domain as the search
+  // provider.
+  if ((current_page_url.scheme() != content::kHttpScheme) &&
+      ((current_page_url.scheme() != content::kHttpsScheme) ||
+       !net::registry_controlled_domains::SameDomainOrHost(
+           current_page_url, suggest_url,
+           net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)))
+    return false;
+
+  // Make sure we are sending the suggest request through HTTPS to prevent
+  // exposing the current page URL to networks before the search provider.
+  if (!suggest_url.SchemeIs(content::kHttpsScheme))
+    return false;
+
+  // Don't run if there's no profile or in incognito mode.
+  if (profile == NULL || profile->IsOffTheRecord())
+    return false;
+
+  // Don't run if we can't get preferences or search suggest is not enabled.
+  PrefService* prefs = profile->GetPrefs();
+  if (!prefs->GetBoolean(prefs::kSearchSuggestEnabled))
+    return false;
+
+  // Only make the request if we know that the provider supports zero suggest
+  // (currently only the prepopulated Google provider).
+  if (template_url == NULL || !template_url->SupportsReplacement() ||
+      TemplateURLPrepopulateData::GetEngineType(*template_url) !=
+      SEARCH_ENGINE_GOOGLE)
+    return false;
+
+  // Check field trials and settings allow sending the URL on suggest requests.
+  ProfileSyncService* service =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
+  browser_sync::SyncPrefs sync_prefs(prefs);
+  if (!OmniboxFieldTrial::InZeroSuggestFieldTrial() ||
+      service == NULL ||
+      !service->IsSyncEnabledAndLoggedIn() ||
+      !sync_prefs.GetPreferredDataTypes(syncer::UserTypes()).Has(
+          syncer::PROXY_TABS) ||
+      service->GetEncryptedDataTypes().Has(syncer::SESSIONS))
+    return false;
+
+  return true;
+}
+
 net::URLFetcher* SearchProvider::CreateSuggestFetcher(
     int id,
     const TemplateURL* template_url,
@@ -935,6 +1013,16 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
       search_term_args));
   if (!suggest_url.is_valid())
     return NULL;
+  // Send the current page URL if user setting and URL requirements are met and
+  // the user is in the field trial.
+  if (CanSendURL(current_page_url_, suggest_url, template_url,
+                 input.current_page_classification(), profile_) &&
+      OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial()) {
+    search_term_args.current_page_url = current_page_url_.spec();
+    // Create the suggest URL again with the current page URL.
+    suggest_url = GURL(template_url->suggestions_url_ref().ReplaceSearchTerms(
+        search_term_args));
+  }
 
   suggest_results_pending_++;
   LogOmniboxSuggestRequest(REQUEST_SENT);
@@ -1016,6 +1104,10 @@ bool SearchProvider::ParseSuggestResults(Value* root_val, bool is_keyword) {
   string16 suggestion;
   std::string type;
   int relevance = -1;
+  // Prohibit navsuggest in FORCED_QUERY mode.  Users wants queries, not URLs.
+  const bool allow_navsuggest =
+      (is_keyword ? keyword_input_.type() : input_.type()) !=
+      AutocompleteInput::FORCED_QUERY;
   for (size_t index = 0; results_list->GetString(index, &suggestion); ++index) {
     // Google search may return empty suggestions for weird input characters,
     // they make no sense at all and can cause problems in our code.
@@ -1028,7 +1120,7 @@ bool SearchProvider::ParseSuggestResults(Value* root_val, bool is_keyword) {
     if (types && types->GetString(index, &type) && (type == "NAVIGATION")) {
       // Do not blindly trust the URL coming from the server to be valid.
       GURL url(URLFixerUpper::FixupURL(UTF16ToUTF8(suggestion), std::string()));
-      if (url.is_valid()) {
+      if (url.is_valid() && allow_navsuggest) {
         string16 title;
         if (descriptions != NULL)
           descriptions->GetString(index, &title);
@@ -1058,11 +1150,21 @@ bool SearchProvider::ParseSuggestResults(Value* root_val, bool is_keyword) {
     }
   }
 
-  // Apply calculated relevance scores if a valid list was not provided.
-  if (relevances == NULL) {
+  // Ignore suggested scores for non-keyword matches in keyword mode; if the
+  // server is allowed to score these, it could interfere with the user's
+  // ability to get good keyword results.
+  const bool abandon_suggested_scores =
+      !is_keyword && !providers_.keyword_provider().empty();
+  // Apply calculated relevance scores to suggestions if a valid list was
+  // not provided or we're abandoning suggested scores entirely.
+  if ((relevances == NULL) || abandon_suggested_scores) {
     ApplyCalculatedSuggestRelevance(&results->suggest_results);
     ApplyCalculatedNavigationRelevance(&results->navigation_results);
+    // If abandoning scores entirely, also abandon the verbatim score.
+    if (abandon_suggested_scores)
+      results->verbatim_relevance = -1;
   }
+
   // Keep the result lists sorted.
   const CompareScoredResults comparator = CompareScoredResults();
   std::stable_sort(results->suggest_results.begin(),
@@ -1195,12 +1297,46 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
                       base::TimeTicks::Now() - start_time);
 }
 
-bool SearchProvider::IsTopMatchNavigationInKeywordMode() const {
-  return (!providers_.keyword_provider().empty() &&
-          (matches_.front().type == AutocompleteMatchType::NAVSUGGEST));
+ACMatches::const_iterator SearchProvider::FindTopMatch(
+    bool autocomplete_result_will_reorder_for_default_match) const {
+  if (!autocomplete_result_will_reorder_for_default_match)
+    return matches_.begin();
+  ACMatches::const_iterator it = matches_.begin();
+  while ((it != matches_.end()) && !it->allowed_to_be_default_match)
+    ++it;
+  return it;
 }
 
-bool SearchProvider::IsTopMatchScoreTooLow() const {
+bool SearchProvider::IsTopMatchNavigationInKeywordMode(
+    bool autocomplete_result_will_reorder_for_default_match) const {
+  ACMatches::const_iterator first_match =
+      FindTopMatch(autocomplete_result_will_reorder_for_default_match);
+  return !providers_.keyword_provider().empty() &&
+      (first_match != matches_.end()) &&
+      (first_match->type == AutocompleteMatchType::NAVSUGGEST);
+}
+
+bool SearchProvider::HasKeywordDefaultMatchInKeywordMode() const {
+  const TemplateURL* keyword_url = providers_.GetKeywordProviderURL();
+  // If the user is not in keyword mode, return true to say that this
+  // constraint is not violated.
+  if (keyword_url == NULL)
+    return true;
+  for (ACMatches::const_iterator it = matches_.begin(); it != matches_.end();
+       ++it) {
+    if ((it->keyword == keyword_url->keyword()) &&
+        it->allowed_to_be_default_match)
+      return true;
+  }
+  return false;
+}
+
+bool SearchProvider::IsTopMatchScoreTooLow(
+    bool autocomplete_result_will_reorder_for_default_match) const {
+  // In reorder mode, there's no such thing as a score that's too low.
+  if (autocomplete_result_will_reorder_for_default_match)
+    return false;
+
   // Here we use CalculateRelevanceForVerbatimIgnoringKeywordModeState()
   // rather than CalculateRelevanceForVerbatim() because the latter returns
   // a very low score (250) if keyword mode is active.  This is because
@@ -1214,10 +1350,14 @@ bool SearchProvider::IsTopMatchScoreTooLow() const {
       CalculateRelevanceForVerbatimIgnoringKeywordModeState();
 }
 
-bool SearchProvider::IsTopMatchSearchWithURLInput() const {
-  return input_.type() == AutocompleteInput::URL &&
-         matches_.front().relevance > CalculateRelevanceForVerbatim() &&
-         matches_.front().type != AutocompleteMatchType::NAVSUGGEST;
+bool SearchProvider::IsTopMatchSearchWithURLInput(
+    bool autocomplete_result_will_reorder_for_default_match) const {
+  ACMatches::const_iterator first_match =
+      FindTopMatch(autocomplete_result_will_reorder_for_default_match);
+  return (input_.type() == AutocompleteInput::URL) &&
+      (first_match != matches_.end()) &&
+      (first_match->relevance > CalculateRelevanceForVerbatim()) &&
+      (first_match->type != AutocompleteMatchType::NAVSUGGEST);
 }
 
 bool SearchProvider::HasValidDefaultMatch(
@@ -1247,38 +1387,45 @@ void SearchProvider::UpdateMatches() {
        keyword_results_.HasServerProvidedScores())) {
     // These blocks attempt to repair undesirable behavior by suggested
     // relevances with minimal impact, preserving other suggested relevances.
-    if (IsTopMatchNavigationInKeywordMode()) {
-      // Correct the suggested relevance scores if the top match is a
-      // navigation in keyword mode, since inlining a navigation match
-      // would break the user out of keyword mode.  By the way, if the top
-      // match is a non-keyword match (query or navsuggestion) in keyword
-      // mode, the user would also break out of keyword mode.  However,
-      // that situation is impossible given the current scoring paradigm
-      // and the fact that only one search engine (Google) provides suggested
-      // relevance scores at this time.
-      DemoteKeywordNavigationMatchesPastTopQuery();
-      ConvertResultsToAutocompleteMatches();
-      DCHECK(!IsTopMatchNavigationInKeywordMode());
-    }
-    // True if the omnibox will reorder matches as necessary to make the top
+
+    // True if the omnibox will reorder matches as necessary to make the first
     // one something that is allowed to be the default match.
     const bool omnibox_will_reorder_for_legal_default_match =
         OmniboxFieldTrial::ReorderForLegalDefaultMatch(
             input_.current_page_classification());
-    if (!omnibox_will_reorder_for_legal_default_match &&
-        IsTopMatchScoreTooLow()) {
+    if (IsTopMatchNavigationInKeywordMode(
+        omnibox_will_reorder_for_legal_default_match)) {
+      // Correct the suggested relevance scores if the top match is a
+      // navigation in keyword mode, since inlining a navigation match
+      // would break the user out of keyword mode.  This will only be
+      // triggered in regular (non-reorder) mode; in reorder mode,
+      // navigation matches are marked as not allowed to be the default
+      // match and hence IsTopMatchNavigation() will always return false.
+      DCHECK(!omnibox_will_reorder_for_legal_default_match);
+      DemoteKeywordNavigationMatchesPastTopQuery();
+      ConvertResultsToAutocompleteMatches();
+      DCHECK(!IsTopMatchNavigationInKeywordMode(
+          omnibox_will_reorder_for_legal_default_match));
+    }
+    if (!HasKeywordDefaultMatchInKeywordMode()) {
+      // In keyword mode, disregard the keyword verbatim suggested relevance
+      // if necessary so there at least one keyword match that's allowed to
+      // be the default match.
+      keyword_results_.verbatim_relevance = -1;
+      ConvertResultsToAutocompleteMatches();
+    }
+    if (IsTopMatchScoreTooLow(omnibox_will_reorder_for_legal_default_match)) {
       // Disregard the suggested verbatim relevance if the top score is below
       // the usual verbatim value. For example, a BarProvider may rely on
       // SearchProvider's verbatim or inlineable matches for input "foo" (all
       // allowed to be default match) to always outrank its own lowly-ranked
-      // "bar" matches that shouldn't be the default match.  This only needs
-      // to be enforced when the omnibox will not reorder results to make a
-      // legal default match first.
+      // "bar" matches that shouldn't be the default match.
       default_results_.verbatim_relevance = -1;
       keyword_results_.verbatim_relevance = -1;
       ConvertResultsToAutocompleteMatches();
     }
-    if (IsTopMatchSearchWithURLInput()) {
+    if (IsTopMatchSearchWithURLInput(
+        omnibox_will_reorder_for_legal_default_match)) {
       // Disregard the suggested search and verbatim relevances if the input
       // type is URL and the top match is a highly-ranked search suggestion.
       // For example, prevent a search for "foo.com" from outranking another
@@ -1303,11 +1450,26 @@ void SearchProvider::UpdateMatches() {
       ApplyCalculatedRelevance();
       ConvertResultsToAutocompleteMatches();
     }
-    DCHECK(!IsTopMatchNavigationInKeywordMode());
-    DCHECK(omnibox_will_reorder_for_legal_default_match ||
-        !IsTopMatchScoreTooLow());
-    DCHECK(!IsTopMatchSearchWithURLInput());
+    DCHECK(!IsTopMatchNavigationInKeywordMode(
+        omnibox_will_reorder_for_legal_default_match));
+    DCHECK(HasKeywordDefaultMatchInKeywordMode());
+    DCHECK(!IsTopMatchScoreTooLow(
+        omnibox_will_reorder_for_legal_default_match));
+    DCHECK(!IsTopMatchSearchWithURLInput(
+        omnibox_will_reorder_for_legal_default_match));
     DCHECK(HasValidDefaultMatch(omnibox_will_reorder_for_legal_default_match));
+  }
+
+  const TemplateURL* keyword_url = providers_.GetKeywordProviderURL();
+  if ((keyword_url != NULL) && HasKeywordDefaultMatchInKeywordMode()) {
+    // If there is a keyword match that is allowed to be the default match,
+    // then prohibit default provider matches from being the default match lest
+    // such matches cause the user to break out of keyword mode.
+    for (ACMatches::iterator it = matches_.begin(); it != matches_.end();
+         ++it) {
+      if (it->keyword != keyword_url->keyword())
+        it->allowed_to_be_default_match = false;
+    }
   }
 
   base::TimeTicks update_starred_start_time(base::TimeTicks::Now());
@@ -1692,14 +1854,6 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
   bool trim_http = !AutocompleteInput::HasHTTPScheme(input) &&
       (!prefix || (match_start != 0));
 
-  // Preserve the forced query '?' prefix in |match.fill_into_edit|.
-  // Otherwise, user edits to a suggestion would show non-Search results.
-  if (input_.type() == AutocompleteInput::FORCED_QUERY) {
-    match.fill_into_edit = ASCIIToUTF16("?");
-    if (inline_autocomplete_offset != string16::npos)
-      ++inline_autocomplete_offset;
-  }
-
   const std::string languages(
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
   const net::FormatUrlTypes format_types =
@@ -1709,10 +1863,21 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
           net::FormatUrl(navigation.url(), languages, format_types,
                          net::UnescapeRule::SPACES, NULL, NULL,
                          &inline_autocomplete_offset));
+  // Preserve the forced query '?' prefix in |match.fill_into_edit|.
+  // Otherwise, user edits to a suggestion would show non-Search results.
+  if (input_.type() == AutocompleteInput::FORCED_QUERY) {
+    match.fill_into_edit.insert(0, ASCIIToUTF16("?"));
+    if (inline_autocomplete_offset != string16::npos)
+      ++inline_autocomplete_offset;
+  }
   if (!input_.prevent_inline_autocomplete() &&
       (inline_autocomplete_offset != string16::npos)) {
     DCHECK(inline_autocomplete_offset <= match.fill_into_edit.length());
-    match.allowed_to_be_default_match = true;
+    // A navsuggestion can only be the default match when there is no
+    // keyword provider active, lest it appear first and break the user
+    // out of keyword mode.
+    match.allowed_to_be_default_match =
+        (providers_.GetKeywordProviderURL() == NULL);
     match.inline_autocompletion =
         match.fill_into_edit.substr(inline_autocomplete_offset);
   }

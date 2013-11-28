@@ -59,8 +59,9 @@ cr.define('options', function() {
         // the way at the top. That way it is clear that there are more elements
         // above the element being scrolled to.
         var scrollFudge = 1.2;
-        document.documentElement.scrollTop = $(idToHighlight).offsetTop -
-            scrollFudge * $(idToHighlight).clientHeight;
+        var scrollTop = $(idToHighlight).offsetTop - scrollFudge *
+            $(idToHighlight).clientHeight;
+        setScrollTopForDocument(document, scrollTop);
       }
 
       if (this.data_.extensions.length == 0)
@@ -84,8 +85,12 @@ cr.define('options', function() {
       if (!extension.enabled || extension.terminated)
         node.classList.add('inactive-extension');
 
-      if (!extension.userModifiable)
-        node.classList.add('may-not-disable');
+      if (extension.managedInstall) {
+        node.classList.add('may-not-modify');
+        node.classList.add('may-not-remove');
+      } else if (extension.suspiciousInstall) {
+        node.classList.add('may-not-modify');
+      }
 
       var idToHighlight = this.getIdQueryParam_();
       if (node.id == idToHighlight)
@@ -201,9 +206,10 @@ cr.define('options', function() {
         // The 'Enabled' checkbox.
         var enable = node.querySelector('.enable-checkbox');
         enable.hidden = false;
-        enable.querySelector('input').disabled = !extension.userModifiable;
+        enable.querySelector('input').disabled = extension.managedInstall ||
+                                                 extension.suspiciousInstall;
 
-        if (extension.userModifiable) {
+        if (!extension.managedInstall && !extension.suspiciousInstall) {
           enable.addEventListener('click', function(e) {
             // When e.target is the label instead of the checkbox, it doesn't
             // have the checked property and the state of the checkbox is
@@ -257,8 +263,12 @@ cr.define('options', function() {
       }
 
       // Then the 'managed, cannot uninstall/disable' message.
-      if (!extension.userModifiable)
+      if (extension.managedInstall) {
         node.querySelector('.managed-message').hidden = false;
+      } else if (extension.suspiciousInstall) {
+        // Then the 'This isn't from the webstore, looks suspicious' message.
+        node.querySelector('.suspicious-install-message').hidden = false;
+      }
 
       // Then active views.
       if (extension.views.length > 0) {
@@ -336,7 +346,7 @@ cr.define('options', function() {
         var pad = parseInt(getComputedStyle(node, null).marginTop, 10);
         if (!isNaN(pad))
           topScroll -= pad / 2;
-        document.documentElement.scrollTop = topScroll;
+        setScrollTopForDocument(document, topScroll);
       }
     },
   };

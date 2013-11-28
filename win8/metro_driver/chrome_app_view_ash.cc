@@ -56,6 +56,10 @@ typedef winfoundtn::ITypedEventHandler<
     winui::Core::CoreWindow*,
     winui::Core::WindowSizeChangedEventArgs*> SizeChangedHandler;
 
+typedef winfoundtn::ITypedEventHandler<
+    winui::Input::EdgeGesture*,
+    winui::Input::EdgeGestureEventArgs*> EdgeEventHandler;
+
 // This function is exported by chrome.exe.
 typedef int (__cdecl *BreakpadExceptionHandler)(EXCEPTION_POINTERS* info);
 
@@ -68,9 +72,76 @@ struct Globals {
 
 namespace {
 
-// TODO(robertshield): Share this with chrome_app_view.cc
-void MetroExit() {
-  globals.app_exit->Exit();
+enum KeyModifier {
+  NONE,
+  SHIFT = 1,
+  CONTROL = 2,
+  ALT = 4
+};
+
+// Helper function to send keystrokes via the SendInput function.
+// mnemonic_char: The keystroke to be sent.
+// modifiers: Combination with Alt, Ctrl, Shift, etc.
+void SendMnemonic(
+    WORD mnemonic_char, KeyModifier modifiers) {
+  INPUT keys[4] = {0};  // Keyboard events
+  int key_count = 0;  // Number of generated events
+
+  if (modifiers & SHIFT) {
+    keys[key_count].type = INPUT_KEYBOARD;
+    keys[key_count].ki.wVk = VK_SHIFT;
+    keys[key_count].ki.wScan = MapVirtualKey(VK_SHIFT, 0);
+    key_count++;
+  }
+
+  if (modifiers & CONTROL) {
+    keys[key_count].type = INPUT_KEYBOARD;
+    keys[key_count].ki.wVk = VK_CONTROL;
+    keys[key_count].ki.wScan = MapVirtualKey(VK_CONTROL, 0);
+    key_count++;
+  }
+
+  if (modifiers & ALT) {
+    keys[key_count].type = INPUT_KEYBOARD;
+    keys[key_count].ki.wVk = VK_MENU;
+    keys[key_count].ki.wScan = MapVirtualKey(VK_MENU, 0);
+    key_count++;
+  }
+
+  keys[key_count].type = INPUT_KEYBOARD;
+  keys[key_count].ki.wVk = mnemonic_char;
+  keys[key_count].ki.wScan = MapVirtualKey(mnemonic_char, 0);
+  key_count++;
+
+  bool should_sleep = key_count > 1;
+
+  // Send key downs.
+  for (int i = 0; i < key_count; i++) {
+    SendInput(1, &keys[ i ], sizeof(keys[0]));
+    keys[i].ki.dwFlags |= KEYEVENTF_KEYUP;
+    if (should_sleep)
+      Sleep(10);
+  }
+
+  // Now send key ups in reverse order.
+  for (int i = key_count; i; i--) {
+    SendInput(1, &keys[ i - 1 ], sizeof(keys[0]));
+    if (should_sleep)
+      Sleep(10);
+  }
+}
+
+// Helper function to Exit metro chrome cleanly. If we are in the foreground
+// then we try and exit by sending an Alt+F4 key combination to the core
+// window which ensures that the chrome application tile does not show up in
+// the running metro apps list on the top left corner.
+void MetroExit(HWND core_window) {
+  if ((core_window != NULL) && (core_window == ::GetForegroundWindow())) {
+    DVLOG(1) << "We are in the foreground. Exiting via Alt F4";
+    SendMnemonic(VK_F4, ALT);
+  } else {
+    globals.app_exit->Exit();
+  }
 }
 
 class ChromeChannelListener : public IPC::Listener {
@@ -99,8 +170,13 @@ class ChromeChannelListener : public IPC::Listener {
   }
 
   virtual void OnChannelError() OVERRIDE {
-    DVLOG(1) << "Channel error";
-    MetroExit();
+    DVLOG(1) << "Channel error. Exiting.";
+    MetroExit(app_view_->core_window_hwnd());
+    // In early Windows 8 versions the code above sometimes fails so we call
+    // it a second time with a NULL window which just calls Exit().
+    ui_proxy_->PostDelayedTask(FROM_HERE,
+        base::Bind(&MetroExit, HWND(NULL)),
+        base::TimeDelta::FromMilliseconds(100));
   }
 
  private:
@@ -311,7 +387,33 @@ uint32 GetKeyboardEventFlags() {
   return flags;
 }
 
-bool LaunchChromeBrowserProcess (const wchar_t* additional_parameters) {
+bool LaunchChromeBrowserProcess(const wchar_t* additional_parameters,
+                                winapp::Activation::IActivatedEventArgs* args) {
+  if (args) {
+    DVLOG(1) << __FUNCTION__ << ":" << ::GetCommandLineW();
+    winapp::Activation::ActivationKind activation_kind;
+    CheckHR(args->get_Kind(&activation_kind));
+
+    DVLOG(1) << __FUNCTION__ << ", activation_kind=" << activation_kind;
+
+    if (activation_kind == winapp::Activation::ActivationKind_Launch) {
+      mswr::ComPtr<winapp::Activation::ILaunchActivatedEventArgs> launch_args;
+      if (args->QueryInterface(
+              winapp::Activation::IID_ILaunchActivatedEventArgs,
+              &launch_args) == S_OK) {
+        DVLOG(1) << "Activate: ActivationKind_Launch";
+        mswrw::HString launch_args_str;
+        launch_args->get_Arguments(launch_args_str.GetAddressOf());
+        string16 actual_launch_args(MakeStdWString(launch_args_str.Get()));
+        if (actual_launch_args == L"test_open") {
+          DVLOG(1) << __FUNCTION__
+                  << "Not launching chrome server";
+          return true;
+        }
+      }
+    }
+  }
+
   DVLOG(1) << "Launching chrome server";
   base::FilePath chrome_exe_path;
 
@@ -432,6 +534,22 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
       &window_activated_token_);
   CheckHR(hr);
 
+  // Register for edge gesture notifications.
+  mswr::ComPtr<winui::Input::IEdgeGestureStatics> edge_gesture_statics;
+  hr = winrt_utils::CreateActivationFactory(
+      RuntimeClass_Windows_UI_Input_EdgeGesture,
+      edge_gesture_statics.GetAddressOf());
+  CheckHR(hr);
+
+  mswr::ComPtr<winui::Input::IEdgeGesture> edge_gesture;
+  hr = edge_gesture_statics->GetForCurrentView(&edge_gesture);
+  CheckHR(hr);
+
+  hr = edge_gesture->add_Completed(mswr::Callback<EdgeEventHandler>(
+      this, &ChromeAppViewAsh::OnEdgeGestureCompleted).Get(),
+      &edgeevent_token_);
+  CheckHR(hr);
+
   // By initializing the direct 3D swap chain with the corewindow
   // we can now directly blit to it from the browser process.
   direct3d_helper_.Initialize(window);
@@ -535,6 +653,11 @@ HRESULT ChromeAppViewAsh::Unsnap() {
 
 void ChromeAppViewAsh::OnActivateDesktop(const base::FilePath& file_path) {
   DLOG(INFO) << "ChannelAppViewAsh::OnActivateDesktop\n";
+
+  // As we are the top level window, the exiting is done async so we manage
+  // to execute  the entire function including the final Send().
+  MetroExit(core_window_hwnd());
+
   // We are just executing delegate_execute here without parameters. Assumption
   // here is that this process will be reused by shell when asking for
   // IExecuteCommand interface.
@@ -683,7 +806,7 @@ HRESULT ChromeAppViewAsh::OnActivate(
   else if (activation_kind == winapp::Activation::ActivationKind_Protocol)
     HandleProtocolRequest(args);
   else
-    LaunchChromeBrowserProcess(NULL);
+    LaunchChromeBrowserProcess(NULL, args);
   // We call ICoreWindow::Activate after the handling for the search/protocol
   // requests because Chrome can be launched to handle a search request which
   // in turn launches the chrome browser process in desktop mode via
@@ -923,7 +1046,7 @@ HRESULT ChromeAppViewAsh::HandleSearchRequest(
 
   if (!ui_channel_) {
     DVLOG(1) << "Launched to handle search request";
-    LaunchChromeBrowserProcess(L"--windows8-search");
+    LaunchChromeBrowserProcess(L"--windows8-search", args);
   }
 
   mswrw::HString search_string;
@@ -960,6 +1083,17 @@ HRESULT ChromeAppViewAsh::HandleProtocolRequest(
                     base::Bind(&ChromeAppViewAsh::OnNavigateToUrl,
                                base::Unretained(this),
                                actual_url));
+  return S_OK;
+}
+
+HRESULT ChromeAppViewAsh::OnEdgeGestureCompleted(
+    winui::Input::IEdgeGesture* gesture,
+    winui::Input::IEdgeGestureEventArgs* args) {
+  // Swipe from edge gesture (and win+z) is equivalent to pressing F11.
+  // TODO(cpu): Make this cleaner for m33.
+  ui_channel_->Send(new MetroViewerHostMsg_KeyDown(VK_F11, 1, 0, 0));
+  ::Sleep(15);
+  ui_channel_->Send(new MetroViewerHostMsg_KeyUp(VK_F11, 1, 0, 0));
   return S_OK;
 }
 

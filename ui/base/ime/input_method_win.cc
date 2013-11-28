@@ -26,7 +26,8 @@ InputMethodWin::InputMethodWin(internal::InputMethodDelegate* delegate,
     : active_(false),
       toplevel_window_handle_(toplevel_window_handle),
       direction_(base::i18n::UNKNOWN_DIRECTION),
-      pending_requested_direction_(base::i18n::UNKNOWN_DIRECTION) {
+      pending_requested_direction_(base::i18n::UNKNOWN_DIRECTION),
+      accept_carriage_return_(false) {
   SetDelegate(delegate);
 }
 
@@ -37,8 +38,11 @@ void InputMethodWin::Init(bool focused) {
   InputMethodBase::Init(focused);
 }
 
-bool InputMethodWin::DispatchKeyEvent(
-    const base::NativeEvent& native_key_event) {
+bool InputMethodWin::DispatchKeyEvent(const ui::KeyEvent& event) {
+  if (!event.HasNativeEvent())
+    return DispatchFabricatedKeyEvent(event);
+
+  const base::NativeEvent& native_key_event = event.native_event();
   if (native_key_event.message == WM_CHAR) {
     BOOL handled;
     OnChar(native_key_event.hwnd, native_key_event.message,
@@ -72,29 +76,11 @@ bool InputMethodWin::DispatchKeyEvent(
   return DispatchKeyEventPostIME(native_key_event);
 }
 
-bool InputMethodWin::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
-  // TODO(ananta)
-  // Support IMEs and RTL layout in Windows 8 metro Ash. The code below won't
-  // work with IMEs.
-  // Bug: https://code.google.com/p/chromium/issues/detail?id=164964
-  if (event.is_char()) {
-    if (GetTextInputClient()) {
-      GetTextInputClient()->InsertChar(event.key_code(),
-                                       ui::GetModifiersFromKeyState());
-      return true;
-    }
-  }
-  return DispatchFabricatedKeyEventPostIME(event.type(),
-                                           event.key_code(),
-                                           event.flags());
-}
-
 void InputMethodWin::OnInputLocaleChanged() {
   active_ = imm32_manager_.SetInputLanguage();
   locale_ = imm32_manager_.GetInputLanguageName();
   direction_ = imm32_manager_.GetTextDirection();
   OnInputMethodChanged();
-  InputMethodBase::OnInputLocaleChanged();
 }
 
 std::string InputMethodWin::GetInputLocale() {
@@ -107,6 +93,13 @@ base::i18n::TextDirection InputMethodWin::GetInputTextDirection() {
 
 bool InputMethodWin::IsActive() {
   return active_;
+}
+
+void InputMethodWin::OnDidChangeFocusedClient(
+    TextInputClient* focused_before,
+    TextInputClient* focused) {
+  if (focused_before != focused)
+    accept_carriage_return_ = false;
 }
 
 LRESULT InputMethodWin::OnImeRequest(UINT message,
@@ -147,8 +140,18 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
   // We need to send character events to the focused text input client event if
   // its text input type is ui::TEXT_INPUT_TYPE_NONE.
   if (GetTextInputClient()) {
-    GetTextInputClient()->InsertChar(static_cast<char16>(wparam),
-                                     ui::GetModifiersFromKeyState());
+    const char16 kCarriageReturn = L'\r';
+    const char16 ch = static_cast<char16>(wparam);
+    // A mask to determine the previous key state from |lparam|. The value is 1
+    // if the key is down before the message is sent, or it is 0 if the key is
+    // up.
+    const uint32 kPrevKeyDownBit = 0x40000000;
+    if (ch == kCarriageReturn && !(lparam & kPrevKeyDownBit))
+      accept_carriage_return_ = true;
+    // Conditionally ignore '\r' events to work around crbug.com/319100.
+    // TODO(yukawa, IME): Figure out long-term solution.
+    if (ch != kCarriageReturn || accept_carriage_return_)
+      GetTextInputClient()->InsertChar(ch, ui::GetModifiersFromKeyState());
   }
 
   // Explicitly show the system menu at a good location on [Alt]+[Space].
@@ -347,6 +350,23 @@ bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
 #else
   return attached_window_handle && GetFocus() == attached_window_handle;
 #endif
+}
+
+bool InputMethodWin::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
+  // TODO(ananta)
+  // Support IMEs and RTL layout in Windows 8 metro Ash. The code below won't
+  // work with IMEs.
+  // Bug: https://code.google.com/p/chromium/issues/detail?id=164964
+  if (event.is_char()) {
+    if (GetTextInputClient()) {
+      GetTextInputClient()->InsertChar(event.key_code(),
+                                       ui::GetModifiersFromKeyState());
+      return true;
+    }
+  }
+  return DispatchFabricatedKeyEventPostIME(event.type(),
+                                           event.key_code(),
+                                           event.flags());
 }
 
 }  // namespace ui

@@ -83,12 +83,12 @@ bool ReliableQuicStream::WillAcceptStreamFrame(
 bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   DCHECK_EQ(frame.stream_id, id_);
   if (read_side_closed_) {
-    DLOG(INFO) << ENDPOINT << "Ignoring frame " << frame.stream_id;
+    DVLOG(1) << ENDPOINT << "Ignoring frame " << frame.stream_id;
     // We don't want to be reading: blackhole the data.
     return true;
   }
   // Note: This count include duplicate data received.
-  stream_bytes_read_ += frame.data.length();
+  stream_bytes_read_ += frame.data.TotalBufferSize();
 
   bool accepted = sequencer_.OnStreamFrame(frame);
 
@@ -255,12 +255,14 @@ QuicConsumedData ReliableQuicStream::WriteDataInternal(
     StringPiece data, bool fin) {
   struct iovec iov = {const_cast<char*>(data.data()),
                       static_cast<size_t>(data.size())};
-  return WritevDataInternal(&iov, 1, fin);
+  return WritevDataInternal(&iov, 1, fin, NULL);
 }
 
-QuicConsumedData ReliableQuicStream::WritevDataInternal(const struct iovec* iov,
-                                                        int iov_count,
-                                                        bool fin) {
+QuicConsumedData ReliableQuicStream::WritevDataInternal(
+    const struct iovec* iov,
+    int iov_count,
+    bool fin,
+    QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
   if (write_side_closed_) {
     DLOG(ERROR) << ENDPOINT << "Attempt to write when the write side is closed";
     return QuicConsumedData(0, false);
@@ -270,8 +272,8 @@ QuicConsumedData ReliableQuicStream::WritevDataInternal(const struct iovec* iov,
   for (int i = 0; i < iov_count; ++i) {
     write_length += iov[i].iov_len;
   }
-  QuicConsumedData consumed_data =
-      session()->WritevData(id(), iov, iov_count, stream_bytes_written_, fin);
+  QuicConsumedData consumed_data = session()->WritevData(
+      id(), iov, iov_count, stream_bytes_written_, fin, ack_notifier_delegate);
   stream_bytes_written_ += consumed_data.bytes_consumed;
   if (consumed_data.bytes_consumed == write_length) {
     if (fin && consumed_data.fin_consumed) {
@@ -294,11 +296,11 @@ void ReliableQuicStream::CloseReadSide() {
   if (read_side_closed_) {
     return;
   }
-  DLOG(INFO) << ENDPOINT << "Done reading from stream " << id();
+  DVLOG(1) << ENDPOINT << "Done reading from stream " << id();
 
   read_side_closed_ = true;
   if (write_side_closed_) {
-    DLOG(INFO) << ENDPOINT << "Closing stream: " << id();
+    DVLOG(1) << ENDPOINT << "Closing stream: " << id();
     session_->CloseStream(id());
   }
 }
@@ -315,7 +317,7 @@ uint32 ReliableQuicStream::ProcessRawData(const char* data, uint32 data_len) {
     total_bytes_consumed += StripPriorityAndHeaderId(data, data_len);
     data += total_bytes_consumed;
     data_len -= total_bytes_consumed;
-    if (data_len == 0 || !session_->connection()->connected()) {
+    if (data_len == 0 || total_bytes_consumed == 0) {
       return total_bytes_consumed;
     }
   }
@@ -466,11 +468,11 @@ void ReliableQuicStream::CloseWriteSide() {
   if (write_side_closed_) {
     return;
   }
-  DLOG(INFO) << ENDPOINT << "Done writing to stream " << id();
+  DVLOG(1) << ENDPOINT << "Done writing to stream " << id();
 
   write_side_closed_ = true;
   if (read_side_closed_) {
-    DLOG(INFO) << ENDPOINT << "Closing stream: " << id();
+    DVLOG(1) << ENDPOINT << "Closing stream: " << id();
     session_->CloseStream(id());
   }
 }

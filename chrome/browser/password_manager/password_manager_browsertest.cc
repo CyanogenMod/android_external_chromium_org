@@ -17,7 +17,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -371,4 +371,100 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       upload_histogram->SnapshotSamples();
   EXPECT_EQ(0, snapshot->GetCount(0 /* failure */));
   EXPECT_EQ(1, snapshot->GetCount(1 /* success */));
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, PromptForSubmitFromIframe) {
+  NavigateToFile("/password/password_submit_from_iframe.html");
+
+  // Submit a form in an iframe, then cause the whole page to navigate without a
+  // user gesture. We expect the save password prompt to be shown here, because
+  // some pages use such iframes for login forms.
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "var iframe = document.getElementById('test_iframe');"
+      "var iframe_doc = iframe.contentDocument;"
+      "iframe_doc.getElementById('username_field').value = 'temp';"
+      "iframe_doc.getElementById('password_field').value = 'random';"
+      "iframe_doc.getElementById('submit_button').click()";
+
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  EXPECT_TRUE(observer.infobar_shown());
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       PromptForInputElementWithoutName) {
+  // Check that the prompt is shown for forms where input elements lack the
+  // "name" attribute but the "id" is present.
+  NavigateToFile("/password/password_form.html");
+
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_field_no_name').value = 'temp';"
+      "document.getElementById('password_field_no_name').value = 'random';"
+      "document.getElementById('input_submit_button_no_name').click()";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  EXPECT_TRUE(observer.infobar_shown());
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       PromptForInputElementWithoutId) {
+  // Check that the prompt is shown for forms where input elements lack the
+  // "id" attribute but the "name" attribute is present.
+  NavigateToFile("/password/password_form.html");
+
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementsByName('username_field_no_id')[0].value = 'temp';"
+      "document.getElementsByName('password_field_no_id')[0].value = 'random';"
+      "document.getElementsByName('input_submit_button_no_id')[0].click()";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  EXPECT_TRUE(observer.infobar_shown());
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       NoPromptForInputElementWithoutIdAndName) {
+  // Check that no prompt is shown for forms where the input fields lack both
+  // the "id" and the "name" attributes.
+  NavigateToFile("/password/password_form.html");
+
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "var form = document.getElementById('testform_elements_no_id_no_name');"
+      "var username = form.children[0];"
+      "username.value = 'temp';"
+      "var password = form.children[1];"
+      "password.value = 'random';"
+      "form.children[2].click()";  // form.children[2] is the submit button.
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  EXPECT_FALSE(observer.infobar_shown());
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, DeleteFrameBeforeSubmit) {
+  NavigateToFile("/password/multi_frames.html");
+
+  NavigationObserver observer(WebContents());
+  // Make sure we save some password info from an iframe and then destroy it.
+  std::string save_and_remove =
+      "var first_frame = document.getElementById('first_frame');"
+      "var frame_doc = first_frame.contentDocument;"
+      "frame_doc.getElementById('username_field').value = 'temp';"
+      "frame_doc.getElementById('password_field').value = 'random';"
+      "frame_doc.getElementById('input_submit_button').click();"
+      "first_frame.parentNode.removeChild(first_frame);";
+  // Submit from the main frame, but without navigating through the onsubmit
+  // handler.
+  std::string navigate_frame =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random';"
+      "document.getElementById('input_submit_button').click();"
+      "window.location.href = 'done.html';";
+
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), save_and_remove));
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), navigate_frame));
+  observer.Wait();
+  // The only thing we check here is that there is no use-after-free reported.
 }

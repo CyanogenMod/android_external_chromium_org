@@ -125,7 +125,6 @@ private:
 class InstantNTPPrerendererTest : public testing::Test {
  public:
   virtual void SetUp() OVERRIDE {
-    chrome::EnableInstantExtendedAPIForTesting();
     instant_service_ = InstantServiceFactory::GetForProfile(&profile_);
     instant_ntp_prerenderer_.reset(
         new TestableInstantNTPPrerenderer(&profile_, instant_service_));
@@ -157,8 +156,7 @@ TEST_F(InstantNTPPrerendererTest, PrefersRemoteNTPOnStartup) {
   instant_ntp_prerenderer()->set_ntp(ntp.get());
   instant_ntp_prerenderer()->set_instant_url(instant_url);
   instant_ntp_prerenderer()->set_in_startup(true);
-  EXPECT_EQ(!chrome::ShouldPreferRemoteNTPOnStartup(),
-            instant_ntp_prerenderer()->ShouldSwitchToLocalNTP());
+  EXPECT_FALSE(instant_ntp_prerenderer()->ShouldSwitchToLocalNTP());
 }
 
 TEST_F(InstantNTPPrerendererTest, SwitchesToLocalNTPIfNoInstantSupport) {

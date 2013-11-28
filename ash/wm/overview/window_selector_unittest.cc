@@ -259,6 +259,39 @@ TEST_F(WindowSelectorTest, Basic) {
   EXPECT_FALSE(aura::client::GetCursorClient(root_window)->IsCursorLocked());
 }
 
+// Tests entering overview mode with two windows and selecting one.
+TEST_F(WindowSelectorTest, FullscreenWindow) {
+  gfx::Rect bounds(0, 0, 400, 400);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+  scoped_ptr<aura::Window> panel1(CreatePanelWindow(bounds));
+  wm::ActivateWindow(window1.get());
+
+  wm::GetWindowState(window1.get())->ToggleFullscreen();
+  // The panel is hidden in fullscreen mode.
+  EXPECT_FALSE(panel1->IsVisible());
+  EXPECT_TRUE(wm::GetWindowState(window1.get())->IsFullscreen());
+
+  // Enter overview and select the fullscreen window.
+  ToggleOverview();
+
+  // The panel becomes temporarily visible for the overview.
+  EXPECT_TRUE(panel1->IsVisible());
+  ClickWindow(window1.get());
+
+  // The window is still fullscreen as it was selected. The panel should again
+  // be hidden.
+  EXPECT_TRUE(wm::GetWindowState(window1.get())->IsFullscreen());
+  EXPECT_FALSE(panel1->IsVisible());
+
+  // Entering overview and selecting another window should exit fullscreen.
+  // TODO(flackr): Currently the panel remains hidden, but should become visible
+  // again.
+  ToggleOverview();
+  ClickWindow(window2.get());
+  EXPECT_FALSE(wm::GetWindowState(window1.get())->IsFullscreen());
+}
+
 // Tests that the shelf dimming state is removed while in overview and restored
 // on exiting overview.
 TEST_F(WindowSelectorTest, OverviewUndimsShelf) {
@@ -354,7 +387,11 @@ TEST_F(WindowSelectorTest, BasicCycle) {
 
   Cycle(WindowSelector::FORWARD);
   EXPECT_TRUE(IsSelecting());
+  EXPECT_TRUE(wm::IsActiveWindow(window2.get()));
+
   Cycle(WindowSelector::FORWARD);
+  EXPECT_TRUE(wm::IsActiveWindow(window3.get()));
+
   StopCycling();
   EXPECT_FALSE(IsSelecting());
   EXPECT_FALSE(wm::IsActiveWindow(window1.get()));
@@ -691,7 +728,7 @@ TEST_F(WindowSelectorTest, MultipleDisplays) {
     return;
 
   UpdateDisplay("600x400,600x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   gfx::Rect bounds1(0, 0, 400, 400);
   gfx::Rect bounds2(650, 0, 400, 400);
 
@@ -747,13 +784,13 @@ TEST_F(WindowSelectorTest, MultipleDisplays) {
 }
 
 // Verifies that the single display overview used during alt tab cycling uses
-// the display of the initial window by default.
-TEST_F(WindowSelectorTest, CycleOverviewUsesInitialDisplay) {
+// the display of the selected window by default.
+TEST_F(WindowSelectorTest, CycleOverviewUsesCurrentDisplay) {
   if (!SupportsMultipleDisplays())
     return;
 
   UpdateDisplay("400x400,400x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 100, 100)));
   scoped_ptr<aura::Window> window2(CreateWindow(gfx::Rect(450, 0, 100, 100)));
@@ -766,9 +803,9 @@ TEST_F(WindowSelectorTest, CycleOverviewUsesInitialDisplay) {
   Cycle(WindowSelector::FORWARD);
   FireOverviewStartTimer();
 
-  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
       ToEnclosingRect(GetTransformedTargetBounds(window1.get()))));
-  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
       ToEnclosingRect(GetTransformedTargetBounds(window2.get()))));
   StopCycling();
 }
@@ -779,7 +816,7 @@ TEST_F(WindowSelectorTest, CycleMultipleDisplaysCopiesWindows) {
     return;
 
   UpdateDisplay("400x400,400x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   gfx::Rect root1_rect(0, 0, 100, 100);
   gfx::Rect root2_rect(450, 0, 100, 100);
@@ -790,8 +827,7 @@ TEST_F(WindowSelectorTest, CycleMultipleDisplaysCopiesWindows) {
   unmoved1->SetName("unmoved1");
   unmoved2->SetName("unmoved2");
   moved1->SetName("moved1");
-  moved1->SetProperty(aura::client::kModalKey,
-                      ui::MODAL_TYPE_WINDOW);
+  moved1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
   moved1_trans_parent->AddTransientChild(moved1.get());
   moved1_trans_parent->SetName("moved1_trans_parent");
 
@@ -830,9 +866,10 @@ TEST_F(WindowSelectorTest, CycleMultipleDisplaysCopiesWindows) {
   // Verify that the bounds and transform of the copy match the original window
   // but that it is on the other root window.
   EXPECT_EQ(root_windows[1], copy1->GetRootWindow());
-  EXPECT_EQ(moved1->GetBoundsInScreen(), copy1->GetBoundsInScreen());
-  EXPECT_EQ(moved1->layer()->GetTargetTransform(),
-            copy1->layer()->GetTargetTransform());
+  EXPECT_EQ(moved1->GetBoundsInScreen().ToString(),
+            copy1->GetBoundsInScreen().ToString());
+  EXPECT_EQ(moved1->layer()->GetTargetTransform().ToString(),
+            copy1->layer()->GetTargetTransform().ToString());
   StopCycling();
 
   // After cycling the copy windows should have been destroyed.
@@ -848,7 +885,7 @@ TEST_F(WindowSelectorTest, MultipleDisplaysOverviewTransitionToCycle) {
     return;
 
   UpdateDisplay("400x400,400x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 100, 100)));
   scoped_ptr<aura::Window> window2(CreateWindow(gfx::Rect(450, 0, 100, 100)));
@@ -877,7 +914,7 @@ TEST_F(WindowSelectorTest, BoundsChangeDuringCycleOnOtherDisplay) {
     return;
 
   UpdateDisplay("400x400,400x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 100, 100)));
   scoped_ptr<aura::Window> window2(CreateWindow(gfx::Rect(450, 0, 100, 100)));

@@ -8,10 +8,10 @@
 #include "base/prefs/pref_value_map.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
-#include "grit/generated_resources.h"
+#include "components/policy/core/common/policy_map.h"
+#include "extensions/common/extension.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
 
 namespace extensions {

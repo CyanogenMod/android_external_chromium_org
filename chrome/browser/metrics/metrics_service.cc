@@ -174,7 +174,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/browser/metrics/compression_utils.h"
@@ -183,6 +182,7 @@
 #include "chrome/browser/metrics/metrics_reporting_scheduler.h"
 #include "chrome/browser/metrics/time_ticks_experiment_win.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/browser/net/http_pipelining_compatibility_client.h"
 #include "chrome/browser/net/network_stats.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
@@ -200,6 +200,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "components/variations/entropy_provider.h"
+#include "components/variations/metrics_util.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/histogram_fetcher.h"
 #include "content/public/browser/load_notification_details.h"
@@ -210,6 +211,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/webplugininfo.h"
+#include "extensions/browser/process_map.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 
@@ -229,7 +231,7 @@
 #endif
 
 #if !defined(OS_ANDROID)
-#include "chrome/browser/service/service_process_control.h"
+#include "chrome/browser/service_process/service_process_control.h"
 #endif
 
 using base::Time;
@@ -330,19 +332,31 @@ void MarkAppCleanShutdownAndCommit() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
   pref->SetInteger(prefs::kStabilityExecutionPhase,
-                   MetricsService::CLEAN_SHUTDOWN);
+                   MetricsService::SHUTDOWN_COMPLETE);
   // Start writing right away (write happens on a different thread).
   pref->CommitPendingWrite();
 }
 
 }  // namespace
 
+
+SyntheticTrialGroup::SyntheticTrialGroup(uint32 trial,
+                                         uint32 group,
+                                         base::TimeTicks start)
+    : start_time(start) {
+  id.name = trial;
+  id.group = group;
+}
+
+SyntheticTrialGroup::~SyntheticTrialGroup() {
+}
+
 // static
 MetricsService::ShutdownCleanliness MetricsService::clean_shutdown_status_ =
     MetricsService::CLEANLY_SHUTDOWN;
 
 MetricsService::ExecutionPhase MetricsService::execution_phase_ =
-    MetricsService::CLEAN_SHUTDOWN;
+    MetricsService::UNINITIALIZED_PHASE;
 
 // This is used to quickly log stats from child process related notifications in
 // MetricsService::child_stats_buffer_.  The buffer's contents are transferred
@@ -415,7 +429,7 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterInt64Pref(prefs::kStabilityStatsBuildTime, 0);
   registry->RegisterBooleanPref(prefs::kStabilityExitedCleanly, true);
   registry->RegisterIntegerPref(prefs::kStabilityExecutionPhase,
-                                CLEAN_SHUTDOWN);
+                                UNINITIALIZED_PHASE);
   registry->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
   registry->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
   registry->RegisterIntegerPref(prefs::kStabilityLaunchCount, 0);
@@ -452,7 +466,7 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
 // static
 void MetricsService::DiscardOldStabilityStats(PrefService* local_state) {
   local_state->SetBoolean(prefs::kStabilityExitedCleanly, true);
-  local_state->SetInteger(prefs::kStabilityExecutionPhase, CLEAN_SHUTDOWN);
+  local_state->SetInteger(prefs::kStabilityExecutionPhase, UNINITIALIZED_PHASE);
   local_state->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
 
   local_state->SetInteger(prefs::kStabilityIncompleteSessionEndCount, 0);
@@ -656,7 +670,7 @@ void MetricsService::SetUpNotifications(
                  content::NotificationService::AllSources());
   registrar->Add(observer, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
                  content::NotificationService::AllSources());
-  registrar->Add(observer, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar->Add(observer, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
                  content::NotificationService::AllSources());
   registrar->Add(observer, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
                  content::NotificationService::AllSources());
@@ -719,7 +733,7 @@ void MetricsService::Observe(int type,
       }
       break;
 
-    case content::NOTIFICATION_RENDERER_PROCESS_HANG:
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG:
       LogRendererHang();
       break;
 
@@ -781,7 +795,6 @@ void MetricsService::OnAppEnterBackground() {
 void MetricsService::OnAppEnterForeground() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, false);
-  pref->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
 
   StartSchedulerIfNecessary();
 }
@@ -789,11 +802,17 @@ void MetricsService::OnAppEnterForeground() {
 void MetricsService::LogNeedForCleanShutdown() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, false);
-  pref->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
   // Redundant setting to be sure we call for a clean shutdown.
   clean_shutdown_status_ = NEED_TO_SHUTDOWN;
 }
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
+
+// static
+void MetricsService::SetExecutionPhase(ExecutionPhase execution_phase) {
+  execution_phase_ = execution_phase;
+  PrefService* pref = g_browser_process->local_state();
+  pref->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
+}
 
 void MetricsService::RecordBreakpadRegistration(bool success) {
   if (!success)
@@ -912,10 +931,11 @@ void MetricsService::InitializeMetricsState() {
     // TODO(rtenneti): On windows, consider saving/getting execution_phase from
     // the registry.
     int execution_phase = pref->GetInteger(prefs::kStabilityExecutionPhase);
-    UMA_HISTOGRAM_SPARSE_SLOWLY("Chrome.Browser.ExecutionPhase",
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Chrome.Browser.CrashedExecutionPhase",
                                 execution_phase);
-    pref->SetInteger(prefs::kStabilityExecutionPhase, CLEAN_SHUTDOWN);
   }
+  DCHECK_EQ(UNINITIALIZED_PHASE, execution_phase_);
+  SetExecutionPhase(START_METRICS_RECORDING);
 
 #if defined(OS_WIN)
   CountBrowserCrashDumpAttempts();
@@ -1165,7 +1185,7 @@ void MetricsService::OpenNewLog() {
   DCHECK(!log_manager_.current_log());
 
   log_manager_.BeginLoggingWithLog(new MetricsLog(client_id_, session_id_),
-                                   MetricsLogManager::ONGOING_LOG);
+                                   MetricsLog::ONGOING_LOG);
   if (state_ == INITIALIZED) {
     // We only need to schedule that run once.
     state_ = INIT_TASK_SCHEDULED;
@@ -1207,10 +1227,14 @@ void MetricsService::CloseCurrentLog() {
   MetricsLog* current_log =
       static_cast<MetricsLog*>(log_manager_.current_log());
   DCHECK(current_log);
-  current_log->RecordEnvironmentProto(plugins_, google_update_metrics_);
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  GetCurrentSyntheticFieldTrials(&synthetic_trials);
+  current_log->RecordEnvironment(plugins_, google_update_metrics_,
+                                 synthetic_trials);
   PrefService* pref = g_browser_process->local_state();
-  current_log->RecordIncrementalStabilityElements(plugins_,
-                                                  GetIncrementalUptime(pref));
+  current_log->RecordStabilityMetrics(GetIncrementalUptime(pref),
+                                      MetricsLog::ONGOING_LOG);
+
   RecordCurrentHistograms();
 
   log_manager_.FinishCurrentLog();
@@ -1443,15 +1467,20 @@ void MetricsService::PrepareInitialLog() {
 
   DCHECK(initial_log_.get());
   initial_log_->set_hardware_class(hardware_class_);
-  PrefService* pref = g_browser_process->local_state();
+
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  GetCurrentSyntheticFieldTrials(&synthetic_trials);
   initial_log_->RecordEnvironment(plugins_, google_update_metrics_,
-                                  GetIncrementalUptime(pref));
+                                  synthetic_trials);
+  PrefService* pref = g_browser_process->local_state();
+  initial_log_->RecordStabilityMetrics(GetIncrementalUptime(pref),
+                                       MetricsLog::INITIAL_LOG);
 
   // Histograms only get written to the current log, so make the new log current
   // before writing them.
   log_manager_.PauseCurrentLog();
   log_manager_.BeginLoggingWithLog(initial_log_.release(),
-                                   MetricsLogManager::INITIAL_LOG);
+                                   MetricsLog::INITIAL_LOG);
   RecordCurrentHistograms();
   log_manager_.FinishCurrentLog();
   log_manager_.ResumePausedLog();
@@ -1678,6 +1707,35 @@ bool MetricsService::UmaMetricsProperlyShutdown() {
   return clean_shutdown_status_ == CLEANLY_SHUTDOWN;
 }
 
+void MetricsService::RegisterSyntheticFieldTrial(
+    const SyntheticTrialGroup& trial) {
+  for (size_t i = 0; i < synthetic_trial_groups_.size(); ++i) {
+    if (synthetic_trial_groups_[i].id.name == trial.id.name) {
+      if (synthetic_trial_groups_[i].id.group != trial.id.group) {
+        synthetic_trial_groups_[i].id.group = trial.id.group;
+        synthetic_trial_groups_[i].start_time = trial.start_time;
+      }
+      return;
+    }
+  }
+
+  SyntheticTrialGroup trial_group(
+      trial.id.name, trial.id.group, base::TimeTicks::Now());
+  synthetic_trial_groups_.push_back(trial_group);
+}
+
+void MetricsService::GetCurrentSyntheticFieldTrials(
+    std::vector<chrome_variations::ActiveGroupId>* synthetic_trials) {
+  DCHECK(synthetic_trials);
+  synthetic_trials->clear();
+  const MetricsLog* current_log =
+      static_cast<const MetricsLog*>(log_manager_.current_log());
+  for (size_t i = 0; i < synthetic_trial_groups_.size(); ++i) {
+    if (synthetic_trial_groups_[i].start_time <= current_log->creation_time())
+      synthetic_trials->push_back(synthetic_trial_groups_[i].id);
+  }
+}
+
 void MetricsService::LogCleanShutdown() {
   // Redundant hack to write pref ASAP.
   MarkAppCleanShutdownAndCommit();
@@ -1689,7 +1747,7 @@ void MetricsService::LogCleanShutdown() {
   RecordBooleanPrefValue(prefs::kStabilityExitedCleanly, true);
   PrefService* pref = g_browser_process->local_state();
   pref->SetInteger(prefs::kStabilityExecutionPhase,
-                   MetricsService::CLEAN_SHUTDOWN);
+                   MetricsService::SHUTDOWN_COMPLETE);
 }
 
 #if defined(OS_CHROMEOS)

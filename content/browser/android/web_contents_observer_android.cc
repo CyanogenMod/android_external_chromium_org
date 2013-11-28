@@ -36,12 +36,12 @@ WebContentsObserverAndroid::WebContentsObserverAndroid(
 WebContentsObserverAndroid::~WebContentsObserverAndroid() {
 }
 
-jint Init(JNIEnv* env, jobject obj, jint native_content_view_core) {
+jlong Init(JNIEnv* env, jobject obj, jlong native_content_view_core) {
   ContentViewCore* content_view_core =
       reinterpret_cast<ContentViewCore*>(native_content_view_core);
   WebContentsObserverAndroid* native_observer = new WebContentsObserverAndroid(
       env, obj, content_view_core->GetWebContents());
-  return reinterpret_cast<jint>(native_observer);
+  return reinterpret_cast<intptr_t>(native_observer);
 }
 
 void WebContentsObserverAndroid::Destroy(JNIEnv* env, jobject obj) {
@@ -58,6 +58,18 @@ void WebContentsObserverAndroid::WebContentsDestroyed(
     // The java side will destroy |this|
     Java_WebContentsObserverAndroid_detachFromWebContents(env, obj.obj());
   }
+}
+
+void WebContentsObserverAndroid::RenderProcessGone(
+    base::TerminationStatus termination_status) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  jboolean was_oom_protected =
+      termination_status == base::TERMINATION_STATUS_OOM_PROTECTED;
+  Java_WebContentsObserverAndroid_renderProcessGone(
+      env, obj.obj(), was_oom_protected);
 }
 
 void WebContentsObserverAndroid::DidStartLoading(
@@ -78,19 +90,8 @@ void WebContentsObserverAndroid::DidStopLoading(
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
-
-  std::string url_string;
-  NavigationEntry* entry =
-    web_contents()->GetController().GetLastCommittedEntry();
-  // Not that GetBaseURLForDataURL is only used by the Android WebView
-  if (entry && !entry->GetBaseURLForDataURL().is_empty()) {
-    url_string = entry->GetBaseURLForDataURL().possibly_invalid_spec();
-  } else {
-    url_string = web_contents()->GetLastCommittedURL().spec();
-  }
-
-  ScopedJavaLocalRef<jstring> jstring_url(
-      ConvertUTF8ToJavaString(env, url_string));
+  ScopedJavaLocalRef<jstring> jstring_url(ConvertUTF8ToJavaString(
+      env, web_contents()->GetLastCommittedURL().spec()));
   Java_WebContentsObserverAndroid_didStopLoading(
       env, obj.obj(), jstring_url.obj());
 }
@@ -199,8 +200,16 @@ void WebContentsObserverAndroid::DidFinishLoad(
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
+
+  std::string url_string = validated_url.spec();
+  NavigationEntry* entry =
+    web_contents()->GetController().GetLastCommittedEntry();
+  // Note that GetBaseURLForDataURL is only used by the Android WebView.
+  if (entry && !entry->GetBaseURLForDataURL().is_empty())
+    url_string = entry->GetBaseURLForDataURL().possibly_invalid_spec();
+
   ScopedJavaLocalRef<jstring> jstring_url(
-      ConvertUTF8ToJavaString(env, validated_url.spec()));
+      ConvertUTF8ToJavaString(env, url_string));
   Java_WebContentsObserverAndroid_didFinishLoad(
       env, obj.obj(), frame_id, jstring_url.obj(), is_main_frame);
 }

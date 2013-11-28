@@ -24,6 +24,10 @@ class UserActionClient;
 }
 }
 
+namespace content {
+class BrowserContext;
+}
+
 namespace ui {
 class MenuModel;
 }
@@ -38,35 +42,27 @@ class KeyboardControllerProxy;
 
 namespace ash {
 
+class AccessibilityDelegate;
 class CapsLockDelegate;
 class LauncherDelegate;
-class LauncherModel;
 struct LauncherItem;
 class MediaDelegate;
 class NewWindowDelegate;
 class RootWindowHostFactory;
-class AccessibilityDelegate;
 class SessionStateDelegate;
+class ShelfModel;
 class SystemTrayDelegate;
 class UserWallpaperDelegate;
 
 enum UserMetricsAction {
   UMA_ACCEL_KEYBOARD_BRIGHTNESS_DOWN_F6,
   UMA_ACCEL_KEYBOARD_BRIGHTNESS_UP_F7,
-  UMA_ACCEL_LOCK_SCREEN_L,
   UMA_ACCEL_LOCK_SCREEN_LOCK_BUTTON,
   UMA_ACCEL_LOCK_SCREEN_POWER_BUTTON,
-  UMA_ACCEL_FULLSCREEN_F4,
   UMA_ACCEL_MAXIMIZE_RESTORE_F4,
-  UMA_ACCEL_NEWTAB_T,
-  UMA_ACCEL_NEXTWINDOW_F5,
-  UMA_ACCEL_NEXTWINDOW_TAB,
-  UMA_ACCEL_OVERVIEW_F5,
   UMA_ACCEL_PREVWINDOW_F5,
-  UMA_ACCEL_PREVWINDOW_TAB,
   UMA_ACCEL_EXIT_FIRST_Q,
   UMA_ACCEL_EXIT_SECOND_Q,
-  UMA_ACCEL_SEARCH_LWIN,
   UMA_ACCEL_SHUT_DOWN_POWER_BUTTON,
   UMA_CLOSE_THROUGH_CONTEXT_MENU,
   UMA_GESTURE_OVERVIEW,
@@ -74,6 +70,9 @@ enum UserMetricsAction {
   UMA_LAUNCHER_CLICK_ON_APPLIST_BUTTON,
   UMA_MINIMIZE_PER_KEY,
   UMA_MOUSE_DOWN,
+  UMA_SHELF_ALIGNMENT_SET_BOTTOM,
+  UMA_SHELF_ALIGNMENT_SET_LEFT,
+  UMA_SHELF_ALIGNMENT_SET_RIGHT,
   UMA_TOGGLE_MAXIMIZE_CAPTION_CLICK,
   UMA_TOGGLE_MAXIMIZE_CAPTION_GESTURE,
   UMA_TOUCHPAD_GESTURE_OVERVIEW,
@@ -148,8 +147,7 @@ class ASH_EXPORT ShellDelegate {
 
   // Creates a new LauncherDelegate. Shell takes ownership of the returned
   // value.
-  virtual LauncherDelegate* CreateLauncherDelegate(
-      ash::LauncherModel* model) = 0;
+  virtual LauncherDelegate* CreateLauncherDelegate(ShelfModel* model) = 0;
 
   // Creates a system-tray delegate. Shell takes ownership of the delegate.
   virtual SystemTrayDelegate* CreateSystemTrayDelegate() = 0;

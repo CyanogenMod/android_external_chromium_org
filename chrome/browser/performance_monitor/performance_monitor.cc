@@ -28,7 +28,6 @@
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
@@ -41,6 +40,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "net/url_request/url_request.h"
 
 using content::BrowserThread;
@@ -51,10 +51,12 @@ namespace performance_monitor {
 
 namespace {
 
+#if !defined(OS_ANDROID)
 std::string TimeToString(base::Time time) {
   int64 time_int64 = time.ToInternalValue();
   return base::Int64ToString(time_int64);
 }
+#endif  // !defined(OS_ANDROID)
 
 bool StringToTime(std::string time, base::Time* output) {
   int64 time_int64 = 0;
@@ -239,7 +241,7 @@ void PerformanceMonitor::RegisterForNotifications() {
       content::NotificationService::AllSources());
 
   // Crashes
-  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar_.Add(this, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
       content::NotificationService::AllSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
       content::NotificationService::AllSources());
@@ -594,7 +596,7 @@ void PerformanceMonitor::Observe(int type,
                         content::Details<Extension>(details).ptr());
       break;
     }
-    case content::NOTIFICATION_RENDERER_PROCESS_HANG: {
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG: {
       std::string url;
       content::RenderWidgetHost* widget =
           content::Source<content::RenderWidgetHost>(source).ptr();

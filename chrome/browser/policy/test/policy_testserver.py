@@ -68,6 +68,7 @@ import tlslite
 import tlslite.api
 import tlslite.utils
 import tlslite.utils.cryptomath
+import urlparse
 
 # The name and availability of the json module varies in python versions.
 try:
@@ -232,10 +233,8 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     settings = ep.ExternalPolicyData()
     data = self.server.ReadPolicyDataFromDataDir(policy_key)
     if data:
-      settings.download_url = ('http://%s:%s/externalpolicydata?key=%s' %
-                                  (self.server.server_name,
-                                   self.server.server_port,
-                                   policy_key) )
+      settings.download_url = urlparse.urljoin(
+          self.server.GetBaseURL(), 'externalpolicydata?key=%s' % policy_key)
       settings.secure_hash = hashlib.sha1(data).digest()
     return settings.SerializeToString()
 
@@ -672,13 +671,12 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     logging.debug('%s\n%s' % (label, str(msg)))
 
 
-class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
-                       testserver_base.BrokenPipeHandlerMixIn,
+class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
                        testserver_base.StoppableHTTPServer):
   """Handles requests and keeps global service state."""
 
   def __init__(self, server_address, data_dir, policy_path, client_state_file,
-               private_key_paths):
+               private_key_paths, server_base_url):
     """Initializes the server.
 
     Args:
@@ -692,6 +690,7 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
     self.data_dir = data_dir
     self.policy_path = policy_path
     self.client_state_file = client_state_file
+    self.server_base_url = server_base_url
 
     self.keys = []
     if private_key_paths:
@@ -766,7 +765,10 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
       dmtoken_chars.append(random.choice('0123456789abcdef'))
     dmtoken = ''.join(dmtoken_chars)
     allowed_policy_types = {
-      dm.DeviceRegisterRequest.BROWSER: ['google/chrome/user'],
+      dm.DeviceRegisterRequest.BROWSER: [
+          'google/chrome/user',
+          'google/chrome/extension'
+      ],
       dm.DeviceRegisterRequest.USER: [
           'google/chromeos/user',
           'google/chrome/extension'
@@ -899,6 +901,21 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
     except IOError:
       return None
 
+  def GetBaseURL(self):
+    """Returns the server base URL.
+
+    Respects the |server_base_url| configuration parameter, if present. Falls
+    back to construct the URL from the server hostname and port otherwise.
+
+    Returns:
+      The URL to use for constructing URLs that get returned to clients.
+    """
+    base_url = self.server_base_url
+    if base_url is None:
+      base_url = 'http://%s:%s' % self.server_address[:2]
+
+    return base_url
+
 
 class PolicyServerRunner(testserver_base.TestServerRunner):
 
@@ -912,7 +929,8 @@ class PolicyServerRunner(testserver_base.TestServerRunner):
     server = PolicyTestServer((self.options.host, self.options.port),
                               data_dir, config_file,
                               self.options.client_state_file,
-                              self.options.policy_keys)
+                              self.options.policy_keys,
+                              self.options.server_base_url)
     server_data['port'] = server.server_port
     return server
 
@@ -942,6 +960,9 @@ class PolicyServerRunner(testserver_base.TestServerRunner):
                                   help='Specify a configuration file to use '
                                   'instead of the default '
                                   '<data_dir>/device_management')
+    self.option_parser.add_option('--server-base-url', dest='server_base_url',
+                                  help='The server base URL to use when '
+                                  'constructing URLs to return to the client.')
 
   def run_server(self):
     logger = logging.getLogger()

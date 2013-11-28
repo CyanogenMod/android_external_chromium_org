@@ -28,7 +28,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/SkBlitRow_opts_arm.cpp \
 	third_party/skia/src/opts/opts_check_arm.cpp \
 	third_party/skia/src/opts/SkXfermode_opts_none.cpp \
-	third_party/skia/src/opts/SkMorphology_opts_none.cpp
+	third_party/skia/src/opts/SkBlurImage_opts_none.cpp
 
 
 # Flags passed to both C and C++ files.
@@ -83,7 +83,9 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -171,7 +173,9 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \

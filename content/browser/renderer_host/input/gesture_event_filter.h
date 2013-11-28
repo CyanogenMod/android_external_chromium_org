@@ -74,7 +74,7 @@ class CONTENT_EXPORT GestureEventFilter {
   // with state |ack_result| and event |type|. May send events if the queue is
   // not empty.
   void ProcessGestureAck(InputEventAckState ack_result,
-                         WebKit::WebInputEvent::Type type,
+                         blink::WebInputEvent::Type type,
                          const ui::LatencyInfo& latency);
 
   // Sets the state of the |fling_in_progress_| field to indicate that a fling
@@ -89,11 +89,13 @@ class CONTENT_EXPORT GestureEventFilter {
 
   void ForwardGestureEvent(const GestureEventWithLatencyInfo& gesture_event);
 
+  void set_debounce_enabled_for_testing(bool enabled) {
+    debounce_enabled_ = enabled;
+  }
+
  private:
   friend class MockRenderWidgetHost;
   friend class GestureEventFilterTest;
-
-  static bool ShouldIgnoreAckForGestureType(WebKit::WebInputEvent::Type type);
 
   // TODO(mohsen): There are a bunch of ShouldForward.../ShouldDiscard...
   // methods that are getting confusing. This should be somehow fixed. Maybe
@@ -152,11 +154,6 @@ class CONTENT_EXPORT GestureEventFilter {
   gfx::Transform GetTransformForEvent(
       const GestureEventWithLatencyInfo& gesture_event) const;
 
-  // Pops and sends events ignoring ack from the head of
-  // |coalesced_gesture_events_| until the queue is empty or the event at the
-  // head requires an ack.
-  void SendEventsIgnoringAck();
-
   // Adds |gesture_event| to the |coalesced_gesture_events_|, resetting the
   // accumulation of |combined_scroll_pinch_|.
   void EnqueueEvent(const GestureEventWithLatencyInfo& gesture_event);
@@ -212,6 +209,10 @@ class CONTENT_EXPORT GestureEventFilter {
   // Time window in which to debounce scroll/fling ends.
   // TODO(rjkroege): Make this dynamically configurable.
   int debounce_interval_time_ms_;
+
+  // Whether scroll-ending events should be deferred when a scroll is active.
+  // Defaults to true.
+  bool debounce_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureEventFilter);
 };

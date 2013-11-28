@@ -68,6 +68,7 @@ class TestHooks : public AnimationDelegate {
   virtual void DidCommitAndDrawFrame() {}
   virtual void DidCompleteSwapBuffers() {}
   virtual void ScheduleComposite() {}
+  virtual void ScheduleAnimation() {}
   virtual void DidDeferCommit() {}
   virtual void DidSetVisibleOnImplTree(LayerTreeHostImpl* host_impl,
                                        bool visible) {}
@@ -111,7 +112,9 @@ class LayerTreeTest : public testing::Test, public TestHooks {
 
   void PostAddAnimationToMainThread(Layer* layer_to_receive_animation);
   void PostAddInstantAnimationToMainThread(Layer* layer_to_receive_animation);
+  void PostAddLongAnimationToMainThread(Layer* layer_to_receive_animation);
   void PostSetNeedsCommitToMainThread();
+  void PostSetNeedsUpdateLayersToMainThread();
   void PostReadbackToMainThread();
   void PostAcquireLayerTextures();
   void PostSetNeedsRedrawToMainThread();
@@ -131,9 +134,10 @@ class LayerTreeTest : public testing::Test, public TestHooks {
 
   void RealEndTest();
 
-  virtual void DispatchAddInstantAnimation(Layer* layer_to_receive_animation);
-  virtual void DispatchAddAnimation(Layer* layer_to_receive_animation);
+  virtual void DispatchAddAnimation(Layer* layer_to_receive_animation,
+                                    double animation_duration);
   void DispatchSetNeedsCommit();
+  void DispatchSetNeedsUpdateLayers();
   void DispatchReadback();
   void DispatchAcquireLayerTextures();
   void DispatchSetNeedsRedraw();

@@ -20,14 +20,14 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_device.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "webkit/common/cursors/webcursor.h"
 
-using WebKit::WebBindings;
-using WebKit::WebCursorInfo;
+using blink::WebBindings;
+using blink::WebCursorInfo;
 
 namespace content {
 
@@ -273,7 +273,7 @@ void WebPluginDelegateStub::OnSetFocus(bool focused) {
 }
 
 void WebPluginDelegateStub::OnHandleInputEvent(
-    const WebKit::WebInputEvent *event,
+    const blink::WebInputEvent *event,
     bool* handled,
     WebCursor* cursor) {
   WebCursor::CursorInfo cursor_info;

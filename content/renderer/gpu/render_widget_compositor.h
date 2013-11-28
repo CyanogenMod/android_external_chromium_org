@@ -12,6 +12,7 @@
 #include "cc/debug/rendering_stats.h"
 #include "cc/input/top_controls_state.h"
 #include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -30,8 +31,9 @@ class LayerTreeHost;
 namespace content {
 class RenderWidget;
 
-class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
-                               public cc::LayerTreeHostClient {
+class RenderWidgetCompositor : public blink::WebLayerTreeView,
+                               public cc::LayerTreeHostClient,
+                               public cc::LayerTreeHostSingleThreadClient {
  public:
   // Attempt to construct and initialize a compositor instance for the widget
   // with the given settings. Returns NULL if initialization fails.
@@ -67,42 +69,41 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
-  virtual void setRootLayer(const WebKit::WebLayer& layer);
+  virtual void setRootLayer(const blink::WebLayer& layer);
   virtual void clearRootLayer();
   virtual void setViewportSize(
-      const WebKit::WebSize& unused_deprecated,
-      const WebKit::WebSize& device_viewport_size);
-  virtual WebKit::WebSize layoutViewportSize() const;
-  virtual WebKit::WebSize deviceViewportSize() const;
-  virtual WebKit::WebFloatPoint adjustEventPointForPinchZoom(
-      const WebKit::WebFloatPoint& point) const;
+      const blink::WebSize& unused_deprecated,
+      const blink::WebSize& device_viewport_size);
+  virtual blink::WebSize layoutViewportSize() const;
+  virtual blink::WebSize deviceViewportSize() const;
+  virtual blink::WebFloatPoint adjustEventPointForPinchZoom(
+      const blink::WebFloatPoint& point) const;
   virtual void setDeviceScaleFactor(float device_scale);
   virtual float deviceScaleFactor() const;
-  virtual void setBackgroundColor(WebKit::WebColor color);
+  virtual void setBackgroundColor(blink::WebColor color);
   virtual void setHasTransparentBackground(bool transparent);
   virtual void setOverhangBitmap(const SkBitmap& bitmap);
   virtual void setVisible(bool visible);
   virtual void setPageScaleFactorAndLimits(float page_scale_factor,
                                            float minimum,
                                            float maximum);
-  virtual void startPageScaleAnimation(const WebKit::WebPoint& destination,
+  virtual void startPageScaleAnimation(const blink::WebPoint& destination,
                                        bool use_anchor,
                                        float new_page_scale,
                                        double duration_sec);
   virtual void setNeedsAnimate();
-  virtual void setNeedsRedraw();
   virtual bool commitRequested() const;
   virtual void didStopFlinging();
-  virtual bool compositeAndReadback(void *pixels, const WebKit::WebRect& rect);
+  virtual bool compositeAndReadback(void *pixels, const blink::WebRect& rect);
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
-  virtual void registerForAnimations(WebKit::WebLayer* layer);
+  virtual void registerForAnimations(blink::WebLayer* layer);
   virtual void registerViewportLayers(
-      const WebKit::WebLayer* pageScaleLayer,
-      const WebKit::WebLayer* innerViewportScrollLayer,
-      const WebKit::WebLayer* outerViewportScrollLayer) OVERRIDE;
+      const blink::WebLayer* pageScaleLayer,
+      const blink::WebLayer* innerViewportScrollLayer,
+      const blink::WebLayer* outerViewportScrollLayer) OVERRIDE;
   virtual void clearViewportLayers() OVERRIDE;
-  virtual void renderingStats(WebKit::WebRenderingStats& stats) const {}
+  virtual void renderingStats(blink::WebRenderingStats& stats) const {}
   virtual void setShowFPSCounter(bool show);
   virtual void setShowPaintRects(bool show);
   virtual void setShowDebugBorders(bool show);
@@ -110,7 +111,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void setShowScrollBottleneckRects(bool show);
 
   // cc::LayerTreeHostClient implementation.
-  virtual void WillBeginMainFrame() OVERRIDE;
+  virtual void WillBeginMainFrame(int frame_id) OVERRIDE;
   virtual void DidBeginMainFrame() OVERRIDE;
   virtual void Animate(double frame_begin_time) OVERRIDE;
   virtual void Layout() OVERRIDE;
@@ -123,14 +124,20 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void DidCommit() OVERRIDE;
   virtual void DidCommitAndDrawFrame() OVERRIDE;
   virtual void DidCompleteSwapBuffers() OVERRIDE;
-  virtual void ScheduleComposite() OVERRIDE;
   virtual scoped_refptr<cc::ContextProvider>
       OffscreenContextProvider() OVERRIDE;
+  virtual void RateLimitSharedMainThreadContext() OVERRIDE;
+
+  // cc::LayerTreeHostSingleThreadClient implementation.
+  virtual void ScheduleComposite() OVERRIDE;
+  virtual void ScheduleAnimation() OVERRIDE;
+  virtual void DidPostSwapBuffers() OVERRIDE;
+  virtual void DidAbortSwapBuffers() OVERRIDE;
 
  private:
   RenderWidgetCompositor(RenderWidget* widget, bool threaded);
 
-  bool initialize(cc::LayerTreeSettings settings);
+  bool Initialize(cc::LayerTreeSettings settings);
 
   bool threaded_;
   bool suppress_schedule_composite_;

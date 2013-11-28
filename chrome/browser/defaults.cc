@@ -16,13 +16,6 @@ const bool kCanToggleSystemTitleBar = true;
 
 const int kOmniboxFontPixelSize = 16;
 
-#if defined(TOOLKIT_VIEWS)
-// Windows and Chrome OS have bigger shadows in the tab art.
-const int kMiniTabWidth = 64;
-#else
-const int kMiniTabWidth = 56;
-#endif
-
 const bool kRestorePopups = false;
 
 #if defined(OS_CHROMEOS) || defined(OS_MACOSX)
@@ -64,10 +57,14 @@ const bool kShowCancelButtonInTaskManager = true;
 const bool kShowCancelButtonInTaskManager = false;
 #endif
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+const bool kScrollEventChangesTab = true;
+#else
+const bool kScrollEventChangesTab = false;
+#endif
+
 const ui::ResourceBundle::FontStyle kAssociatedNetworkFontStyle =
     ui::ResourceBundle::BoldFont;
-
-const int kInfoBarBorderPaddingVertical = 5;
 
 #if !defined(OS_ANDROID)
 const bool kPasswordEchoEnabled = false;

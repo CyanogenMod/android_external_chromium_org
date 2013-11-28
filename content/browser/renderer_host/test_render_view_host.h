@@ -132,6 +132,8 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
+  virtual void AcceleratedSurfaceInitialized(int host_id,
+                                             int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
       int gpu_host_id) OVERRIDE;
@@ -153,7 +155,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
 #elif defined(OS_WIN) && !defined(USE_AURA)
   virtual void WillWmDestroy() OVERRIDE;
 #endif
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE {}
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE {}
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE { }
@@ -170,6 +172,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) OVERRIDE;
+  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const OVERRIDE;
 #endif
 
   bool is_showing() const { return is_showing_; }

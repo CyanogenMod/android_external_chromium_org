@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/values.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
@@ -32,7 +33,7 @@ void ResizeWebContentsView(Shell* shell, const gfx::Size& size,
   // The cleaner and shorter SizeContents is preferred as more platforms convert
   // to Aura.
 #if defined(TOOLKIT_GTK) || defined(OS_MACOSX)
-  shell->SizeTo(size.width(), size.height());
+  shell->SizeTo(size);
   // If |set_start_page| is true, start with blank page to make sure resize
   // takes effect.
   if (set_start_page)
@@ -134,7 +135,7 @@ class RenderViewSizeObserver : public WebContentsObserver {
     rwhv_create_size_ = rvh->GetView()->GetViewBounds().size();
   }
 
-  virtual void NavigateToPendingEntry(
+  virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       NavigationController::ReloadType reload_type) OVERRIDE {
     ResizeWebContentsView(shell_, wcv_new_size_, false);
@@ -287,13 +288,30 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   // RenderWidgetHostView is created at specified size.
   init_size.Enlarge(size_insets.width(), size_insets.height());
   EXPECT_EQ(init_size, observer.rwhv_create_size());
-  // RenderViewSizeObserver resizes WebContentsView in NavigateToPendingEntry,
-  // so both WebContentsView and RenderWidgetHostView adopt this new size.
+  // RenderViewSizeObserver resizes WebContentsView in
+  // DidStartNavigationToPendingEntry, so both WebContentsView and
+  // RenderWidgetHostView adopt this new size.
   new_size.Enlarge(size_insets.width(), size_insets.height());
   EXPECT_EQ(new_size,
             shell()->web_contents()->GetRenderWidgetHostView()->GetViewBounds().
                 size());
   EXPECT_EQ(new_size, shell()->web_contents()->GetView()->GetContainerSize());
 }
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, OpenURLSubframe) {
+
+  // Navigate with source_frame_id 3, FrameTreeNode ID 4.
+  const GURL url("http://foo");
+  OpenURLParams params(url, Referrer(), 3, 4, CURRENT_TAB, PAGE_TRANSITION_LINK,
+                       true);
+  shell()->web_contents()->OpenURL(params);
+
+  // Make sure the NavigationEntry ends up with the FrameTreeNode ID.
+  NavigationController* controller = &shell()->web_contents()->GetController();
+  EXPECT_TRUE(controller->GetPendingEntry());
+  EXPECT_EQ(4, NavigationEntryImpl::FromNavigationEntry(
+                controller->GetPendingEntry())->frame_tree_node_id());
+}
+
 
 }  // namespace content

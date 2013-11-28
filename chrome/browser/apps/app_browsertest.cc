@@ -20,7 +20,6 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api.h"
 #include "chrome/browser/extensions/component_loader.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -43,6 +42,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/event_router.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "url/gurl.h"
 
@@ -173,6 +173,7 @@ class ScopedPreviewTestingDelegate : PrintPreviewUI::TestingDelegate {
   gfx::Size dialog_size_;
 };
 
+#if !defined(OS_CHROMEOS) && !defined(OS_WIN)
 bool CopyTestDataAndSetCommandLineArg(
     const base::FilePath& test_data_file,
     const base::FilePath& temp_dir,
@@ -186,6 +187,7 @@ bool CopyTestDataAndSetCommandLineArg(
   command_line->AppendArgPath(path);
   return true;
 }
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_WIN)
 
 #if !defined(OS_CHROMEOS)
 const char kTestFilePath[] = "platform_apps/launch_files/test.txt";
@@ -372,7 +374,14 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuClicked) {
   ASSERT_TRUE(onclicked_listener.WaitUntilSatisfied());
 }
 
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DisallowNavigation) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_DisallowNavigation DISABLED_DisallowNavigation
+#else
+#define MAYBE_DisallowNavigation DisallowNavigation
+#endif
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_DisallowNavigation) {
   TabsAddedNotificationObserver observer(2);
 
   ASSERT_TRUE(StartEmbeddedTestServer());
@@ -398,12 +407,6 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DisallowStorage) {
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Restrictions) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/restrictions")) << message_;
-}
-
-// Tests that platform apps can use the chrome.app.window.* API.
-// It is flaky: http://crbug.com/223467
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DISABLED_WindowsApi) {
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/windows_api")) << message_;
 }
 
 // Tests that extensions can't use platform-app-only APIs.
@@ -519,8 +522,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithRelativeFile) {
   ASSERT_TRUE(extension);
 
   // Run the test
-  AppLaunchParams params(browser()->profile(), extension,
-                         extension_misc::LAUNCH_NONE, NEW_WINDOW);
+  AppLaunchParams params(browser()->profile(), extension, LAUNCH_NONE,
+                         NEW_WINDOW);
   params.command_line = CommandLine::ForCurrentProcess();
   params.current_directory = test_data_dir_;
   OpenApplication(params);
@@ -538,10 +541,17 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFileExtension) {
       << message_;
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_LaunchWithFileExtensionAndMimeType DISABLED_LaunchWithFileExtensionAndMimeType
+#else
+#define MAYBE_LaunchWithFileExtensionAndMimeType LaunchWithFileExtensionAndMimeType
+#endif
+
 // Tests that launch data is sent through if the file extension and MIME type
 // both match.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
-                       LaunchWithFileExtensionAndMimeType) {
+                       MAYBE_LaunchWithFileExtensionAndMimeType) {
   SetCommandLineArg(kTestFilePath);
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/launch_file_by_extension_and_type")) << message_;
@@ -705,7 +715,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MutationEventsDisabled) {
 // geometry when opening new windows.
 // Originally disabled due to flakiness (see http://crbug.com/155459)
 // but now because a regression breaks the test (http://crbug.com/160343).
-#if defined(TOOLKIT_GTK)
+//
+// TODO(erg): Now a linux_aura asan regression too: http://crbug.com/304555
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #define MAYBE_ShellWindowRestorePosition DISABLED_ShellWindowRestorePosition
 #else
 #define MAYBE_ShellWindowRestorePosition ShellWindowRestorePosition
@@ -847,10 +859,8 @@ void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
     content::WindowedNotificationObserver app_loaded_observer(
         content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
         content::NotificationService::AllSources());
-    OpenApplication(AppLaunchParams(browser()->profile(),
-                                    extension,
-                                    extension_misc::LAUNCH_NONE,
-                                    NEW_WINDOW));
+    OpenApplication(AppLaunchParams(browser()->profile(), extension,
+                                    LAUNCH_NONE, NEW_WINDOW));
     app_loaded_observer.Wait();
     window = GetFirstShellWindow();
     ASSERT_TRUE(window);
@@ -992,9 +1002,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_TRUE(should_install.seen());
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extension_misc::LAUNCH_NONE,
+  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
                                   NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
@@ -1017,9 +1025,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_TRUE(extension);
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extension_misc::LAUNCH_NONE,
+  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
                                   NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
@@ -1058,9 +1064,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(should_install.seen());
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extension_misc::LAUNCH_NONE,
+  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
                                   NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
@@ -1112,7 +1116,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
 //        <path-to-your-src>/out/Debug/Chromium.app/*/*/*/*/"Internet Plug-Ins"
 //   4) Run browser_tests with the --enable-print-preview flag
 
-#if !defined(GOOGLE_CHROME_BUILD)
+#if !defined(GOOGLE_CHROME_BUILD) || \
+    (defined(GOOGLE_CHROME_BUILD) && (defined(OS_WIN) || defined(OS_LINUX)))
 #define MAYBE_WindowDotPrintShouldBringUpPrintPreview \
     DISABLED_WindowDotPrintShouldBringUpPrintPreview
 #else
@@ -1242,8 +1247,11 @@ class RestartDeviceTest : public PlatformAppBrowserTest {
 
     chromeos::FakeDBusThreadManager* dbus_manager =
         new chromeos::FakeDBusThreadManager;
+    dbus_manager->SetFakeClients();
+    power_manager_client_ = new chromeos::FakePowerManagerClient;
+    dbus_manager->SetPowerManagerClient(
+        scoped_ptr<chromeos::PowerManagerClient>(power_manager_client_));
     chromeos::DBusThreadManager::InitializeForTesting(dbus_manager);
-    power_manager_client_ = dbus_manager->fake_power_manager_client();
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {

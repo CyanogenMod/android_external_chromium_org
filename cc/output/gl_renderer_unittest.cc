@@ -40,25 +40,25 @@ using testing::InSequence;
 using testing::Mock;
 using testing::Return;
 using testing::StrictMock;
-using WebKit::WebGLId;
-using WebKit::WebString;
-using WebKit::WGC3Dbitfield;
-using WebKit::WGC3Dboolean;
-using WebKit::WGC3Dchar;
-using WebKit::WGC3Denum;
-using WebKit::WGC3Dfloat;
-using WebKit::WGC3Dint;
-using WebKit::WGC3Dintptr;
-using WebKit::WGC3Dsizei;
-using WebKit::WGC3Dsizeiptr;
-using WebKit::WGC3Duint;
+using blink::WebGLId;
+using blink::WebString;
+using blink::WGC3Dbitfield;
+using blink::WGC3Dboolean;
+using blink::WGC3Dchar;
+using blink::WGC3Denum;
+using blink::WGC3Dfloat;
+using blink::WGC3Dint;
+using blink::WGC3Dintptr;
+using blink::WGC3Dsizei;
+using blink::WGC3Dsizeiptr;
+using blink::WGC3Duint;
 
 namespace cc {
 
 #define EXPECT_PROGRAM_VALID(program_binding)                                  \
   do {                                                                         \
-    EXPECT_TRUE(program_binding->program());                                   \
-    EXPECT_TRUE(program_binding->initialized());                               \
+    EXPECT_TRUE((program_binding)->program());                                 \
+    EXPECT_TRUE((program_binding)->initialized());                             \
   } while (false)
 
 // Explicitly named to be a friend in GLRenderer for shader access.
@@ -76,12 +76,6 @@ class GLRendererShaderPixelTest : public GLRendererPixelTest {
   }
 
   void TestShadersWithTexCoordPrecision(TexCoordPrecision precision) {
-    EXPECT_PROGRAM_VALID(renderer()->GetTileProgram(precision));
-    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramOpaque(precision));
-    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramAA(precision));
-    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramSwizzle(precision));
-    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramSwizzleOpaque(precision));
-    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramSwizzleAA(precision));
     EXPECT_PROGRAM_VALID(renderer()->GetRenderPassProgram(precision));
     EXPECT_PROGRAM_VALID(renderer()->GetRenderPassProgramAA(precision));
     EXPECT_PROGRAM_VALID(renderer()->GetRenderPassMaskProgram(precision));
@@ -108,6 +102,24 @@ class GLRendererShaderPixelTest : public GLRendererPixelTest {
       EXPECT_PROGRAM_VALID(renderer()->GetVideoStreamTextureProgram(precision));
     else
       EXPECT_FALSE(renderer()->GetVideoStreamTextureProgram(precision));
+    TestShadersWithSamplerType(precision, SamplerType2D);
+    TestShadersWithSamplerType(precision, SamplerType2DRect);
+    // This is unlikely to be ever true in tests due to usage of osmesa.
+    if (renderer()->Capabilities().using_egl_image)
+      TestShadersWithSamplerType(precision, SamplerTypeExternalOES);
+  }
+
+  void TestShadersWithSamplerType(
+      TexCoordPrecision precision, SamplerType sampler) {
+    EXPECT_PROGRAM_VALID(renderer()->GetTileProgram(precision, sampler));
+    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramOpaque(precision, sampler));
+    EXPECT_PROGRAM_VALID(renderer()->GetTileProgramAA(precision, sampler));
+    EXPECT_PROGRAM_VALID(
+        renderer()->GetTileProgramSwizzle(precision, sampler));
+    EXPECT_PROGRAM_VALID(
+        renderer()->GetTileProgramSwizzleOpaque(precision, sampler));
+    EXPECT_PROGRAM_VALID(
+        renderer()->GetTileProgramSwizzleAA(precision, sampler));
   }
 };
 
@@ -159,9 +171,6 @@ class FakeRendererClient : public RendererClient {
   virtual gfx::Rect DeviceClip() const OVERRIDE { return clip_; }
   virtual void SetFullRootLayerDamage() OVERRIDE {
     set_full_root_layer_damage_count_++;
-  }
-  virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE {
-    return CompositorFrameMetadata();
   }
 
   // Methods added for test.
@@ -230,7 +239,7 @@ class GLRendererTest : public testing::Test {
 
   virtual void SetUp() { renderer_->Initialize(); }
 
-  void SwapBuffers() { renderer_->SwapBuffers(); }
+  void SwapBuffers() { renderer_->SwapBuffers(CompositorFrameMetadata()); }
 
   LayerTreeSettings settings_;
   FrameCountingContext* context3d_;
@@ -246,70 +255,10 @@ class GLRendererTest : public testing::Test {
 // declared above it.
 }  // namespace
 
-
-// Gives unique shader ids and unique program ids for tests that need them.
-class ShaderCreatorMockGraphicsContext : public TestWebGraphicsContext3D {
- public:
-  ShaderCreatorMockGraphicsContext()
-      : next_program_id_number_(10000),
-        next_shader_id_number_(1) {}
-
-  bool hasShader(WebGLId shader) {
-    return shader_set_.find(shader) != shader_set_.end();
-  }
-
-  bool hasProgram(WebGLId program) {
-    return program_set_.find(program) != program_set_.end();
-  }
-
-  virtual WebGLId createProgram() {
-    unsigned program = next_program_id_number_;
-    program_set_.insert(program);
-    next_program_id_number_++;
-    return program;
-  }
-
-  virtual void deleteProgram(WebGLId program) {
-    ASSERT_TRUE(hasProgram(program));
-    program_set_.erase(program);
-  }
-
-  virtual void useProgram(WebGLId program) {
-    if (!program)
-      return;
-    ASSERT_TRUE(hasProgram(program));
-  }
-
-  virtual WebKit::WebGLId createShader(WebKit::WGC3Denum) {
-    unsigned shader = next_shader_id_number_;
-    shader_set_.insert(shader);
-    next_shader_id_number_++;
-    return shader;
-  }
-
-  virtual void deleteShader(WebKit::WebGLId shader) {
-    ASSERT_TRUE(hasShader(shader));
-    shader_set_.erase(shader);
-  }
-
-  virtual void attachShader(WebGLId program, WebGLId shader) {
-    ASSERT_TRUE(hasProgram(program));
-    ASSERT_TRUE(hasShader(shader));
-  }
-
- protected:
-  unsigned next_program_id_number_;
-  unsigned next_shader_id_number_;
-  std::set<unsigned> program_set_;
-  std::set<unsigned> shader_set_;
-};
-
 class GLRendererShaderTest : public testing::Test {
  protected:
   GLRendererShaderTest() {
-    output_surface_ = FakeOutputSurface::Create3d(
-        scoped_ptr<TestWebGraphicsContext3D>(
-            new ShaderCreatorMockGraphicsContext())).Pass();
+    output_surface_ = FakeOutputSurface::Create3d().Pass();
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     resource_provider_ = ResourceProvider::Create(
@@ -321,57 +270,65 @@ class GLRendererShaderTest : public testing::Test {
     renderer_->Initialize();
   }
 
-  void TestRenderPassProgram() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_program_);
-    EXPECT_EQ(renderer_->render_pass_program_->program(),
+  void TestRenderPassProgram(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(&renderer_->render_pass_program_[precision]);
+    EXPECT_EQ(renderer_->render_pass_program_[precision].program(),
               renderer_->program_shadow_);
   }
 
-  void TestRenderPassColorMatrixProgram() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_color_matrix_program_);
-    EXPECT_EQ(renderer_->render_pass_color_matrix_program_->program(),
+  void TestRenderPassColorMatrixProgram(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(
+        &renderer_->render_pass_color_matrix_program_[precision]);
+    EXPECT_EQ(
+        renderer_->render_pass_color_matrix_program_[precision].program(),
+        renderer_->program_shadow_);
+  }
+
+  void TestRenderPassMaskProgram(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(&renderer_->render_pass_mask_program_[precision]);
+    EXPECT_EQ(renderer_->render_pass_mask_program_[precision].program(),
               renderer_->program_shadow_);
   }
 
-  void TestRenderPassMaskProgram() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_mask_program_);
-    EXPECT_EQ(renderer_->render_pass_mask_program_->program(),
+  void TestRenderPassMaskColorMatrixProgram(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(
+        &renderer_->render_pass_mask_color_matrix_program_[precision]);
+    EXPECT_EQ(renderer_->
+              render_pass_mask_color_matrix_program_[precision].program(),
               renderer_->program_shadow_);
   }
 
-  void TestRenderPassMaskColorMatrixProgram() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_mask_color_matrix_program_);
-    EXPECT_EQ(renderer_->render_pass_mask_color_matrix_program_->program(),
+  void TestRenderPassProgramAA(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(&renderer_->render_pass_program_aa_[precision]);
+    EXPECT_EQ(renderer_->render_pass_program_aa_[precision].program(),
               renderer_->program_shadow_);
   }
 
-  void TestRenderPassProgramAA() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_program_aa_);
-    EXPECT_EQ(renderer_->render_pass_program_aa_->program(),
+  void TestRenderPassColorMatrixProgramAA(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(
+        &renderer_->render_pass_color_matrix_program_aa_[precision]);
+    EXPECT_EQ(renderer_->
+              render_pass_color_matrix_program_aa_[precision].program(),
               renderer_->program_shadow_);
   }
 
-  void TestRenderPassColorMatrixProgramAA() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_color_matrix_program_aa_);
-    EXPECT_EQ(renderer_->render_pass_color_matrix_program_aa_->program(),
+  void TestRenderPassMaskProgramAA(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(&renderer_->render_pass_mask_program_aa_[precision]);
+    EXPECT_EQ(renderer_->render_pass_mask_program_aa_[precision].program(),
               renderer_->program_shadow_);
   }
 
-  void TestRenderPassMaskProgramAA() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_mask_program_aa_);
-    EXPECT_EQ(renderer_->render_pass_mask_program_aa_->program(),
-              renderer_->program_shadow_);
-  }
-
-  void TestRenderPassMaskColorMatrixProgramAA() {
-    EXPECT_PROGRAM_VALID(renderer_->render_pass_mask_color_matrix_program_aa_);
-    EXPECT_EQ(renderer_->render_pass_mask_color_matrix_program_aa_->program(),
+  void TestRenderPassMaskColorMatrixProgramAA(TexCoordPrecision precision) {
+    EXPECT_PROGRAM_VALID(
+        &renderer_->render_pass_mask_color_matrix_program_aa_[precision]);
+    EXPECT_EQ(renderer_->
+              render_pass_mask_color_matrix_program_aa_[precision].program(),
               renderer_->program_shadow_);
   }
 
   void TestSolidColorProgramAA() {
-    EXPECT_PROGRAM_VALID(renderer_->solid_color_program_aa_);
-    EXPECT_EQ(renderer_->solid_color_program_aa_->program(),
+    EXPECT_PROGRAM_VALID(&renderer_->solid_color_program_aa_);
+    EXPECT_EQ(renderer_->solid_color_program_aa_.program(),
               renderer_->program_shadow_);
   }
 
@@ -630,9 +587,7 @@ TEST(GLRendererTest2, InitializationDoesNotMakeSynchronousCalls) {
 
 class LoseContextOnFirstGetContext : public TestWebGraphicsContext3D {
  public:
-  LoseContextOnFirstGetContext() : context_lost_(false) {}
-
-  virtual bool makeContextCurrent() OVERRIDE { return !context_lost_; }
+  LoseContextOnFirstGetContext() {}
 
   virtual void getProgramiv(WebGLId program, WGC3Denum pname, WGC3Dint* value)
       OVERRIDE {
@@ -645,13 +600,6 @@ class LoseContextOnFirstGetContext : public TestWebGraphicsContext3D {
     context_lost_ = true;
     *value = 0;
   }
-
-  virtual WGC3Denum getGraphicsResetStatusARB() OVERRIDE {
-    return context_lost_ ? 1 : 0;
-  }
-
- private:
-  bool context_lost_;
 };
 
 TEST(GLRendererTest2, InitializationWithQuicklyLostContextDoesNotAssert) {
@@ -1436,7 +1384,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassProgram();
+  TestRenderPassProgram(TexCoordPrecisionMedium);
 
   // RenderPassColorMatrixProgram
   render_passes->clear();
@@ -1453,7 +1401,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassColorMatrixProgram();
+  TestRenderPassColorMatrixProgram(TexCoordPrecisionMedium);
 
   // RenderPassMaskProgram
   render_passes->clear();
@@ -1474,7 +1422,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassMaskProgram();
+  TestRenderPassMaskProgram(TexCoordPrecisionMedium);
 
   // RenderPassMaskColorMatrixProgram
   render_passes->clear();
@@ -1491,7 +1439,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassMaskColorMatrixProgram();
+  TestRenderPassMaskColorMatrixProgram(TexCoordPrecisionMedium);
 
   // RenderPassProgramAA
   render_passes->clear();
@@ -1512,7 +1460,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassProgramAA();
+  TestRenderPassProgramAA(TexCoordPrecisionMedium);
 
   // RenderPassColorMatrixProgramAA
   render_passes->clear();
@@ -1529,7 +1477,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassColorMatrixProgramAA();
+  TestRenderPassColorMatrixProgramAA(TexCoordPrecisionMedium);
 
   // RenderPassMaskProgramAA
   render_passes->clear();
@@ -1547,7 +1495,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassMaskProgramAA();
+  TestRenderPassMaskProgramAA(TexCoordPrecisionMedium);
 
   // RenderPassMaskColorMatrixProgramAA
   render_passes->clear();
@@ -1564,7 +1512,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       *renderer_client_.render_passes_in_draw_order());
   renderer_->DrawFrame(
       renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true, false);
-  TestRenderPassMaskColorMatrixProgramAA();
+  TestRenderPassMaskColorMatrixProgramAA(TexCoordPrecisionMedium);
 }
 
 // At this time, the AA code path cannot be taken if the surface's rect would
@@ -1616,7 +1564,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
 
   // If use_aa incorrectly ignores clipping, it will use the
   // RenderPassProgramAA shader instead of the RenderPassProgram.
-  TestRenderPassProgram();
+  TestRenderPassProgram(TexCoordPrecisionMedium);
 }
 
 TEST_F(GLRendererShaderTest, DrawSolidColorShader) {
@@ -1703,7 +1651,7 @@ class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
     EXPECT_TRUE(renderer_->Initialize());
   }
 
-  void SwapBuffers() { renderer_->SwapBuffers(); }
+  void SwapBuffers() { renderer_->SwapBuffers(CompositorFrameMetadata()); }
 
   void DrawFrame(float device_scale_factor) {
     gfx::Rect viewport_rect(DeviceViewport());
@@ -1746,31 +1694,31 @@ TEST_F(MockOutputSurfaceTest, DrawFrameAndSwap) {
   DrawFrame(1.f);
 
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_->SwapBuffers();
+  renderer_->SwapBuffers(CompositorFrameMetadata());
 }
 
 TEST_F(MockOutputSurfaceTest, DrawFrameAndResizeAndSwap) {
   DrawFrame(1.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_->SwapBuffers();
+  renderer_->SwapBuffers(CompositorFrameMetadata());
 
   set_viewport(gfx::Rect(0, 0, 2, 2));
   renderer_->ViewportChanged();
 
   DrawFrame(2.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_->SwapBuffers();
+  renderer_->SwapBuffers(CompositorFrameMetadata());
 
   DrawFrame(2.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_->SwapBuffers();
+  renderer_->SwapBuffers(CompositorFrameMetadata());
 
   set_viewport(gfx::Rect(0, 0, 1, 1));
   renderer_->ViewportChanged();
 
   DrawFrame(1.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_->SwapBuffers();
+  renderer_->SwapBuffers(CompositorFrameMetadata());
 }
 
 class GLRendererTestSyncPoint : public GLRendererPixelTest {
@@ -1790,7 +1738,7 @@ class GLRendererTestSyncPoint : public GLRendererPixelTest {
 TEST_F(GLRendererTestSyncPoint, SignalSyncPointOnLostContext) {
   int sync_point_callback_count = 0;
   int other_callback_count = 0;
-  WebKit::WebGraphicsContext3D* context3d =
+  blink::WebGraphicsContext3D* context3d =
       output_surface_->context_provider()->Context3d();
   gpu::ContextSupport* context_support =
       output_surface_->context_provider()->ContextSupport();
@@ -1823,7 +1771,7 @@ TEST_F(GLRendererTestSyncPoint, SignalSyncPoint) {
   int sync_point_callback_count = 0;
   int other_callback_count = 0;
 
-  WebKit::WebGraphicsContext3D* context3d =
+  blink::WebGraphicsContext3D* context3d =
       output_surface_->context_provider()->Context3d();
   gpu::ContextSupport* context_support =
       output_surface_->context_provider()->ContextSupport();

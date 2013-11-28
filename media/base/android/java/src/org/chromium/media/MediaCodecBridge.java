@@ -12,8 +12,9 @@ import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaCrypto;
 import android.media.MediaFormat;
-import android.view.Surface;
+import android.os.Build;
 import android.util.Log;
+import android.view.Surface;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -83,12 +84,10 @@ class MediaCodecBridge {
     private static class CodecInfo {
         private final String mCodecType;  // e.g. "video/x-vnd.on2.vp8".
         private final String mCodecName;  // e.g. "OMX.google.vp8.decoder".
-        private final boolean mIsSecureDecoderSupported;
 
-        private CodecInfo(String codecType, String codecName, boolean isSecureDecoderSupported) {
+        private CodecInfo(String codecType, String codecName) {
             mCodecType = codecType;
             mCodecName = codecName;
-            mIsSecureDecoderSupported = isSecureDecoderSupported;
         }
 
         @CalledByNative("CodecInfo")
@@ -96,9 +95,6 @@ class MediaCodecBridge {
 
         @CalledByNative("CodecInfo")
         private String codecName() { return mCodecName; }
-
-        @CalledByNative("CodecInfo")
-        private boolean isSecureDecoderSupported() { return mIsSecureDecoderSupported; }
     }
 
     private static class DequeueOutputResult {
@@ -151,21 +147,12 @@ class MediaCodecBridge {
                 continue;
             }
 
-            String[] supportedTypes = info.getSupportedTypes();
             String codecString = info.getName();
-            String secureCodecName = codecString + ".secure";
-            boolean secureDecoderSupported = false;
-            try {
-                MediaCodec secureCodec = MediaCodec.createByCodecName(secureCodecName);
-                secureDecoderSupported = true;
-                secureCodec.release();
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to create " + secureCodecName);
-            }
+            String[] supportedTypes = info.getSupportedTypes();
             for (int j = 0; j < supportedTypes.length; ++j) {
-                if (!CodecInfoMap.containsKey(supportedTypes[j]) || secureDecoderSupported) {
+                if (!CodecInfoMap.containsKey(supportedTypes[j])) {
                     CodecInfoMap.put(supportedTypes[j], new CodecInfo(
-                        supportedTypes[j], codecString, secureDecoderSupported));
+                        supportedTypes[j], codecString));
                 }
             }
         }
@@ -201,6 +188,11 @@ class MediaCodecBridge {
 
     @CalledByNative
     private static MediaCodecBridge create(String mime, boolean isSecure) {
+        // Creation of ".secure" codecs sometimes crash instead of throwing exceptions
+        // on pre-JBMR2 devices.
+        if (isSecure && Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            return null;
+        }
         MediaCodec mediaCodec = null;
         try {
             // |isSecure| only applies to video decoders.
@@ -330,11 +322,11 @@ class MediaCodecBridge {
             mMediaCodec.queueSecureInputBuffer(index, offset, cryptoInfo, presentationTimeUs, 0);
         } catch (MediaCodec.CryptoException e) {
             Log.e(TAG, "Failed to queue secure input buffer: " + e.toString());
-            // TODO(xhwang): Replace hard coded value with constant/enum.
-            if (e.getErrorCode() == 1) {
-                Log.e(TAG, "No key available.");
+            if (e.getErrorCode() == MediaCodec.CryptoException.ERROR_NO_KEY) {
+                Log.e(TAG, "MediaCodec.CryptoException.ERROR_NO_KEY");
                 return MEDIA_CODEC_NO_KEY;
             }
+            Log.e(TAG, "MediaCodec.CryptoException with error code " + e.getErrorCode());
             return MEDIA_CODEC_ERROR;
         } catch(IllegalStateException e) {
             Log.e(TAG, "Failed to queue secure input buffer: " + e.toString());

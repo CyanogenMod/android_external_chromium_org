@@ -46,6 +46,12 @@
 #include "grit/chrome_frame_resources.h"
 #include "url/url_util.h"
 
+#if _ATL_VER >= 0x0C00
+// This was removed between the VS2010 version and the VS2013 version, and
+// the unsuffixed version was repurposed to mean 'S'.
+#define UpdateRegistryFromResourceS UpdateRegistryFromResource
+#endif
+
 using base::win::RegKey;
 
 namespace {
@@ -887,7 +893,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance,
                                LPVOID reserved) {
   UNREFERENCED_PARAMETER(instance);
   if (reason == DLL_PROCESS_ATTACH) {
-#ifndef NDEBUG
+#if _ATL_VER < 0x0C00 && !defined(NDEBUG)
     // Silence traces from the ATL registrar to reduce the log noise.
     ATL::CTrace::s_trace.ChangeCategory(atlTraceRegistrar, 0,
                                         ATLTRACESTATUS_DISABLED);
@@ -945,6 +951,11 @@ STDAPI DllCanUnloadNow() {
 // Returns a class factory to create an object of the requested type
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
   chrome_frame::ScopedCrashReporting crash_reporting;
+
+  // IE 11+ are unsupported.
+  if (GetIEVersion() > IE_10) {
+    return CLASS_E_CLASSNOTAVAILABLE;
+  }
 
   // If we found another module present when we were loaded, then delegate to
   // that:

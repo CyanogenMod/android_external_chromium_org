@@ -116,6 +116,9 @@ class NavigationController {
     // Note the default value in constructor below.
     PageTransition transition_type;
 
+    // The FrameTreeNode ID for the frame to navigate, or -1 for the main frame.
+    int64 frame_tree_node_id;
+
     // Referrer for this load. Empty if none.
     Referrer referrer;
 
@@ -349,7 +352,7 @@ class NavigationController {
 
   // Random --------------------------------------------------------------------
 
-  // Session storage depends on dom_storage that depends on WebKit::WebString,
+  // Session storage depends on dom_storage that depends on blink::WebString,
   // which cannot be used on iOS.
 #if !defined(OS_IOS)
   // Returns all the SessionStorageNamespace objects that this
@@ -406,11 +409,11 @@ class NavigationController {
   // result: A B C *G*
   // If there is a pending entry after *G* in |this|, it is also preserved.
   // This ignores any pending or transient entries in |source|.  Callers must
-  // ensure that |CanPruneAllButVisible| returns true before calling this, or it
-  // will crash.
+  // ensure that |CanPruneAllButLastCommitted| returns true before calling this,
+  // or it will crash.
   virtual void CopyStateFromAndPrune(NavigationController* source) = 0;
 
-  // Returns whether it is safe to call PruneAllButVisible or
+  // Returns whether it is safe to call PruneAllButLastCommitted or
   // CopyStateFromAndPrune.  There must be a last committed entry, no transient
   // entry, and if there is a pending entry, it must be new and not an existing
   // entry.
@@ -426,12 +429,13 @@ class NavigationController {
   // sensible place to put the pending entry when it did commit, after all other
   // entries are pruned.  For example, it could be going back several entries.
   // (New pending entries are safe, because they can always commit to the end.)
-  virtual bool CanPruneAllButVisible() = 0;
+  virtual bool CanPruneAllButLastCommitted() = 0;
 
   // Removes all the entries except the last committed entry. If there is a new
   // pending navigation it is preserved.  Callers must ensure
-  // |CanPruneAllButVisible| returns true before calling this, or it will crash.
-  virtual void PruneAllButVisible() = 0;
+  // |CanPruneAllButLastCommitted| returns true before calling this, or it will
+  // crash.
+  virtual void PruneAllButLastCommitted() = 0;
 
   // Clears all screenshots associated with navigation entries in this
   // controller. Useful to reduce memory consumption in low-memory situations.

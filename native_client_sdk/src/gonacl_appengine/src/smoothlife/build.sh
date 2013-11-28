@@ -12,7 +12,7 @@ cd ${SCRIPT_DIR}
 OUT_DIR=out
 SMOOTHLIFE_URL=https://github.com/binji/smoothnacl
 SMOOTHLIFE_DIR=${OUT_DIR}/smoothlife
-SMOOTHLIFE_SHA=63f115f2393aa629aab1403948cbfb28acc54360
+SMOOTHLIFE_SHA=d817d7578a762127e18ce17664e5bf0d94d037f1
 
 if [ -z "${NACL_SDK_ROOT:-}" ]; then
   echo "-------------------------------------------------------------------"
@@ -71,7 +71,7 @@ Banner Updating submodules
 LogExecute git submodule update --init
 
 Banner Building FFTW
-LogExecute make ports
+LogExecute make ports TOOLCHAIN=pnacl CONFIG=Release
 
 Banner Building smoothlife
 LogExecute make TOOLCHAIN=pnacl CONFIG=Release -j${OS_JOBS}

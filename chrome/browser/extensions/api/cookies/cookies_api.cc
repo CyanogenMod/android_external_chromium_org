@@ -18,17 +18,17 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/cookies/cookies_api_constants.h"
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/common/extensions/api/cookies.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_monster.h"
@@ -140,7 +140,7 @@ void CookiesEventRouter::DispatchEvent(
   if (!router)
     return;
   scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   event->event_url = cookie_domain;
   router->BroadcastEvent(event.Pass());
 }

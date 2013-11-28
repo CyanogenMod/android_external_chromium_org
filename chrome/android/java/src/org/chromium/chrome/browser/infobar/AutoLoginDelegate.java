@@ -4,12 +4,8 @@
 
 package org.chromium.chrome.browser.infobar;
 
-import android.accounts.Account;
 import android.app.Activity;
-import android.util.Log;
 import android.util.Pair;
-
-import org.chromium.chrome.R;
 
 import org.chromium.base.CalledByNative;
 
@@ -24,7 +20,7 @@ public class AutoLoginDelegate {
     private final AutoLoginProcessor mAutoLoginProcessor;
 
     // nativeInfoBar -> AutoLoginAccountDelegate
-    private Pair<Integer, AutoLoginAccountDelegate> mAccountHelper;
+    private Pair<Long, AutoLoginAccountDelegate> mAccountHelper;
 
     public AutoLoginDelegate(AutoLoginProcessor autoLoginProcessor, Activity activity) {
         mActivity = activity;
@@ -36,7 +32,7 @@ public class AutoLoginDelegate {
      * @return the account name of the device if any.
      */
     @CalledByNative
-    String initializeAccount(int nativeInfoBar, String realm, String account, String args) {
+    String initializeAccount(long nativeInfoBar, String realm, String account, String args) {
         AutoLoginAccountDelegate accountHelper =
                 new AutoLoginAccountDelegate(mActivity, mAutoLoginProcessor, realm, account, args);
 
@@ -44,7 +40,7 @@ public class AutoLoginDelegate {
             return "";
         }
 
-        mAccountHelper = new Pair<Integer, AutoLoginAccountDelegate>(nativeInfoBar, accountHelper);
+        mAccountHelper = new Pair<Long, AutoLoginAccountDelegate>(nativeInfoBar, accountHelper);
         return accountHelper.getAccountName();
     }
 
@@ -52,7 +48,7 @@ public class AutoLoginDelegate {
      * Log in a user to a given google service.
      */
     @CalledByNative
-    boolean logIn(int nativeInfoBar) {
+    boolean logIn(long nativeInfoBar) {
         AutoLoginAccountDelegate account =
                 mAccountHelper != null && mAccountHelper.first == nativeInfoBar ?
                         mAccountHelper.second : null;
@@ -68,7 +64,7 @@ public class AutoLoginDelegate {
      * Clear account information for cancelled login requests.
      */
     @CalledByNative
-    boolean cancelLogIn(int nativeInfoBar) {
+    boolean cancelLogIn(long nativeInfoBar) {
         mAccountHelper = null;
         return true;
     }
@@ -80,7 +76,7 @@ public class AutoLoginDelegate {
             String result) {
 
         if (mAccountHelper != null) {
-            int infoBar = mAccountHelper.first;
+            long infoBar = mAccountHelper.first;
             AutoLoginAccountDelegate delegate = mAccountHelper.second;
             if (!delegate.loginRequested()) {
                 nativeLoginDismiss(infoBar);
@@ -99,8 +95,8 @@ public class AutoLoginDelegate {
         }
     }
 
-    private native void nativeLoginSuccess(int nativeAutoLoginInfoBarDelegateAndroid,
+    private native void nativeLoginSuccess(long nativeAutoLoginInfoBarDelegateAndroid,
             String result);
-    private native void nativeLoginFailed(int nativeAutoLoginInfoBarDelegateAndroid);
-    private native void nativeLoginDismiss(int nativeAutoLoginInfoBarDelegateAndroid);
+    private native void nativeLoginFailed(long nativeAutoLoginInfoBarDelegateAndroid);
+    private native void nativeLoginDismiss(long nativeAutoLoginInfoBarDelegateAndroid);
 }

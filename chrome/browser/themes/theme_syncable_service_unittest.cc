@@ -14,11 +14,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -207,9 +207,11 @@ class ThemeSyncableServiceTest : public testing::Test {
                                           GetThemeLocation(),
                                           kCustomThemeUrl);
     extensions::APIPermissionSet empty_set;
+    extensions::ManifestPermissionSet empty_manifest_permissions;
     extensions::URLPatternSet empty_extent;
     scoped_refptr<extensions::PermissionSet> permissions =
-        new extensions::PermissionSet(empty_set, empty_extent, empty_extent);
+        new extensions::PermissionSet(empty_set, empty_manifest_permissions,
+                                      empty_extent, empty_extent);
     service->extension_prefs()->AddGrantedPermissions(
         theme_extension_->id(), permissions.get());
     service->AddExtension(theme_extension_.get());

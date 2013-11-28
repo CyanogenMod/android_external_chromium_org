@@ -43,6 +43,7 @@
 #include "ui/gfx/text_elider.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/mouse_constants.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 
@@ -869,6 +870,7 @@ void DownloadItemView::OpenDownload() {
 }
 
 bool DownloadItemView::BeginDownloadFeedback() {
+#if defined(FULL_SAFE_BROWSING)
   SafeBrowsingService* sb_service = g_browser_process->safe_browsing_service();
   if (!sb_service)
     return false;
@@ -885,6 +887,10 @@ bool DownloadItemView::BeginDownloadFeedback() {
       download());
   // WARNING: we are deleted at this point.  Don't access 'this'.
   return true;
+#else
+  NOTREACHED();
+  return false;
+#endif
 }
 
 void DownloadItemView::LoadIcon() {
@@ -967,6 +973,14 @@ void DownloadItemView::HandlePressEvent(const ui::LocatedEvent& event,
 
   if (active_event) {
     if (InDropDownButtonXCoordinateRange(event.x())) {
+      if (context_menu_.get()) {
+        // Ignore two close clicks. This typically happens when the user clicks
+        // the button to close the menu.
+        base::TimeDelta delta =
+            base::TimeTicks::Now() - context_menu_->close_time();
+        if (delta.InMilliseconds() < views::kMinimumMsBetweenButtonClicks)
+          return;
+      }
       drop_down_pressed_ = true;
       SetState(NORMAL, PUSHED);
       // We are setting is_mouse_gesture to false when calling ShowContextMenu
@@ -1086,10 +1100,12 @@ void DownloadItemView::ClearWarningDialog() {
 void DownloadItemView::ShowWarningDialog() {
   DCHECK(mode_ != DANGEROUS_MODE && mode_ != MALICIOUS_MODE);
   time_download_warning_shown_ = base::Time::Now();
+#if defined(FULL_SAFE_BROWSING)
   if (model_.ShouldAllowDownloadFeedback()) {
     safe_browsing::DownloadFeedbackService::RecordEligibleDownloadShown(
         download()->GetDangerType());
   }
+#endif
   mode_ = model_.MightBeMalicious() ? MALICIOUS_MODE : DANGEROUS_MODE;
 
   body_state_ = NORMAL;

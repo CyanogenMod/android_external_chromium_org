@@ -29,7 +29,9 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "crypto/hmac.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_util.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
@@ -38,12 +40,7 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "base/win/scoped_com_initializer.h"
-#include "content/common/gpu/media/dxva_video_decode_accelerator.h"
 #include "sandbox/win/src/sandbox.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-#include "content/common/gpu/media/exynos_video_decode_accelerator.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-#include "content/common/gpu/media/vaapi_wrapper.h"
 #endif
 
 #if defined(USE_X11)
@@ -97,31 +94,27 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   base::Time start_time = base::Time::Now();
 
-  bool in_browser_process = command_line.HasSwitch(switches::kSingleProcess) ||
-                            command_line.HasSwitch(switches::kInProcessGPU);
-
-  if (!in_browser_process) {
 #if defined(OS_WIN)
-    // Prevent Windows from displaying a modal dialog on failures like not being
-    // able to load a DLL.
-    SetErrorMode(
-        SEM_FAILCRITICALERRORS |
-        SEM_NOGPFAULTERRORBOX |
-        SEM_NOOPENFILEERRORBOX);
+  // Prevent Windows from displaying a modal dialog on failures like not being
+  // able to load a DLL.
+  SetErrorMode(
+      SEM_FAILCRITICALERRORS |
+      SEM_NOGPFAULTERRORBOX |
+      SEM_NOOPENFILEERRORBOX);
 #elif defined(USE_X11)
-    ui::SetDefaultX11ErrorHandlers();
+  ui::SetDefaultX11ErrorHandlers();
 #endif
 
-    logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
-  }
+  logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
 
-  if (command_line.HasSwitch(switches::kSupportsDualGpus) &&
-      command_line.HasSwitch(switches::kGpuSwitching)) {
-    std::string option = command_line.GetSwitchValueASCII(
-        switches::kGpuSwitching);
-    if (option == switches::kGpuSwitchingOptionNameForceDiscrete)
+  if (command_line.HasSwitch(switches::kSupportsDualGpus)) {
+    std::string types = command_line.GetSwitchValueASCII(
+        switches::kGpuDriverBugWorkarounds);
+    std::set<int> workarounds;
+    gpu::StringToFeatureSet(types, &workarounds);
+    if (workarounds.count(gpu::FORCE_DISCRETE_GPU) == 1)
       ui::GpuSwitchingManager::GetInstance()->ForceUseOfDiscreteGpu();
-    else if (option == switches::kGpuSwitchingOptionNameForceIntegrated)
+    else if (workarounds.count(gpu::FORCE_INTEGRATED_GPU) == 1)
       ui::GpuSwitchingManager::GetInstance()->ForceUseOfIntegratedGpu();
   }
 
@@ -358,47 +351,6 @@ bool WarmUpSandbox(const CommandLine& command_line) {
     }
   }
 
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-  ExynosVideoDecodeAccelerator::PreSandboxInitialization();
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-  VaapiWrapper::PreSandboxInitialization();
-#endif
-
-#if defined(OS_WIN)
-  {
-    TRACE_EVENT0("gpu", "Preload setupapi.dll");
-    // Preload this DLL because the sandbox prevents it from loading.
-    if (LoadLibrary(L"setupapi.dll") == NULL) {
-      LOG(ERROR) << "WarmUpSandbox() failed with loading setupapi.dll";
-      return false;
-    }
-  }
-
-  if (!command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
-    TRACE_EVENT0("gpu", "Initialize DXVA");
-    // Initialize H/W video decoding stuff which fails in the sandbox.
-    DXVAVideoDecodeAccelerator::PreSandboxInitialization();
-  }
-
-  {
-    TRACE_EVENT0("gpu", "Warm up DWM");
-
-    // DWM was introduced with Windows Vista. DwmFlush seems to be sufficient
-    // to warm it up before lowering the token. DWM is required to present to
-    // a window with Vista and later and this allows us to do so with the
-    // GPU process sandbox enabled.
-    if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
-      HMODULE module = LoadLibrary(L"dwmapi.dll");
-      if (module) {
-        typedef HRESULT (WINAPI *DwmFlushFunc)();
-        DwmFlushFunc dwm_flush = reinterpret_cast<DwmFlushFunc>(
-            GetProcAddress(module, "DwmFlush"));
-        if (dwm_flush)
-          dwm_flush();
-      }
-    }
-  }
-#endif
   return true;
 }
 

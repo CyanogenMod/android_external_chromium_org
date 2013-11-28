@@ -114,7 +114,7 @@ void SetDisplayPropertiesOnHostWindow(aura::RootWindow* root,
   }
 
   int internal = display.IsInternal() ? 1 : 0;
-  gfx::AcceleratedWidget xwindow = root->GetAcceleratedWidget();
+  gfx::AcceleratedWidget xwindow = root->host()->GetAcceleratedWidget();
   ui::SetIntProperty(xwindow, kInternalProp, kCARDINAL, internal);
   ui::SetIntProperty(xwindow, kRotationProp, kCARDINAL, xrandr_rotation);
   ui::SetIntProperty(xwindow,
@@ -123,7 +123,7 @@ void SetDisplayPropertiesOnHostWindow(aura::RootWindow* root,
                      100 * display.device_scale_factor());
 #endif
   scoped_ptr<aura::RootWindowTransformer> transformer(
-      internal::CreateRootWindowTransformerForDisplay(root, display));
+      internal::CreateRootWindowTransformerForDisplay(root->window(), display));
   root->SetRootWindowTransformer(transformer.Pass());
 }
 
@@ -143,7 +143,7 @@ class FocusActivationStore {
         active_(NULL) {
   }
 
-  void Store(bool display_removed) {
+  void Store(bool clear_focus) {
     if (!activation_client_) {
       aura::Window* root = Shell::GetPrimaryRootWindow();
       activation_client_ = aura::client::GetActivationClient(root);
@@ -158,7 +158,7 @@ class FocusActivationStore {
       tracker_.Add(active_);
 
     // Deactivate the window to close menu / bubble windows.
-    if (display_removed)
+    if (clear_focus)
       activation_client_->DeactivateWindow(active_);
 
     // Release capture if any.
@@ -167,7 +167,7 @@ class FocusActivationStore {
     // window may be deleted when losing focus (fullscreen flash for
     // example).  If the focused window is still alive after move, it'll
     // be re-focused below.
-    if (display_removed)
+    if (clear_focus)
       focus_client_->FocusWindow(NULL);
   }
 
@@ -264,7 +264,7 @@ void DisplayController::Shutdown() {
   Shell::GetScreen()->RemoveObserver(this);
   // Delete all root window controllers, which deletes root window
   // from the last so that the primary root window gets deleted last.
-  for (std::map<int64, aura::RootWindow*>::const_reverse_iterator it =
+  for (std::map<int64, aura::Window*>::const_reverse_iterator it =
            root_windows_.rbegin(); it != root_windows_.rend(); ++it) {
     internal::RootWindowController* controller =
         internal::GetRootWindowController(it->second);
@@ -325,9 +325,9 @@ aura::Window* DisplayController::GetRootWindowForDisplayId(int64 id) {
 }
 
 void DisplayController::CloseChildWindows() {
-  for (std::map<int64, aura::RootWindow*>::const_iterator it =
+  for (std::map<int64, aura::Window*>::const_iterator it =
            root_windows_.begin(); it != root_windows_.end(); ++it) {
-    aura::RootWindow* root_window = it->second;
+    aura::Window* root_window = it->second;
     internal::RootWindowController* controller =
         internal::GetRootWindowController(root_window);
     if (controller) {
@@ -341,9 +341,9 @@ void DisplayController::CloseChildWindows() {
   }
 }
 
-std::vector<aura::RootWindow*> DisplayController::GetAllRootWindows() {
-  std::vector<aura::RootWindow*> windows;
-  for (std::map<int64, aura::RootWindow*>::const_iterator it =
+aura::Window::Windows DisplayController::GetAllRootWindows() {
+  aura::Window::Windows windows;
+  for (std::map<int64, aura::Window*>::const_iterator it =
            root_windows_.begin(); it != root_windows_.end(); ++it) {
     DCHECK(it->second);
     if (internal::GetRootWindowController(it->second))
@@ -364,7 +364,7 @@ void DisplayController::SetOverscanInsets(int64 display_id,
 std::vector<internal::RootWindowController*>
 DisplayController::GetAllRootWindowControllers() {
   std::vector<internal::RootWindowController*> controllers;
-  for (std::map<int64, aura::RootWindow*>::const_iterator it =
+  for (std::map<int64, aura::Window*>::const_iterator it =
            root_windows_.begin(); it != root_windows_.end(); ++it) {
     internal::RootWindowController* controller =
         internal::GetRootWindowController(it->second);
@@ -447,7 +447,7 @@ void DisplayController::SetPrimaryDisplay(
     return;
   }
 
-  aura::RootWindow* non_primary_root = root_windows_[new_primary_display.id()];
+  aura::Window* non_primary_root = root_windows_[new_primary_display.id()];
   LOG_IF(ERROR, !non_primary_root)
       << "Unknown display is requested in SetPrimaryDisplay: id="
       << new_primary_display.id();
@@ -457,7 +457,7 @@ void DisplayController::SetPrimaryDisplay(
   gfx::Display old_primary_display = GetPrimaryDisplay();
 
   // Swap root windows between current and new primary display.
-  aura::RootWindow* primary_root = root_windows_[primary_display_id];
+  aura::Window* primary_root = root_windows_[primary_display_id];
   DCHECK(primary_root);
   DCHECK_NE(primary_root, non_primary_root);
 
@@ -525,13 +525,13 @@ void DisplayController::EnsurePointerInDisplays() {
       aura::client::ScreenPositionClient* client =
           aura::client::GetScreenPositionClient(root_window);
       client->ConvertPointFromScreen(root_window, &center);
-      root_window->GetDispatcher()->ConvertPointToNativeScreen(&center);
+      root_window->GetDispatcher()->host()->ConvertPointToNativeScreen(&center);
       dst_root_window = root_window;
       target_location_in_native = center;
       closest_distance_squared = distance_squared;
     }
   }
-  dst_root_window->GetDispatcher()->ConvertPointFromNativeScreen(
+  dst_root_window->GetDispatcher()->host()->ConvertPointFromNativeScreen(
       &target_location_in_native);
   dst_root_window->MoveCursorTo(target_location_in_native);
 }
@@ -598,9 +598,10 @@ void DisplayController::OnDisplayBoundsChanged(const gfx::Display& display) {
   const internal::DisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display.id());
   DCHECK(!display_info.bounds_in_native().IsEmpty());
-  aura::RootWindow* root = root_windows_[display.id()];
-  root->SetHostBounds(display_info.bounds_in_native());
-  SetDisplayPropertiesOnHostWindow(root, display);
+  aura::WindowEventDispatcher* dispatcher =
+      root_windows_[display.id()]->GetDispatcher();
+  dispatcher->SetHostBounds(display_info.bounds_in_native());
+  SetDisplayPropertiesOnHostWindow(dispatcher, display);
 }
 
 void DisplayController::OnDisplayAdded(const gfx::Display& display) {
@@ -613,8 +614,10 @@ void DisplayController::OnDisplayAdded(const gfx::Display& display) {
     primary_root_window_for_replace_ = NULL;
     const internal::DisplayInfo& display_info =
         GetDisplayManager()->GetDisplayInfo(display.id());
-    root_windows_[display.id()]->SetHostBounds(
-        display_info.bounds_in_native());
+    aura::WindowEventDispatcher* dispatcher =
+        root_windows_[display.id()]->GetDispatcher();
+    dispatcher->SetHostBounds(display_info.bounds_in_native());
+    SetDisplayPropertiesOnHostWindow(dispatcher, display);
   } else {
     if (primary_display_id == gfx::Display::kInvalidDisplayID)
       primary_display_id = display.id();
@@ -625,7 +628,7 @@ void DisplayController::OnDisplayAdded(const gfx::Display& display) {
 }
 
 void DisplayController::OnDisplayRemoved(const gfx::Display& display) {
-  aura::RootWindow* root_to_delete = root_windows_[display.id()];
+  aura::Window* root_to_delete = root_windows_[display.id()];
   DCHECK(root_to_delete) << display.ToString();
 
   // Display for root window will be deleted when the Primary RootWindow
@@ -644,7 +647,7 @@ void DisplayController::OnDisplayRemoved(const gfx::Display& display) {
     }
     DCHECK_EQ(1U, root_windows_.size());
     primary_display_id = ScreenAsh::GetSecondaryDisplay().id();
-    aura::RootWindow* primary_root = root_to_delete;
+    aura::Window* primary_root = root_to_delete;
 
     // Delete the other root instead.
     root_to_delete = root_windows_[primary_display_id];
@@ -670,10 +673,10 @@ void DisplayController::OnDisplayRemoved(const gfx::Display& display) {
 
 void DisplayController::OnRootWindowHostResized(const aura::RootWindow* root) {
   internal::DisplayManager* display_manager = GetDisplayManager();
-  gfx::Display display = GetDisplayNearestWindow(root);
+  gfx::Display display = GetDisplayNearestWindow(root->window());
   if (display_manager->UpdateDisplayBounds(
           display.id(),
-          gfx::Rect(root->GetHostOrigin(), root->GetHostSize()))) {
+          root->host()->GetBounds())) {
     mirror_window_controller_->UpdateWindow();
   }
 }
@@ -699,9 +702,9 @@ void DisplayController::CloseNonDesktopDisplay() {
   virtual_keyboard_window_controller_->Close();
 }
 
-void DisplayController::PreDisplayConfigurationChange(bool display_removed) {
+void DisplayController::PreDisplayConfigurationChange(bool clear_focus) {
   FOR_EACH_OBSERVER(Observer, observers_, OnDisplayConfigurationChanging());
-  focus_activation_store_->Store(display_removed);
+  focus_activation_store_->Store(clear_focus);
 
   gfx::Point point_in_screen = Shell::GetScreen()->GetCursorScreenPoint();
   gfx::Display display =
@@ -711,7 +714,8 @@ void DisplayController::PreDisplayConfigurationChange(bool display_removed) {
   aura::client::ScreenPositionClient* client =
       aura::client::GetScreenPositionClient(root_window);
   client->ConvertPointFromScreen(root_window, &point_in_screen);
-  root_window->GetDispatcher()->ConvertPointToNativeScreen(&point_in_screen);
+  root_window->GetDispatcher()->host()->ConvertPointToNativeScreen(
+      &point_in_screen);
   cursor_location_in_native_coords_for_restore_ = point_in_screen;
 }
 
@@ -755,16 +759,17 @@ aura::RootWindow* DisplayController::AddRootWindowForDisplay(
   params.host = Shell::GetInstance()->root_window_host_factory()->
       CreateRootWindowHost(bounds_in_native);
   aura::RootWindow* root_window = new aura::RootWindow(params);
-  root_window->SetName(
+  root_window->window()->SetName(
       base::StringPrintf("RootWindow-%d", root_window_count++));
   root_window->compositor()->SetBackgroundColor(SK_ColorBLACK);
   // No need to remove RootWindowObserver because
   // the DisplayController object outlives RootWindow objects.
   root_window->AddRootWindowObserver(this);
-  internal::InitRootWindowSettings(root_window)->display_id = display.id();
+  internal::InitRootWindowSettings(root_window->window())->display_id =
+      display.id();
   root_window->Init();
 
-  root_windows_[display.id()] = root_window;
+  root_windows_[display.id()] = root_window->window();
   SetDisplayPropertiesOnHostWindow(root_window, display);
 
 #if defined(OS_CHROMEOS)
@@ -772,7 +777,7 @@ aura::RootWindow* DisplayController::AddRootWindowForDisplay(
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshConstrainPointerToRoot);
   if (base::SysInfo::IsRunningOnChromeOS() || force_constrain_pointer_to_root)
-    root_window->ConfineCursorToWindow();
+    root_window->host()->ConfineCursorToRootWindow();
 #endif
   return root_window;
 }
@@ -790,12 +795,12 @@ void DisplayController::UpdateHostWindowNames() {
   // to "aura_root_0" so gtalk can find the primary root window to broadcast.
   // TODO(jhorwich) Remove this once Chrome supports window-based broadcasting.
   aura::Window* primary = Shell::GetPrimaryRootWindow();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   for (size_t i = 0; i < root_windows.size(); ++i) {
     std::string name =
         root_windows[i] == primary ? "aura_root_0" : "aura_root_x";
     gfx::AcceleratedWidget xwindow =
-        root_windows[i]->GetDispatcher()->GetAcceleratedWidget();
+        root_windows[i]->GetDispatcher()->host()->GetAcceleratedWidget();
     XStoreName(gfx::GetXDisplay(), xwindow, name.c_str());
   }
 #endif

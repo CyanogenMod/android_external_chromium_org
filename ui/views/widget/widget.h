@@ -140,6 +140,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
                         // specialized to menus.
       TYPE_TOOLTIP,
       TYPE_BUBBLE,
+      TYPE_DRAG,        // An undecorated Window, used during a drag-and-drop to
+                        // show the drag image.
     };
 
     enum WindowOpacity {
@@ -165,6 +167,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
     InitParams();
     explicit InitParams(Type type);
+    ~InitParams();
 
     // Will return the first of the following that isn't NULL: the native view,
     // |parent|, |context|.
@@ -229,6 +232,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // Only used by X11, for root level windows. Specifies the res_name and
     // res_class fields, respectively, of the WM_CLASS window property. Controls
     // window grouping and desktop file matching in Linux window managers.
+    std::string wm_role_name;
     std::string wm_class_name;
     std::string wm_class_class;
   };
@@ -254,22 +258,16 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
                                                  gfx::NativeWindow parent,
                                                  const gfx::Rect& bounds);
 
-  // Creates a decorated window Widget in the same desktop context as
-  // |context|.
+  // Creates a decorated window Widget in the same desktop context as |context|.
   static Widget* CreateWindowWithContext(WidgetDelegate* delegate,
                                          gfx::NativeView context);
   static Widget* CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
                                                   gfx::NativeView context,
                                                   const gfx::Rect& bounds);
 
-  // Creates an undecorated child window Widget. |new_style_parent| is the
-  // parent to use for new style dialogs, |parent| for currently-styled dialogs.
-  //
-  // TODO(wittman): use a single parent parameter once we move fully to
-  // new-style dialogs.
+  // Creates an undecorated child window Widget parented to |parent|.
   static Widget* CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
-                                              gfx::NativeView parent,
-                                              gfx::NativeView new_style_parent);
+                                              gfx::NativeView parent);
 
   // Enumerates all windows pertaining to us and notifies their
   // view hierarchies that the locale has changed.
@@ -419,7 +417,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Places the widget below the specified NativeView.
   void StackBelow(gfx::NativeView native_view);
 
-  // Sets a shape on the widget. This takes ownership of shape.
+  // Sets a shape on the widget. Passing a NULL |shape| reverts the widget to
+  // be rectangular. Takes ownership of |shape|.
   void SetShape(gfx::NativeRegion shape);
 
   // Hides the widget then closes it after a return to the message loop.

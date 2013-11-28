@@ -38,17 +38,16 @@
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
 using content::BrowserPluginEmbedder;
 using content::BrowserPluginGuest;
 using content::BrowserPluginHostFactory;
 using content::WebContentsImpl;
 
-namespace {
-
 const char kHTMLForGuest[] =
     "data:text/html,<html><body>hello world</body></html>";
+
 const char kHTMLForGuestTouchHandler[] =
     "data:text/html,<html><body><div id=\"touch\">With touch</div></body>"
     "<script type=\"text/javascript\">"
@@ -62,11 +61,7 @@ const char kHTMLForGuestTouchHandler[] =
     "     handler);"
     "}"
     "</script></html>";
-const char kHTMLForGuestWithTitle[] =
-    "data:text/html,"
-    "<html><head><title>%s</title></head>"
-    "<body>hello world</body>"
-    "</html>";
+
 const char kHTMLForGuestAcceptDrag[] =
     "data:text/html,<html><body>"
     "<script>"
@@ -78,6 +73,7 @@ const char kHTMLForGuestAcceptDrag[] =
     "    ondrop=\"dropped();\">"
     "</textarea>"
     "</body></html>";
+
 const char kHTMLForGuestWithSize[] =
     "data:text/html,"
     "<html>"
@@ -85,12 +81,6 @@ const char kHTMLForGuestWithSize[] =
     "<img style=\"width: 100%; height: 400px;\"/>"
     "</body>"
     "</html>";
-
-std::string GetHTMLForGuestWithTitle(const std::string& title) {
-  return base::StringPrintf(kHTMLForGuestWithTitle, title.c_str());
-}
-
-}  // namespace
 
 namespace content {
 
@@ -155,9 +145,9 @@ class TestShortHangTimeoutGuestFactory : public TestBrowserPluginHostFactory {
  public:
   virtual BrowserPluginGuest* CreateBrowserPluginGuest(
       int instance_id, WebContentsImpl* web_contents) OVERRIDE {
-    BrowserPluginGuest* guest =
+    TestBrowserPluginGuest* guest =
         new TestBrowserPluginGuest(instance_id, web_contents);
-    guest->set_guest_hang_timeout_for_testing(TestTimeouts::tiny_timeout());
+    guest->set_guest_hang_timeout(TestTimeouts::tiny_timeout());
     return guest;
   }
 
@@ -396,7 +386,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, AdvanceFocus) {
   StartBrowserPluginTest(kEmbedderURL, kGuestURL, false, std::string());
 
   SimulateMouseClick(test_embedder()->web_contents(), 0,
-      WebKit::WebMouseEvent::ButtonLeft);
+      blink::WebMouseEvent::ButtonLeft);
   BrowserPluginHostTest::SimulateTabKeyPress(test_embedder()->web_contents());
   // Wait until we focus into the guest.
   test_guest()->WaitForFocus();
@@ -466,10 +456,10 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_EmbedderSameAfterNav) {
   const string16 expected_title = ASCIIToUTF16("done");
   content::TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   NavigateToURL(shell(), test_url_new);
-  LOG(INFO) << "Start waiting for title";
+  VLOG(0) << "Start waiting for title";
   string16 actual_title = title_watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, actual_title);
-  LOG(INFO) << "Done navigating to second page";
+  VLOG(0) << "Done navigating to second page";
 
   TestBrowserPluginEmbedder* test_embedder_after_nav =
       static_cast<TestBrowserPluginEmbedder*>(
@@ -633,9 +623,9 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_AcceptDragEvents) {
       expected_title);
 
   rvh->DragTargetDragEnter(drop_data, gfx::Point(start_x, start_y),
-      gfx::Point(start_x, start_y), WebKit::WebDragOperationEvery, 0);
+      gfx::Point(start_x, start_y), blink::WebDragOperationEvery, 0);
   rvh->DragTargetDragOver(gfx::Point(end_x, end_y), gfx::Point(end_x, end_y),
-      WebKit::WebDragOperationEvery, 0);
+      blink::WebDragOperationEvery, 0);
   rvh->DragTargetDrop(gfx::Point(end_x, end_y), gfx::Point(end_x, end_y), 0);
 
   string16 actual_title = title_watcher.WaitAndGetTitle();

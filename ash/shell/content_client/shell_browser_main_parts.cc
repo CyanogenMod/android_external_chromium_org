@@ -119,7 +119,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 #endif
 
   ash::Shell::CreateInstance(delegate_);
-  ash::Shell::GetInstance()->set_browser_context(browser_context_.get());
+  delegate_->set_browser_context(browser_context_.get());
   ash::Shell::GetInstance()->CreateLauncher();
   ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(
       user::LOGGED_IN_USER);
@@ -134,7 +134,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   Shell::GetInstance()->desktop_background_controller()->SetDefaultWallpaper(
       false /* is_guest */);
 
-  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->ShowRootWindow();
+  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {

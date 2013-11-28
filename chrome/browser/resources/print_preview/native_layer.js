@@ -21,6 +21,8 @@ cr.define('print_preview', function() {
         this.onUpdateWithPrinterCapabilities_.bind(this);
     global['failedToGetPrinterCapabilities'] =
         this.onFailedToGetPrinterCapabilities_.bind(this);
+    global['failedToGetPrivetPrinterCapabilities'] =
+      this.onFailedToGetPrivetPrinterCapabilities_.bind(this);
     global['reloadPrintersList'] = this.onReloadPrintersList_.bind(this);
     global['printToCloud'] = this.onPrintToCloud_.bind(this);
     global['fileSelectionCancelled'] =
@@ -34,13 +36,18 @@ cr.define('print_preview', function() {
         this.onDidGetDefaultPageLayout_.bind(this);
     global['onDidGetPreviewPageCount'] =
         this.onDidGetPreviewPageCount_.bind(this);
-    global['reloadPreviewPages'] = this.onReloadPreviewPages_.bind(this);
     global['onDidPreviewPage'] = this.onDidPreviewPage_.bind(this);
     global['updatePrintPreview'] = this.onUpdatePrintPreview_.bind(this);
     global['printScalingDisabledForSourcePDF'] =
         this.onPrintScalingDisabledForSourcePDF_.bind(this);
     global['onDidGetAccessToken'] = this.onDidGetAccessToken_.bind(this);
     global['autoCancelForTesting'] = this.autoCancelForTesting_.bind(this);
+    global['onPrivetPrinterChanged'] = this.onPrivetPrinterChanged_.bind(this);
+    global['onPrivetPrinterSearchDone'] =
+      this.onPrivetPrinterSearchDone_.bind(this);
+    global['onPrivetCapabilitiesSet'] =
+      this.onPrivetCapabilitiesSet_.bind(this);
+    global['onPrivetPrintFailed'] = this.onPrivetPrintFailed_.bind(this);
   };
 
   /**
@@ -67,9 +74,14 @@ cr.define('print_preview', function() {
         'print_preview.NativeLayer.PREVIEW_GENERATION_DONE',
     PREVIEW_GENERATION_FAIL:
         'print_preview.NativeLayer.PREVIEW_GENERATION_FAIL',
-    PREVIEW_RELOAD: 'print_preview.NativeLayer.PREVIEW_RELOAD',
     PRINT_TO_CLOUD: 'print_preview.NativeLayer.PRINT_TO_CLOUD',
-    SETTINGS_INVALID: 'print_preview.NativeLayer.SETTINGS_INVALID'
+    SETTINGS_INVALID: 'print_preview.NativeLayer.SETTINGS_INVALID',
+    PRIVET_PRINTER_CHANGED: 'print_preview.NativeLayer.PRIVET_PRINTER_CHANGED',
+    PRIVET_PRINTER_SEARCH_DONE:
+        'print_preview.NativeLayer.PRIVET_PRINTER_SEARCH_DONE',
+    PRIVET_CAPABILITIES_SET:
+        'print_preview.NativeLayer.PRIVET_CAPABILITIES_SET',
+    PRIVET_PRINT_FAILED: 'print_preview.NativeLayer.PRIVET_PRINT_FAILED'
   };
 
   /**
@@ -125,6 +137,24 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Requests the network's privet print destinations. A number of
+     * PRIVET_PRINTER_CHANGED events will be fired in response, followed by a
+     * PRIVET_SEARCH_ENDED.
+     */
+    startGetPrivetDestinations: function() {
+      chrome.send('getPrivetPrinters');
+    },
+
+    /**
+     * Requests the privet destination's printing capabilities. A
+     * PRIVET_CAPABILITIES_SET event will be dispatched in response.
+     * @param {string} destinationId ID of the destination.
+     */
+    startGetPrivetDestinationCapabilities: function(destinationId) {
+      chrome.send('getPrivetPrinterCapabilities', [destinationId]);
+    },
+
+    /**
      * Requests the destination's printing capabilities. A CAPABILITIES_SET
      * event will be dispatched in response.
      * @param {string} destinationId ID of the destination.
@@ -141,7 +171,6 @@ cr.define('print_preview', function() {
      *   - PAGE_PREVIEW_READY
      *   - PREVIEW_GENERATION_DONE
      *   - PREVIEW_GENERATION_FAIL
-     *   - PREVIEW_RELOAD
      * @param {print_preview.Destination} destination Destination to print to.
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
@@ -168,6 +197,7 @@ cr.define('print_preview', function() {
             destination.id ==
                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
         'printWithCloudPrint': destination != null && !destination.isLocal,
+        'printWithPrivet': destination.isPrivet,
         'deviceName': destination == null ? 'foo' : destination.id,
         'generateDraftData': documentInfo.isModifiable,
         'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
@@ -243,10 +273,13 @@ cr.define('print_preview', function() {
         'printToPDF': destination.id ==
             print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
         'printWithCloudPrint': !destination.isLocal,
+        'printWithPrivet': destination.isPrivet,
         'deviceName': destination.id,
         'isFirstRequest': false,
         'requestID': -1,
-        'fitToPageEnabled': printTicketStore.fitToPage.getValue()
+        'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
+        'pageWidth': documentInfo.pageSize.width,
+        'pageHeight': documentInfo.pageSize.height,
       };
 
       if (!destination.isLocal) {
@@ -268,6 +301,10 @@ cr.define('print_preview', function() {
           'marginBottom': customMargins.get(orientationEnum.BOTTOM),
           'marginLeft': customMargins.get(orientationEnum.LEFT)
         };
+      }
+
+      if (destination.isPrivet) {
+        ticket['ticket'] = printTicketStore.createPrintTicket(destination);
       }
 
       if (opt_isOpenPdfInPreview) {
@@ -411,6 +448,21 @@ cr.define('print_preview', function() {
       this.dispatchEvent(getCapsFailEvent);
     },
 
+    /**
+     * Called when native layer gets settings information for a requested privet
+     * destination.
+     * @param {string} printerId printer affected by error.
+     * @private
+     */
+    onFailedToGetPrivetPrinterCapabilities_: function(destinationId) {
+      var getCapsFailEvent = new Event(
+          NativeLayer.EventType.GET_CAPABILITIES_FAIL);
+      getCapsFailEvent.destinationId = destinationId;
+      getCapsFailEvent.destinationOrigin =
+          print_preview.Destination.Origin.PRIVET;
+      this.dispatchEvent(getCapsFailEvent);
+    },
+
     /** Reloads the printer list. */
     onReloadPrintersList_: function() {
       cr.dispatchSimpleEvent(this, NativeLayer.EventType.DESTINATIONS_RELOAD);
@@ -505,21 +557,6 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * Called when no pipelining previewed pages.
-     * @param {number} previewUid Preview unique identifier.
-     * @param {number} previewResponseId The preview request id that resulted in
-     *     this response.
-     * @private
-     */
-    onReloadPreviewPages_: function(previewUid, previewResponseId) {
-      var previewReloadEvent = new Event(
-          NativeLayer.EventType.PREVIEW_RELOAD);
-      previewReloadEvent.previewUid = previewUid;
-      previewReloadEvent.previewResponseId = previewResponseId;
-      this.dispatchEvent(previewReloadEvent);
-    },
-
-    /**
      * Notification that a print preview page has been rendered.
      * Check if the settings have changed and request a regeneration if needed.
      * Called from PrintPreviewUI::OnDidPreviewPage().
@@ -590,6 +627,53 @@ cr.define('print_preview', function() {
       var properties = {view: window, bubbles: true, cancelable: true};
       var click = new MouseEvent('click', properties);
       document.querySelector('#print-header .cancel').dispatchEvent(click);
+    },
+
+    /**
+     * @param {{serviceName: string, name: string}} printer Specifies
+     *     information about the printer that was added.
+     * @private
+     */
+    onPrivetPrinterChanged_: function(printer) {
+      var privetPrinterChangedEvent =
+            new Event(NativeLayer.EventType.PRIVET_PRINTER_CHANGED);
+      privetPrinterChangedEvent.printer = printer;
+      this.dispatchEvent(privetPrinterChangedEvent);
+    },
+
+    /**
+     * Called when the privet printer search is over.
+     * @private
+     */
+    onPrivetPrinterSearchDone_: function() {
+      var privetPrinterSearchDoneEvent =
+            new Event(NativeLayer.EventType.PRIVET_PRINTER_SEARCH_DONE);
+      this.dispatchEvent(privetPrinterSearchDoneEvent);
+    },
+
+    /**
+     * @param {Object} printer Specifies information about the printer that was
+     *    added.
+     * @private
+     */
+    onPrivetCapabilitiesSet_: function(printer, capabilities) {
+      var privetCapabilitiesSetEvent =
+            new Event(NativeLayer.EventType.PRIVET_CAPABILITIES_SET);
+      privetCapabilitiesSetEvent.printer = printer;
+      privetCapabilitiesSetEvent.capabilities = capabilities;
+      this.dispatchEvent(privetCapabilitiesSetEvent);
+    },
+
+    /**
+     * @param {string} http_error The HTTP response code or -1 if not an HTTP
+     *    error.
+     * @private
+     */
+    onPrivetPrintFailed_: function(http_error) {
+      var privetPrintFailedEvent =
+            new Event(NativeLayer.EventType.PRIVET_PRINT_FAILED);
+      privetPrintFailedEvent.httpError = http_error;
+      this.dispatchEvent(privetPrintFailedEvent);
     }
   };
 

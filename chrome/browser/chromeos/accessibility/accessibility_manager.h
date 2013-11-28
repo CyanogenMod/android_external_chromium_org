@@ -10,8 +10,10 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/extensions/api/braille_display_private/braille_controller.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/event_router.h"
 
 class Profile;
 
@@ -36,6 +38,7 @@ struct AccessibilityStatusEventDetails {
 // watching profile notifications and pref-changes.
 // TODO(yoshiki): merge MagnificationManager with AccessibilityManager.
 class AccessibilityManager : public content::NotificationObserver,
+    public extensions::EventRouter::Observer,
     extensions::api::braille_display_private::BrailleObserver {
  public:
   // Creates an instance of AccessibilityManager, this should be called once,
@@ -87,12 +90,6 @@ class AccessibilityManager : public content::NotificationObserver,
 
   // Toggles whether Chrome OS spoken feedback is on or off.
   void ToggleSpokenFeedback(ash::AccessibilityNotificationVisibility notify);
-
-  // Speaks the specified string.
-  void Speak(const std::string& text);
-
-  // Speaks the given text if the accessibility pref is already set.
-  void MaybeSpeak(const std::string& text);
 
   // Enables or disables the high contrast mode for Chrome.
   void EnableHighContrast(bool enabled);
@@ -156,6 +153,12 @@ class AccessibilityManager : public content::NotificationObserver,
       const extensions::api::braille_display_private::DisplayState&
           display_state) OVERRIDE;
 
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(
+      const extensions::EventListenerInfo& details) OVERRIDE;
+  virtual void OnListenerRemoved(
+      const extensions::EventListenerInfo& details) OVERRIDE;
+
   // Profile which has the current a11y context.
   Profile* profile_;
 
@@ -184,6 +187,8 @@ class AccessibilityManager : public content::NotificationObserver,
   ash::AccessibilityNotificationVisibility spoken_feedback_notification_;
 
   base::WeakPtrFactory<AccessibilityManager> weak_ptr_factory_;
+
+  bool should_speak_chrome_vox_announcements_on_user_screen_;
 
   DISALLOW_COPY_AND_ASSIGN(AccessibilityManager);
 };

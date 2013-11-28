@@ -7,10 +7,10 @@
 #include <vector>
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
 #include "chrome/renderer/searchbox/search_bouncer.h"
 #include "content/public/common/webplugininfo.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
 #include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -18,14 +18,11 @@
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "url/gurl.h"
 
-using WebKit::WebPluginParams;
-using WebKit::WebString;
-using WebKit::WebVector;
-using chrome::ChromeContentRendererClient;
+using blink::WebPluginParams;
+using blink::WebString;
+using blink::WebVector;
 using content::WebPluginInfo;
 using content::WebPluginMimeType;
-
-namespace chrome {
 
 namespace {
 const bool kNaClRestricted = false;
@@ -389,5 +386,3 @@ TEST_F(ChromeContentRendererClientTest, ShouldSuppressErrorPage) {
   EXPECT_FALSE(client.ShouldSuppressErrorPage(GURL("http://example.com")));
   EXPECT_TRUE(client.ShouldSuppressErrorPage(GURL("http://example.com/n")));
 }
-
-}  // namespace chrome

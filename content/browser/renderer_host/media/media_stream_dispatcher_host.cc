@@ -46,14 +46,16 @@ void MediaStreamDispatcherHost::StreamGenerationFailed(
                                                  request.page_request_id));
 }
 
-void MediaStreamDispatcherHost::StopGeneratedStream(
-    int render_view_id,
-    const std::string& label) {
+void MediaStreamDispatcherHost::DeviceStopped(int render_view_id,
+                                              const std::string& label,
+                                              const StreamDeviceInfo& device) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DVLOG(1) << "MediaStreamDispatcherHost::StopGeneratedStream("
-           << ", {label = " << label <<  "})";
+  DVLOG(1) << "MediaStreamDispatcherHost::DeviceStopped("
+           << "{label = " << label << "}, "
+           << "{type = " << device.device.type << "}, "
+           << "{device_id = " << device.device.id << "})";
 
-  Send(new MediaStreamMsg_StopGeneratedStream(render_view_id, label));
+  Send(new MediaStreamMsg_DeviceStopped(render_view_id, label, device));
 }
 
 void MediaStreamDispatcherHost::DevicesEnumerated(
@@ -78,6 +80,16 @@ void MediaStreamDispatcherHost::DeviceOpened(
   DVLOG(1) << "MediaStreamDispatcherHost::DeviceOpened("
            << ", {label = " << label <<  "})";
 
+  // TODO(perkj): Checking for StreamRequest here is a temporary fix to avoid
+  // an Assert in PopRequest. Remove this once the real problem is solved.
+  // crbug/316396.
+  StreamMap::iterator it = streams_.find(label);
+  DCHECK(it != streams_.end());
+  if (it == streams_.end()) {
+    LOG(ERROR) << "DeviceOpened but there is no request for the device.";
+    return;
+  }
+
   StreamRequest request = PopRequest(label);
 
   Send(new MediaStreamMsg_DeviceOpened(
@@ -95,6 +107,8 @@ bool MediaStreamDispatcherHost::OnMessageReceived(
                         OnStopStreamDevice)
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_EnumerateDevices,
                         OnEnumerateDevices)
+    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_CancelEnumerateDevices,
+                        OnCancelEnumerateDevices)
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_OpenDevice,
                         OnOpenDevice)
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_CloseDevice,
@@ -133,8 +147,12 @@ void MediaStreamDispatcherHost::OnGenerateStream(
   const std::string& label = media_stream_manager_->GenerateStream(
       this, render_process_id_, render_view_id, page_request_id,
       components, security_origin);
-  CHECK(!label.empty());
-  StoreRequest(render_view_id, page_request_id, label);
+  if (label.empty()) {
+    Send(new MediaStreamMsg_StreamGenerationFailed(render_view_id,
+                                                   page_request_id));
+  } else {
+    StoreRequest(render_view_id, page_request_id, label);
+  }
 }
 
 void MediaStreamDispatcherHost::OnCancelGenerateStream(int render_view_id,
@@ -188,6 +206,13 @@ void MediaStreamDispatcherHost::OnCancelEnumerateDevices(
            << render_view_id << ", "
            << label << ")";
 
+  if (streams_.find(label) == streams_.end()) {
+    // According to the comments in MediaStreamDispatcher::OnDevicesEnumerated,
+    // OnCancelEnumerateDevices can be called several times with the same label.
+    DVLOG(1) << "Enumeration request with label " << label
+             << "does not exist.";
+    return;
+  }
   media_stream_manager_->CancelRequest(label);
   PopRequest(label);
 }

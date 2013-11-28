@@ -17,11 +17,11 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/generated_schemas.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/common_resources.h"
 #include "grit/extensions_api_resources.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -262,6 +262,9 @@ void ExtensionAPI::InitDefaultConfiguration() {
   RegisterSchemaResource("webstore", IDR_EXTENSION_API_JSON_WEBSTORE);
   RegisterSchemaResource("webstorePrivate",
       IDR_EXTENSION_API_JSON_WEBSTOREPRIVATE);
+  RegisterSchemaResource("webViewRequest",
+      IDR_EXTENSION_API_JSON_WEBVIEW_REQUEST);
+
   default_configuration_initialized_ = true;
 }
 

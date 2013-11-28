@@ -27,6 +27,7 @@
 #include "content/browser/cross_site_request_manager.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/frame_host/render_frame_host_factory.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
@@ -83,16 +84,18 @@
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
 #include "content/browser/media/android/browser_media_player_manager.h"
+#elif defined(OS_WIN)
+#include "base/win/win_util.h"
 #endif
 
 using base::TimeDelta;
-using WebKit::WebConsoleMessage;
-using WebKit::WebDragOperation;
-using WebKit::WebDragOperationNone;
-using WebKit::WebDragOperationsMask;
-using WebKit::WebInputEvent;
-using WebKit::WebMediaPlayerAction;
-using WebKit::WebPluginAction;
+using blink::WebConsoleMessage;
+using blink::WebDragOperation;
+using blink::WebDragOperationNone;
+using blink::WebDragOperationsMask;
+using blink::WebInputEvent;
+using blink::WebMediaPlayerAction;
+using blink::WebPluginAction;
 
 namespace content {
 namespace {
@@ -103,11 +106,11 @@ const int kUnloadTimeoutMS = 1000;
 
 // Translate a WebKit text direction into a base::i18n one.
 base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
-    WebKit::WebTextDirection dir) {
+    blink::WebTextDirection dir) {
   switch (dir) {
-    case WebKit::WebTextDirectionLeftToRight:
+    case blink::WebTextDirectionLeftToRight:
       return base::i18n::LEFT_TO_RIGHT;
-    case WebKit::WebTextDirectionRightToLeft:
+    case blink::WebTextDirectionRightToLeft:
       return base::i18n::RIGHT_TO_LEFT;
     default:
       NOTREACHED();
@@ -189,9 +192,8 @@ RenderViewHostImpl::RenderViewHostImpl(
   if (main_frame_routing_id == MSG_ROUTING_NONE)
     main_frame_routing_id = GetProcess()->GetNextRoutingID();
 
-  main_render_frame_host_.reset(
-      new RenderFrameHostImpl(this, delegate_->GetFrameTree(),
-                              main_frame_routing_id, is_swapped_out_));
+  main_render_frame_host_ = RenderFrameHostFactory::Create(
+      this, delegate_->GetFrameTree(), main_frame_routing_id, is_swapped_out_);
 
   GetProcess()->EnableSendQueue();
 
@@ -374,6 +376,12 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   if (command_line.HasSwitch(switches::kDisableAcceleratedOverflowScroll))
     prefs.accelerated_compositing_for_overflow_scroll_enabled = false;
 
+  prefs.layer_squashing_enabled = false;
+  if (command_line.HasSwitch(switches::kEnableLayerSquashing))
+      prefs.layer_squashing_enabled = true;
+  if (command_line.HasSwitch(switches::kDisableLayerSquashing))
+      prefs.layer_squashing_enabled = false;
+
   prefs.accelerated_compositing_for_scrollable_frames_enabled = false;
   if (command_line.HasSwitch(switches::kEnableAcceleratedScrollableFrames))
     prefs.accelerated_compositing_for_scrollable_frames_enabled = true;
@@ -508,7 +516,15 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
 
   prefs.number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
 
-  prefs.viewport_enabled = command_line.HasSwitch(switches::kEnableViewport);
+  prefs.viewport_meta_enabled =
+      command_line.HasSwitch(switches::kEnableViewportMeta);
+
+  prefs.viewport_enabled =
+      command_line.HasSwitch(switches::kEnableViewport) ||
+      prefs.viewport_meta_enabled;
+
+  prefs.main_frame_resizes_are_orientation_changes =
+      command_line.HasSwitch(switches::kMainFrameResizesAreOrientationChanges);
 
   prefs.deferred_image_decoding_enabled =
       command_line.HasSwitch(switches::kEnableDeferredImageDecoding) ||
@@ -653,6 +669,27 @@ void RenderViewHostImpl::FirePageBeforeUnload(bool for_cross_site_transition) {
     send_should_close_start_time_ = base::TimeTicks::Now();
     Send(new ViewMsg_ShouldClose(GetRoutingID()));
   }
+}
+
+void RenderViewHostImpl::OnCrossSiteResponse(
+    const GlobalRequestID& global_request_id,
+    bool is_transfer,
+    const std::vector<GURL>& transfer_url_chain,
+    const Referrer& referrer,
+    PageTransition page_transition,
+    int64 frame_id,
+    bool should_replace_current_entry) {
+  RenderViewHostDelegate::RendererManagement* manager =
+      delegate_->GetRendererManagementDelegate();
+  if (manager) {
+    manager->OnCrossSiteResponse(this, global_request_id, is_transfer,
+                                 transfer_url_chain, referrer, page_transition,
+                                 frame_id, should_replace_current_entry);
+  }
+}
+
+void RenderViewHostImpl::SuppressDialogsUntilSwapOut() {
+  Send(new ViewMsg_SuppressDialogsUntilSwapOut(GetRoutingID()));
 }
 
 void RenderViewHostImpl::SwapOut() {
@@ -1227,6 +1264,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_DomOperationResponse,
                         OnDomOperationResponse)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeTouched, OnFocusedNodeTouched)
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(
         handled = RenderWidgetHostImpl::OnMessageReceived(msg))
@@ -1288,7 +1326,7 @@ void RenderViewHostImpl::CreateNewWindow(
 }
 
 void RenderViewHostImpl::CreateNewWidget(int route_id,
-                                     WebKit::WebPopupType popup_type) {
+                                     blink::WebPopupType popup_type) {
   delegate_->CreateNewWidget(route_id, popup_type);
 }
 
@@ -1353,8 +1391,11 @@ void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
   render_view_termination_status_ =
       static_cast<base::TerminationStatus>(status);
 
-  // Reset state.
+  // Reset frame tree state.
+  // TODO(creis): Once subframes can be in different processes, we'll need to
+  // clear just the FrameTreeNodes affected by the crash (and their subtrees).
   main_frame_id_ = -1;
+  delegate_->GetFrameTree()->SwapMainFrame(main_render_frame_host_.get());
 
   // Our base class RenderWidgetHost needs to reset some stuff.
   RendererExited(render_view_termination_status_, exit_code);
@@ -1495,7 +1536,7 @@ void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
 void RenderViewHostImpl::OnUpdateTitle(
     int32 page_id,
     const string16& title,
-    WebKit::WebTextDirection title_direction) {
+    blink::WebTextDirection title_direction) {
   if (title.length() > kMaxTitleChars) {
     NOTREACHED() << "Renderer sent too many characters in title.";
     return;
@@ -1850,11 +1891,11 @@ gfx::Rect RenderViewHostImpl::GetRootWindowResizerRect() const {
 }
 
 void RenderViewHostImpl::ForwardMouseEvent(
-    const WebKit::WebMouseEvent& mouse_event) {
+    const blink::WebMouseEvent& mouse_event) {
 
   // We make a copy of the mouse event because
   // RenderWidgetHost::ForwardMouseEvent will delete |mouse_event|.
-  WebKit::WebMouseEvent event_copy(mouse_event);
+  blink::WebMouseEvent event_copy(mouse_event);
   RenderWidgetHostImpl::ForwardMouseEvent(event_copy);
 
   switch (event_copy.type) {
@@ -1999,7 +2040,7 @@ void RenderViewHostImpl::DisownOpener() {
 }
 
 void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
-    const base::Callback<void(WebKit::WebAXEvent)>& callback) {
+    const base::Callback<void(blink::WebAXEvent)>& callback) {
   accessibility_testing_callback_ = callback;
 }
 
@@ -2036,7 +2077,7 @@ void RenderViewHostImpl::ReloadFrame() {
 
 void RenderViewHostImpl::Find(int request_id,
                               const string16& search_text,
-                              const WebKit::WebFindOptions& options) {
+                              const blink::WebFindOptions& options) {
   Send(new ViewMsg_Find(GetRoutingID(), request_id, search_text, options));
 }
 
@@ -2079,12 +2120,12 @@ void RenderViewHostImpl::CopyImageAt(int x, int y) {
 }
 
 void RenderViewHostImpl::ExecuteMediaPlayerActionAtLocation(
-  const gfx::Point& location, const WebKit::WebMediaPlayerAction& action) {
+  const gfx::Point& location, const blink::WebMediaPlayerAction& action) {
   Send(new ViewMsg_MediaPlayerActionAt(GetRoutingID(), location, action));
 }
 
 void RenderViewHostImpl::ExecutePluginActionAtLocation(
-  const gfx::Point& location, const WebKit::WebPluginAction& action) {
+  const gfx::Point& location, const blink::WebPluginAction& action) {
   Send(new ViewMsg_PluginActionAt(GetRoutingID(), location, action));
 }
 
@@ -2111,9 +2152,9 @@ void RenderViewHostImpl::OnAccessibilityEvents(
 
   for (unsigned i = 0; i < params.size(); i++) {
     const AccessibilityHostMsg_EventParams& param = params[i];
-    WebKit::WebAXEvent src_type = param.event_type;
-    if (src_type == WebKit::WebAXEventLayoutComplete ||
-        src_type == WebKit::WebAXEventLoadComplete) {
+    blink::WebAXEvent src_type = param.event_type;
+    if (src_type == blink::WebAXEventLayoutComplete ||
+        src_type == blink::WebAXEventLoadComplete) {
       MakeAccessibilityNodeDataTree(param.nodes, &accessibility_tree_);
     }
     accessibility_testing_callback_.Run(src_type);
@@ -2196,6 +2237,16 @@ void RenderViewHostImpl::OnDomOperationResponse(
       NOTIFICATION_DOM_OPERATION_RESPONSE,
       Source<RenderViewHost>(this),
       Details<DomOperationNotificationDetails>(&details));
+}
+
+void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {
+#if defined(OS_WIN) && defined(USE_AURA)
+  if (editable) {
+    base::win::DisplayVirtualKeyboard();
+  } else {
+    base::win::DismissVirtualKeyboard();
+  }
+#endif
 }
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)

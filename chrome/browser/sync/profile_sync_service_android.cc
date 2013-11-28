@@ -33,6 +33,7 @@
 #include "grit/generated_resources.h"
 #include "jni/ProfileSyncService_jni.h"
 #include "sync/internal_api/public/read_transaction.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::android::AttachCurrentThread;
@@ -501,11 +502,11 @@ ProfileSyncServiceAndroid*
       AttachCurrentThread(), base::android::GetApplicationContext()));
 }
 
-static int Init(JNIEnv* env, jobject obj) {
+static jlong Init(JNIEnv* env, jobject obj) {
   ProfileSyncServiceAndroid* profile_sync_service_android =
       new ProfileSyncServiceAndroid(env, obj);
   profile_sync_service_android->Init();
-  return reinterpret_cast<jint>(profile_sync_service_android);
+  return reinterpret_cast<intptr_t>(profile_sync_service_android);
 }
 
 // static

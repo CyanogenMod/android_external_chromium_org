@@ -6,6 +6,9 @@
 
 #include <stdlib.h>
 
+#include <algorithm>
+
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -99,6 +102,7 @@ base::FilePath FindDotFile(const base::FilePath& current_dir) {
   return FindDotFile(up_one_dir);
 }
 
+#if defined(OS_WIN)
 // Searches the list of strings, and returns the FilePat corresponding to the
 // one ending in the given substring, or the empty path if none match.
 base::FilePath GetPathEndingIn(
@@ -111,13 +115,12 @@ base::FilePath GetPathEndingIn(
   return base::FilePath();
 }
 
-// Fins the depot tools directory in the path environment variable and returns
+// Finds the depot tools directory in the path environment variable and returns
 // its value. Returns an empty file path if not found.
 //
 // We detect the depot_tools path by looking for a directory with depot_tools
 // at the end (optionally followed by a separator).
 base::FilePath ExtractDepotToolsFromPath() {
-#if defined(OS_WIN)
   static const wchar_t kPathVarName[] = L"Path";
   DWORD env_buf_size = GetEnvironmentVariable(kPathVarName, NULL, 0);
   if (env_buf_size == 0)
@@ -132,17 +135,6 @@ base::FilePath ExtractDepotToolsFromPath() {
   base::SplitString(path, ';', &components);
 
   base::string16 ending_in1 = L"depot_tools\\";
-#else
-  static const char kPathVarName[] = "PATH";
-  const char* path = getenv(kPathVarName);
-  if (!path)
-    return base::FilePath();
-
-  std::vector<std::string> components;
-  base::SplitString(path, ':', &components);
-
-  std::string ending_in1 = "depot_tools/";
-#endif
   base::FilePath::StringType ending_in2 = FILE_PATH_LITERAL("depot_tools");
 
   base::FilePath found = GetPathEndingIn(components, ending_in1);
@@ -150,18 +142,39 @@ base::FilePath ExtractDepotToolsFromPath() {
     return found;
   return GetPathEndingIn(components, ending_in2);
 }
+#endif
+
+// Called on any thread. Post the item to the builder on the main thread.
+void ItemDefinedCallback(base::MessageLoop* main_loop,
+                         scoped_refptr<Builder> builder,
+                         scoped_ptr<Item> item) {
+  DCHECK(item);
+  main_loop->PostTask(FROM_HERE, base::Bind(&Builder::ItemDefined, builder,
+                                            base::Passed(&item)));
+}
+
+void DecrementWorkCount() {
+  g_scheduler->DecrementWorkCount();
+}
 
 }  // namespace
 
 // CommonSetup -----------------------------------------------------------------
 
 CommonSetup::CommonSetup()
-    : check_for_bad_items_(true) {
+    : build_settings_(),
+      loader_(new LoaderImpl(&build_settings_)),
+      builder_(new Builder(loader_.get())),
+      check_for_bad_items_(true) {
+  loader_->set_complete_callback(base::Bind(&DecrementWorkCount));
 }
 
 CommonSetup::CommonSetup(const CommonSetup& other)
     : build_settings_(other.build_settings_),
+      loader_(new LoaderImpl(&build_settings_)),
+      builder_(new Builder(loader_.get())),
       check_for_bad_items_(other.check_for_bad_items_) {
+  loader_->set_complete_callback(base::Bind(&DecrementWorkCount));
 }
 
 CommonSetup::~CommonSetup() {
@@ -169,15 +182,16 @@ CommonSetup::~CommonSetup() {
 
 void CommonSetup::RunPreMessageLoop() {
   // Load the root build file.
-  build_settings_.toolchain_manager().StartLoadingUnlocked(
-      SourceFile("//BUILD.gn"));
+  loader_->Load(SourceFile("//BUILD.gn"), Label());
+
+  // Will be decremented with the loader is drained.
+  g_scheduler->IncrementWorkCount();
 }
 
 bool CommonSetup::RunPostMessageLoop() {
   Err err;
   if (check_for_bad_items_) {
-    err = build_settings_.item_tree().CheckForBadItems();
-    if (err.has_error()) {
+    if (!builder_->CheckForBadItems(&err)) {
       err.PrintToStdout();
       return false;
     }
@@ -205,6 +219,12 @@ Setup::Setup()
       empty_settings_(&empty_build_settings_, std::string()),
       dotfile_scope_(&empty_settings_) {
   empty_settings_.set_toolchain_label(Label());
+  build_settings_.set_item_defined_callback(
+      base::Bind(&ItemDefinedCallback, scheduler_.main_loop(), builder_));
+
+  // The scheduler's main loop wasn't created when the Loader was created, so
+  // we need to set it now.
+  loader_->set_main_loop(scheduler_.main_loop());
 }
 
 Setup::~Setup() {
@@ -235,6 +255,10 @@ bool Setup::DoSetup() {
     std::string build_path_8 = FilePathToUTF8(build_path);
     if (build_path_8.compare(0, 2, "//") != 0)
       build_path_8.insert(0, "//");
+#if defined(OS_WIN)
+    // Canonicalize to forward slashes on Windows.
+    std::replace(build_path_8.begin(), build_path_8.end(), '\\', '/');
+#endif
     build_settings_.SetBuildDir(SourceDir(build_path_8));
   } else {
     // Default output dir.
@@ -421,8 +445,11 @@ bool Setup::FillOtherConfig(const CommandLine& cmdline) {
 
 // DependentSetup --------------------------------------------------------------
 
-DependentSetup::DependentSetup(const Setup& main_setup)
+DependentSetup::DependentSetup(Setup& main_setup)
     : CommonSetup(main_setup) {
+  build_settings_.set_item_defined_callback(
+      base::Bind(&ItemDefinedCallback, main_setup.scheduler().main_loop(),
+                 builder_));
 }
 
 DependentSetup::~DependentSetup() {

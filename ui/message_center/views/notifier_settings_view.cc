@@ -124,12 +124,17 @@ const int kComputedTitleTopMargin =
 const int kComputedTitleElementSpacing =
     settings::kDescriptionToSwitcherSpace - kButtonPainterInsets - 1;
 
+
+// EntryView ------------------------------------------------------------------
+
 // The view to guarantee the 48px height and place the contents at the
 // middle. It also guarantee the left margin.
 class EntryView : public views::View {
  public:
   EntryView(views::View* contents);
-  virtual ~EntryView(); // Overridden from views::View:
+  virtual ~EntryView();
+
+  // views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
@@ -184,58 +189,27 @@ bool EntryView::OnKeyReleased(const ui::KeyEvent& event) {
 
 }  // namespace
 
-// NotifierGroupMenuButtonBorder ///////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-class NotifierGroupMenuButtonBorder : public views::TextButtonDefaultBorder {
- public:
-  NotifierGroupMenuButtonBorder();
 
- private:
-  virtual ~NotifierGroupMenuButtonBorder();
-};
+// NotifierGroupMenuModel -----------------------------------------------------
 
-NotifierGroupMenuButtonBorder::NotifierGroupMenuButtonBorder()
-    : views::TextButtonDefaultBorder() {
-  ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-
-  gfx::Insets insets(kButtonPainterInsets,
-                     kButtonPainterInsets,
-                     kButtonPainterInsets,
-                     kButtonPainterInsets);
-
-  set_normal_painter(views::Painter::CreateImagePainter(
-      *rb.GetImageSkiaNamed(IDR_BUTTON_NORMAL), insets));
-  set_hot_painter(views::Painter::CreateImagePainter(
-      *rb.GetImageSkiaNamed(IDR_BUTTON_HOVER), insets));
-  set_pushed_painter(views::Painter::CreateImagePainter(
-      *rb.GetImageSkiaNamed(IDR_BUTTON_PRESSED), insets));
-
-  SetInsets(gfx::Insets(kMenuButtonVerticalPadding,
-                        kMenuButtonLeftPadding,
-                        kMenuButtonVerticalPadding,
-                        kMenuButtonRightPadding));
-}
-
-NotifierGroupMenuButtonBorder::~NotifierGroupMenuButtonBorder() {}
-
-// NotifierGroupMenuModel //////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 class NotifierGroupMenuModel : public ui::SimpleMenuModel,
                                public ui::SimpleMenuModel::Delegate {
  public:
   NotifierGroupMenuModel(NotifierSettingsProvider* notifier_settings_provider);
   virtual ~NotifierGroupMenuModel();
 
-  // Overridden from ui::SimpleMenuModel::Delegate:
+  // ui::SimpleMenuModel::Delegate:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(int command_id,
-                                          ui::Accelerator* accelerator)
-      OVERRIDE;
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
   NotifierSettingsProvider* notifier_settings_provider_;
+
+  DISALLOW_COPY_AND_ASSIGN(NotifierGroupMenuModel);
 };
 
 NotifierGroupMenuModel::NotifierGroupMenuModel(
@@ -258,10 +232,8 @@ NotifierGroupMenuModel::~NotifierGroupMenuModel() {}
 
 bool NotifierGroupMenuModel::IsCommandIdChecked(int command_id) const {
   // If there's no provider, assume only one notifier group - the active one.
-  if (!notifier_settings_provider_)
-    return true;
-
-  return notifier_settings_provider_->IsNotifierGroupActiveAt(command_id);
+  return !notifier_settings_provider_ ||
+      notifier_settings_provider_->IsNotifierGroupActiveAt(command_id);
 }
 
 bool NotifierGroupMenuModel::IsCommandIdEnabled(int command_id) const {
@@ -286,6 +258,9 @@ void NotifierGroupMenuModel::ExecuteCommand(int command_id, int event_flags) {
 
   notifier_settings_provider_->SwitchToNotifierGroup(notifier_group_index);
 }
+
+
+// NotifierSettingsView::NotifierButton ---------------------------------------
 
 // We do not use views::Checkbox class directly because it doesn't support
 // showing 'icon'.
@@ -469,7 +444,12 @@ void NotifierSettingsView::NotifierButton::GridChanged(bool has_learn_more,
   layout->AddView(name_view_);
   if (has_learn_more)
     layout->AddView(learn_more_);
+
+  Layout();
 }
+
+
+// NotifierSettingsView -------------------------------------------------------
 
 NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
     : title_arrow_(NULL),
@@ -583,7 +563,21 @@ void NotifierSettingsView::UpdateContentsView(
         active_group.name : active_group.login_info;
     notifier_group_selector_ =
         new views::MenuButton(NULL, notifier_group_text, this, true);
-    notifier_group_selector_->set_border(new NotifierGroupMenuButtonBorder);
+    scoped_ptr<views::TextButtonDefaultBorder> selector_border(
+        new views::TextButtonDefaultBorder());
+    ui::ResourceBundle* rb = &ResourceBundle::GetSharedInstance();
+    gfx::Insets painter_insets(kButtonPainterInsets, kButtonPainterInsets,
+                               kButtonPainterInsets, kButtonPainterInsets);
+    selector_border->set_normal_painter(views::Painter::CreateImagePainter(
+        *rb->GetImageSkiaNamed(IDR_BUTTON_NORMAL), painter_insets));
+    selector_border->set_hot_painter(views::Painter::CreateImagePainter(
+        *rb->GetImageSkiaNamed(IDR_BUTTON_HOVER), painter_insets));
+    selector_border->set_pushed_painter(views::Painter::CreateImagePainter(
+        *rb->GetImageSkiaNamed(IDR_BUTTON_PRESSED), painter_insets));
+    selector_border->SetInsets(gfx::Insets(
+        kMenuButtonVerticalPadding, kMenuButtonLeftPadding,
+        kMenuButtonVerticalPadding, kMenuButtonRightPadding));
+    notifier_group_selector_->set_border(selector_border.release());
     notifier_group_selector_->set_focus_border(NULL);
     notifier_group_selector_->set_animate_on_state_change(false);
     notifier_group_selector_->set_focusable(true);

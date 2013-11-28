@@ -4,6 +4,8 @@
 
 #include "remoting/client/jni/chromoting_jni_instance.h"
 
+#include <android/log.h>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "net/socket/client_socket_factory.h"
@@ -13,12 +15,19 @@
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/libjingle_transport_factory.h"
 
+namespace remoting {
+
+namespace {
+
 // TODO(solb) Move into location shared with client plugin.
 const char* const kXmppServer = "talk.google.com";
 const int kXmppPort = 5222;
 const bool kXmppUseTls = true;
 
-namespace remoting {
+// Interval at which to log performance statistics, if enabled.
+const int kPerfStatsIntervalMs = 10000;
+
+}
 
 ChromotingJniInstance::ChromotingJniInstance(ChromotingJniRuntime* jni_runtime,
                                              const char* username,
@@ -30,7 +39,8 @@ ChromotingJniInstance::ChromotingJniInstance(ChromotingJniRuntime* jni_runtime,
                                              const char* pairing_secret)
     : jni_runtime_(jni_runtime),
       host_id_(host_id),
-      create_pairing_(false) {
+      create_pairing_(false),
+      stats_logging_enabled_(false) {
   DCHECK(jni_runtime_->ui_task_runner()->BelongsToCurrentThread());
 
   // Intialize XMPP config.
@@ -131,6 +141,22 @@ void ChromotingJniInstance::PerformMouseAction(
   connection_->input_stub()->InjectMouseEvent(action);
 }
 
+void ChromotingJniInstance::PerformMouseWheelDeltaAction(int delta_x,
+                                                         int delta_y) {
+  if (!jni_runtime_->network_task_runner()->BelongsToCurrentThread()) {
+    jni_runtime_->network_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ChromotingJniInstance::PerformMouseWheelDeltaAction, this,
+                   delta_x, delta_y));
+    return;
+  }
+
+  protocol::MouseEvent action;
+  action.set_wheel_delta_x(delta_x);
+  action.set_wheel_delta_y(delta_y);
+  connection_->input_stub()->InjectMouseEvent(action);
+}
+
 void ChromotingJniInstance::PerformKeyboardAction(int key_code, bool key_down) {
   if (!jni_runtime_->network_task_runner()->BelongsToCurrentThread()) {
     jni_runtime_->network_task_runner()->PostTask(
@@ -150,13 +176,26 @@ void ChromotingJniInstance::PerformKeyboardAction(int key_code, bool key_down) {
   }
 }
 
+void ChromotingJniInstance::RecordPaintTime(int64 paint_time_ms) {
+  if (!jni_runtime_->network_task_runner()->BelongsToCurrentThread()) {
+    jni_runtime_->network_task_runner()->PostTask(
+        FROM_HERE, base::Bind(&ChromotingJniInstance::RecordPaintTime, this,
+                              paint_time_ms));
+    return;
+  }
+
+  if (stats_logging_enabled_)
+    client_->GetStats()->video_paint_ms()->Record(paint_time_ms);
+}
+
 void ChromotingJniInstance::OnConnectionState(
     protocol::ConnectionToHost::State state,
     protocol::ErrorCode error) {
   DCHECK(jni_runtime_->network_task_runner()->BelongsToCurrentThread());
 
+  EnableStatsLogging(state == protocol::ConnectionToHost::CONNECTED);
+
   if (create_pairing_ && state == protocol::ConnectionToHost::CONNECTED) {
-    LOG(INFO) << "Attempting to pair with host";
     protocol::PairingRequest request;
     request.set_client_name("Android");
     connection_->host_stub()->RequestPairing(request);
@@ -171,7 +210,7 @@ void ChromotingJniInstance::OnConnectionState(
 }
 
 void ChromotingJniInstance::OnConnectionReady(bool ready) {
-  // We ignore this message, since OnConnectoinState tells us the same thing.
+  // We ignore this message, since OnConnectionState tells us the same thing.
 }
 
 void ChromotingJniInstance::SetCapabilities(const std::string& capabilities) {
@@ -180,7 +219,6 @@ void ChromotingJniInstance::SetCapabilities(const std::string& capabilities) {
 
 void ChromotingJniInstance::SetPairingResponse(
     const protocol::PairingResponse& response) {
-  LOG(INFO) << "Successfully established pairing with host";
 
   jni_runtime_->ui_task_runner()->PostTask(
       FROM_HERE,
@@ -228,7 +266,7 @@ void ChromotingJniInstance::SetCursorShape(
 void ChromotingJniInstance::ConnectToHostOnDisplayThread() {
   DCHECK(jni_runtime_->display_task_runner()->BelongsToCurrentThread());
 
-  view_.reset(new JniFrameConsumer(jni_runtime_));
+  view_.reset(new JniFrameConsumer(jni_runtime_, this));
   view_weak_factory_.reset(new base::WeakPtrFactory<JniFrameConsumer>(
       view_.get()));
   frame_consumer_ = new FrameConsumerProxy(jni_runtime_->display_task_runner(),
@@ -274,6 +312,8 @@ void ChromotingJniInstance::DisconnectFromHostOnNetworkThread() {
 
   host_id_.clear();
 
+  stats_logging_enabled_ = false;
+
   // |client_| must be torn down before |signaling_|.
   connection_.reset();
   client_.reset();
@@ -292,12 +332,45 @@ void ChromotingJniInstance::FetchSecret(
   if (!client_config_.client_pairing_id.empty()) {
     // We attempted to connect using an existing pairing that was rejected.
     // Unless we forget about the stale credentials, we'll continue trying them.
-    LOG(INFO) << "Deleting rejected pairing credentials";
     jni_runtime_->CommitPairingCredentials(host_id_, "", "");
   }
 
   pin_callback_ = callback;
   jni_runtime_->DisplayAuthenticationPrompt(pairable);
+}
+
+void ChromotingJniInstance::EnableStatsLogging(bool enabled) {
+  DCHECK(jni_runtime_->network_task_runner()->BelongsToCurrentThread());
+
+  if (enabled && !stats_logging_enabled_) {
+    jni_runtime_->network_task_runner()->PostDelayedTask(
+        FROM_HERE, base::Bind(&ChromotingJniInstance::LogPerfStats, this),
+        base::TimeDelta::FromMilliseconds(kPerfStatsIntervalMs));
+  }
+  stats_logging_enabled_ = enabled;
+}
+
+void ChromotingJniInstance::LogPerfStats() {
+  DCHECK(jni_runtime_->network_task_runner()->BelongsToCurrentThread());
+
+  if (!stats_logging_enabled_)
+    return;
+
+  ChromotingStats* stats = client_->GetStats();
+  __android_log_print(ANDROID_LOG_INFO, "stats",
+                      "Bandwidth:%.0f FrameRate:%.1f Capture:%.1f Encode:%.1f "
+                      "Decode:%.1f Render:%.1f Latency:%.0f",
+                      stats->video_bandwidth()->Rate(),
+                      stats->video_frame_rate()->Rate(),
+                      stats->video_capture_ms()->Average(),
+                      stats->video_encode_ms()->Average(),
+                      stats->video_decode_ms()->Average(),
+                      stats->video_paint_ms()->Average(),
+                      stats->round_trip_ms()->Average());
+
+  jni_runtime_->network_task_runner()->PostDelayedTask(
+      FROM_HERE, base::Bind(&ChromotingJniInstance::LogPerfStats, this),
+      base::TimeDelta::FromMilliseconds(kPerfStatsIntervalMs));
 }
 
 }  // namespace remoting

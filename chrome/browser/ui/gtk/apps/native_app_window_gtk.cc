@@ -14,11 +14,11 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/gtk_window_util.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/common/extension.h"
 #include "ui/base/x/active_window_watcher_x.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
@@ -202,9 +202,19 @@ ui::WindowShowState NativeAppWindowGtk::GetRestoredState() const {
 }
 
 gfx::Rect NativeAppWindowGtk::GetBounds() const {
-  gfx::Rect window_bounds = bounds_;
-  window_bounds.Inset(-GetFrameInsets());
-  return window_bounds;
+  // :GetBounds() is expecting the outer window bounds to be returned (ie.
+  // including window decorations). The internal |bounds_| is not including them
+  // and trying to add the decoration to |bounds_| would require calling
+  // gdk_window_get_frame_extents. The best thing to do is to directly get the
+  // frame bounds and only use the internal value if we can't.
+  GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window_));
+  if (!gdk_window)
+    return bounds_;
+
+  GdkRectangle window_bounds = {0};
+  gdk_window_get_frame_extents(gdk_window, &window_bounds);
+  return gfx::Rect(window_bounds.x, window_bounds.y,
+                   window_bounds.width, window_bounds.height);
 }
 
 void NativeAppWindowGtk::Show() {
@@ -284,7 +294,6 @@ void NativeAppWindowGtk::Restore() {
 
 void NativeAppWindowGtk::SetBounds(const gfx::Rect& bounds) {
   gfx::Rect content_bounds = bounds;
-  content_bounds.Inset(GetFrameInsets());
   gtk_window_move(window_, content_bounds.x(), content_bounds.y());
   if (!resizable_) {
     if (frameless_ &&
@@ -320,10 +329,14 @@ GdkFilterReturn NativeAppWindowGtk::OnXEvent(GdkXEvent* gdk_x_event,
         std::find(atom_list.begin(),
                   atom_list.end(),
                   atom_cache_.GetAtom("_NET_WM_STATE_HIDDEN"));
+
+    GdkWindowState previous_state = state_;
     state_ = (it != atom_list.end()) ? GDK_WINDOW_STATE_ICONIFIED :
         static_cast<GdkWindowState>(state_ & ~GDK_WINDOW_STATE_ICONIFIED);
 
-    shell_window_->OnNativeWindowChanged();
+    if (previous_state != state_) {
+      shell_window_->OnNativeWindowChanged();
+    }
   }
 
   return GDK_FILTER_CONTINUE;
@@ -349,7 +362,6 @@ void NativeAppWindowGtk::SetAlwaysOnTop(bool always_on_top) {
     // GDK_WINDOW_STATE_ABOVE bit. Cache the current state.
     always_on_top_ = always_on_top;
     gtk_window_set_keep_above(window_, always_on_top_ ? TRUE : FALSE);
-    shell_window_->OnNativeWindowChanged();
   }
 }
 
@@ -580,9 +592,10 @@ gboolean NativeAppWindowGtk::OnButtonPress(GtkWidget* widget,
 
 // NativeAppWindow implementation:
 
-void NativeAppWindowGtk::SetFullscreen(bool fullscreen) {
+void NativeAppWindowGtk::SetFullscreen(int fullscreen_types) {
+  bool fullscreen = (fullscreen_types != ShellWindow::FULLSCREEN_TYPE_NONE);
   content_thinks_its_fullscreen_ = fullscreen;
-  if (fullscreen){
+  if (fullscreen) {
     if (resizable_) {
       gtk_window_fullscreen(window_);
     } else {
@@ -637,7 +650,7 @@ SkRegion* NativeAppWindowGtk::GetDraggableRegion() {
   return draggable_region_.get();
 }
 
-void NativeAppWindowGtk::UpdateInputRegion(scoped_ptr<SkRegion> region) {
+void NativeAppWindowGtk::UpdateShape(scoped_ptr<SkRegion> region) {
   NOTIMPLEMENTED();
 }
 

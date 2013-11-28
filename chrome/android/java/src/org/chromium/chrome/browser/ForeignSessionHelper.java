@@ -17,7 +17,7 @@ import java.util.List;
  * devices.
  */
 public class ForeignSessionHelper {
-    private int mNativeForeignSessionHelper;
+    private long mNativeForeignSessionHelper;
 
     /**
      * Callback interface for getting notified when foreign session sync is updated.
@@ -131,6 +131,7 @@ public class ForeignSessionHelper {
     public void destroy() {
         assert mNativeForeignSessionHelper != 0;
         nativeDestroy(mNativeForeignSessionHelper);
+        mNativeForeignSessionHelper = 0;
     }
 
     @Override
@@ -148,6 +149,7 @@ public class ForeignSessionHelper {
 
     /**
      * Sets callback instance that will be called on every foreign session sync update.
+     * @param callback The callback to be invoked.
      */
     public void setOnForeignSessionCallback(ForeignSessionCallback callback) {
         nativeSetOnForeignSessionCallback(mNativeForeignSessionHelper, callback);
@@ -166,7 +168,7 @@ public class ForeignSessionHelper {
                 @Override
                 public int compare(ForeignSession lhs, ForeignSession rhs) {
                     return lhs.modifiedTime < rhs.modifiedTime ? 1 :
-                        (lhs.modifiedTime == rhs.modifiedTime ? 0: -1);
+                        (lhs.modifiedTime == rhs.modifiedTime ? 0 : -1);
                 }
             });
         } else {
@@ -178,30 +180,16 @@ public class ForeignSessionHelper {
 
     /**
      * Opens the given foreign tab in a new tab.
+     * @param tab Tab to load the session into.
      * @param session Session that the target tab belongs to.
-     * @param tab     Target tab to open.
-     * @return        {@code True} iff the tab is successfully opened.
+     * @param foreignTab Target tab to open.
+     * @param windowOpenDisposition The WindowOpenDisposition flag.
+     * @return {@code True} iff the tab is successfully opened.
      */
-    public boolean openForeignSessionTab(ForeignSession session, ForeignSessionTab tab) {
-        return nativeOpenForeignSessionTab(mNativeForeignSessionHelper, session.tag, tab.id);
-    }
-
-    /**
-     * Set the given session collapsed or uncollapsed in preferences.
-     * @param session     Session to set collapsed or uncollapsed.
-     * @param isCollapsed {@code True} iff we want the session to be collapsed.
-     */
-    public void setForeignSessionCollapsed(ForeignSession session, boolean isCollapsed) {
-        nativeSetForeignSessionCollapsed(mNativeForeignSessionHelper, session.tag, isCollapsed);
-    }
-
-    /**
-     * Get the given session collapsed or uncollapsed state in preferences.
-     * @param  session Session to fetch collapsed state.
-     * @return         {@code True} if the session is collapsed, false if expanded.
-     */
-    public boolean getForeignSessionCollapsed(ForeignSession session) {
-        return nativeGetForeignSessionCollapsed(mNativeForeignSessionHelper, session.tag);
+    public boolean openForeignSessionTab(TabBase tab, ForeignSession session,
+            ForeignSessionTab foreignTab, int windowOpenDisposition) {
+        return nativeOpenForeignSessionTab(mNativeForeignSessionHelper, tab, session.tag,
+                foreignTab.id, windowOpenDisposition);
     }
 
     /**
@@ -215,19 +203,16 @@ public class ForeignSessionHelper {
         nativeDeleteForeignSession(mNativeForeignSessionHelper, session.tag);
     }
 
-    private static native int nativeInit(Profile profile);
-    private static native void nativeDestroy(int nativeForeignSessionHelper);
-    private static native boolean nativeIsTabSyncEnabled(int nativeForeignSessionHelper);
+    private static native long nativeInit(Profile profile);
+    private static native void nativeDestroy(long nativeForeignSessionHelper);
+    private static native boolean nativeIsTabSyncEnabled(long nativeForeignSessionHelper);
     private static native void nativeSetOnForeignSessionCallback(
-            int nativeForeignSessionHelper, ForeignSessionCallback callback);
-    private static native boolean nativeGetForeignSessions(int nativeForeignSessionHelper,
+            long nativeForeignSessionHelper, ForeignSessionCallback callback);
+    private static native boolean nativeGetForeignSessions(long nativeForeignSessionHelper,
             List<ForeignSession> resultSessions);
     private static native boolean nativeOpenForeignSessionTab(
-            int nativeForeignSessionHelper, String sessionTag, int tabId);
-    private static native void nativeSetForeignSessionCollapsed(
-            int nativeForeignSessionHelper, String sessionTag, boolean isCollapsed);
-    private static native boolean nativeGetForeignSessionCollapsed(
-            int nativeForeignSessionHelper, String sessionTag);
+            long nativeForeignSessionHelper, TabBase tab, String sessionTag, int tabId,
+            int disposition);
     private static native void nativeDeleteForeignSession(
-            int nativeForeignSessionHelper, String sessionTag);
+            long nativeForeignSessionHelper, String sessionTag);
 }

@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 

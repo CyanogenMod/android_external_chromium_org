@@ -28,6 +28,7 @@ LOCAL_SRC_FILES := \
 	third_party/harfbuzz-ng/src/hb-buffer-serialize.cc \
 	third_party/harfbuzz-ng/src/hb-buffer.cc \
 	third_party/harfbuzz-ng/src/hb-common.cc \
+	third_party/harfbuzz-ng/src/hb-face.cc \
 	third_party/harfbuzz-ng/src/hb-fallback-shape.cc \
 	third_party/harfbuzz-ng/src/hb-font.cc \
 	third_party/harfbuzz-ng/src/hb-icu.cc \
@@ -103,6 +104,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DHAVE_OT' \
 	'-DHAVE_ICU' \
 	'-DHB_NO_MT' \
@@ -191,6 +193,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DHAVE_OT' \
 	'-DHAVE_ICU' \
 	'-DHB_NO_MT' \

@@ -9,8 +9,8 @@
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
 #include "components/autofill/content/browser/wallet/wallet_test_util.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -166,6 +166,27 @@ TEST(DataModelWrapperTest, GetDisplayPhoneNumber) {
             profile_wrapper.GetInfoForDisplay(
                 AutofillType(PHONE_HOME_WHOLE_NUMBER)));
 
+}
+
+TEST(FieldMapWrapperTest, BothShippingAndBillingCanCoexist) {
+  DetailInputs inputs;
+
+  DetailInput billing_street;
+  billing_street.type = ADDRESS_BILLING_STREET_ADDRESS;
+  inputs.push_back(billing_street);
+
+  DetailInput shipping_street;
+  shipping_street.type = ADDRESS_HOME_STREET_ADDRESS;
+  inputs.push_back(shipping_street);
+
+  FieldValueMap outputs;
+  outputs[inputs[0].type] = ASCIIToUTF16("123 billing street");
+  outputs[inputs[1].type] = ASCIIToUTF16("123 shipping street");
+
+  FieldMapWrapper wrapper(outputs);
+  wrapper.FillInputs(&inputs);
+
+  EXPECT_NE(inputs[0].initial_value, inputs[1].initial_value);
 }
 
 }  // namespace autofill

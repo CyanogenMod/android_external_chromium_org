@@ -4,7 +4,6 @@
 
 {
   'dependencies': [
-    'browser/speech/proto/speech_proto.gyp:speech_proto',
     '../base/base.gyp:base_static',
     '../crypto/crypto.gyp:crypto',
     '../google_apis/google_apis.gyp:google_apis',
@@ -14,11 +13,12 @@
     '../third_party/re2/re2.gyp:re2',
     '../third_party/zlib/google/zip.gyp:zip',
     '../third_party/zlib/zlib.gyp:zlib',
-    '../ui/events/events.gyp:events',
+    '../ui/events/events.gyp:events_base',
     '../ui/gfx/gfx.gyp:gfx',
+    '../ui/resources/ui_resources.gyp:ui_resources',
     '../ui/snapshot/snapshot.gyp:snapshot',
     '../ui/ui.gyp:ui',
-    '../ui/ui.gyp:ui_resources',
+    'browser/speech/proto/speech_proto.gyp:speech_proto',
   ],
   'include_dirs': [
     '..',
@@ -29,7 +29,7 @@
     'port/browser/location_provider.h',
     'port/browser/render_view_host_delegate_view.h',
     'port/browser/render_widget_host_view_port.h',
-    'port/browser/synthetic_gesture.h',
+    'port/browser/vibration_provider.h',
     'port/browser/web_contents_view_port.h',
     'public/browser/access_token_store.h',
     'public/browser/android/compositor.h',
@@ -148,6 +148,7 @@
     'public/browser/render_frame_host.h',
     'public/browser/render_process_host.h',
     'public/browser/render_process_host_factory.h',
+    'public/browser/render_process_host_observer.h',
     'public/browser/render_view_host.h',
     'public/browser/render_widget_host.h',
     'public/browser/render_widget_host_view.h',
@@ -165,6 +166,7 @@
     'public/browser/save_page_type.h',
     'public/browser/session_storage_namespace.h',
     'public/browser/session_storage_usage_info.h',
+    'public/browser/signed_certificate_timestamp_store.h',
     'public/browser/site_instance.h',
     'public/browser/speech_recognition_event_listener.h',
     'public/browser/speech_recognition_manager.h',
@@ -280,8 +282,6 @@
     'browser/android/touch_point.h',
     'browser/android/tracing_controller_android.cc',
     'browser/android/tracing_controller_android.h',
-    'browser/android/vibration_message_filter.cc',
-    'browser/android/vibration_message_filter.h',
     'browser/android/web_contents_observer_android.cc',
     'browser/android/web_contents_observer_android.h',
     'browser/appcache/appcache_dispatcher_host.cc',
@@ -306,6 +306,8 @@
     'browser/aura/reflector_impl.h',
     'browser/aura/resize_lock.cc',
     'browser/aura/resize_lock.h',
+    'browser/aura/gpu_browser_compositor_output_surface.cc',
+    'browser/aura/gpu_browser_compositor_output_surface.h',
     'browser/aura/software_browser_compositor_output_surface.cc',
     'browser/aura/software_browser_compositor_output_surface.h',
     'browser/aura/software_output_device_ozone.cc',
@@ -390,10 +392,10 @@
     'browser/devtools/worker_devtools_manager.h',
     'browser/devtools/worker_devtools_message_filter.cc',
     'browser/devtools/worker_devtools_message_filter.h',
-    'browser/device_monitor_linux.cc',
-    'browser/device_monitor_linux.h',
     'browser/device_monitor_mac.h',
     'browser/device_monitor_mac.mm',
+    'browser/device_monitor_udev.cc',
+    'browser/device_monitor_udev.h',
     'browser/device_orientation/data_fetcher_impl_android.cc',
     'browser/device_orientation/data_fetcher_impl_android.h',
     'browser/device_orientation/data_fetcher_shared_memory.h',
@@ -512,14 +514,19 @@
     'browser/frame_host/navigation_controller_impl.h',
     'browser/frame_host/navigation_entry_impl.cc',
     'browser/frame_host/navigation_entry_impl.h',
+    'browser/frame_host/navigation_entry_screenshot_manager.cc',
+    'browser/frame_host/navigation_entry_screenshot_manager.h',
+    'browser/frame_host/navigator.cc',
+    'browser/frame_host/navigator.h',
+    'browser/frame_host/navigator_delegate.h',
+    'browser/frame_host/render_frame_host_factory.cc',
+    'browser/frame_host/render_frame_host_factory.h',
     'browser/frame_host/render_frame_host_impl.cc',
     'browser/frame_host/render_frame_host_impl.h',
+    'browser/frame_host/render_frame_host_manager.cc',
+    'browser/frame_host/render_frame_host_manager.h',
     'browser/frame_host/render_frame_message_filter.cc',
     'browser/frame_host/render_frame_message_filter.h',
-    'browser/frame_host/render_view_host_manager.cc',
-    'browser/frame_host/render_view_host_manager.h',
-    'browser/frame_host/web_contents_screenshot_manager.cc',
-    'browser/frame_host/web_contents_screenshot_manager.h',
     'browser/gamepad/gamepad_data_fetcher.h',
     'browser/gamepad/gamepad_platform_data_fetcher.h',
     'browser/gamepad/gamepad_platform_data_fetcher_linux.cc',
@@ -655,6 +662,8 @@
     'browser/loader/certificate_resource_handler.h',
     'browser/loader/cross_site_resource_handler.cc',
     'browser/loader/cross_site_resource_handler.h',
+    'browser/loader/detachable_resource_handler.cc',
+    'browser/loader/detachable_resource_handler.h',
     'browser/loader/global_routing_id.h',
     'browser/loader/layered_resource_handler.cc',
     'browser/loader/layered_resource_handler.h',
@@ -727,10 +736,6 @@
     'browser/message_port_service.h',
     'browser/mime_registry_message_filter.cc',
     'browser/mime_registry_message_filter.h',
-    'browser/service_worker/service_worker_dispatcher_host.h',
-    'browser/service_worker/service_worker_dispatcher_host.cc',
-    'browser/service_worker/service_worker_context.h',
-    'browser/service_worker/service_worker_context.cc',
     'browser/net/browser_online_state_observer.cc',
     'browser/net/browser_online_state_observer.h',
     'browser/net/sqlite_persistent_cookie_store.cc',
@@ -771,6 +776,7 @@
     'browser/profiler_message_filter.h',
     'browser/quota_dispatcher_host.cc',
     'browser/quota_dispatcher_host.h',
+    'browser/renderer_data_memoizing_store.h',
     'browser/renderer_host/backing_store.cc',
     'browser/renderer_host/backing_store.h',
     'browser/renderer_host/backing_store_aura.cc',
@@ -783,8 +789,6 @@
     'browser/renderer_host/backing_store_manager.h',
     'browser/renderer_host/backing_store_win.cc',
     'browser/renderer_host/backing_store_win.h',
-    'browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.cc',
-    'browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.h',
     'browser/renderer_host/clipboard_message_filter.cc',
     'browser/renderer_host/clipboard_message_filter.h',
     'browser/renderer_host/clipboard_message_filter_mac.mm',
@@ -833,13 +837,21 @@
     'browser/renderer_host/input/input_ack_handler.h',
     'browser/renderer_host/input/input_router.h',
     'browser/renderer_host/input/input_router_client.h',
-    'browser/renderer_host/input/synthetic_gesture_controller_new.cc',
-    'browser/renderer_host/input/synthetic_gesture_controller_new.h',
-    'browser/renderer_host/input/synthetic_gesture_new.cc',
-    'browser/renderer_host/input/synthetic_gesture_new.h',
+    'browser/renderer_host/input/synthetic_gesture.cc',
+    'browser/renderer_host/input/synthetic_gesture.h',
+    'browser/renderer_host/input/synthetic_gesture_controller.cc',
+    'browser/renderer_host/input/synthetic_gesture_controller.h',
     'browser/renderer_host/input/synthetic_gesture_target.h',
-    'browser/renderer_host/input/synthetic_smooth_scroll_gesture_new.cc',
-    'browser/renderer_host/input/synthetic_smooth_scroll_gesture_new.h',
+    'browser/renderer_host/input/synthetic_gesture_target_android.cc',
+    'browser/renderer_host/input/synthetic_gesture_target_android.h',
+    'browser/renderer_host/input/synthetic_gesture_target_aura.cc',
+    'browser/renderer_host/input/synthetic_gesture_target_aura.h',
+    'browser/renderer_host/input/synthetic_gesture_target_base.cc',
+    'browser/renderer_host/input/synthetic_gesture_target_base.h',
+    'browser/renderer_host/input/synthetic_pinch_gesture.cc',
+    'browser/renderer_host/input/synthetic_pinch_gesture.h',
+    'browser/renderer_host/input/synthetic_smooth_scroll_gesture.cc',
+    'browser/renderer_host/input/synthetic_smooth_scroll_gesture.h',
     'browser/renderer_host/input/synthetic_web_input_event_builders.cc',
     'browser/renderer_host/input/synthetic_web_input_event_builders.h',
     'browser/renderer_host/input/tap_suppression_controller.cc',
@@ -909,6 +921,8 @@
     'browser/renderer_host/media/video_capture_controller.h',
     'browser/renderer_host/media/video_capture_controller_event_handler.cc',
     'browser/renderer_host/media/video_capture_controller_event_handler.h',
+    'browser/renderer_host/media/video_capture_device_impl.cc',
+    'browser/renderer_host/media/video_capture_device_impl.h',
     'browser/renderer_host/media/video_capture_host.cc',
     'browser/renderer_host/media/video_capture_host.h',
     'browser/renderer_host/media/video_capture_manager.cc',
@@ -982,7 +996,8 @@
     'browser/renderer_host/pepper/pepper_truetype_font_list_android.cc',
     'browser/renderer_host/pepper/pepper_truetype_font_list_host.cc',
     'browser/renderer_host/pepper/pepper_truetype_font_list_host.h',
-    'browser/renderer_host/pepper/pepper_truetype_font_list_linux.cc',
+    'browser/renderer_host/pepper/pepper_truetype_font_list_ozone.cc',
+    'browser/renderer_host/pepper/pepper_truetype_font_list_pango.cc',
     'browser/renderer_host/pepper/pepper_truetype_font_list_mac.mm',
     'browser/renderer_host/pepper/pepper_truetype_font_list_win.cc',
     'browser/renderer_host/pepper/pepper_udp_socket_message_filter.cc',
@@ -1033,10 +1048,6 @@
     'browser/renderer_host/renderer_frame_manager.h',
     'browser/renderer_host/software_frame_manager.cc',
     'browser/renderer_host/software_frame_manager.h',
-    'browser/renderer_host/synthetic_gesture_calculator.cc',
-    'browser/renderer_host/synthetic_gesture_calculator.h',
-    'browser/renderer_host/synthetic_gesture_controller.cc',
-    'browser/renderer_host/synthetic_gesture_controller.h',
     'browser/renderer_host/socket_stream_dispatcher_host.cc',
     'browser/renderer_host/socket_stream_dispatcher_host.h',
     'browser/renderer_host/socket_stream_host.cc',
@@ -1045,10 +1056,6 @@
     'browser/renderer_host/text_input_client_mac.mm',
     'browser/renderer_host/text_input_client_message_filter.h',
     'browser/renderer_host/text_input_client_message_filter.mm',
-    'browser/renderer_host/generic_touch_gesture_android.cc',
-    'browser/renderer_host/generic_touch_gesture_android.h',
-    'browser/renderer_host/touch_smooth_scroll_gesture_aura.cc',
-    'browser/renderer_host/touch_smooth_scroll_gesture_aura.h',
     'browser/renderer_host/ui_events_helper.cc',
     'browser/renderer_host/ui_events_helper.h',
     'browser/renderer_host/web_input_event_aura.cc',
@@ -1067,6 +1074,21 @@
     'browser/resource_context_impl.h',
     'browser/safe_util_win.cc',
     'browser/safe_util_win.h',
+    'browser/service_worker/service_worker_context.h',
+    'browser/service_worker/service_worker_context_core.cc',
+    'browser/service_worker/service_worker_context_core.h',
+    'browser/service_worker/service_worker_context_wrapper.cc',
+    'browser/service_worker/service_worker_context_wrapper.h',
+    'browser/service_worker/service_worker_dispatcher_host.cc',
+    'browser/service_worker/service_worker_dispatcher_host.h',
+    'browser/service_worker/service_worker_provider_host.cc',
+    'browser/service_worker/service_worker_provider_host.h',
+    'browser/service_worker/service_worker_registration.cc',
+    'browser/service_worker/service_worker_registration.h',
+    'browser/service_worker/service_worker_version.cc',
+    'browser/service_worker/service_worker_version.h',
+    'browser/signed_certificate_timestamp_store_impl.cc',
+    'browser/signed_certificate_timestamp_store_impl.h',
     'browser/site_instance_impl.cc',
     'browser/site_instance_impl.h',
     'browser/speech/audio_buffer.cc',
@@ -1136,6 +1158,8 @@
     'browser/system_message_window_win.h',
     'browser/tcmalloc_internals_request_job.cc',
     'browser/tcmalloc_internals_request_job.h',
+    'browser/theme_helper_mac.mm',
+    'browser/theme_helper_mac.h',
     'browser/tracing/trace_controller_impl.cc',
     'browser/tracing/trace_controller_impl.h',
     'browser/tracing/trace_message_filter.cc',
@@ -1151,6 +1175,10 @@
     'browser/user_metrics.cc',
     'browser/utility_process_host_impl.cc',
     'browser/utility_process_host_impl.h',
+    'browser/vibration/vibration_message_filter.cc',
+    'browser/vibration/vibration_message_filter.h',
+    'browser/vibration/vibration_provider_android.cc',
+    'browser/vibration/vibration_provider_android.h',
     'browser/web_contents/aura/image_window_delegate.cc',
     'browser/web_contents/aura/image_window_delegate.h',
     'browser/web_contents/aura/shadow_layer_delegate.cc',
@@ -1233,7 +1261,12 @@
     '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/grit/webui_resources_map.cc',
   ],
   'conditions': [
-    ['OS!="win" and OS!="mac" and OS!="linux"', {
+    ['toolkit_views==1', {
+      'dependencies': [
+        '../ui/events/events.gyp:events',
+      ],
+    }],
+    ['OS!="win" and OS!="mac" and (OS!="linux" or use_udev==0)', {
       'sources': [
         'browser/gamepad/gamepad_platform_data_fetcher.cc',
       ]
@@ -1260,6 +1293,7 @@
         ['include', '^browser/cert_store_impl\\.cc$'],
         ['include', '^browser/download/download_create_info\\.cc$'],
         ['include', '^browser/notification_service_impl\\.cc$'],
+        ['include', '^browser/signed_certificate_timestamp_store_impl\\.cc$'],
         ['include', '^browser/user_metrics\\.cc$'],
         ['include', '^browser/web_contents/navigation_entry_impl\\.cc$'],
       ],
@@ -1268,7 +1302,6 @@
         'browser/devtools/devtools_resources.gyp:devtools_resources',
         '../cc/cc.gyp:cc',
         '../net/net.gyp:http_server',
-        '../printing/printing.gyp:printing',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
         '../ui/surface/surface.gyp:surface',
         '../webkit/common/webkit_common.gyp:webkit_common',
@@ -1276,6 +1309,11 @@
         '../webkit/storage_common.gyp:webkit_storage_common',
         '../webkit/webkit_resources.gyp:webkit_resources',
         '../webkit/webkit_resources.gyp:webkit_strings',
+      ],
+    }],
+    ['enable_printing!=0', {
+      'dependencies': [
+        '../printing/printing.gyp:printing',
       ],
     }],
     ['OS!="ios" and chrome_multiple_dll!=1', {
@@ -1328,6 +1366,8 @@
       'sources': [
         'browser/renderer_host/media/desktop_capture_device.cc',
         'browser/renderer_host/media/desktop_capture_device.h',
+        'browser/renderer_host/media/desktop_capture_device_ash.cc',
+        'browser/renderer_host/media/desktop_capture_device_ash.h',
       ],
       'dependencies': [
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
@@ -1373,26 +1413,34 @@
     }],
     ['toolkit_uses_gtk == 1', {
       'dependencies': [
-        '../build/linux/system.gyp:dbus',
         # For FcLangSetAdd call in render_sandbox_host_linux.cc
         '../build/linux/system.gyp:fontconfig',
         '../build/linux/system.gyp:gtk',
         # For XShm* in backing_store_x.cc
         '../build/linux/system.gyp:x11',
-        '../dbus/dbus.gyp:dbus',
       ],
     }],
     ['OS=="linux"', {
       'dependencies': [
-        '../build/linux/system.gyp:udev',
         '../sandbox/sandbox.gyp:libc_urandom_override',
+      ],
+    }],
+    ['use_udev == 1', {
+      'dependencies': [
+        '../build/linux/system.gyp:udev',
+      ],
+    }, {
+      'sources!': [
+        'browser/device_monitor_udev.cc',
+        'browser/device_monitor_udev.h',
+        'browser/gamepad/gamepad_platform_data_fetcher_linux.cc',
+        'browser/udev_linux.cc',
+        'browser/udev_linux.h',
       ],
     }],
     ['OS=="linux" and use_aura==1', {
       'dependencies': [
-        '../build/linux/system.gyp:dbus',
         '../build/linux/system.gyp:fontconfig',
-        '../dbus/dbus.gyp:dbus',
       ],
     }],
     ['use_x11==1', {
@@ -1403,6 +1451,9 @@
     ['use_pango==1', {
       'dependencies': [
         '../build/linux/system.gyp:pangocairo',
+      ],
+      'sources!': [
+        'browser/renderer_host/pepper/pepper_truetype_font_list_ozone.cc',
       ],
     }],
     ['OS=="android"', {
@@ -1432,7 +1483,6 @@
         'browser/geolocation/device_data_provider.cc',
         'browser/geolocation/empty_device_data_provider.cc',
         'browser/geolocation/wifi_data_provider_common.cc',
-        'browser/renderer_host/input/tap_suppression_controller.cc',
         'browser/renderer_host/native_web_keyboard_event.cc',
       ]
     }, {  # OS!="android"
@@ -1455,6 +1505,9 @@
       ],
       'sources/': [
         ['exclude', '^browser/device_orientation/data_fetcher_shared_memory_default.cc$'],
+      ],
+      'sources!': [
+        'browser/geolocation/empty_wifi_data_provider.cc',
       ],
       'dependencies': [
         '../third_party/sudden_motion_sensor/sudden_motion_sensor.gyp:sudden_motion_sensor',
@@ -1480,14 +1533,17 @@
     ['os_bsd==1', {
       'sources/': [
         ['exclude', '^browser/gamepad/gamepad_platform_data_fetcher_linux\\.cc$'],
-        ['exclude', '^browser/geolocation/wifi_data_provider_linux\\.cc$'],
       ],
     }],
     ['use_aura!=1 and OS!="win"', {
       'sources!': [
-        'browser/renderer_host/input/touchscreen_tap_suppression_controller.cc',
         'browser/renderer_host/ui_events_helper.cc',
         'browser/renderer_host/ui_events_helper.h',
+      ],
+    }],
+    ['use_aura!=1 and OS!="win" and OS!="android"', {
+      'sources!': [
+        'browser/renderer_host/input/touchscreen_tap_suppression_controller.cc',
         'browser/renderer_host/tap_suppression_controller.cc',
       ],
     }, {
@@ -1560,6 +1616,24 @@
       'dependencies': [
         '../third_party/flac/flac.gyp:libflac',
         '../third_party/speex/speex.gyp:libspeex',
+      ],
+    }],
+    ['OS == "win"', {
+      'sources!': [
+        'browser/geolocation/empty_wifi_data_provider.cc',
+      ],
+    }],
+    ['OS == "linux" and use_dbus==1', {
+      'sources!': [
+        'browser/geolocation/empty_wifi_data_provider.cc',
+      ],
+      'dependencies': [
+        '../build/linux/system.gyp:dbus',
+        '../dbus/dbus.gyp:dbus',
+      ],
+    }, {  # OS != "linux" or use_dbus==0
+      'sources!': [
+        'browser/geolocation/wifi_data_provider_linux.cc',
       ],
     }],
   ],

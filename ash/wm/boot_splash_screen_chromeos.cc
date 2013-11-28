@@ -6,6 +6,7 @@
 
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_type.h"
@@ -34,9 +35,8 @@ class BootSplashScreen::CopyHostContentLayerDelegate
     // TODO(derat): Instead of copying the data, use GLX_EXT_texture_from_pixmap
     // to create a zero-copy texture (when possible):
     // https://codereview.chromium.org/10543125
-    ui::CopyAreaToCanvas(root_window_->GetAcceleratedWidget(),
-        gfx::Rect(root_window_->GetHostOrigin(), root_window_->GetHostSize()),
-        gfx::Point(), canvas);
+    ui::CopyAreaToCanvas(root_window_->host()->GetAcceleratedWidget(),
+        root_window_->host()->GetBounds(), gfx::Point(), canvas);
   }
 
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
@@ -56,7 +56,7 @@ BootSplashScreen::BootSplashScreen(aura::RootWindow* root_window)
       layer_(new ui::Layer(ui::LAYER_TEXTURED)) {
   layer_->set_delegate(layer_delegate_.get());
 
-  ui::Layer* root_layer = root_window->layer();
+  ui::Layer* root_layer = root_window->window()->layer();
   layer_->SetBounds(gfx::Rect(root_layer->bounds().size()));
   root_layer->Add(layer_.get());
   root_layer->StackAtTop(layer_.get());

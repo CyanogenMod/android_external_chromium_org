@@ -18,6 +18,7 @@
 #include "chrome/browser/ui/apps/chrome_shell_window_delegate.h"
 #include "chrome/common/extensions/api/app_window.h"
 #include "chrome/common/extensions/features/feature_channel.h"
+#include "chrome/common/extensions/features/simple_feature.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
@@ -95,7 +96,7 @@ void SetCreateResultFromShellWindow(ShellWindow* window,
   result->SetBoolean("fullscreen", window->GetBaseWindow()->IsFullscreen());
   result->SetBoolean("minimized", window->GetBaseWindow()->IsMinimized());
   result->SetBoolean("maximized", window->GetBaseWindow()->IsMaximized());
-  result->SetBoolean("alwaysOnTop", window->GetBaseWindow()->IsAlwaysOnTop());
+  result->SetBoolean("alwaysOnTop", window->IsAlwaysOnTop());
   base::DictionaryValue* boundsValue = new base::DictionaryValue();
   gfx::Rect bounds = window->GetClientBounds();
   boundsValue->SetInteger("left", bounds.x());
@@ -119,6 +120,22 @@ void SetCreateResultFromShellWindow(ShellWindow* window,
 }
 
 }  // namespace
+
+// static
+bool AppWindowCreateFunction::AllowAlwaysOnTopWindows(
+    const std::string& extension_id) {
+  if (GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV)
+    return true;
+
+  const char* kWhitelist[] = {
+    "0F42756099D914A026DADFA182871C015735DD95",
+    "2D22CDB6583FD0A13758AEBE8B15E45208B4E9A7"
+  };
+  return SimpleFeature::IsIdInWhitelist(
+      extension_id,
+      std::set<std::string>(kWhitelist,
+                            kWhitelist + arraysize(kWhitelist)));
+}
 
 void AppWindowCreateFunction::SendDelayedResponse() {
   SendResponse(true);
@@ -159,6 +176,13 @@ bool AppWindowCreateFunction::RunImpl() {
 
       create_params.window_key = *options->id;
 
+      if (options->singleton && *options->singleton == false) {
+        WriteToConsole(
+          content::CONSOLE_MESSAGE_LEVEL_WARNING,
+          "The 'singleton' option in chrome.apps.window.create() is deprecated!"
+          " Change your code to no longer rely on this.");
+      }
+
       if (!options->singleton || *options->singleton) {
         ShellWindow* window = apps::ShellWindowRegistry::Get(
             GetProfile())->GetShellWindowForAppAndKey(extension_id(),
@@ -172,7 +196,7 @@ bool AppWindowCreateFunction::RunImpl() {
             view_id = created_view->GetRoutingID();
           }
 
-          window->GetBaseWindow()->Show();
+          window->Show(ShellWindow::SHOW_ACTIVE);
           base::DictionaryValue* result = new base::DictionaryValue;
           result->Set("viewId", new base::FundamentalValue(view_id));
           SetCreateResultFromShellWindow(window, result);
@@ -262,7 +286,8 @@ bool AppWindowCreateFunction::RunImpl() {
     if (options->resizable.get())
       create_params.resizable = *options->resizable.get();
 
-    if (options->always_on_top.get())
+    if (options->always_on_top.get() &&
+        AllowAlwaysOnTopWindows(GetExtension()->id()))
       create_params.always_on_top = *options->always_on_top.get();
 
     if (options->type != extensions::api::app_window::WINDOW_TYPE_PANEL) {

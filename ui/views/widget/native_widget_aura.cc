@@ -844,13 +844,13 @@ void NativeWidgetAura::OnScrollEvent(ui::ScrollEvent* event) {
 
 void NativeWidgetAura::OnTouchEvent(ui::TouchEvent* event) {
   DCHECK(window_);
-  DCHECK(window_->IsVisible());
+  DCHECK(window_->IsVisible() || event->IsEndingEvent());
   delegate_->OnTouchEvent(event);
 }
 
 void NativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {
   DCHECK(window_);
-  DCHECK(window_->IsVisible());
+  DCHECK(window_->IsVisible() || event->IsEndingEvent());
   delegate_->OnGestureEvent(event);
 }
 
@@ -973,6 +973,7 @@ void Widget::NotifyLocaleChanged() {
 }
 
 namespace {
+#if defined(OS_WIN) || (defined(USE_X11) && !defined(OS_CHROMEOS))
 void CloseWindow(aura::Window* window) {
   if (window) {
     Widget* widget = Widget::GetWidgetForNativeView(window);
@@ -984,6 +985,8 @@ void CloseWindow(aura::Window* window) {
       widget->CloseNow();
   }
 }
+#endif
+
 #if defined(OS_WIN)
 BOOL CALLBACK WindowCallbackProc(HWND hwnd, LPARAM lParam) {
   aura::Window* root_window =

@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/logging.h"
+#include "tools/gn/builder_record.h"
 #include "tools/gn/config_values_extractors.h"
 #include "tools/gn/err.h"
 #include "tools/gn/escape.h"
@@ -29,17 +30,6 @@ struct Accumulator {
   std::vector<T>* result;
 };
 
-// Standalone version of GypBinaryTargetWriter::Indent for use by standalone
-// functions.
-std::ostream& Indent(std::ostream& out, int spaces) {
-  const char kSpaces[81] =
-      "                                        "
-      "                                        ";
-  CHECK(static_cast<size_t>(spaces) <= arraysize(kSpaces) - 1);
-  out.write(kSpaces, spaces);
-  return out;
-}
-
 // Writes the given array values. The array should already be declared with the
 // opening "[" written to the output. The function will not write the
 // terminating "]" either.
@@ -52,24 +42,6 @@ void WriteArrayValues(std::ostream& out,
     EscapeStringToStream(out, values[i], options);
     out << "',";
   }
-}
-
-// Writes the given array with the given name. The indent should be the
-// indenting for the name, the values will be indented 2 spaces from there.
-// Writes nothing if there is nothing in the array.
-void WriteNamedArray(std::ostream& out,
-                     const char* name,
-                     const std::vector<std::string>& values,
-                     int indent) {
-  if (values.empty())
-    return;
-
-  EscapeOptions options;
-  options.mode = ESCAPE_JSON;
-
-  Indent(out, indent) << "'" << name << "': [";
-  WriteArrayValues(out, values);
-  out << " ],\n";
 }
 
 // Returns the value from the already-filled in cflags_* for the optimization
@@ -109,16 +81,15 @@ void FillConfigListValues(
   }
 }
 
-const int kExtraIndent = 2;
-
 }  // namespace
 
 GypBinaryTargetWriter::Flags::Flags() {}
 GypBinaryTargetWriter::Flags::~Flags() {}
 
 GypBinaryTargetWriter::GypBinaryTargetWriter(const TargetGroup& group,
+                                             const SourceDir& gyp_dir,
                                              std::ostream& out)
-    : GypTargetWriter(group.debug, out),
+    : GypTargetWriter(group.debug->item()->AsTarget(), gyp_dir, out),
       group_(group) {
 }
 
@@ -143,10 +114,6 @@ void GypBinaryTargetWriter::Run() {
   WriteAllDependentSettings(indent + kExtraIndent);
 
   Indent(indent) << "},\n";
-}
-
-std::ostream& GypBinaryTargetWriter::Indent(int spaces) {
-  return ::Indent(out_, spaces);
 }
 
 void GypBinaryTargetWriter::WriteName(int indent) {
@@ -193,12 +160,12 @@ void GypBinaryTargetWriter::WriteVCConfiguration(int indent) {
   Indent(indent) << "'configurations': {\n";
 
   Indent(indent + kExtraIndent) << "'Debug': {\n";
-  Flags debug_flags(FlagsFromTarget(group_.debug));
+  Flags debug_flags(FlagsFromTarget(group_.debug->item()->AsTarget()));
   WriteVCFlags(debug_flags, indent + kExtraIndent * 2);
   Indent(indent + kExtraIndent) << "},\n";
 
   Indent(indent + kExtraIndent) << "'Release': {\n";
-  Flags release_flags(FlagsFromTarget(group_.release));
+  Flags release_flags(FlagsFromTarget(group_.release->item()->AsTarget()));
   WriteVCFlags(release_flags, indent + kExtraIndent * 2);
   Indent(indent + kExtraIndent) << "},\n";
 
@@ -221,15 +188,18 @@ void GypBinaryTargetWriter::WriteLinuxConfiguration(int indent) {
     Indent(indent + kExtraIndent) << "['_toolset == \"host\"', {\n";
     Indent(indent + kExtraIndent * 2) << "'configurations': {\n";
     Indent(indent + kExtraIndent * 3) << "'Debug': {\n";
-    WriteLinuxFlagsForTarget(group_.host_debug, indent + kExtraIndent * 4);
+    WriteLinuxFlagsForTarget(group_.host_debug->item()->AsTarget(),
+                             indent + kExtraIndent * 4);
     Indent(indent + kExtraIndent * 3) << "},\n";
     Indent(indent + kExtraIndent * 3) << "'Release': {\n";
-    WriteLinuxFlagsForTarget(group_.host_release, indent + kExtraIndent * 4);
+    WriteLinuxFlagsForTarget(group_.host_release->item()->AsTarget(),
+                             indent + kExtraIndent * 4);
     Indent(indent + kExtraIndent * 3) << "},\n";
     Indent(indent + kExtraIndent * 2) << "}\n";
 
     // The sources are per-toolset but shared between debug & release.
-    WriteSources(group_.host_debug, indent + kExtraIndent * 2);
+    WriteSources(group_.host_debug->item()->AsTarget(),
+                 indent + kExtraIndent * 2);
 
     Indent(indent + kExtraIndent) << "],\n";
   }
@@ -238,10 +208,12 @@ void GypBinaryTargetWriter::WriteLinuxConfiguration(int indent) {
   Indent(indent + kExtraIndent) << "['_toolset == \"target\"', {\n";
   Indent(indent + kExtraIndent * 2) << "'configurations': {\n";
   Indent(indent + kExtraIndent * 3) << "'Debug': {\n";
-  WriteLinuxFlagsForTarget(group_.debug, indent + kExtraIndent * 4);
+  WriteLinuxFlagsForTarget(group_.debug->item()->AsTarget(),
+                           indent + kExtraIndent * 4);
   Indent(indent + kExtraIndent * 3) << "},\n";
   Indent(indent + kExtraIndent * 3) << "'Release': {\n";
-  WriteLinuxFlagsForTarget(group_.release, indent + kExtraIndent * 4);
+  WriteLinuxFlagsForTarget(group_.release->item()->AsTarget(),
+                           indent + kExtraIndent * 4);
   Indent(indent + kExtraIndent * 3) << "},\n";
   Indent(indent + kExtraIndent * 2) << "},\n";
 
@@ -258,12 +230,12 @@ void GypBinaryTargetWriter::WriteMacConfiguration(int indent) {
   Indent(indent) << "'configurations': {\n";
 
   Indent(indent + kExtraIndent) << "'Debug': {\n";
-  Flags debug_flags(FlagsFromTarget(group_.debug));
+  Flags debug_flags(FlagsFromTarget(group_.debug->item()->AsTarget()));
   WriteMacFlags(debug_flags, indent + kExtraIndent * 2);
   Indent(indent + kExtraIndent) << "},\n";
 
   Indent(indent + kExtraIndent) << "'Release': {\n";
-  Flags release_flags(FlagsFromTarget(group_.release));
+  Flags release_flags(FlagsFromTarget(group_.release->item()->AsTarget()));
   WriteMacFlags(release_flags, indent + kExtraIndent * 2);
   Indent(indent + kExtraIndent) << "},\n";
 
@@ -275,7 +247,7 @@ void GypBinaryTargetWriter::WriteMacConfiguration(int indent) {
 
 void GypBinaryTargetWriter::WriteVCFlags(Flags& flags, int indent) {
   // Defines and includes go outside of the msvs settings.
-  WriteNamedArray(out_, "defines", flags.defines, indent);
+  WriteNamedArray("defines", flags.defines, indent);
   WriteIncludeDirs(flags, indent);
 
   // C flags.
@@ -286,8 +258,7 @@ void GypBinaryTargetWriter::WriteVCFlags(Flags& flags, int indent) {
   // This can produce duplicate values. So look up the GYP value corresponding
   // to the flags used, and set the same one.
   std::string optimization = GetVCOptimization(&flags.cflags);
-  WriteNamedArray(out_, "AdditionalOptions", flags.cflags,
-                  indent + kExtraIndent * 2);
+  WriteNamedArray("AdditionalOptions", flags.cflags, indent + kExtraIndent * 2);
   // TODO(brettw) cflags_c and cflags_cc!
   Indent(indent + kExtraIndent * 2) << "'Optimization': "
                                     << optimization << ",\n";
@@ -312,19 +283,19 @@ void GypBinaryTargetWriter::WriteVCFlags(Flags& flags, int indent) {
   }
 
   // ...Libraries.
-  WriteNamedArray(out_, "AdditionalDependencies", flags.libs,
+  WriteNamedArray("AdditionalDependencies", flags.libs,
                   indent + kExtraIndent * 2);
 
   // ...LD flags.
   // TODO(brettw) EnableUAC defaults to on and needs to be set. Also
   // UACExecutionLevel and UACUIAccess depends on that and defaults to 0/false.
-  WriteNamedArray(out_, "AdditionalOptions", flags.ldflags, 14);
+  WriteNamedArray("AdditionalOptions", flags.ldflags, 14);
   Indent(indent + kExtraIndent) << "},\n";
   Indent(indent) << "},\n";
 }
 
 void GypBinaryTargetWriter::WriteMacFlags(Flags& flags, int indent) {
-  WriteNamedArray(out_, "defines", flags.defines, indent);
+  WriteNamedArray("defines", flags.defines, indent);
   WriteIncludeDirs(flags, indent);
 
   // Libraries and library directories.
@@ -376,10 +347,8 @@ void GypBinaryTargetWriter::WriteMacFlags(Flags& flags, int indent) {
   // Ld flags. Don't write these for static libraries. Otherwise, they'll be
   // passed to the library tool which doesn't expect it (the toolchain does
   // not use ldflags so these are ignored in the normal build).
-  if (target_->output_type() != Target::STATIC_LIBRARY) {
-    WriteNamedArray(out_, "OTHER_LDFLAGS", flags.ldflags,
-                    indent + kExtraIndent);
-  }
+  if (target_->output_type() != Target::STATIC_LIBRARY)
+    WriteNamedArray("OTHER_LDFLAGS", flags.ldflags, indent + kExtraIndent);
 
   base::FilePath clang_path =
       target_->settings()->build_settings()->GetFullPath(SourceFile(
@@ -403,12 +372,12 @@ void GypBinaryTargetWriter::WriteLinuxFlagsForTarget(const Target* target,
 
 void GypBinaryTargetWriter::WriteLinuxFlags(const Flags& flags, int indent) {
   WriteIncludeDirs(flags, indent);
-  WriteNamedArray(out_, "defines",      flags.defines,      indent);
-  WriteNamedArray(out_, "cflags",       flags.cflags,       indent);
-  WriteNamedArray(out_, "cflags_c",     flags.cflags_c,     indent);
-  WriteNamedArray(out_, "cflags_cc",    flags.cflags_cc,    indent);
-  WriteNamedArray(out_, "cflags_objc",  flags.cflags_objc,  indent);
-  WriteNamedArray(out_, "cflags_objcc", flags.cflags_objcc, indent);
+  WriteNamedArray("defines",      flags.defines,      indent);
+  WriteNamedArray("cflags",       flags.cflags,       indent);
+  WriteNamedArray("cflags_c",     flags.cflags_c,     indent);
+  WriteNamedArray("cflags_cc",    flags.cflags_cc,    indent);
+  WriteNamedArray("cflags_objc",  flags.cflags_objc,  indent);
+  WriteNamedArray("cflags_objcc", flags.cflags_objcc, indent);
 
   // Put libraries and library directories in with ldflags.
   Indent(indent) << "'ldflags': ["; \
@@ -484,7 +453,7 @@ void GypBinaryTargetWriter::WriteIncludeDirs(const Flags& flags, int indent) {
 void GypBinaryTargetWriter::WriteDirectDependentSettings(int indent) {
   if (target_->direct_dependent_configs().empty())
     return;
-  out_ << "'direct_dependent_settings': {\n";
+  Indent(indent) << "'direct_dependent_settings': {\n";
 
   Flags flags(FlagsFromConfigList(target_->direct_dependent_configs()));
   if (target_->settings()->IsLinux())
@@ -567,3 +536,19 @@ GypBinaryTargetWriter::Flags GypBinaryTargetWriter::FlagsFromConfigList(
 
   return ret;
 }
+
+void GypBinaryTargetWriter::WriteNamedArray(
+    const char* name,
+    const std::vector<std::string>& values,
+    int indent) {
+  if (values.empty())
+    return;
+
+  EscapeOptions options;
+  options.mode = ESCAPE_JSON;
+
+  Indent(indent) << "'" << name << "': [";
+  WriteArrayValues(out_, values);
+  out_ << " ],\n";
+}
+

@@ -21,7 +21,6 @@
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
 #include "url/gurl.h"
 
@@ -53,14 +52,14 @@ class CONTENT_EXPORT IndexedDBBackingStore
   static scoped_refptr<IndexedDBBackingStore> Open(
       const GURL& origin_url,
       const base::FilePath& path_base,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full);
 
   static scoped_refptr<IndexedDBBackingStore> Open(
       const GURL& origin_url,
       const base::FilePath& path_base,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full,
       LevelDBFactory* factory);
@@ -78,10 +77,6 @@ class CONTENT_EXPORT IndexedDBBackingStore
                                          const string16& version,
                                          int64 int_version,
                                          int64* row_id);
-  virtual bool UpdateIDBDatabaseMetaData(
-      IndexedDBBackingStore::Transaction* transaction,
-      int64 row_id,
-      const string16& version);
   virtual bool UpdateIDBDatabaseIntVersion(
       IndexedDBBackingStore::Transaction* transaction,
       int64 row_id,
@@ -219,8 +214,13 @@ class CONTENT_EXPORT IndexedDBBackingStore
     };
 
     const IndexedDBKey& key() const { return *current_key_; }
-    bool Continue() { return Continue(NULL, SEEK); }
-    bool Continue(const IndexedDBKey* key, IteratorState state);
+    bool Continue() { return Continue(NULL, NULL, SEEK); }
+    bool Continue(const IndexedDBKey* key, IteratorState state) {
+      return Continue(key, NULL, state);
+    }
+    bool Continue(const IndexedDBKey* key,
+                  const IndexedDBKey* primary_key,
+                  IteratorState state);
     bool Advance(uint32 count);
     bool FirstSeek();
 
@@ -236,6 +236,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
     explicit Cursor(const IndexedDBBackingStore::Cursor* other);
 
     virtual std::string EncodeKey(const IndexedDBKey& key) = 0;
+    virtual std::string EncodeKey(const IndexedDBKey& key,
+                                  const IndexedDBKey& primary_key) = 0;
 
     bool IsPastBounds() const;
     bool HaveEnteredRange() const;

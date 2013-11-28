@@ -13,9 +13,6 @@
 
 var CreateEvent = require('webView').CreateEvent;
 var MessagingNatives = requireNative('messaging_natives');
-var WebRequestEvent = require('webRequestInternal').WebRequestEvent;
-var WebRequestSchema =
-    requireNative('schema_registry').GetSchema('webRequest');
 var WebViewInternal = require('webView').WebViewInternal;
 var WebView = require('webView').WebView;
 
@@ -33,10 +30,10 @@ var WEB_VIEW_EXPERIMENTAL_EVENTS = {
 /**
  * @private
  */
-WebViewInternal.prototype.maybeAttachWebRequestEventToWebview_ =
-    function(eventName, webRequestEvent) {
+WebViewInternal.prototype.maybeAttachWebRequestEventToObject_ =
+    function(obj, eventName, webRequestEvent) {
   Object.defineProperty(
-      this.webviewNode_,
+      obj,
       eventName,
       {
         get: webRequestEvent,

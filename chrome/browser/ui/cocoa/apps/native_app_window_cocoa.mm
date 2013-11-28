@@ -14,11 +14,11 @@
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/common/extension.h"
 #include "third_party/skia/include/core/SkRegion.h"
 
 // NOTE: State Before Update.
@@ -68,6 +68,16 @@ void SetFullScreenCollectionBehavior(NSWindow* window, bool allow_fullscreen) {
     behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
   else
     behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+  [window setCollectionBehavior:behavior];
+}
+
+void InitCollectionBehavior(NSWindow* window) {
+  // Since always-on-top windows have a higher window level
+  // than NSNormalWindowLevel, they will default to
+  // NSWindowCollectionBehaviorTransient. Set the value
+  // explicitly here to match normal windows.
+  NSWindowCollectionBehavior behavior = [window collectionBehavior];
+  behavior |= NSWindowCollectionBehaviorManaged;
   [window setCollectionBehavior:behavior];
 }
 
@@ -327,6 +337,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
 
   if (params.always_on_top)
     [window setLevel:AlwaysOnTopWindowLevel()];
+  InitCollectionBehavior(window);
 
   // Set the window to participate in Lion Fullscreen mode. Setting this flag
   // has no effect on Snow Leopard or earlier. UI controls for fullscreen are
@@ -427,7 +438,8 @@ bool NativeAppWindowCocoa::IsFullscreen() const {
   return is_fullscreen_;
 }
 
-void NativeAppWindowCocoa::SetFullscreen(bool fullscreen) {
+void NativeAppWindowCocoa::SetFullscreen(int fullscreen_types) {
+  bool fullscreen = (fullscreen_types != ShellWindow::FULLSCREEN_TYPE_NONE);
   if (fullscreen == is_fullscreen_)
     return;
   is_fullscreen_ = fullscreen;
@@ -619,7 +631,7 @@ void NativeAppWindowCocoa::UpdateWindowTitle() {
   [window() setTitle:base::SysUTF16ToNSString(title)];
 }
 
-void NativeAppWindowCocoa::UpdateInputRegion(scoped_ptr<SkRegion> region) {
+void NativeAppWindowCocoa::UpdateShape(scoped_ptr<SkRegion> region) {
   NOTIMPLEMENTED();
 }
 
@@ -983,7 +995,6 @@ void NativeAppWindowCocoa::ShowWithApp() {
 void NativeAppWindowCocoa::SetAlwaysOnTop(bool always_on_top) {
   [window() setLevel:(always_on_top ? AlwaysOnTopWindowLevel() :
                                       NSNormalWindowLevel)];
-  shell_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowCocoa::HideWithoutMarkingHidden() {

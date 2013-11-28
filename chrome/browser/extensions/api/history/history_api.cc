@@ -19,7 +19,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -33,6 +32,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
 
 namespace extensions {
 
@@ -198,7 +198,7 @@ void HistoryEventRouter::DispatchEvent(
   if (profile && extensions::ExtensionSystem::Get(profile)->event_router()) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
         event_name, event_args.Pass()));
-    event->restrict_to_profile = profile;
+    event->restrict_to_browser_context = profile;
     extensions::ExtensionSystem::Get(profile)->event_router()->
         BroadcastEvent(event.Pass());
   }

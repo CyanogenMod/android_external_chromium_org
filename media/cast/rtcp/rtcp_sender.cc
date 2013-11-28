@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "media/cast/cast_environment.h"
 #include "media/cast/pacing/paced_sender.h"
 #include "media/cast/rtcp/rtcp_utility.h"
 #include "net/base/big_endian.h"
@@ -16,60 +16,87 @@
 namespace media {
 namespace cast {
 
-static const size_t kRtcpMaxNackFields = 253;
-static const size_t kRtcpMaxCastLossFields = 100;
-
-RtcpSender::RtcpSender(PacedPacketSender* outgoing_transport,
+RtcpSender::RtcpSender(scoped_refptr<CastEnvironment> cast_environment,
+                       PacedPacketSender* outgoing_transport,
                        uint32 sending_ssrc,
                        const std::string& c_name)
      : ssrc_(sending_ssrc),
        c_name_(c_name),
-       transport_(outgoing_transport) {
+       transport_(outgoing_transport),
+       cast_environment_(cast_environment) {
   DCHECK_LT(c_name_.length(), kRtcpCnameSize) << "Invalid config";
 }
 
 RtcpSender::~RtcpSender() {}
 
-void RtcpSender::SendRtcp(uint32 packet_type_flags,
-                          const RtcpSenderInfo* sender_info,
-                          const RtcpReportBlock* report_block,
-                          uint32 pli_remote_ssrc,
-                          const RtcpDlrrReportBlock* dlrr,
-                          const RtcpReceiverReferenceTimeReport* rrtr,
-                          const RtcpCastMessage* cast_message) {
+void RtcpSender::SendRtcpFromRtpSender(uint32 packet_type_flags,
+                                       const RtcpSenderInfo* sender_info,
+                                       const RtcpDlrrReportBlock* dlrr,
+                                       const RtcpSenderLogMessage* sender_log) {
+  if (packet_type_flags & kRtcpRr ||
+      packet_type_flags & kRtcpPli ||
+      packet_type_flags & kRtcpRrtr ||
+      packet_type_flags & kRtcpCast ||
+      packet_type_flags & kRtcpReceiverLog ||
+      packet_type_flags & kRtcpRpsi ||
+      packet_type_flags & kRtcpRemb ||
+      packet_type_flags & kRtcpNack) {
+    NOTREACHED() << "Invalid argument";
+  }
+
   std::vector<uint8> packet;
   packet.reserve(kIpPacketSize);
   if (packet_type_flags & kRtcpSr) {
     DCHECK(sender_info) << "Invalid argument";
-    BuildSR(*sender_info, report_block, &packet);
+    BuildSR(*sender_info, NULL, &packet);
     BuildSdec(&packet);
-  } else if (packet_type_flags & kRtcpRr) {
+  }
+  if (packet_type_flags & kRtcpBye) {
+    BuildBye(&packet);
+  }
+  if (packet_type_flags & kRtcpDlrr) {
+    DCHECK(dlrr) << "Invalid argument";
+    BuildDlrrRb(dlrr, &packet);
+  }
+  if (packet_type_flags & kRtcpSenderLog) {
+    DCHECK(sender_log) << "Invalid argument";
+    BuildSenderLog(sender_log, &packet);
+  }
+  if (packet.empty())
+    return;  // Sanity don't send empty packets.
+
+  transport_->SendRtcpPacket(packet);
+}
+
+void RtcpSender::SendRtcpFromRtpReceiver(
+    uint32 packet_type_flags,
+    const RtcpReportBlock* report_block,
+    const RtcpReceiverReferenceTimeReport* rrtr,
+    const RtcpCastMessage* cast_message,
+    const RtcpReceiverLogMessage* receiver_log) {
+  if (packet_type_flags & kRtcpSr ||
+      packet_type_flags & kRtcpDlrr ||
+      packet_type_flags & kRtcpSenderLog) {
+    NOTREACHED() << "Invalid argument";
+  }
+  if (packet_type_flags & kRtcpPli ||
+      packet_type_flags & kRtcpRpsi ||
+      packet_type_flags & kRtcpRemb ||
+      packet_type_flags & kRtcpNack) {
+    // Implement these for webrtc interop.
+    NOTIMPLEMENTED();
+  }
+  std::vector<uint8> packet;
+  packet.reserve(kIpPacketSize);
+
+  if (packet_type_flags & kRtcpRr) {
     BuildRR(report_block, &packet);
     if (!c_name_.empty()) {
       BuildSdec(&packet);
     }
   }
-  if (packet_type_flags & kRtcpPli) {
-    BuildPli(pli_remote_ssrc, &packet);
-  }
   if (packet_type_flags & kRtcpBye) {
     BuildBye(&packet);
-  }
-  if (packet_type_flags & kRtcpRpsi) {
-    // Implement this for webrtc interop.
-    NOTIMPLEMENTED();
-  }
-  if (packet_type_flags & kRtcpRemb) {
-    // Implement this for webrtc interop.
-    NOTIMPLEMENTED();
-  }
-  if (packet_type_flags & kRtcpNack) {
-    // Implement this for webrtc interop.
-    NOTIMPLEMENTED();
-  }
-  if (packet_type_flags & kRtcpDlrr) {
-    DCHECK(dlrr) << "Invalid argument";
-    BuildDlrrRb(dlrr, &packet);
   }
   if (packet_type_flags & kRtcpRrtr) {
     DCHECK(rrtr) << "Invalid argument";
@@ -79,7 +106,10 @@ void RtcpSender::SendRtcp(uint32 packet_type_flags,
     DCHECK(cast_message) << "Invalid argument";
     BuildCast(cast_message, &packet);
   }
-
+  if (packet_type_flags & kRtcpReceiverLog) {
+    DCHECK(receiver_log) << "Invalid argument";
+    BuildReceiverLog(receiver_log, &packet);
+  }
   if (packet.empty()) return;  // Sanity don't send empty packets.
 
   transport_->SendRtcpPacket(packet);
@@ -218,9 +248,6 @@ void RtcpSender::BuildPli(uint32 remote_ssrc,
   big_endian_writer.WriteU16(2);  // Used fixed length of 2.
   big_endian_writer.WriteU32(ssrc_);  // Add our own SSRC.
   big_endian_writer.WriteU32(remote_ssrc);  // Add the remote SSRC.
-  TRACE_EVENT_INSTANT2("cast_rtcp", "RtcpSender::PLI", TRACE_EVENT_SCOPE_THREAD,
-                       "remote_ssrc", remote_ssrc,
-                       "ssrc", ssrc_);
 }
 
 /*
@@ -324,8 +351,8 @@ void RtcpSender::BuildRemb(const RtcpRembMessage* remb,
   for (; it != remb->remb_ssrcs.end(); ++it) {
     big_endian_writer.WriteU32(*it);
   }
-  TRACE_COUNTER_ID1("cast_rtcp", "RtcpSender::RembBitrate", ssrc_,
-                    remb->remb_bitrate);
+  cast_environment_->Logging()->InsertGenericEvent(kRembBitrate,
+                                                   remb->remb_bitrate);
 }
 
 void RtcpSender::BuildNack(const RtcpNackMessage* nack,
@@ -381,8 +408,6 @@ void RtcpSender::BuildNack(const RtcpNackMessage* nack,
   }
   DCHECK_GE(kRtcpMaxNackFields, number_of_nack_fields);
   (*packet)[nack_size_pos] = static_cast<uint8>(2 + number_of_nack_fields);
-  TRACE_COUNTER_ID1("cast_rtcp", "RtcpSender::NACK", ssrc_,
-                    nack->nack_list.size());
 }
 
 void RtcpSender::BuildBye(std::vector<uint8>* packet) const {
@@ -478,7 +503,7 @@ void RtcpSender::BuildCast(const RtcpCastMessage* cast,
   big_endian_writer.WriteU32(ssrc_);  // Add our own SSRC.
   big_endian_writer.WriteU32(cast->media_ssrc_);  // Remote SSRC.
   big_endian_writer.WriteU32(kCast);
-  big_endian_writer.WriteU8(cast->ack_frame_id_);
+  big_endian_writer.WriteU8(static_cast<uint8>(cast->ack_frame_id_));
   size_t cast_loss_field_pos = start_size + 17;  // Save loss field position.
   big_endian_writer.WriteU8(0);  // Overwritten with number_of_loss_fields.
   big_endian_writer.WriteU8(0);  // Reserved.
@@ -499,7 +524,7 @@ void RtcpSender::BuildCast(const RtcpCastMessage* cast,
       start_size = packet->size();
       packet->resize(start_size + 4);
       net::BigEndianWriter big_endian_nack_writer(&((*packet)[start_size]), 4);
-      big_endian_nack_writer.WriteU8(frame_it->first);
+      big_endian_nack_writer.WriteU8(static_cast<uint8>(frame_it->first));
       big_endian_nack_writer.WriteU16(kRtcpCastAllPacketsLost);
       big_endian_nack_writer.WriteU8(0);
       ++number_of_loss_fields;
@@ -514,7 +539,7 @@ void RtcpSender::BuildCast(const RtcpCastMessage* cast,
             &((*packet)[start_size]), 4);
 
         // Write frame and packet id to buffer before calculating bitmask.
-        big_endian_nack_writer.WriteU8(frame_it->first);
+        big_endian_nack_writer.WriteU8(static_cast<uint8>(frame_it->first));
         big_endian_nack_writer.WriteU16(packet_id);
 
         uint8 bitmask = 0;
@@ -536,10 +561,19 @@ void RtcpSender::BuildCast(const RtcpCastMessage* cast,
   DCHECK_LE(number_of_loss_fields, kRtcpMaxCastLossFields);
   (*packet)[cast_size_pos] = static_cast<uint8>(4 + number_of_loss_fields);
   (*packet)[cast_loss_field_pos] = static_cast<uint8>(number_of_loss_fields);
+}
 
-  // Frames with missing packets.
-  TRACE_COUNTER_ID1("cast_rtcp", "RtcpSender::CastNACK", ssrc_,
-                    cast->missing_frames_and_packets_.size());
+void RtcpSender::BuildSenderLog(const RtcpSenderLogMessage* sender_log_message,
+                                std::vector<uint8>* packet) const {
+  // TODO(pwestin): Implement.
+  NOTIMPLEMENTED();
+}
+
+void RtcpSender::BuildReceiverLog(
+    const RtcpReceiverLogMessage* receiver_log_message,
+    std::vector<uint8>* packet) const {
+  // TODO(pwestin): Implement.
+  NOTIMPLEMENTED();
 }
 
 }  // namespace cast

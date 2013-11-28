@@ -186,12 +186,12 @@ int QuicClientSession::TryCreateStream(StreamRequest* request,
   }
 
   if (goaway_received()) {
-    DLOG(INFO) << "Going away.";
+    DVLOG(1) << "Going away.";
     return ERR_CONNECTION_CLOSED;
   }
 
   if (!connection()->connected()) {
-    DLOG(INFO) << "Already closed.";
+    DVLOG(1) << "Already closed.";
     return ERR_CONNECTION_CLOSED;
   }
 
@@ -216,16 +216,16 @@ void QuicClientSession::CancelRequest(StreamRequest* request) {
 
 QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
   if (!crypto_stream_->encryption_established()) {
-    DLOG(INFO) << "Encryption not active so no outgoing stream created.";
+    DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return NULL;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
+    DVLOG(1) << "Failed to create a new outgoing stream. "
                << "Already " << GetNumOpenStreams() << " open.";
     return NULL;
   }
   if (goaway_received()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
+    DVLOG(1) << "Failed to create a new outgoing stream. "
                << "Already received goaway.";
     return NULL;
   }
@@ -373,6 +373,9 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
   }
   socket_->Close();
   QuicSession::OnConnectionClosed(error, from_peer);
+  DCHECK(streams()->empty());
+  CloseAllStreams(ERR_UNEXPECTED);
+  CloseAllObservers(ERR_UNEXPECTED);
   NotifyFactoryOfSessionClosedLater();
 }
 
@@ -470,7 +473,7 @@ void QuicClientSession::OnReadComplete(int result) {
     result = ERR_CONNECTION_CLOSED;
 
   if (result < 0) {
-    DLOG(INFO) << "Closing session on read error: " << result;
+    DVLOG(1) << "Closing session on read error: " << result;
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ReadError", -result);
     NotifyFactoryOfSessionGoingAway();
     CloseSessionOnErrorInner(result, QUIC_PACKET_READ_ERROR);

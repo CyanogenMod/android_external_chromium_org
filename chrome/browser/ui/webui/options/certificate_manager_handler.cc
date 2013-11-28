@@ -33,8 +33,8 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/policy/profile_policy_connector.h"
-#include "chrome/browser/policy/profile_policy_connector_factory.h"
+#include "chrome/browser/chromeos/policy/user_network_configuration_updater.h"
+#include "chrome/browser/chromeos/policy/user_network_configuration_updater_factory.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #endif
@@ -396,10 +396,6 @@ void CertificateManagerHandler::GetLocalizedValues(
 #if defined(OS_CHROMEOS)
   localized_strings->SetString("importAndBindCertificate",
       l10n_util::GetStringUTF16(IDS_CERT_MANAGER_IMPORT_AND_BIND_BUTTON));
-  localized_strings->SetString("hardwareBackedKeyFormat",
-      l10n_util::GetStringUTF16(IDS_CERT_MANAGER_HARDWARE_BACKED_KEY_FORMAT));
-  localized_strings->SetString("chromeOSDeviceName",
-      l10n_util::GetStringUTF16(IDS_CERT_MANAGER_HARDWARE_BACKED));
 #endif  // defined(OS_CHROMEOS)
 }
 
@@ -489,9 +485,11 @@ void CertificateManagerHandler::RegisterMessages() {
 void CertificateManagerHandler::CertificatesRefreshed() {
   net::CertificateList web_trusted_certs;
 #if defined(OS_CHROMEOS)
-  policy::ProfilePolicyConnectorFactory::GetForProfile(
-      Profile::FromWebUI(web_ui()))->GetWebTrustedCertificates(
-          &web_trusted_certs);
+  policy::UserNetworkConfigurationUpdater* service =
+      policy::UserNetworkConfigurationUpdaterFactory::GetForProfile(
+          Profile::FromWebUI(web_ui()));
+  if (service)
+    service->GetWebTrustedCertificates(&web_trusted_certs);
 #endif
   PopulateTree("personalCertsTab", net::USER_CERT, web_trusted_certs);
   PopulateTree("serverCertsTab", net::SERVER_CERT, web_trusted_certs);
@@ -645,6 +643,7 @@ void CertificateManagerHandler::ExportPersonalPasswordSelected(
       selected_cert_list_[0].get(),
       chrome::kCryptoModulePasswordCertExport,
       std::string(),  // unused.
+      GetParentWindow(),
       base::Bind(&CertificateManagerHandler::ExportPersonalSlotsUnlocked,
                  base::Unretained(this)));
 }
@@ -753,6 +752,7 @@ void CertificateManagerHandler::ImportPersonalFileRead(
       modules,
       chrome::kCryptoModulePasswordCertImport,
       std::string(),  // unused.
+      GetParentWindow(),
       base::Bind(&CertificateManagerHandler::ImportPersonalSlotUnlocked,
                  base::Unretained(this)));
 }

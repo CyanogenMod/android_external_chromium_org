@@ -15,17 +15,18 @@ namespace cast {
 
 // These values are arbitrary only for the purpose of testing.
 
+namespace {
 // Sender report.
 static const int kNtpHigh = 0x01020304;
 static const int kNtpLow = 0x05060708;
-static const int kRtpTimestamp = 0x10203;
+static const int kRtpTimestamp = 0x10203040;
 static const int kSendPacketCount = 987;
 static const int kSendOctetCount = 87654;
 
 // Report block.
 static const int kLoss = 0x01000123;
 static const int kExtendedMax = 0x15678;
-static const int kJitter = 0x10203;
+static const int kTestJitter = 0x10203;
 static const int kLastSr = 0x34561234;
 static const int kDelayLastSr = 1000;
 
@@ -34,7 +35,7 @@ static const int kLastRr = 0x34561234;
 static const int kDelayLastRr = 1000;
 
 // REMB.
-static const int kRembBitrate = 52428;
+static const int kTestRembBitrate = 52428;
 
 // RPSI.
 static const int kPayloadtype = 126;
@@ -44,12 +45,13 @@ static const uint64 kPictureId = 0x1234567890;
 static const int kMissingPacket = 34567;
 
 // CAST.
-static const int kAckFrameId = 17;
-static const int kLostFrameId = 18;
-static const int kFrameIdWithLostPackets = 19;
+static const uint32 kAckFrameId = 17;
+static const uint32 kLostFrameId = 18;
+static const uint32 kFrameIdWithLostPackets = 19;
 static const int kLostPacketId1 = 3;
 static const int kLostPacketId2 = 5;
 static const int kLostPacketId3 = 12;
+}  // namespace
 
 class TestRtcpPacketBuilder {
  public:
@@ -75,6 +77,13 @@ class TestRtcpPacketBuilder {
   void AddRpsi(uint32 sender_ssrc, uint32 media_ssrc);
   void AddRemb(uint32 sender_ssrc, uint32 media_ssrc);
   void AddCast(uint32 sender_ssrc, uint32 media_ssrc);
+  void AddSenderLog(uint32 sender_ssrc);
+  void AddSenderFrameLog(uint8 event_id, uint32 rtp_timestamp);
+  void AddReceiverLog(uint32 sender_ssrc);
+  void AddReceiverFrameLog(uint32 rtp_timestamp, int num_events,
+                           uint32 event_timesamp_base);
+  void AddReceiverEventLog(uint16 event_data, uint8 event_id,
+                           uint16 event_timesamp_delta);
 
   const uint8* Packet();
   int Length() { return kIpPacketSize - big_endian_writer_.remaining(); }

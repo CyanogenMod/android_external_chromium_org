@@ -794,6 +794,10 @@ void BrowserWindowGtk::SetStarredState(bool is_starred) {
   toolbar_->GetLocationBarView()->SetStarred(is_starred);
 }
 
+void BrowserWindowGtk::SetTranslateIconToggled(bool is_lit) {
+  NOTIMPLEMENTED();
+}
+
 void BrowserWindowGtk::OnActiveTabChanged(WebContents* old_contents,
                                           WebContents* new_contents,
                                           int index,
@@ -1093,7 +1097,7 @@ bool BrowserWindowGtk::PreHandleKeyboardEvent(
     const NativeWebKeyboardEvent& event, bool* is_keyboard_shortcut) {
   GdkEventKey* os_event = &event.os_event->key;
 
-  if (!os_event || event.type != WebKit::WebInputEvent::RawKeyDown)
+  if (!os_event || event.type != blink::WebInputEvent::RawKeyDown)
     return false;
 
   if (ExtensionKeybindingRegistryGtk::shortcut_handling_suspended())
@@ -1161,7 +1165,7 @@ void BrowserWindowGtk::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
   GdkEventKey* os_event = &event.os_event->key;
 
-  if (!os_event || event.type != WebKit::WebInputEvent::RawKeyDown)
+  if (!os_event || event.type != blink::WebInputEvent::RawKeyDown)
     return;
 
   // Handles a key event in following sequence:
@@ -1339,7 +1343,7 @@ gboolean BrowserWindowGtk::OnConfigure(GtkWidget* widget,
   if (bounds == configure_bounds_)
     return FALSE;
 
-  GetLocationBar()->GetLocationEntry()->CloseOmniboxPopup();
+  GetLocationBar()->GetOmniboxView()->CloseOmniboxPopup();
 
   WebContents* tab = GetDisplayedTab();
   if (tab)
@@ -2417,4 +2421,10 @@ BrowserWindow* BrowserWindow::CreateBrowserWindow(Browser* browser) {
   BrowserWindowGtk* browser_window_gtk = new BrowserWindowGtk(browser);
   browser_window_gtk->Init();
   return browser_window_gtk;
+}
+
+// static
+chrome::HostDesktopType BrowserWindow::AdjustHostDesktopType(
+    chrome::HostDesktopType desktop_type) {
+  return desktop_type;
 }

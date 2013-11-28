@@ -18,6 +18,7 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/tabs/stacked_tab_strip_layout.h"
@@ -43,10 +44,12 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/mouse_watcher_view_host.h"
+#include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
@@ -236,6 +239,16 @@ int stacked_tab_right_clip() {
   return value;
 }
 
+base::string16 GetClipboardText() {
+  if (!ui::Clipboard::IsSupportedClipboardType(ui::CLIPBOARD_TYPE_SELECTION))
+    return base::string16();
+  ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
+  CHECK(clipboard);
+  base::string16 clipboard_text;
+  clipboard->ReadText(ui::CLIPBOARD_TYPE_SELECTION, &clipboard_text);
+  return clipboard_text;
+}
+
 // Animation delegate used when a dragged tab is released. When done sets the
 // dragging state to false.
 class ResetDraggingStateDelegate
@@ -343,6 +356,10 @@ NewTabButton::NewTabButton(TabStrip* tab_strip, views::ButtonListener* listener)
     : views::ImageButton(listener),
       tab_strip_(tab_strip),
       destroyed_(NULL) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  set_triggerable_event_flags(triggerable_event_flags() |
+                              ui::EF_MIDDLE_MOUSE_BUTTON);
+#endif
 }
 
 NewTabButton::~NewTabButton() {
@@ -614,6 +631,8 @@ TabStrip::TabStrip(TabStripController* controller)
       mouse_move_count_(0),
       immersive_style_(false) {
   Init();
+  // TODO(sky): temporary work around for 323255.
+  set_focus_border(NULL);
 }
 
 TabStrip::~TabStrip() {
@@ -915,22 +934,27 @@ void TabStrip::UpdateLoadingAnimations() {
 }
 
 bool TabStrip::IsPositionInWindowCaption(const gfx::Point& point) {
-  views::View* v = GetEventHandlerForPoint(point);
+  return IsRectInWindowCaption(gfx::Rect(point, gfx::Size(1, 1)));
+}
+
+bool TabStrip::IsRectInWindowCaption(const gfx::Rect& rect) {
+  views::View* v = GetEventHandlerForRect(rect);
 
   // If there is no control at this location, claim the hit was in the title
   // bar to get a move action.
   if (v == this)
     return true;
 
-  // Check to see if the point is within the non-button parts of the new tab
+  // Check to see if the rect intersects the non-button parts of the new tab
   // button. The button has a non-rectangular shape, so if it's not in the
   // visual portions of the button we treat it as a click to the caption.
-  gfx::Point point_in_newtab_coords(point);
-  View::ConvertPointToTarget(this, newtab_button_, &point_in_newtab_coords);
-  if (newtab_button_->GetLocalBounds().Contains(point_in_newtab_coords) &&
-      !newtab_button_->HitTestPoint(point_in_newtab_coords)) {
+  gfx::RectF rect_in_newtab_coords_f(rect);
+  View::ConvertRectToTarget(this, newtab_button_, &rect_in_newtab_coords_f);
+  gfx::Rect rect_in_newtab_coords = gfx::ToEnclosingRect(
+      rect_in_newtab_coords_f);
+  if (newtab_button_->GetLocalBounds().Intersects(rect_in_newtab_coords) &&
+      !newtab_button_->HitTestRect(rect_in_newtab_coords))
     return true;
-  }
 
   // All other regions, including the new Tab button, should be considered part
   // of the containing Window's client area so that regular events can be
@@ -1122,19 +1146,6 @@ void TabStrip::MaybeStartDrag(
   }
 
   views::Widget* widget = GetWidget();
-
-  // Don't allow detaching from maximized or fullscreen windows (in ash) when
-  // all the tabs are selected and there is only one display. Since the window
-  // is maximized or fullscreen, we know there are no other tabbed browsers the
-  // user can drag to.
-  const chrome::HostDesktopType host_desktop_type =
-      chrome::GetHostDesktopTypeForNativeView(widget->GetNativeView());
-  if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH &&
-      (widget->IsMaximized() || widget->IsFullscreen()) &&
-      static_cast<int>(tabs.size()) == tab_count() &&
-      gfx::Screen::GetScreenFor(widget->GetNativeView())->GetNumDisplays() == 1)
-    detach_behavior = TabDragController::NOT_DETACHABLE;
-
 #if defined(OS_WIN)
   // It doesn't make sense to drag tabs out on Win8's single window Metro mode.
   if (win8::IsSingleWindowMetroMode())
@@ -1426,11 +1437,15 @@ void TabStrip::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_PAGETABLIST;
 }
 
-views::View* TabStrip::GetEventHandlerForPoint(const gfx::Point& point) {
+views::View* TabStrip::GetEventHandlerForRect(const gfx::Rect& rect) {
+  if (!views::UsePointBasedTargeting(rect))
+    return View::GetEventHandlerForRect(rect);
+  const gfx::Point point(rect.CenterPoint());
+
   if (!touch_layout_.get()) {
     // Return any view that isn't a Tab or this TabStrip immediately. We don't
     // want to interfere.
-    views::View* v = View::GetEventHandlerForPoint(point);
+    views::View* v = View::GetEventHandlerForRect(rect);
     if (v && v != this && strcmp(v->GetClassName(), Tab::kViewClassName))
       return v;
 
@@ -1499,6 +1514,16 @@ void TabStrip::ButtonPressed(views::Button* sender, const ui::Event& event) {
     content::RecordAction(UserMetricsAction("NewTab_Button"));
     UMA_HISTOGRAM_ENUMERATION("Tab.NewTab", TabStripModel::NEW_TAB_BUTTON,
                               TabStripModel::NEW_TAB_ENUM_COUNT);
+    if (event.IsMouseEvent()) {
+      const ui::MouseEvent& mouse = static_cast<const ui::MouseEvent&>(event);
+      if (mouse.IsOnlyMiddleMouseButton()) {
+        base::string16 clipboard_text = GetClipboardText();
+        if (!clipboard_text.empty())
+          controller()->CreateNewTabWithLocation(clipboard_text);
+        return;
+      }
+    }
+
     controller()->CreateNewTab();
     if (event.type() == ui::ET_GESTURE_TAP)
       TouchUMA::RecordGestureAction(TouchUMA::GESTURE_NEWTAB_TAP);
@@ -1560,6 +1585,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
     case ui::ET_GESTURE_SCROLL_END:
     case ui::ET_SCROLL_FLING_START:
+    case ui::ET_GESTURE_END:
       EndDrag(END_DRAG_COMPLETE);
       if (adjust_layout_) {
         SetLayoutType(TAB_STRIP_LAYOUT_STACKED, true);
@@ -2716,7 +2742,10 @@ bool TabStrip::GetAdjustLayout() const {
   if (!adjust_layout_)
     return false;
 
-#if !defined(OS_CHROMEOS)
+#if defined(USE_AURA)
+  return chrome::GetHostDesktopTypeForNativeView(
+      GetWidget()->GetNativeView()) == chrome::HOST_DESKTOP_TYPE_ASH;
+#else
   if (ui::GetDisplayLayout() != ui::LAYOUT_TOUCH)
     return false;
 #endif

@@ -19,7 +19,6 @@
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/chrome_extensions_client.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_process_policy.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -75,6 +74,7 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -117,28 +117,28 @@ using autofill::PasswordGenerationAgent;
 using content::RenderThread;
 using content::WebPluginInfo;
 using extensions::Extension;
-using WebKit::WebCache;
-using WebKit::WebConsoleMessage;
-using WebKit::WebDataSource;
-using WebKit::WebDocument;
-using WebKit::WebFrame;
-using WebKit::WebPlugin;
-using WebKit::WebPluginParams;
-using WebKit::WebSecurityOrigin;
-using WebKit::WebSecurityPolicy;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
-using WebKit::WebVector;
+using blink::WebCache;
+using blink::WebConsoleMessage;
+using blink::WebDataSource;
+using blink::WebDocument;
+using blink::WebFrame;
+using blink::WebPlugin;
+using blink::WebPluginParams;
+using blink::WebSecurityOrigin;
+using blink::WebSecurityPolicy;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
+using blink::WebVector;
 
 namespace {
 
 const char kWebViewTagName[] = "WEBVIEW";
 const char kAdViewTagName[] = "ADVIEW";
 
-chrome::ChromeContentRendererClient* g_current_client;
+ChromeContentRendererClient* g_current_client;
 
 static void AppendParams(const std::vector<string16>& additional_names,
                          const std::vector<string16>& additional_values,
@@ -195,7 +195,7 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   }
 
   // Treat Native Client invocations like JavaScript.
-  if (plugin.name == ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName))
+  if (plugin.name == ASCIIToUTF16(ChromeContentClient::kNaClPluginName))
     return true;
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
@@ -210,8 +210,6 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 }
 
 }  // namespace
-
-namespace chrome {
 
 ChromeContentRendererClient::ChromeContentRendererClient() {
   g_current_client = this;
@@ -577,8 +575,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       }
       case ChromeViewHostMsg_GetPluginInfo_Status::kAllowed: {
         const bool is_nacl_plugin =
-            plugin.name ==
-            ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName);
+            plugin.name == ASCIIToUTF16(ChromeContentClient::kNaClPluginName);
         const bool is_nacl_mime_type =
             actual_mime_type == "application/x-nacl";
         const bool is_pnacl_mime_type =
@@ -908,9 +905,9 @@ bool ChromeContentRendererClient::ShouldSuppressErrorPage(const GURL& url) {
 }
 
 void ChromeContentRendererClient::GetNavigationErrorStrings(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURLRequest& failed_request,
-    const WebKit::WebURLError& error,
+    blink::WebFrame* frame,
+    const blink::WebURLRequest& failed_request,
+    const blink::WebURLError& error,
     const std::string& accept_languages,
     std::string* error_html,
     string16* error_description) {
@@ -1073,7 +1070,7 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
 }
 
 bool ChromeContentRendererClient::WillSendRequest(
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     content::PageTransition transition_type,
     const GURL& url,
     const GURL& first_party_for_cookies,
@@ -1139,18 +1136,18 @@ bool ChromeContentRendererClient::IsLinkVisited(unsigned long long link_hash) {
   return visited_link_slave_->IsVisited(link_hash);
 }
 
-WebKit::WebPrescientNetworking*
+blink::WebPrescientNetworking*
 ChromeContentRendererClient::GetPrescientNetworking() {
   return prescient_networking_dispatcher_.get();
 }
 
 bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
     const content::RenderView* render_view,
-    WebKit::WebPageVisibilityState* override_state) {
+    blink::WebPageVisibilityState* override_state) {
   if (!prerender::PrerenderHelper::IsPrerendering(render_view))
     return false;
 
-  *override_state = WebKit::WebPageVisibilityStatePrerender;
+  *override_state = blink::WebPageVisibilityStatePrerender;
   return true;
 }
 
@@ -1295,14 +1292,14 @@ bool ChromeContentRendererClient::IsExternalPepperPlugin(
   return module_name == "Native Client";
 }
 
-WebKit::WebSpeechSynthesizer*
+blink::WebSpeechSynthesizer*
 ChromeContentRendererClient::OverrideSpeechSynthesizer(
-    WebKit::WebSpeechSynthesizerClient* client) {
+    blink::WebSpeechSynthesizerClient* client) {
   return new TtsDispatcher(client);
 }
 
 bool ChromeContentRendererClient::AllowBrowserPlugin(
-    WebKit::WebPluginContainer* container) {
+    blink::WebPluginContainer* container) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableBrowserPluginForAllViewTypes))
     return true;
@@ -1368,11 +1365,9 @@ bool ChromeContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   return !command_line->HasSwitch(switches::kExtensionProcess);
 }
 
-WebKit::WebWorkerPermissionClientProxy*
+blink::WebWorkerPermissionClientProxy*
 ChromeContentRendererClient::CreateWorkerPermissionClientProxy(
     content::RenderView* render_view,
-    WebKit::WebFrame* frame) {
+    blink::WebFrame* frame) {
   return new WorkerPermissionClientProxy(render_view, frame);
 }
-
-}  // namespace chrome

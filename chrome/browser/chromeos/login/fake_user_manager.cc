@@ -118,11 +118,6 @@ void FakeUserManager::SaveUserDisplayName(
   }
 }
 
-void FakeUserManager::UpdateUserAccountData(const std::string&, const string16&,
-                           const std::string&) {
-  // Not implemented
-}
-
 SupervisedUserManager* FakeUserManager::GetSupervisedUserManager() {
   return supervised_user_manager_.get();
 }
@@ -151,6 +146,10 @@ const User* FakeUserManager::FindUser(const std::string& email) const {
   return NULL;
 }
 
+User* FakeUserManager::FindUserAndModify(const std::string& email) {
+  return NULL;
+}
+
 const User* FakeUserManager::GetLoggedInUser() const {
   return NULL;
 }
@@ -171,6 +170,11 @@ User* FakeUserManager::GetUserByProfile(Profile* profile) const {
       return *it;
   }
   return primary_user_;
+}
+
+Profile* FakeUserManager::GetProfileByUser(const User* user) const {
+  NOTIMPLEMENTED();
+  return NULL;
 }
 
 string16 FakeUserManager::GetUserDisplayName(
@@ -274,8 +278,11 @@ base::FilePath FakeUserManager::GetUserProfileDir(
   return base::FilePath();
 }
 
-void FakeUserManager::RespectLocalePreference(Profile* profile,
-                                              const User* user) const {
+bool FakeUserManager::RespectLocalePreference(
+    Profile* profile,
+    const User* user,
+    scoped_ptr<locale_util::SwitchLanguageCallback> callback) const {
+  return false;
 }
 
 }  // namespace chromeos

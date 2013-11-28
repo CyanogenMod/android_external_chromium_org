@@ -24,7 +24,7 @@ import android.widget.FrameLayout;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.content.common.TraceEvent;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * The containing view for {@link ContentViewCore} that exists in the Android UI hierarchy and
@@ -50,7 +50,7 @@ public class ContentView extends FrameLayout
      * @param windowAndroid An instance of the WindowAndroid.
      * @return A ContentView instance.
      */
-    public static ContentView newInstance(Context context, int nativeWebContents,
+    public static ContentView newInstance(Context context, long nativeWebContents,
             WindowAndroid windowAndroid) {
         return newInstance(context, nativeWebContents, windowAndroid, null,
                 android.R.attr.webViewStyle);
@@ -65,7 +65,7 @@ public class ContentView extends FrameLayout
      * @param attrs The attributes of the XML tag that is inflating the view.
      * @return A ContentView instance.
      */
-    public static ContentView newInstance(Context context, int nativeWebContents,
+    public static ContentView newInstance(Context context, long nativeWebContents,
             WindowAndroid windowAndroid, AttributeSet attrs) {
         // TODO(klobag): use the WebViewStyle as the default style for now. It enables scrollbar.
         // When ContentView is moved to framework, we can define its own style in the res.
@@ -83,7 +83,7 @@ public class ContentView extends FrameLayout
      * @param defStyle The default style to apply to this view.
      * @return A ContentView instance.
      */
-    public static ContentView newInstance(Context context, int nativeWebContents,
+    public static ContentView newInstance(Context context, long nativeWebContents,
             WindowAndroid windowAndroid, AttributeSet attrs, int defStyle) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             return new ContentView(context, nativeWebContents, windowAndroid, attrs, defStyle);
@@ -93,7 +93,7 @@ public class ContentView extends FrameLayout
         }
     }
 
-    protected ContentView(Context context, int nativeWebContents, WindowAndroid windowAndroid,
+    protected ContentView(Context context, long nativeWebContents, WindowAndroid windowAndroid,
             AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
 
@@ -106,10 +106,7 @@ public class ContentView extends FrameLayout
         setFocusableInTouchMode(true);
 
         mContentViewCore = new ContentViewCore(context);
-        mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN ?
-                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC :
-                ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
+        mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid);
     }
 
     /**
@@ -128,7 +125,7 @@ public class ContentView extends FrameLayout
 
     @Override
     public boolean isReadyForSnapshot() {
-        return !isCrashed() && isReady();
+        return isReady();
     }
 
     @Override
@@ -274,13 +271,6 @@ public class ContentView extends FrameLayout
      */
     public void goForward() {
         mContentViewCore.goForward();
-    }
-
-    /**
-     * Reload the current page.
-     */
-    public void reload() {
-        mContentViewCore.reload();
     }
 
     /**
@@ -549,7 +539,7 @@ public class ContentView extends FrameLayout
 
     @Override
     protected int computeHorizontalScrollExtent() {
-        // TODO (dtrainor): Need to expose scroll events properly to public. Either make getScroll*
+        // TODO(dtrainor): Need to expose scroll events properly to public. Either make getScroll*
         // work or expose computeHorizontalScrollOffset()/computeVerticalScrollOffset as public.
         return mContentViewCore.computeHorizontalScrollExtent();
     }
@@ -659,13 +649,6 @@ public class ContentView extends FrameLayout
      */
     public void setUseDesktopUserAgent(boolean override, boolean reloadOnChange) {
         mContentViewCore.setUseDesktopUserAgent(override, reloadOnChange);
-    }
-
-    /**
-     * @return Whether the native ContentView has crashed.
-     */
-    public boolean isCrashed() {
-        return mContentViewCore.isCrashed();
     }
 
     /**

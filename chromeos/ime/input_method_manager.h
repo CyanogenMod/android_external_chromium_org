@@ -29,7 +29,7 @@ class XKeyboard;
 
 // This class manages input methodshandles.  Classes can add themselves as
 // observers. Clients can get an instance of this library class by:
-// GetInputMethodManager().
+// InputMethodManager::Get().
 class CHROMEOS_EXPORT InputMethodManager {
  public:
   enum State {
@@ -143,6 +143,7 @@ class CHROMEOS_EXPORT InputMethodManager {
       const std::vector<std::string>& layouts,
       const std::vector<std::string>& languages,
       const GURL& options_url,
+      const GURL& inputview_url,
       InputMethodEngine* instance) = 0;
 
   // Removes an input method extension.
@@ -162,6 +163,10 @@ class CHROMEOS_EXPORT InputMethodManager {
 
   // Gets the list of input method properties. The list could be empty().
   virtual InputMethodPropertyList GetCurrentInputMethodProperties() const = 0;
+
+  // Sets the list of input method properties. The list could be empty().
+  virtual void SetCurrentInputMethodProperties(
+      const InputMethodPropertyList& property_list) = 0;
 
   // Returns an X keyboard object which could be used to change the current XKB
   // layout, change the caps lock status, and set the auto repeat rate/interval.

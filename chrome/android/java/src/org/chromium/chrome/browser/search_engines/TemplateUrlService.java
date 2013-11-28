@@ -40,9 +40,9 @@ public class TemplateUrlService {
         }
 
         public TemplateUrl(int index, String shortName, String keyword) {
-          mIndex = index;
-          mShortName = shortName;
-          mKeyword = keyword;
+            mIndex = index;
+            mShortName = shortName;
+            mKeyword = keyword;
         }
 
         public int getIndex() {
@@ -68,7 +68,7 @@ public class TemplateUrlService {
         return sService;
     }
 
-    private final int mNativeTemplateUrlServiceAndroid;
+    private final long mNativeTemplateUrlServiceAndroid;
     private final ObserverList<LoadListener> mLoadListeners = new ObserverList<LoadListener>();
 
     private TemplateUrlService() {
@@ -98,7 +98,7 @@ public class TemplateUrlService {
             TemplateUrl templateUrl = nativeGetPrepopulatedTemplateUrlAt(
                     mNativeTemplateUrlServiceAndroid, i);
             if (templateUrl != null) {
-              templateUrls.add(templateUrl);
+                templateUrls.add(templateUrl);
             }
         }
         return templateUrls;
@@ -204,20 +204,20 @@ public class TemplateUrlService {
         return nativeReplaceSearchTermsInUrl(mNativeTemplateUrlServiceAndroid, query, url);
     }
 
-    private native int nativeInit();
-    private native void nativeLoad(int nativeTemplateUrlServiceAndroid);
-    private native boolean nativeIsLoaded(int nativeTemplateUrlServiceAndroid);
-    private native int nativeGetTemplateUrlCount(int nativeTemplateUrlServiceAndroid);
+    private native long nativeInit();
+    private native void nativeLoad(long nativeTemplateUrlServiceAndroid);
+    private native boolean nativeIsLoaded(long nativeTemplateUrlServiceAndroid);
+    private native int nativeGetTemplateUrlCount(long nativeTemplateUrlServiceAndroid);
     private native TemplateUrl nativeGetPrepopulatedTemplateUrlAt(
-            int nativeTemplateUrlServiceAndroid, int i);
-    private native void nativeSetDefaultSearchProvider(int nativeTemplateUrlServiceAndroid,
+            long nativeTemplateUrlServiceAndroid, int i);
+    private native void nativeSetDefaultSearchProvider(long nativeTemplateUrlServiceAndroid,
             int selectedIndex);
-    private native int nativeGetDefaultSearchProvider(int nativeTemplateUrlServiceAndroid);
-    private native boolean nativeIsSearchProviderManaged(int nativeTemplateUrlServiceAndroid);
-    private native boolean nativeIsSearchByImageAvailable(int nativeTemplateUrlServiceAndroid);
-    private native boolean nativeIsDefaultSearchEngineGoogle(int nativeTemplateUrlServiceAndroid);
-    private native String nativeGetUrlForSearchQuery(int nativeTemplateUrlServiceAndroid,
+    private native int nativeGetDefaultSearchProvider(long nativeTemplateUrlServiceAndroid);
+    private native boolean nativeIsSearchProviderManaged(long nativeTemplateUrlServiceAndroid);
+    private native boolean nativeIsSearchByImageAvailable(long nativeTemplateUrlServiceAndroid);
+    private native boolean nativeIsDefaultSearchEngineGoogle(long nativeTemplateUrlServiceAndroid);
+    private native String nativeGetUrlForSearchQuery(long nativeTemplateUrlServiceAndroid,
             String query);
-    private native String nativeReplaceSearchTermsInUrl(int nativeTemplateUrlServiceAndroid,
+    private native String nativeReplaceSearchTermsInUrl(long nativeTemplateUrlServiceAndroid,
             String query, String currentUrl);
 }

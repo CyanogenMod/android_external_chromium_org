@@ -7,6 +7,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_controller_android.h"
 #include "content/public/browser/notification_service.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 
 namespace invalidation {
 
@@ -44,13 +45,6 @@ void InvalidationServiceAndroid::UnregisterInvalidationHandler(
   invalidator_registrar_.UnregisterHandler(handler);
 }
 
-void InvalidationServiceAndroid::AcknowledgeInvalidation(
-    const invalidation::ObjectId& id,
-    const syncer::AckHandle& ack_handle) {
-  DCHECK(CalledOnValidThread());
-  // Do nothing.  The Android invalidator does not support ack tracking.
-}
-
 syncer::InvalidatorState
 InvalidationServiceAndroid::GetInvalidatorState() const {
   DCHECK(CalledOnValidThread());
@@ -59,8 +53,7 @@ InvalidationServiceAndroid::GetInvalidatorState() const {
 
 std::string InvalidationServiceAndroid::GetInvalidatorClientId() const {
   DCHECK(CalledOnValidThread());
-  // TODO: Return a valid ID here.  See crbug.com/172391.
-  return "Bogus";
+  return invalidation_controller_->GetInvalidatorClientId();
 }
 
 void InvalidationServiceAndroid::Observe(

@@ -95,7 +95,7 @@
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/browser/renderer_host/websocket_dispatcher_host.h"
 #include "content/browser/resolve_proxy_msg_helper.h"
-#include "content/browser/service_worker/service_worker_context.h"
+#include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/speech/input_tag_speech_dispatcher_host.h"
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
@@ -103,6 +103,7 @@
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/tracing/trace_controller_impl.h"
 #include "content/browser/tracing/trace_message_filter.h"
+#include "content/browser/vibration/vibration_message_filter.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_storage_partition.h"
@@ -117,6 +118,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host_factory.h"
+#include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/resource_context.h"
@@ -140,10 +142,6 @@
 #include "ui/gl/gl_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/common/resource_type.h"
-
-#if defined(OS_ANDROID)
-#include "content/browser/android/vibration_message_filter.h"
-#endif
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
@@ -359,6 +357,9 @@ RenderProcessHostImpl::RenderProcessHostImpl(
     bool is_guest)
         : fast_shutdown_started_(false),
           deleting_soon_(false),
+#ifndef NDEBUG
+          is_self_deleted_(false),
+#endif
           pending_views_(0),
           visible_widgets_(0),
           backgrounded_(true),
@@ -399,7 +400,37 @@ RenderProcessHostImpl::RenderProcessHostImpl(
   //       creation.
 }
 
+// static
+void RenderProcessHostImpl::ShutDownInProcessRenderer() {
+  DCHECK(g_run_renderer_in_process_);
+
+  switch (g_all_hosts.Pointer()->size()) {
+    case 0:
+      return;
+    case 1: {
+      RenderProcessHostImpl* host = static_cast<RenderProcessHostImpl*>(
+          AllHostsIterator().GetCurrentValue());
+      FOR_EACH_OBSERVER(RenderProcessHostObserver,
+                        host->observers_,
+                        RenderProcessHostDestroyed(host));
+#ifndef NDEBUG
+      host->is_self_deleted_ = true;
+#endif
+      delete host;
+      return;
+    }
+    default:
+      NOTREACHED() << "There should be only one RenderProcessHost when running "
+                   << "in-process.";
+  }
+}
+
 RenderProcessHostImpl::~RenderProcessHostImpl() {
+#ifndef NDEBUG
+  DCHECK(is_self_deleted_)
+      << "RenderProcessHostImpl is destroyed by something other than itself";
+#endif
+
   ChildProcessSecurityPolicyImpl::GetInstance()->Remove(GetID());
 
   if (gpu_observer_registered_) {
@@ -471,8 +502,8 @@ bool RenderProcessHostImpl::Init() {
 
   CreateMessageFilters();
 
-  // Single-process mode not supported in multiple-dll mode currently.
-  if (run_renderer_in_process() && g_renderer_main_thread_factory) {
+  if (run_renderer_in_process()) {
+    DCHECK(g_renderer_main_thread_factory);
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required
     // to prevent a deadlock in single-process mode.  Since the primordial
@@ -611,10 +642,14 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(),
       storage_partition_impl_->GetDOMStorageContext()));
   AddFilter(new IndexedDBDispatcherHost(
-      GetID(),
       storage_partition_impl_->GetIndexedDBContext()));
-  AddFilter(new ServiceWorkerDispatcherHost(
-      GetID(), storage_partition_impl_->GetServiceWorkerContext()));
+
+  scoped_refptr<ServiceWorkerDispatcherHost> service_worker_filter =
+      new ServiceWorkerDispatcherHost(GetID());
+  service_worker_filter->Init(
+      storage_partition_impl_->GetServiceWorkerContext());
+  AddFilter(service_worker_filter);
+
   if (IsGuest()) {
     if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
@@ -724,9 +759,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       switches::kEnableMemoryBenchmarking))
     AddFilter(new MemoryBenchmarkMessageFilter());
 #endif
-#if defined(OS_ANDROID)
   AddFilter(new VibrationMessageFilter());
-#endif
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -765,6 +798,15 @@ void RenderProcessHostImpl::RemoveRoute(int32 routing_id) {
   // Keep the one renderer thread around forever in single process mode.
   if (!run_renderer_in_process())
     Cleanup();
+}
+
+void RenderProcessHostImpl::AddObserver(RenderProcessHostObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void RenderProcessHostImpl::RemoveObserver(
+    RenderProcessHostObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 bool RenderProcessHostImpl::WaitForBackingStoreMsg(
@@ -902,13 +944,14 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableFiltersOverIPC,
     switches::kDisableFullScreen,
     switches::kDisableGeolocation,
-    switches::kDisableGLMultisampling,
     switches::kDisableGpu,
     switches::kDisableGpuCompositing,
     switches::kDisableGpuVsync,
     switches::kDisableHistogramCustomizer,
+    switches::kDisableLayerSquashing,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
+    switches::kDisableOpusPlayback,
     switches::kDisablePinch,
     switches::kDisablePrefixedEncryptedMedia,
     switches::kDisableSeccompFilterSandbox,
@@ -920,7 +963,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
     switches::kDisableUniversalAcceleratedOverflowScroll,
+    switches::kDisableUnprefixedMediaSource,
     switches::kDisableVp8AlphaPlayback,
+    switches::kDisableWebAnimationsCSS,
     switches::kDisableWebAudio,
     switches::kDisableWebKitMediaSource,
     switches::kDomAutomationController,
@@ -951,10 +996,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableHTMLImports,
     switches::kEnableInbandTextTracks,
     switches::kEnableInputModeAttribute,
+    switches::kEnableLayerSquashing,
     switches::kEnableLogging,
     switches::kEnableMP3StreamParser,
     switches::kEnableMemoryBenchmarking,
-    switches::kEnableOpusPlayback,
     switches::kEnableOverlayFullscreenVideo,
     switches::kEnableOverlayScrollbars,
     switches::kEnableOverscrollNotifications,
@@ -973,6 +1018,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
     switches::kEnableViewport,
+    switches::kEnableViewportMeta,
+    switches::kMainFrameResizesAreOrientationChanges,
     switches::kEnableVtune,
     switches::kEnableWebAnimationsCSS,
     switches::kEnableWebAnimationsSVG,
@@ -1006,6 +1053,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kVideoThreads,
     switches::kVModule,
     switches::kWebCoreLogChannels,
+    switches::kWebGLCommandBufferSizeKb,
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,
@@ -1016,6 +1064,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kDisableLCDText,
     cc::switches::kDisableMapImage,
     cc::switches::kDisableThreadedAnimation,
+    cc::switches::kEnableGPURasterization,
     cc::switches::kEnableImplSidePainting,
     cc::switches::kEnableLCDText,
     cc::switches::kEnableMapImage,
@@ -1047,6 +1096,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisablePepper3d,
 #endif
 #if defined(ENABLE_WEBRTC)
+    switches::kEnableAudioTrackProcessing,
     switches::kDisableDeviceEnumeration,
     switches::kDisableSCTPDataChannels,
     switches::kDisableWebRtcHWDecoding,
@@ -1065,7 +1115,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #endif
 #if defined(OS_ANDROID)
     switches::kDisableGestureRequirementForMediaPlayback,
+    switches::kDisableLowEndDeviceMode,
     switches::kDisableWebRTC,
+    switches::kEnableLowEndDeviceMode,
     switches::kEnableSpeechRecognition,
     switches::kHideScrollbars,
     switches::kMediaDrmEnableNonCompositing,
@@ -1086,10 +1138,12 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
                                  arraysize(kSwitchNames));
 
   if (browser_cmd.HasSwitch(switches::kTraceStartup) &&
-      TraceControllerImpl::GetInstance()->is_tracing_startup()) {
+      BrowserMainLoop::GetInstance()->is_tracing_startup()) {
     // Pass kTraceStartup switch to renderer only if startup tracing has not
     // finished.
-    renderer_cmd->AppendSwitch(switches::kTraceStartup);
+    renderer_cmd->AppendSwitchASCII(
+        switches::kTraceStartup,
+        browser_cmd.GetSwitchValueASCII(switches::kTraceStartup));
   }
 
   // Disable databases in incognito mode.
@@ -1348,14 +1402,20 @@ bool RenderProcessHostImpl::IgnoreInputEvents() const {
 }
 
 void RenderProcessHostImpl::Cleanup() {
-  // When no other owners of this object, we can delete ourselves
+  // When there are no other owners of this object, we can delete ourselves.
   if (listeners_.IsEmpty()) {
     DCHECK_EQ(0, pending_views_);
+    FOR_EACH_OBSERVER(RenderProcessHostObserver,
+                      observers_,
+                      RenderProcessHostDestroyed(this));
     NotificationService::current()->Notify(
         NOTIFICATION_RENDERER_PROCESS_TERMINATED,
         Source<RenderProcessHost>(this),
         NotificationService::NoDetails());
 
+#ifndef NDEBUG
+    is_self_deleted_ = true;
+#endif
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
     deleting_soon_ = true;
     // It's important not to wait for the DeleteTask to delete the channel
@@ -1504,6 +1564,7 @@ void RenderProcessHost::SetRunRendererInProcess(bool value) {
   }
 }
 
+// static
 RenderProcessHost::iterator RenderProcessHost::AllHostsIterator() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return iterator(g_all_hosts.Pointer());

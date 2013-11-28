@@ -12,8 +12,6 @@
 #include "chrome/browser/signin/signin_global_error.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/webdata/common/web_data_service_consumer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
 namespace net {
@@ -22,12 +20,11 @@ class URLRequestContextGetter;
 
 class GoogleServiceAuthError;
 class Profile;
-class TokenService;
 class SigninGlobalError;
 
 // ProfileOAuth2TokenService is a BrowserContextKeyedService that retrieves
 // OAuth2 access tokens for a given set of scopes using the OAuth2 login
-// refresh token maintained by TokenService.
+// refresh tokens.
 //
 // See |OAuth2TokenService| for usage details.
 //
@@ -40,17 +37,18 @@ class SigninGlobalError;
 // Note: requests should be started from the UI thread. To start a
 // request from other thread, please use ProfileOAuth2TokenServiceRequest.
 class ProfileOAuth2TokenService : public OAuth2TokenService,
-                                  public content::NotificationObserver,
                                   public BrowserContextKeyedService,
                                   public WebDataServiceConsumer {
  public:
-  // content::NotificationObserver listening for TokenService updates.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // Initializes this token service with the profile.
   virtual void Initialize(Profile* profile);
+
+  // Loads credentials from a backing persistent store to make them available
+  // after service is used between profile restarts.
+  // Usually it's not necessary to directly call this method.
+  // TODO(bauerb): Make this method private once this class initializes itself
+  // automatically.
+  void LoadCredentials();
 
   // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
@@ -62,9 +60,9 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   virtual std::vector<std::string> GetAccounts() OVERRIDE;
 
   // Updates a |refresh_token| for an |account_id|. Credentials are persisted,
-  // and avialable through |LoadCredentials| after service is restarted.
-  void UpdateCredentials(const std::string& account_id,
-                         const std::string& refresh_token);
+  // and available through |LoadCredentials| after service is restarted.
+  virtual void UpdateCredentials(const std::string& account_id,
+                                 const std::string& refresh_token);
 
   // Revokes credentials related to |account_id|.
   void RevokeCredentials(const std::string& account_id);
@@ -147,14 +145,14 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceTest,
                            PersistenceLoadCredentials);
 
+  // When migrating an old login-scoped refresh token, this returns the account
+  // ID with which the token was associated.
+  std::string GetAccountIdForMigratingRefreshToken();
+
   // WebDataServiceConsumer implementation:
   virtual void OnWebDataServiceRequestDone(
       WebDataServiceBase::Handle handle,
       const WDTypedResult* result) OVERRIDE;
-
-  // Loads credentials from a backing persistent store to make them available
-  // after service is used between profile restarts.
-  void LoadCredentials();
 
   // Loads credentials into in memory stucture.
   void LoadAllCredentialsIntoMemory(
@@ -163,6 +161,9 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   // Loads a single pair of |account_id|, |refresh_token| into memory.
   void LoadCredentialsIntoMemory(const std::string& account_id,
                                  const std::string& refresh_token);
+
+  // Revokes the refresh token on the server.
+  virtual void RevokeCredentialsOnServer(const std::string& refresh_token);
 
   // The profile with which this instance was initialized, or NULL.
   Profile* profile_;
@@ -178,9 +179,6 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   // ProfileOAuth2TokenService (so we can expose a reference for use in the
   // wrench menu).
   scoped_ptr<SigninGlobalError> signin_global_error_;
-
-  // Registrar for notifications from the TokenService.
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileOAuth2TokenService);
 };

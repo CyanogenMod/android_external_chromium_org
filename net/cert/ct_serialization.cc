@@ -169,22 +169,6 @@ bool ConvertSignatureAlgorithm(
   return true;
 }
 
-// Checks and converts a log entry type.
-// |in| the numeric representation of the log type.
-// If the log type is 0 (X.509 cert) or 1 (PreCertificate), fills in |out| and
-// returns true. Otherwise, returns false.
-bool ConvertLogEntryType(int in, LogEntry::Type* out) {
-  switch (in) {
-    case LogEntry::LOG_ENTRY_TYPE_X509:
-    case LogEntry::LOG_ENTRY_TYPE_PRECERT:
-      break;
-    default:
-      return false;
-  }
-  *out = static_cast<LogEntry::Type>(in);
-  return true;
-}
-
 // Writes a TLS-encoded variable length unsigned integer to |output|.
 // |length| indicates the size (in bytes) of the integer.
 // |value| the value itself to be written.
@@ -332,9 +316,11 @@ bool DecodeSCTList(base::StringPiece* input,
   return true;
 }
 
-bool DecodeSignedCertificateTimestamp(base::StringPiece* input,
-                                      SignedCertificateTimestamp* output) {
-  SignedCertificateTimestamp result;
+bool DecodeSignedCertificateTimestamp(
+    base::StringPiece* input,
+    scoped_refptr<SignedCertificateTimestamp>* output) {
+  scoped_refptr<SignedCertificateTimestamp> result(
+      new SignedCertificateTimestamp());
   unsigned version;
   if (!ReadUint(kVersionLength, input, &version))
     return false;
@@ -343,7 +329,7 @@ bool DecodeSignedCertificateTimestamp(base::StringPiece* input,
     return false;
   }
 
-  result.version = SignedCertificateTimestamp::SCT_VERSION_1;
+  result->version = SignedCertificateTimestamp::SCT_VERSION_1;
   uint64 timestamp;
   base::StringPiece log_id;
   base::StringPiece extensions;
@@ -351,7 +337,7 @@ bool DecodeSignedCertificateTimestamp(base::StringPiece* input,
       !ReadUint(kTimestampLength, input, &timestamp) ||
       !ReadVariableBytes(kExtensionsLengthBytes, input,
                          &extensions) ||
-      !DecodeDigitallySigned(input, &result.signature)) {
+      !DecodeDigitallySigned(input, &result->signature)) {
     return false;
   }
 
@@ -360,14 +346,21 @@ bool DecodeSignedCertificateTimestamp(base::StringPiece* input,
     return false;
   }
 
-  log_id.CopyToString(&result.log_id);
-  extensions.CopyToString(&result.extensions);
-  result.timestamp =
+  log_id.CopyToString(&result->log_id);
+  extensions.CopyToString(&result->extensions);
+  result->timestamp =
       base::Time::UnixEpoch() +
       base::TimeDelta::FromMilliseconds(static_cast<int64>(timestamp));
 
-  *output = result;
+  output->swap(result);
   return true;
+}
+
+bool EncodeSCTListForTesting(const base::StringPiece& sct,
+                             std::string* output) {
+  std::string encoded_sct;
+  return WriteVariableBytes(kSerializedSCTLengthBytes, sct, &encoded_sct) &&
+      WriteVariableBytes(kSCTListLengthBytes, encoded_sct, output);
 }
 
 }  // namespace ct

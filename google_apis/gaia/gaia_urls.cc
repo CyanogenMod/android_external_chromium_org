@@ -28,6 +28,9 @@ const char kOAuthGetAccessTokenUrlSuffix[] = "OAuthGetAccessToken";
 const char kOAuthWrapBridgeUrlSuffix[] = "OAuthWrapBridge";
 const char kOAuth1LoginUrlSuffix[] = "OAuthLogin";
 const char kOAuthRevokeTokenUrlSuffix[] = "AuthSubRevokeToken";
+const char kListAccountsSuffix[] = "ListAccounts";
+const char kEmbeddedSigninSuffix[] = "EmbeddedSignIn";
+const char kAddAccountSuffix[] = "AddSession";
 
 // OAuth scopes
 const char kOAuth1LoginScope[] = "https://www.google.com/accounts/OAuthLogin";
@@ -103,6 +106,9 @@ GaiaUrls::GaiaUrls() {
   oauth_wrap_bridge_url_ = gaia_url_.Resolve(kOAuthWrapBridgeUrlSuffix);
   oauth_revoke_token_url_ = gaia_url_.Resolve(kOAuthRevokeTokenUrlSuffix);
   oauth1_login_url_ = gaia_url_.Resolve(kOAuth1LoginUrlSuffix);
+  list_accounts_url_ = gaia_url_.Resolve(kListAccountsSuffix);
+  embedded_signin_url_ = gaia_url_.Resolve(kEmbeddedSigninSuffix);
+  add_account_url_ = gaia_url_.Resolve(kAddAccountSuffix);
 
   // URLs from accounts.google.com (LSO).
   get_oauth_token_url_ = lso_origin_url_.Resolve(kGetOAuthTokenUrlSuffix);
@@ -196,6 +202,18 @@ const GURL& GaiaUrls::oauth_revoke_token_url() const {
 
 const GURL& GaiaUrls::oauth1_login_url() const {
   return oauth1_login_url_;
+}
+
+const GURL& GaiaUrls::list_accounts_url() const {
+  return list_accounts_url_;
+}
+
+const GURL& GaiaUrls::embedded_signin_url() const {
+  return embedded_signin_url_;
+}
+
+const GURL& GaiaUrls::add_account_url() const {
+  return add_account_url_;
 }
 
 const std::string& GaiaUrls::oauth1_login_scope() const {

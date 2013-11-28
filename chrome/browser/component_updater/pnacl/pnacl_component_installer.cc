@@ -25,8 +25,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/omaha_query_params/omaha_query_params.h"
+#include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/browser_thread.h"
 
 using chrome::OmahaQueryParams;
@@ -260,8 +260,8 @@ bool PnaclComponentInstaller::Install(const base::DictionaryValue& manifest,
   base::FilePath path = GetPnaclBaseDirectory().AppendASCII(
       version.GetString());
   if (base::PathExists(path)) {
-    LOG(WARNING) << "Target path already exists, not installing.";
-    return false;
+    if (!base::DeleteFile(path, true))
+      return false;
   }
   if (!base::Move(unpack_path, path)) {
     LOG(WARNING) << "Move failed, not installing.";

@@ -55,6 +55,7 @@
 #include "ash/wm/window_state.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #endif
 
@@ -521,6 +522,9 @@ void TabDragController::SetMoveBehavior(MoveBehavior behavior) {
 }
 
 void TabDragController::Drag(const gfx::Point& point_in_screen) {
+  TRACE_EVENT1("views", "TabDragController::Drag",
+               "point_in_screen", point_in_screen.ToString());
+
   bring_to_front_timer_.Stop();
   move_stacked_timer_.Stop();
 
@@ -551,6 +555,8 @@ void TabDragController::Drag(const gfx::Point& point_in_screen) {
 }
 
 void TabDragController::EndDrag(EndDragReason reason) {
+  TRACE_EVENT0("views", "TabDragController::EndDrag");
+
   // If we're dragging a window ignore capture lost since it'll ultimately
   // trigger the move loop to end and we'll revert the drag when RunMoveLoop()
   // finishes.
@@ -562,6 +568,7 @@ void TabDragController::EndDrag(EndDragReason reason) {
 
 void TabDragController::InitTabDragData(Tab* tab,
                                         TabDragData* drag_data) {
+  TRACE_EVENT0("views", "TabDragController::InitTabDragData");
   drag_data->source_model_index =
       source_tabstrip_->GetModelIndexOfTab(tab);
   drag_data->contents = GetModel(source_tabstrip_)->GetWebContentsAt(
@@ -711,6 +718,9 @@ void TabDragController::DidProcessEvent(const base::NativeEvent& event) {
 
 void TabDragController::OnWidgetBoundsChanged(views::Widget* widget,
                                               const gfx::Rect& new_bounds) {
+  TRACE_EVENT1("views", "TabDragController::OnWidgetBoundsChanged",
+               "new_bounds", new_bounds.ToString());
+
   Drag(GetCursorScreenPoint());
 }
 
@@ -766,6 +776,9 @@ gfx::Point TabDragController::GetWindowCreatePoint(
 }
 
 void TabDragController::UpdateDockInfo(const gfx::Point& point_in_screen) {
+  TRACE_EVENT1("views", "TabDragController::UpdateDockInfo",
+               "point_in_screen", point_in_screen.ToString());
+
   // Update the DockInfo for the current mouse coordinates.
   DockInfo dock_info = GetDockInfoAtPoint(point_in_screen);
   if (!dock_info.equals(dock_info_)) {
@@ -806,8 +819,14 @@ void TabDragController::SaveFocus() {
 }
 
 void TabDragController::RestoreFocus() {
-  if (attached_tabstrip_ != source_tabstrip_)
+  if (attached_tabstrip_ != source_tabstrip_) {
+    if (is_dragging_new_browser_) {
+      content::WebContents* active_contents = source_dragged_contents();
+      if (active_contents && !active_contents->FocusLocationBarByDefault())
+        active_contents->GetView()->Focus();
+    }
     return;
+  }
   views::View* old_focused_view =
       views::ViewStorage::GetInstance()->RetrieveView(
       old_focused_view_id_);
@@ -827,6 +846,9 @@ bool TabDragController::CanStartDrag(const gfx::Point& point_in_screen) const {
 }
 
 void TabDragController::ContinueDragging(const gfx::Point& point_in_screen) {
+  TRACE_EVENT1("views", "TabDragController::ContinueDragging",
+               "point_in_screen", point_in_screen.ToString());
+
   DCHECK(!detach_into_browser_ || attached_tabstrip_);
 
   TabStrip* target_tabstrip = detach_behavior_ == DETACHABLE ?
@@ -886,6 +908,9 @@ TabDragController::DragBrowserResultType
 TabDragController::DragBrowserToNewTabStrip(
     TabStrip* target_tabstrip,
     const gfx::Point& point_in_screen) {
+  TRACE_EVENT1("views", "TabDragController::DragBrowserToNewTabStrip",
+               "point_in_screen", point_in_screen.ToString());
+
   if (!target_tabstrip) {
     DetachIntoNewBrowserAndRunMoveLoop(point_in_screen);
     return DRAG_BROWSER_RESULT_STOP;
@@ -1159,6 +1184,9 @@ DockInfo TabDragController::GetDockInfoAtPoint(
 
 TabStrip* TabDragController::GetTargetTabStripForPoint(
     const gfx::Point& point_in_screen) {
+  TRACE_EVENT1("views", "TabDragController::GetTargetTabStripForPoint",
+               "point_in_screen", point_in_screen.ToString());
+
   if (move_only() && attached_tabstrip_) {
     DCHECK_EQ(DETACHABLE, detach_behavior_);
     // move_only() is intended for touch, in which case we only want to detach
@@ -1224,6 +1252,9 @@ bool TabDragController::DoesTabStripContain(
 
 void TabDragController::Attach(TabStrip* attached_tabstrip,
                                const gfx::Point& point_in_screen) {
+  TRACE_EVENT1("views", "TabDragController::Attach",
+               "point_in_screen", point_in_screen.ToString());
+
   DCHECK(!attached_tabstrip_);  // We should already have detached by the time
                                 // we get here.
 
@@ -1325,6 +1356,9 @@ void TabDragController::Attach(TabStrip* attached_tabstrip,
 }
 
 void TabDragController::Detach(ReleaseCapture release_capture) {
+  TRACE_EVENT1("views", "TabDragController::Detach",
+               "release_capture", release_capture);
+
   attach_index_ = -1;
 
   // When the user detaches we assume they want to reorder.
@@ -1543,6 +1577,9 @@ void TabDragController::RunMoveLoop(const gfx::Vector2d& drag_offset) {
       // Move the tabs into position.
       MoveAttached(point_in_screen);
       attached_tabstrip_->GetWidget()->Activate();
+      // Activate may trigger a focus loss, destroying us.
+      if (!ref)
+        return;
       tab_strip_to_attach_to_after_exit_ = NULL;
     }
     DCHECK(attached_tabstrip_);
@@ -1775,6 +1812,7 @@ void TabDragController::EndDragImpl(EndDragType type) {
         CompleteDrag();
     }
   } else if (drag_data_.size() > 1) {
+    initial_selection_model_.Clear();
     RevertDrag();
   }  // else case the only tab we were dragging was deleted. Nothing to do.
 

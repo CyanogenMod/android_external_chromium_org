@@ -58,10 +58,20 @@ MediaStreamDevice::MediaStreamDevice(
 
 MediaStreamDevice::~MediaStreamDevice() {}
 
+bool MediaStreamDevice::IsEqual(const MediaStreamDevice& second) const {
+  const AudioDeviceParameters& input_second = second.input;
+  return type == second.type &&
+      name == second.name &&
+      id == second.id &&
+      input.sample_rate == input_second.sample_rate &&
+      input.channel_layout == input_second.channel_layout;
+}
+
 MediaStreamRequest::MediaStreamRequest(
     int render_process_id,
     int render_view_id,
     int page_request_id,
+    const std::string& tab_capture_device_id,
     const GURL& security_origin,
     MediaStreamRequestType request_type,
     const std::string& requested_audio_device_id,
@@ -71,6 +81,7 @@ MediaStreamRequest::MediaStreamRequest(
     : render_process_id(render_process_id),
       render_view_id(render_view_id),
       page_request_id(page_request_id),
+      tab_capture_device_id(tab_capture_device_id),
       security_origin(security_origin),
       request_type(request_type),
       requested_audio_device_id(requested_audio_device_id),

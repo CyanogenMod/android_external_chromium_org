@@ -12,8 +12,8 @@
 #include "chrome/browser/policy/cloud/cloud_policy_service.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_store.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "components/policy/core/common/policy_pref_names.h"
+#include "components/policy/core/common/policy_types.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace em = enterprise_management;
@@ -21,22 +21,28 @@ namespace em = enterprise_management;
 namespace policy {
 
 UserCloudPolicyManager::UserCloudPolicyManager(
-    Profile* profile,
+    content::BrowserContext* context,
     scoped_ptr<UserCloudPolicyStore> store,
+    const base::FilePath& component_policy_cache_path,
     scoped_ptr<CloudExternalDataManager> external_data_manager,
-    const scoped_refptr<base::SequencedTaskRunner>& task_runner)
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner)
     : CloudPolicyManager(
           PolicyNamespaceKey(GetChromeUserPolicyType(), std::string()),
           store.get(),
-          task_runner),
-      profile_(profile),
+          task_runner,
+          file_task_runner,
+          io_task_runner),
+      context_(context),
       store_(store.Pass()),
+      component_policy_cache_path_(component_policy_cache_path),
       external_data_manager_(external_data_manager.Pass()) {
-  UserCloudPolicyManagerFactory::GetInstance()->Register(profile_, this);
+  UserCloudPolicyManagerFactory::GetInstance()->Register(context_, this);
 }
 
 UserCloudPolicyManager::~UserCloudPolicyManager() {
-  UserCloudPolicyManagerFactory::GetInstance()->Unregister(profile_, this);
+  UserCloudPolicyManagerFactory::GetInstance()->Unregister(context_, this);
 }
 
 void UserCloudPolicyManager::Shutdown() {
@@ -44,6 +50,10 @@ void UserCloudPolicyManager::Shutdown() {
     external_data_manager_->Disconnect();
   CloudPolicyManager::Shutdown();
   BrowserContextKeyedService::Shutdown();
+}
+
+void UserCloudPolicyManager::SetSigninUsername(const std::string& username) {
+  store_->SetSigninUsername(username);
 }
 
 void UserCloudPolicyManager::Connect(
@@ -56,6 +66,8 @@ void UserCloudPolicyManager::Connect(
                                 policy_prefs::kUserPolicyRefreshRate);
   if (external_data_manager_)
     external_data_manager_->Connect(request_context);
+  CreateComponentCloudPolicyService(component_policy_cache_path_,
+                                    request_context);
 }
 
 // static

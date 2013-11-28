@@ -31,7 +31,7 @@ class TestBrowserPluginGuest : public BrowserPluginGuest {
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void OnHandleInputEvent(int instance_id,
                                   const gfx::Rect& guest_window_rect,
-                                  const WebKit::WebInputEvent* event) OVERRIDE;
+                                  const blink::WebInputEvent* event) OVERRIDE;
   virtual void OnSetFocus(int instance_id, bool focused) OVERRIDE;
   virtual void OnTakeFocus(bool reverse) OVERRIDE;
   virtual void SetDamageBuffer(
@@ -64,6 +64,10 @@ class TestBrowserPluginGuest : public BrowserPluginGuest {
   void WaitForLoadStop();
   // Waits until UpdateRect with a particular |view_size| is observed.
   void WaitForViewSize(const gfx::Size& view_size);
+
+  void set_guest_hang_timeout(const base::TimeDelta& timeout) {
+    guest_hang_timeout_ = timeout;
+  }
 
  private:
   // Overridden methods from BrowserPluginGuest to intercept in test objects.

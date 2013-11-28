@@ -28,7 +28,6 @@
     'conditions': [
       ['OS!="ios"', {
         'chromium_browser_dependencies': [
-          '../printing/printing.gyp:printing',
           '../ppapi/ppapi_internal.gyp:ppapi_host',
         ],
         'chromium_child_dependencies': [
@@ -40,6 +39,11 @@
           '../content/content.gyp:content_ppapi_plugin',
           '../content/content.gyp:content_worker',
           '../third_party/WebKit/Source/devtools/devtools.gyp:devtools_frontend_resources',
+        ],
+      }],
+      ['enable_printing!=0', {
+        'chromium_browser_dependencies': [
+          '../printing/printing.gyp:printing',
         ],
       }],
       ['OS=="win"', {
@@ -105,7 +109,6 @@
     'chrome_browser_ui.gypi',
     'chrome_common.gypi',
     'chrome_installer_util.gypi',
-    'chrome_tests_unit.gypi',
     'version.gypi',
     '../components/nacl/nacl_defines.gypi',
   ],
@@ -119,7 +122,7 @@
         'chrome_installer.gypi',
         'chrome_renderer.gypi',
         'chrome_tests.gypi',
-        'nacl.gypi',
+        'chrome_tests_unit.gypi',
         '../apps/apps.gypi',
       ],
       'targets': [
@@ -189,6 +192,8 @@
             'browser/devtools/devtools_protocol.h',
             'browser/devtools/devtools_target_impl.cc',
             'browser/devtools/devtools_target_impl.h',
+            'browser/devtools/devtools_targets_ui.cc',
+            'browser/devtools/devtools_targets_ui.h',
             'browser/devtools/devtools_toggle_action.cc',
             'browser/devtools/devtools_toggle_action.h',
             'browser/devtools/devtools_window.cc',
@@ -263,6 +268,10 @@
           'sources': [
             'utility/chrome_content_utility_client.cc',
             'utility/chrome_content_utility_client.h',
+            'utility/cloud_print/bitmap_image.cc',
+            'utility/cloud_print/bitmap_image.h',
+            'utility/cloud_print/pwg_encoder.cc',
+            'utility/cloud_print/pwg_encoder.h',
             'utility/extensions/unpacker.cc',
             'utility/extensions/unpacker.h',
             'utility/importer/bookmark_html_reader.cc',
@@ -364,8 +373,11 @@
         },
       ],
     }],  # OS!="ios"
-    ['OS=="mac"',
-      { 'targets': [
+    ['OS=="mac"', {
+      'includes': [
+        '../apps/app_shim/app_shim.gypi',
+      ],
+      'targets': [
         {
           'target_name': 'helper_app',
           'type': 'executable',
@@ -687,7 +699,6 @@
           'dependencies': [
             'chrome_resources.gyp:chrome_strings',
             '../base/base.gyp:base',
-            '../ui/events/events.gyp:events',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/ui.gyp:ui',
           ],
@@ -700,21 +711,6 @@
         },
       ],  # targets
     }],  # OS=="mac"
-    ['OS!="mac" and OS!="ios"', {
-      'targets': [
-        {
-          'target_name': 'flush_cache',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/base.gyp:test_support_base',
-          ],
-          'sources': [
-            'tools/perf/flush_cache/flush_cache.cc',
-          ],
-        },
-      ],
-    }],  # OS!="mac" and OS!="ios"
     ['OS=="linux"',
       { 'targets': [
         {
@@ -1012,9 +1008,10 @@
             '../components/components.gyp:sessions',
             '../components/components.gyp:web_contents_delegate_android_java',
             '../content/content.gyp:content_java',
+            '../printing/printing.gyp:printing_java',
             '../sync/sync.gyp:sync_java',
             '../third_party/guava/guava.gyp:guava_javalib',
-            '../ui/ui.gyp:ui_java',
+            '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {
             'java_in_dir': '../chrome/android/java',
@@ -1072,8 +1069,8 @@
             'service/cloud_print/cloud_print_auth.h',
             'service/cloud_print/cloud_print_connector.cc',
             'service/cloud_print/cloud_print_connector.h',
-            'service/cloud_print/cloud_print_helpers.cc',
-            'service/cloud_print/cloud_print_helpers.h',
+            'service/cloud_print/cloud_print_service_helpers.cc',
+            'service/cloud_print/cloud_print_service_helpers.h',
             'service/cloud_print/cloud_print_proxy.cc',
             'service/cloud_print/cloud_print_proxy.h',
             'service/cloud_print/cloud_print_proxy_backend.cc',
@@ -1088,7 +1085,6 @@
             'service/cloud_print/connector_settings.h',
             'service/cloud_print/job_status_updater.cc',
             'service/cloud_print/job_status_updater.h',
-            'service/cloud_print/print_system_dummy.cc',
             'service/cloud_print/print_system.cc',
             'service/cloud_print/print_system.h',
             'service/cloud_print/printer_job_handler.cc',
@@ -1103,13 +1099,10 @@
           ],
           'conditions': [
             ['OS=="win"', {
-              'defines': [
-                # CP_PRINT_SYSTEM_AVAILABLE disables default dummy implementation
-                # of cloud print system, and allows to use custom implementaiton.
-                'CP_PRINT_SYSTEM_AVAILABLE',
-              ],
               'sources': [
                 'service/cloud_print/print_system_win.cc',
+                'service/cloud_print/print_system_win.h',
+                'service/cloud_print/print_system_xps_win.cc',
               ],
             }],
             ['toolkit_uses_gtk == 1', {
@@ -1121,13 +1114,13 @@
               'dependencies': [
                 '../printing/printing.gyp:cups',
               ],
-              'defines': [
-                # CP_PRINT_SYSTEM_AVAILABLE disables default dummy implementation
-                # of cloud print system, and allows to use custom implementaiton.
-                'CP_PRINT_SYSTEM_AVAILABLE',
-              ],
               'sources': [
                 'service/cloud_print/print_system_cups.cc',
+              ],
+            }],
+            ['OS!="win" and use_cups!=1', {
+              'sources': [
+                'service/cloud_print/print_system_dummy.cc',
               ],
             }],
           ],

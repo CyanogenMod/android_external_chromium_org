@@ -98,7 +98,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::SiteInstance* site_instance) OVERRIDE;
   virtual void SiteInstanceDeleting(content::SiteInstance* site_instance)
       OVERRIDE;
-  virtual bool ShouldSwapProcessesForNavigation(
+  virtual bool ShouldSwapBrowsingInstancesForNavigation(
       content::SiteInstance* site_instance,
       const GURL& current_url,
       const GURL& new_url) OVERRIDE;
@@ -182,7 +182,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       int callback_context,
       int render_process_id,
       int render_view_id) OVERRIDE;
-  virtual WebKit::WebNotificationPresenter::Permission
+  virtual blink::WebNotificationPresenter::Permission
       CheckDesktopNotificationPermission(
           const GURL& source_origin,
           content::ResourceContext* context,
@@ -203,7 +203,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                                const GURL& target_url,
                                const content::Referrer& referrer,
                                WindowOpenDisposition disposition,
-                               const WebKit::WebWindowFeatures& features,
+                               const blink::WebWindowFeatures& features,
                                bool user_gesture,
                                bool opener_suppressed,
                                content::ResourceContext* context,

@@ -14,9 +14,9 @@
 #include "ash/display/display_controller.h"
 #include "ash/launcher/launcher_delegate.h"
 #include "ash/launcher/launcher_item_delegate.h"
-#include "ash/launcher/launcher_model_observer.h"
 #include "ash/launcher/launcher_types.h"
 #include "ash/shelf/shelf_layout_manager_observer.h"
+#include "ash/shelf/shelf_model_observer.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shell_observer.h"
 #include "base/basictypes.h"
@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_types.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/aura/window_observer.h"
 
 class AppSyncUIState;
@@ -47,7 +48,7 @@ class TabContents;
 
 namespace ash {
 class LauncherItemDelegateManager;
-class LauncherModel;
+class ShelfModel;
 }
 
 namespace aura {
@@ -55,7 +56,6 @@ class Window;
 }
 
 namespace content {
-class NotificationRegistrar;
 class WebContents;
 }
 
@@ -87,7 +87,7 @@ class ChromeLauncherControllerUserSwitchObserver {
 //   ShellWindowLauncherController.
 // * Shortcuts have no LauncherItemController.
 class ChromeLauncherController : public ash::LauncherDelegate,
-                                 public ash::LauncherModelObserver,
+                                 public ash::ShelfModelObserver,
                                  public ash::ShellObserver,
                                  public ash::DisplayController::Observer,
                                  public content::NotificationObserver,
@@ -130,7 +130,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
     virtual void SetCurrentUser(Profile* profile) = 0;
   };
 
-  ChromeLauncherController(Profile* profile, ash::LauncherModel* model);
+  ChromeLauncherController(Profile* profile, ash::ShelfModel* model);
   virtual ~ChromeLauncherController();
 
   // Initializes this ChromeLauncherController.
@@ -138,7 +138,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // Creates an instance.
   static ChromeLauncherController* CreateInstance(Profile* profile,
-                                                  ash::LauncherModel* model);
+                                                  ash::ShelfModel* model);
 
   // Returns the single ChromeLauncherController instance.
   static ChromeLauncherController* instance() { return instance_; }
@@ -244,7 +244,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // id of the app.
   void PersistPinnedState();
 
-  ash::LauncherModel* model();
+  ash::ShelfModel* model();
 
   // Accessor to the currently loaded profile. Note that in multi profile use
   // cases this might change over time.
@@ -270,6 +270,10 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // have changed,
   void UpdateAppState(content::WebContents* contents, AppState app_state);
 
+  // Returns LauncherID for |contents|. If |contents| is not an app or is not
+  // pinned, returns the id of browser shrotcut.
+  ash::LauncherID GetLauncherIDForWebContents(content::WebContents* contents);
+
   // Limits application refocusing to urls that match |url| for |id|.
   void SetRefocusURLPatternForTest(ash::LauncherID id, const GURL& url);
 
@@ -283,7 +287,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
                                         bool allow_minimize);
 
   // ash::LauncherDelegate overrides:
-  virtual ash::LauncherID GetIDByWindow(aura::Window* window) OVERRIDE;
   virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
   virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
   virtual ash::LauncherID GetLauncherIDForAppID(
@@ -294,13 +297,13 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   virtual bool CanPin() const OVERRIDE;
   virtual void UnpinAppWithID(const std::string& app_id) OVERRIDE;
 
-  // ash::LauncherModelObserver overrides:
-  virtual void LauncherItemAdded(int index) OVERRIDE;
-  virtual void LauncherItemRemoved(int index, ash::LauncherID id) OVERRIDE;
-  virtual void LauncherItemMoved(int start_index, int target_index) OVERRIDE;
-  virtual void LauncherItemChanged(int index,
-                                   const ash::LauncherItem& old_item) OVERRIDE;
-  virtual void LauncherStatusChanged() OVERRIDE;
+  // ash::ShelfModelObserver overrides:
+  virtual void ShelfItemAdded(int index) OVERRIDE;
+  virtual void ShelfItemRemoved(int index, ash::LauncherID id) OVERRIDE;
+  virtual void ShelfItemMoved(int start_index, int target_index) OVERRIDE;
+  virtual void ShelfItemChanged(int index,
+                                const ash::LauncherItem& old_item) OVERRIDE;
+  virtual void ShelfStatusChanged() OVERRIDE;
 
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
@@ -384,6 +387,11 @@ class ChromeLauncherController : public ash::LauncherDelegate,
     return browser_status_monitor_.get();
   }
 
+  // Access to the ShellWindowController for tests.
+  ShellWindowLauncherController* shell_window_controller_for_test() {
+    return shell_window_controller_.get();
+  }
+
  protected:
   // Creates a new app shortcut item and controller on the launcher at |index|.
   // Use kInsertItemAtEnd to add a shortcut as the last item.
@@ -460,7 +468,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // Creates an app launcher to insert at |index|. Note that |index| may be
   // adjusted by the model to meet ordering constraints.
-  // The |launcher_item_type| will be set into the LauncherModel.
+  // The |launcher_item_type| will be set into the ShelfModel.
   ash::LauncherID InsertAppLauncherItem(
       LauncherItemController* controller,
       const std::string& app_id,
@@ -523,12 +531,14 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // Forget the current profile to allow attaching to a new one.
   void ReleaseProfile();
 
-  // Update the state of all V1 shortcut launcher items after a user switch.
-  void UpdateV1AppStatesAfterUserSwitch();
+  // Returns true if |app_id| is a Packaged App that has already launched on the
+  // native desktop and, if so, executes it as a desktop shortcut to activate
+  // desktop mode and send another OnLaunched event to the Extension.
+  bool LaunchedInNativeDesktop(const std::string& app_id);
 
   static ChromeLauncherController* instance_;
 
-  ash::LauncherModel* model_;
+  ash::ShelfModel* model_;
 
   ash::LauncherItemDelegateManager* item_delegate_manager_;
 

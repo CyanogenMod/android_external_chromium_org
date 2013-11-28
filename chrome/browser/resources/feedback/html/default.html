@@ -14,7 +14,7 @@
 <script src="../js/feedback.js"></script>
 </head>
 <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
-  <div class="title-bar">
+  <div id="title-bar" class="title-bar">
     <span id="page-title" i18n-content="page-title"></span>
     <span class="topbutton-bar">
       <button class="minimize-button" id="minimize-button" tabindex="-1">
@@ -23,7 +23,7 @@
       </button>
     </span>
   </div>
-  <div class="content">
+  <div id="content-pane" class="content">
     <textarea id="description-text"></textarea>
     <div id="page-url" class="text-field-container">
       <label id="page-url-label" i18n-content="page-url"></label>
@@ -56,8 +56,7 @@
     <!-- System Information -->
     <div class="checkbox-field-container">
       <input id="sys-info-checkbox" type="checkbox" checked>
-      <span id="sysinfo-label">
-        <a id="sysinfo-url" href="#" i18n-content="sysinfo"></a>
+      <label id="sys-info-label" i18n-values=".innerHTML:sys-info"></label>
       </span>
     </div>
     <!-- Performance Feedback -->

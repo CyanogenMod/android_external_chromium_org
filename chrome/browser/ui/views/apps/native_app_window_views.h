@@ -12,12 +12,20 @@
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/rect.h"
+#include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/shell_integration.h"
+#endif
+
+#if defined(USE_ASH)
+namespace ash {
+class ImmersiveFullscreenController;
+}
 #endif
 
 class ExtensionKeybindingRegistryViews;
@@ -36,18 +44,39 @@ namespace extensions {
 class Extension;
 }
 
+namespace ui {
+class MenuModel;
+}
+
 namespace views {
+class MenuRunner;
 class WebView;
 }
 
 class NativeAppWindowViews : public apps::NativeAppWindow,
+                             public content::WebContentsObserver,
+                             public views::ContextMenuController,
                              public views::WidgetDelegateView,
-                             public views::WidgetObserver,
-                             public content::WebContentsObserver {
+                             public views::WidgetObserver {
  public:
   NativeAppWindowViews(apps::ShellWindow* shell_window,
                        const apps::ShellWindow::CreateParams& params);
   virtual ~NativeAppWindowViews();
+
+ protected:
+  // Called before views::Widget::Init() to allow subclasses to customize
+  // the InitParams that would be passed.
+  virtual void OnBeforeWidgetInit(views::Widget::InitParams* init_params,
+                                  views::Widget* widget);
+
+  // ui::BaseWindow implementation that subclasses may override.
+  virtual void Show() OVERRIDE;
+  virtual void Activate() OVERRIDE;
+
+  Profile* profile() { return shell_window_->profile(); }
+  const extensions::Extension* extension() {
+    return shell_window_->extension();
+  }
 
  private:
   void InitializeDefaultWindow(
@@ -76,11 +105,9 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
   virtual ui::WindowShowState GetRestoredState() const OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
-  virtual void Show() OVERRIDE;
   virtual void ShowInactive() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void Activate() OVERRIDE;
   virtual void Deactivate() OVERRIDE;
   virtual void Maximize() OVERRIDE;
   virtual void Minimize() OVERRIDE;
@@ -89,6 +116,11 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+
+  // Overridden from views::ContextMenuController:
+  virtual void ShowContextMenuForView(views::View* source,
+                                      const gfx::Point& p,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   // WidgetDelegate implementation.
   virtual void OnWidgetMove() OVERRIDE;
@@ -138,7 +170,7 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
   // NativeAppWindow implementation.
-  virtual void SetFullscreen(bool fullscreen) OVERRIDE;
+  virtual void SetFullscreen(int fullscreen_types) OVERRIDE;
   virtual bool IsFullscreenOrPending() const OVERRIDE;
   virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
@@ -146,7 +178,7 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual void UpdateDraggableRegions(
       const std::vector<extensions::DraggableRegion>& regions) OVERRIDE;
   virtual SkRegion* GetDraggableRegion() OVERRIDE;
-  virtual void UpdateInputRegion(scoped_ptr<SkRegion> region) OVERRIDE;
+  virtual void UpdateShape(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool IsFrameless() const OVERRIDE;
@@ -164,12 +196,8 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual void RemoveObserver(
       web_modal::ModalDialogHostObserver* observer) OVERRIDE;
 
-  Profile* profile() { return shell_window_->profile(); }
   content::WebContents* web_contents() {
     return shell_window_->web_contents();
-  }
-  const extensions::Extension* extension() {
-    return shell_window_->extension();
   }
 
   apps::ShellWindow* shell_window_; // weak - ShellWindow owns NativeAppWindow.
@@ -177,9 +205,9 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   views::Widget* window_;
   bool is_fullscreen_;
 
-  // The region of the window that accepts input events.
-  // If this is not set, then the entire window accepts input events.
-  scoped_ptr<SkRegion> input_region_;
+  // Custom shape of the window. If this is not set then the window has a
+  // default shape, usually rectangular.
+  scoped_ptr<SkRegion> shape_;
 
   scoped_ptr<SkRegion> draggable_region_;
 
@@ -193,9 +221,21 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
 
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
-  base::WeakPtrFactory<NativeAppWindowViews> weak_ptr_factory_;
+#if defined(USE_ASH)
+  // Used to put non-frameless windows into immersive fullscreen on ChromeOS. In
+  // immersive fullscreen, the window header (title bar and window controls)
+  // slides onscreen as an overlay when the mouse is hovered at the top of the
+  // screen.
+  scoped_ptr<ash::ImmersiveFullscreenController>
+      immersive_fullscreen_controller_;
+#endif
 
   ObserverList<web_modal::ModalDialogHostObserver> observer_list_;
+
+  base::WeakPtrFactory<NativeAppWindowViews> weak_ptr_factory_;
+
+  // Used to show the system menu.
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeAppWindowViews);
 };

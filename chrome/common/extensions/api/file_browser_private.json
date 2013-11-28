@@ -111,6 +111,11 @@
         "type": "object",
         "description": "Mounted disk volume metadata.",
         "properties": {
+          "volumeId": {
+            "type": "string",
+            "description": "ID of the disk volume."
+          },
+          // TODO(satorux): Remove "mountPath". crbug.com/316077
           "mountPath": {
             "type": "string",
             "description": "Disk volume mount point path."
@@ -272,9 +277,9 @@
     ],
     "functions": [
       {
-        "name": "logoutUser",
+        "name": "logoutUserForReauthentication",
         "type": "function",
-        "description": "Logout the current user.",
+        "description": "Logout the current user for navigating to the re-authentication screen for the Google account.",
         "parameters": []
       },
       {
@@ -439,12 +444,12 @@
       },
       {
         "name": "requestFileSystem",
-        "description": "Requests access to the file system specially set up for Files.app. The filesystem has multiple mount points which provide access to the user's Downloadsfolder, removal media like SD cards, and Drive. See comments at CrosDiskMountPorivder for details.",
+        "description": "Requests access to a file system volume.",
         "parameters": [
           {
-            "name": "fileSystemId",
+            "name": "volumeId",
             "type": "string",
-            "description": "The ID of the file system to request. The file system ID is delivered to JavaScript as part of VolumeMetadata (This is not yet implemented). By specifying \"compatible\", this function behaves in the compatible mode, where the returned FileSystem object gives access to all file systems (i.e. all file systems are provided inside the single FileSystem object). In the new \"multi FileSystem object model\", a separate FileSystem object is created for each file system. \"compatible\" parameter will be removed once Files.app is switched to the multi FileSystem object model. crbug.com/284963"
+            "description": "The ID of the file system volume to request. The volume ID is delivered to JavaScript as part of VolumeMetadata. By specifying \"compatible\", this function behaves in the compatible mode, where the returned FileSystem object gives access to all file system volumes such as Downloads folder and removal media like SD cards (i.e. all volumes are provided inside the single FileSystem object). In the new \"per-volume FileSystem object model\" crbug.com/322305, a separate FileSystem object is created for each volume. \"compatible\" parameter will be removed once Files.app is switched to the per-volume FileSystem object model."
           },
           {
             "name": "callback",
@@ -735,13 +740,13 @@
         ]
       },
       {
-        "name": "formatDevice",
-        "description": "Formats a mounted device",
+        "name": "formatVolume",
+        "description": "Formats a mounted volume",
         "parameters": [
           {
-            "name": "mountPath",
+            "name": "volumeId",
             "type": "string",
-            "description": "Device's mount path."
+            "description": "ID of the volume to be formatted."
           }
         ]
       },
@@ -875,11 +880,6 @@
             ]
           }
         ]
-      },
-      {
-        "name": "clearDriveCache",
-        "description": "Clear all Drive local caches including locally cached user files and filesystem metadata. The file system metadata will be reloaded from the server immediately.",
-        "parameters": []
       },
       {
         "name": "zipSelection",

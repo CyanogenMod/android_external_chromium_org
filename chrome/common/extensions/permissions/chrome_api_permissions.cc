@@ -81,6 +81,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kNotification, "notifications" },
     { APIPermission::kUnlimitedStorage, "unlimitedStorage",
       APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kGcm, "gcm" },
 
     // Register extension permissions.
     { APIPermission::kActiveTab, "activeTab" },
@@ -163,6 +164,10 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional },
 
     // Register private permissions.
+    { APIPermission::kScreenlockPrivate, "screenlockPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional,
+      IDS_EXTENSION_PROMPT_WARNING_SCREENLOCK_PRIVATE,
+      PermissionMessage::kScreenlockPrivate },
     { APIPermission::kActivityLogPrivate, "activityLogPrivate",
       APIPermissionInfo::kFlagCannotBeOptional,
       IDS_EXTENSION_PROMPT_WARNING_ACTIVITY_LOG_PRIVATE,
@@ -302,6 +307,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_DIRECTORY,
       PermissionMessage::kFileSystemDirectory },
+    { APIPermission::kFileSystemProvider, "fileSystemProvider" },
     { APIPermission::kFileSystemRetainEntries, "fileSystem.retainEntries" },
     { APIPermission::kFileSystemWrite, "fileSystem.write",
       APIPermissionInfo::kFlagNone,
@@ -341,12 +347,31 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       PermissionMessage::kSystemIndicator },
     { APIPermission::kSystemCpu, "system.cpu" },
     { APIPermission::kSystemMemory, "system.memory" },
+    { APIPermission::kSystemNetwork, "system.network" },
     { APIPermission::kSystemDisplay, "system.display" },
     { APIPermission::kSystemStorage, "system.storage" },
     { APIPermission::kPointerLock, "pointerLock" },
     { APIPermission::kFullscreen, "fullscreen" },
     { APIPermission::kAudio, "audio" },
     { APIPermission::kWebRtc, "webrtc" },
+    { APIPermission::kOverrideEscFullscreen, "overrideEscFullscreen" },
+
+    // Settings override permissions.
+    { APIPermission::kHomepage, "homepage",
+      APIPermissionInfo::kFlagCannotBeOptional |
+      APIPermissionInfo::kFlagInternal,
+      IDS_EXTENSION_PROMPT_WARNING_HOME_PAGE_SETTING_OVERRIDE,
+      PermissionMessage::kHomepage },
+    { APIPermission::kSearchProvider, "searchProvider",
+      APIPermissionInfo::kFlagCannotBeOptional |
+      APIPermissionInfo::kFlagInternal,
+      IDS_EXTENSION_PROMPT_WARNING_SEARCH_SETTINGS_OVERRIDE,
+      PermissionMessage::kSearchProvider },
+    { APIPermission::kStartupPages, "startupPages",
+      APIPermissionInfo::kFlagCannotBeOptional |
+      APIPermissionInfo::kFlagInternal,
+      IDS_EXTENSION_PROMPT_WARNING_START_PAGE_SETTING_OVERRIDE,
+      PermissionMessage::kStartupPages },
   };
 
   std::vector<APIPermissionInfo*> permissions;

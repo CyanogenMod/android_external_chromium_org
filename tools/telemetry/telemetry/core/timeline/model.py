@@ -8,8 +8,11 @@ https://code.google.com/p/trace-viewer/
 '''
 
 from operator import attrgetter
+import weakref
 
 import telemetry.core.timeline.process as tracing_process
+from telemetry.core import web_contents
+from telemetry.core import browser
 
 # Register importers for data
 from telemetry.core.timeline import inspector_importer
@@ -41,6 +44,10 @@ class TimelineModel(object):
     self._frozen = False
     self.import_errors = []
     self.metadata = []
+    # Use a WeakKeyDictionary, because an ordinary dictionary could keep
+    # references to Tab objects around until it gets garbage collected.
+    # This would prevent telemetry from navigating to another page.
+    self._core_object_to_timeline_container_map = weakref.WeakKeyDictionary()
 
     if event_data is not None:
       self.ImportTraces([event_data], shift_world_to_zero=shift_world_to_zero)
@@ -136,30 +143,33 @@ class TimelineModel(object):
       self._processes[pid] = tracing_process.Process(self, pid)
     return self._processes[pid]
 
-  def FindTimelineMarkers(self, timeline_marker_labels):
+  def FindTimelineMarkers(self, timeline_marker_names):
     """Find the timeline events with the given names.
 
-    If the number and order of events found does not match the labels,
+    If the number and order of events found does not match the names,
     raise an error.
     """
-    # Make sure labels are in a list and remove all None labels
-    if not isinstance(timeline_marker_labels, list):
-      timeline_marker_labels = [timeline_marker_labels]
-    labels = [x for x in timeline_marker_labels if x is not None]
+    # Make sure names are in a list and remove all None names
+    if not isinstance(timeline_marker_names, list):
+      timeline_marker_names = [timeline_marker_names]
+    names = [x for x in timeline_marker_names if x is not None]
 
-    # Gather all events that match the labels and sort them.
+    # Gather all events that match the names and sort them.
     events = []
-    for label in labels:
-      events.extend([s for s in self.GetAllEventsOfName(label)
+    name_set = set()
+    for name in names:
+      name_set.add(name)
+    for name in name_set:
+      events.extend([s for s in self.GetAllEventsOfName(name)
                      if s.parent_slice == None])
     events.sort(key=attrgetter('start'))
 
-    # Check if the number and order of events matches the provided labels,
+    # Check if the number and order of events matches the provided names,
     # and that the events don't overlap.
-    if len(events) != len(labels):
+    if len(events) != len(names):
       raise MarkerMismatchError()
     for (i, event) in enumerate(events):
-      if event.name != labels[i]:
+      if event.name != names[i]:
         raise MarkerMismatchError()
     for i in xrange(0, len(events)):
       for j in xrange(i+1, len(events)):
@@ -167,6 +177,18 @@ class TimelineModel(object):
           raise MarkerOverlapError()
 
     return events
+
+  def GetRendererProcessFromTab(self, tab):
+    return self._core_object_to_timeline_container_map[tab]
+
+  def AddCoreObjectToContainerMapping(self, core_object, container):
+    """ Add a mapping from a core object to a timeline container.
+
+    Used for example to map a Tab to its renderer process in the timeline model.
+    """
+    assert(isinstance(core_object, web_contents.WebContents) or
+           isinstance(core_object, browser.Browser))
+    self._core_object_to_timeline_container_map[core_object] = container
 
   def _CreateImporter(self, event_data):
     for importer_class in _IMPORTERS:

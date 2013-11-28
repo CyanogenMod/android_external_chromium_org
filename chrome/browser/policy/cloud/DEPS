@@ -37,6 +37,10 @@ specific_include_rules = {
     "+sync/internal_api/public/base/invalidation.h",
   ],
 
+  r"cloud_policy_invalidator.h": [
+    "+sync/internal_api/public/base/invalidation.h",
+  ],
+
   # TODO(joaodasilva): remove these exceptions.
   r"cloud_policy_invalidator\.cc": [
     "+chrome/browser/invalidation/invalidation_service.h",
@@ -69,20 +73,6 @@ specific_include_rules = {
   ],
 
   r"user_cloud_policy_manager_factory\.cc": [
-    "+chrome/browser/profiles/profile.h",
-  ],
-
-  r"user_cloud_policy_store\.cc": [
-    "+chrome/browser/profiles/profile.h",
-    "+chrome/browser/signin/signin_manager.h",
-    "+chrome/browser/signin/signin_manager_factory.h",
-  ],
-
-  r"user_cloud_policy_store_unittest\.cc": [
-    "+chrome/browser/signin/fake_signin_manager.h",
-    "+chrome/browser/signin/signin_manager.h",
-    "+chrome/browser/signin/signin_manager_factory.h",
-    "+chrome/common/pref_names.h",
-    "+chrome/test/base/testing_profile.h",
+    "+content/public/browser/browser_context.h",
   ],
 }

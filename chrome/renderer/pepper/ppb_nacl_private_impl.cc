@@ -29,11 +29,13 @@
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
+#include "third_party/WebKit/public/web/WebDOMResourceProgressEvent.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
+#include "v8/include/v8.h"
 
 namespace {
 
@@ -79,15 +81,15 @@ static int GetRoutingID(PP_Instance instance) {
 
 // Launch NaCl's sel_ldr process.
 PP_ExternalPluginResult LaunchSelLdr(PP_Instance instance,
-                           const char* alleged_url,
-                           PP_Bool uses_irt,
-                           PP_Bool uses_ppapi,
-                           PP_Bool enable_ppapi_dev,
-                           PP_Bool enable_dyncode_syscalls,
-                           PP_Bool enable_exception_handling,
-                           PP_Bool enable_crash_throttling,
-                           void* imc_handle,
-                           struct PP_Var* error_message) {
+                                     const char* alleged_url,
+                                     PP_Bool uses_irt,
+                                     PP_Bool uses_ppapi,
+                                     PP_Bool enable_ppapi_dev,
+                                     PP_Bool enable_dyncode_syscalls,
+                                     PP_Bool enable_exception_handling,
+                                     PP_Bool enable_crash_throttling,
+                                     void* imc_handle,
+                                     struct PP_Var* error_message) {
   nacl::FileDescriptor result_socket;
   IPC::Sender* sender = content::RenderThread::Get();
   DCHECK(sender);
@@ -336,6 +338,83 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
   return handle;
 }
 
+blink::WebString EventTypeToString(PP_NaClEventType event_type) {
+  switch (event_type) {
+    case PP_NACL_EVENT_LOADSTART:
+      return blink::WebString::fromUTF8("loadstart");
+    case PP_NACL_EVENT_PROGRESS:
+      return blink::WebString::fromUTF8("progress");
+    case PP_NACL_EVENT_ERROR:
+      return blink::WebString::fromUTF8("error");
+    case PP_NACL_EVENT_ABORT:
+      return blink::WebString::fromUTF8("abort");
+    case PP_NACL_EVENT_LOAD:
+      return blink::WebString::fromUTF8("load");
+    case PP_NACL_EVENT_LOADEND:
+      return blink::WebString::fromUTF8("loadend");
+    case PP_NACL_EVENT_CRASH:
+      return blink::WebString::fromUTF8("crash");
+  }
+  NOTIMPLEMENTED();
+  return blink::WebString();
+}
+
+void DispatchEvent(PP_Instance instance,
+                   PP_NaClEventType event_type,
+                   struct PP_Var resource_url,
+                   PP_Bool length_is_computable,
+                   uint64_t loaded_bytes,
+                   uint64_t total_bytes) {
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  if (!plugin_instance) {
+    NOTREACHED();
+    return;
+  }
+  blink::WebPluginContainer* container = plugin_instance->GetContainer();
+  // It's possible that container() is NULL if the plugin has been removed from
+  // the DOM (but the PluginInstance is not destroyed yet).
+  if (!container)
+    return;
+  blink::WebFrame* frame = container->element().document().frame();
+  if (!frame)
+    return;
+  v8::HandleScope handle_scope(plugin_instance->GetIsolate());
+  v8::Local<v8::Context> context(
+      plugin_instance->GetIsolate()->GetCurrentContext());
+  if (context.IsEmpty()) {
+    // If there's no JavaScript on the stack, we have to make a new Context.
+    context = v8::Context::New(plugin_instance->GetIsolate());
+  }
+  v8::Context::Scope context_scope(context);
+
+  ppapi::StringVar* url_var = ppapi::StringVar::FromPPVar(resource_url);
+  if (url_var) {
+    blink::WebString url_string = blink::WebString::fromUTF8(
+        url_var->value().data(), url_var->value().size());
+    blink::WebDOMResourceProgressEvent event(EventTypeToString(event_type),
+                                              PP_ToBool(length_is_computable),
+                                              loaded_bytes,
+                                              total_bytes,
+                                              url_string);
+    container->element().dispatchEvent(event);
+  } else {
+    blink::WebDOMProgressEvent event(EventTypeToString(event_type),
+                                      PP_ToBool(length_is_computable),
+                                      loaded_bytes,
+                                      total_bytes);
+    container->element().dispatchEvent(event);
+  }
+}
+
+void SetReadOnlyProperty(PP_Instance instance,
+                         struct PP_Var key,
+                         struct PP_Var value) {
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  plugin_instance->SetEmbedProperty(key, value);
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -348,7 +427,9 @@ const PPB_NaCl_Private nacl_interface = {
   &ReportTranslationFinished,
   &IsOffTheRecord,
   &ReportNaClError,
-  &OpenNaClExecutable
+  &OpenNaClExecutable,
+  &DispatchEvent,
+  &SetReadOnlyProperty
 };
 
 }  // namespace

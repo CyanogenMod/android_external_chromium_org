@@ -31,6 +31,7 @@ class MessageCenterTray;
 class MessageCenterView;
 class MessageView;
 class MessageListView;
+class NotificationView;
 class NotifierSettingsView;
 
 // MessageCenterView ///////////////////////////////////////////////////////////
@@ -83,18 +84,21 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
 
   void AddNotificationAt(const Notification& notification, int index);
   void NotificationsChanged();
-  void SetNotificationViewForTest(views::View* view);
+  void SetNotificationViewForTest(MessageView* view);
 
   MessageCenter* message_center_;  // Weak reference.
   MessageCenterTray* tray_;  // Weak reference.
-  std::vector<MessageView*> message_views_;  // Weak references.
+  // Map notification_id->NotificationView*. It contains all NotificaitonViews
+  // currently displayed in MessageCenter.
+  typedef std::map<std::string, NotificationView*> NotificationViewsMap;
+  NotificationViewsMap notification_views_;  // Weak.
 
   // Child views.
   views::ScrollView* scroller_;
-  MessageListView* message_list_view_;
+  scoped_ptr<MessageListView> message_list_view_;
+  scoped_ptr<views::View> empty_list_view_;
   NotifierSettingsView* settings_view_;
   MessageCenterButtonBar* button_bar_;
-  views::View* no_notifications_message_view_;
   bool top_down_;
 
   // Data for transition animation between settings view and message list.

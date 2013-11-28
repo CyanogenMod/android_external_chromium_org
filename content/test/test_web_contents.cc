@@ -43,7 +43,7 @@ TestWebContents::~TestWebContents() {
 }
 
 RenderViewHost* TestWebContents::GetPendingRenderViewHost() const {
-  return render_manager_.pending_render_view_host_;
+  return GetRenderManager()->pending_render_view_host_;
 }
 
 TestRenderViewHost* TestWebContents::pending_test_rvh() const {
@@ -226,7 +226,7 @@ void TestWebContents::CreateNewWindow(
 }
 
 void TestWebContents::CreateNewWidget(int route_id,
-                                      WebKit::WebPopupType popup_type) {
+                                      blink::WebPopupType popup_type) {
 }
 
 void TestWebContents::CreateNewFullscreenWidget(int route_id) {

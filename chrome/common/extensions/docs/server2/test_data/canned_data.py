@@ -3,7 +3,10 @@
 # found in the LICENSE file.
 
 import json
+
+from extensions_paths import EXTENSIONS
 from third_party.json_schema_compiler.json_parse import OrderedDict
+from test_file_system import MoveAllTo, MoveTo
 
 
 CANNED_CHANNELS = OrderedDict([
@@ -43,23 +46,24 @@ CANNED_BRANCHES = OrderedDict([
 ])
 
 
-CANNED_TEST_FILE_SYSTEM_DATA = {
+CANNED_TEST_FILE_SYSTEM_DATA = MoveTo(EXTENSIONS, {
   'api': {
     '_api_features.json': json.dumps({
       'ref_test': { 'dependencies': ['permission:ref_test'] },
       'tester': { 'dependencies': ['permission:tester', 'manifest:tester'] }
     }),
-    '_manifest_features.json': json.dumps({
-      'manifest': 'features'
-    }),
-    '_permission_features.json': json.dumps({
-      'permission': 'features'
-    })
+    '_manifest_features.json': '{}',
+    '_permission_features.json': '{}'
   },
   'docs': {
     'templates': {
+      'articles': {
+        'test_article.html':
+            '<h1>hi</h1>you<h2>first</h2><h3>inner</h3><h2>second</h2>'
+      },
       'intros': {
-        'test.html': '<h1>hi</h1>you<h2>first</h2><h3>inner</h3><h2>second</h2>'
+        'test_intro.html':
+            'you<h2>first</h2><h3>inner</h3><h2>second</h2>'
       },
       'json': {
         'api_availabilities.json': json.dumps({
@@ -104,10 +108,10 @@ CANNED_TEST_FILE_SYSTEM_DATA = {
       }
     }
   }
-}
+})
 
 
-CANNED_API_FILE_SYSTEM_DATA = {
+CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
   'trunk': {
     'api': {
       '_api_features.json': json.dumps({
@@ -181,25 +185,47 @@ CANNED_API_FILE_SYSTEM_DATA = {
           'channel': 'trunk'
         }
       }),
-      'idle.json': '{}',
-      'input_ime.json': '{}',
-      'menus.json': '{}',
-      'tabs.json': '{}',
-      'windows.json': '{}'
+      'bluetooth.idl': '\n'.join(('//Copyleft Schmopyright',
+                                  '',
+                                  '//An IDL description, oh my!',
+                                  'namespace bluetooth {',
+                                  '  dictionary Socket {',
+                                  '    long id;',
+                                  '  };',
+                                  '};')),
+      'context_menus.json': json.dumps([{
+        'namespace': 'contextMenus',
+        'description': ''
+      }]),
+      'json_stable_api.json': json.dumps([{
+        'namespace': 'jsonStableAPI',
+        'description': 'An API with a predetermined availability.'
+      }]),
+      'idle.json': json.dumps([{'namespace': 'idle', 'description': ''}]),
+      'input_ime.json': json.dumps([{
+        'namespace': 'input.ime',
+        'description': 'An API that has the potential to cause some trouble.'
+      }]),
+      'menus.json': json.dumps([{'namespace': 'menus', 'description': ''}]),
+      'tabs.json': json.dumps([{'namespace': 'tabs', 'description': ''}]),
+      'windows.json': json.dumps([{'namespace': 'windows', 'description': ''}])
     },
     'docs': {
       'templates': {
         'json': {
           'api_availabilities.json': json.dumps({
-            'jsonAPI1': {
-              'channel': 'stable',
-              'version': 10
-            },
-            'jsonAPI2': {
+            'jsonTrunkAPI': {
               'channel': 'trunk'
             },
-            'jsonAPI3': {
+            'jsonDevAPI': {
               'channel': 'dev'
+            },
+            'jsonBetaAPI': {
+              'channel': 'beta'
+            },
+            'jsonStableAPI': {
+              'channel': 'stable',
+              'version': 20
             }
           }),
           'intro_tables.json': json.dumps({
@@ -791,4 +817,4 @@ CANNED_API_FILE_SYSTEM_DATA = {
       ])
     }
   }
-}
+})

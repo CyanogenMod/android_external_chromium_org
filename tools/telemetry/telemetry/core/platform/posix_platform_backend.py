@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import distutils.spawn
+import re
 import subprocess
 
 from telemetry.core.platform import desktop_platform_backend
-from telemetry.core.platform import proc_util
+from telemetry.core.platform import ps_util
 
 
 class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
@@ -38,10 +40,14 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
   def GetChildPids(self, pid):
     """Returns a list of child pids of |pid|."""
     ps_output = self._GetPsOutput(['pid', 'ppid', 'state'])
+    ps_line_re = re.compile(
+        '\s*(?P<pid>\d+)\s*(?P<ppid>\d+)\s*(?P<state>\S*)\s*')
     processes = []
     for pid_ppid_state in ps_output:
-      processes.append(pid_ppid_state.split())
-    return proc_util.GetChildPids(processes, pid)
+      m = ps_line_re.match(pid_ppid_state)
+      assert m, 'Did not understand ps output: %s' % pid_ppid_state
+      processes.append((m.group('pid'), m.group('ppid'), m.group('state')))
+    return ps_util.GetChildPids(processes, pid)
 
   def GetCommandLine(self, pid):
     command = self._GetPsOutput(['command'], pid)
@@ -49,3 +55,6 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
 
   def GetFlushUtilityName(self):
     return 'clear_system_cache'
+
+  def CanRunApplication(self, application):
+    return bool(distutils.spawn.find_executable(application))

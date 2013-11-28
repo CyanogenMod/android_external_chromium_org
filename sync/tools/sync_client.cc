@@ -195,6 +195,7 @@ notifier::NotifierOptions ParseNotifierOptions(
         request_context_getter) {
   notifier::NotifierOptions notifier_options;
   notifier_options.request_context_getter = request_context_getter;
+  notifier_options.auth_mechanism = "X-OAUTH2";
 
   if (command_line.HasSwitch(kXmppHostPortSwitch)) {
     notifier_options.xmpp_host_port =
@@ -274,7 +275,7 @@ int SyncClientMain(int argc, char* argv[]) {
   scoped_ptr<Invalidator> invalidator(new NonBlockingInvalidator(
       notifier_options,
       invalidator_id,
-      null_invalidation_state_tracker.GetAllInvalidationStates(),
+      null_invalidation_state_tracker.GetSavedInvalidations(),
       null_invalidation_state_tracker.GetBootstrapData(),
       WeakHandle<InvalidationStateTracker>(
           null_invalidation_state_tracker.AsWeakPtr()),

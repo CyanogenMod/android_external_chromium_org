@@ -147,18 +147,19 @@
 
 
 using base::StringPiece;
-using WebKit::WebIDBKeyType;
-using WebKit::WebIDBKeyTypeArray;
-using WebKit::WebIDBKeyTypeDate;
-using WebKit::WebIDBKeyTypeInvalid;
-using WebKit::WebIDBKeyTypeMin;
-using WebKit::WebIDBKeyTypeNull;
-using WebKit::WebIDBKeyTypeNumber;
-using WebKit::WebIDBKeyTypeString;
-using WebKit::WebIDBKeyPathType;
-using WebKit::WebIDBKeyPathTypeArray;
-using WebKit::WebIDBKeyPathTypeNull;
-using WebKit::WebIDBKeyPathTypeString;
+using blink::WebIDBKeyType;
+using blink::WebIDBKeyTypeArray;
+using blink::WebIDBKeyTypeBinary;
+using blink::WebIDBKeyTypeDate;
+using blink::WebIDBKeyTypeInvalid;
+using blink::WebIDBKeyTypeMin;
+using blink::WebIDBKeyTypeNull;
+using blink::WebIDBKeyTypeNumber;
+using blink::WebIDBKeyTypeString;
+using blink::WebIDBKeyPathType;
+using blink::WebIDBKeyPathTypeArray;
+using blink::WebIDBKeyPathTypeNull;
+using blink::WebIDBKeyPathTypeString;
 
 namespace content {
 
@@ -173,6 +174,7 @@ static const unsigned char kIndexedDBKeyDateTypeByte = 2;
 static const unsigned char kIndexedDBKeyNumberTypeByte = 3;
 static const unsigned char kIndexedDBKeyArrayTypeByte = 4;
 static const unsigned char kIndexedDBKeyMinKeyTypeByte = 5;
+static const unsigned char kIndexedDBKeyBinaryTypeByte = 6;
 
 static const unsigned char kIndexedDBKeyPathTypeCodedByte1 = 0;
 static const unsigned char kIndexedDBKeyPathTypeCodedByte2 = 0;
@@ -269,6 +271,12 @@ void EncodeString(const string16& value, std::string* into) {
     *dst++ = htons(*src++);
 }
 
+void EncodeBinary(const std::string& value, std::string* into) {
+  EncodeVarInt(value.length(), into);
+  into->append(value.begin(), value.end());
+  DCHECK(into->size() >= value.size());
+}
+
 void EncodeStringWithLength(const string16& value, std::string* into) {
   EncodeVarInt(value.length(), into);
   EncodeString(value, into);
@@ -298,6 +306,12 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
       EncodeVarInt(length, into);
       for (size_t i = 0; i < length; ++i)
         EncodeIDBKey(value.array()[i], into);
+      DCHECK_GT(into->size(), previous_size);
+      return;
+    }
+    case WebIDBKeyTypeBinary: {
+      EncodeByte(kIndexedDBKeyBinaryTypeByte, into);
+      EncodeBinary(value.binary(), into);
       DCHECK_GT(into->size(), previous_size);
       return;
     }
@@ -446,6 +460,22 @@ bool DecodeStringWithLength(StringPiece* slice, string16* value) {
   return true;
 }
 
+bool DecodeBinary(StringPiece* slice, std::string* value) {
+  if (slice->empty())
+    return false;
+
+  int64 length = 0;
+  if (!DecodeVarInt(slice, &length) || length < 0)
+    return false;
+  size_t size = length;
+  if (slice->size() < size)
+    return false;
+
+  value->assign(slice->begin(), size);
+  slice->remove_prefix(size);
+  return true;
+}
+
 bool DecodeIDBKey(StringPiece* slice, scoped_ptr<IndexedDBKey>* value) {
   if (slice->empty())
     return false;
@@ -470,6 +500,13 @@ bool DecodeIDBKey(StringPiece* slice, scoped_ptr<IndexedDBKey>* value) {
         array.push_back(*key);
       }
       *value = make_scoped_ptr(new IndexedDBKey(array));
+      return true;
+    }
+    case kIndexedDBKeyBinaryTypeByte: {
+      std::string binary;
+      if (!DecodeBinary(slice, &binary))
+        return false;
+      *value = make_scoped_ptr(new IndexedDBKey(binary));
       return true;
     }
     case kIndexedDBKeyStringTypeByte: {
@@ -578,6 +615,15 @@ bool ConsumeEncodedIDBKey(StringPiece* slice) {
       }
       return true;
     }
+    case kIndexedDBKeyBinaryTypeByte: {
+      int64 length = 0;
+      if (!DecodeVarInt(slice, &length) || length < 0)
+        return false;
+      if (slice->size() < static_cast<size_t>(length))
+        return false;
+      slice->remove_prefix(length);
+      return true;
+    }
     case kIndexedDBKeyStringTypeByte: {
       int64 length = 0;
       if (!DecodeVarInt(slice, &length) || length < 0)
@@ -614,6 +660,8 @@ static WebIDBKeyType KeyTypeByteToKeyType(unsigned char type) {
       return WebIDBKeyTypeInvalid;
     case kIndexedDBKeyArrayTypeByte:
       return WebIDBKeyTypeArray;
+    case kIndexedDBKeyBinaryTypeByte:
+      return WebIDBKeyTypeBinary;
     case kIndexedDBKeyStringTypeByte:
       return WebIDBKeyTypeString;
     case kIndexedDBKeyDateTypeByte:
@@ -650,6 +698,7 @@ int CompareEncodedStringsWithLength(StringPiece* slice1,
     return 0;
   }
 
+  // Extract the string data, and advance the passed slices.
   StringPiece string1(slice1->begin(), len1 * sizeof(char16));
   StringPiece string2(slice2->begin(), len2 * sizeof(char16));
   slice1->remove_prefix(len1 * sizeof(char16));
@@ -658,6 +707,41 @@ int CompareEncodedStringsWithLength(StringPiece* slice1,
   *ok = true;
   // Strings are UTF-16BE encoded, so a simple memcmp is sufficient.
   return string1.compare(string2);
+}
+
+int CompareEncodedBinary(StringPiece* slice1,
+                         StringPiece* slice2,
+                         bool* ok) {
+  int64 len1, len2;
+  if (!DecodeVarInt(slice1, &len1) || !DecodeVarInt(slice2, &len2)) {
+    *ok = false;
+    return 0;
+  }
+  DCHECK_GE(len1, 0);
+  DCHECK_GE(len2, 0);
+  if (len1 < 0 || len2 < 0) {
+    *ok = false;
+    return 0;
+  }
+  size_t size1 = len1;
+  size_t size2 = len2;
+
+  DCHECK_GE(slice1->size(), size1);
+  DCHECK_GE(slice2->size(), size2);
+  if (slice1->size() < size1 || slice2->size() < size2) {
+    *ok = false;
+    return 0;
+  }
+
+  // Extract the binary data, and advance the passed slices.
+  StringPiece binary1(slice1->begin(), size1);
+  StringPiece binary2(slice2->begin(), size2);
+  slice1->remove_prefix(size1);
+  slice2->remove_prefix(size2);
+
+  *ok = true;
+  // This is the same as a memcmp()
+  return binary1.compare(binary2);
 }
 
 static int CompareInts(int64 a, int64 b) {
@@ -718,6 +802,8 @@ int CompareEncodedIDBKeys(StringPiece* slice_a,
       }
       return length_a - length_b;
     }
+    case kIndexedDBKeyBinaryTypeByte:
+      return CompareEncodedBinary(slice_a, slice_b, ok);
     case kIndexedDBKeyStringTypeByte:
       return CompareEncodedStringsWithLength(slice_a, slice_b, ok);
     case kIndexedDBKeyDateTypeByte:
@@ -795,67 +881,11 @@ int CompareSuffix<ExistsEntryKey>(StringPiece* slice_a,
 }
 
 template <>
-int Compare<ExistsEntryKey>(const StringPiece& a,
-                            const StringPiece& b,
-                            bool only_compare_index_keys,
-                            bool* ok) {
-  KeyPrefix prefix_a;
-  KeyPrefix prefix_b;
-  StringPiece slice_a(a);
-  StringPiece slice_b(b);
-  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
-  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
-  DCHECK(ok_a);
-  DCHECK(ok_b);
-  DCHECK(prefix_a.database_id_);
-  DCHECK(prefix_a.object_store_id_);
-  DCHECK_EQ(prefix_a.index_id_, ExistsEntryKey::kSpecialIndexNumber);
-  DCHECK(prefix_b.database_id_);
-  DCHECK(prefix_b.object_store_id_);
-  DCHECK_EQ(prefix_b.index_id_, ExistsEntryKey::kSpecialIndexNumber);
-  DCHECK(!slice_a.empty());
-  DCHECK(!slice_b.empty());
-  // Prefixes are not compared - it is assumed this was already done.
-  DCHECK(!prefix_a.Compare(prefix_b));
-
-  return CompareSuffix<ExistsEntryKey>(
-      &slice_a, &slice_b, only_compare_index_keys, ok);
-}
-
-template <>
 int CompareSuffix<ObjectStoreDataKey>(StringPiece* slice_a,
                                       StringPiece* slice_b,
                                       bool only_compare_index_keys,
                                       bool* ok) {
   return CompareEncodedIDBKeys(slice_a, slice_b, ok);
-}
-
-template <>
-int Compare<ObjectStoreDataKey>(const StringPiece& a,
-                                const StringPiece& b,
-                                bool only_compare_index_keys,
-                                bool* ok) {
-  KeyPrefix prefix_a;
-  KeyPrefix prefix_b;
-  StringPiece slice_a(a);
-  StringPiece slice_b(b);
-  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
-  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
-  DCHECK(ok_a);
-  DCHECK(ok_b);
-  DCHECK(prefix_a.database_id_);
-  DCHECK(prefix_a.object_store_id_);
-  DCHECK_EQ(prefix_a.index_id_, ObjectStoreDataKey::kSpecialIndexNumber);
-  DCHECK(prefix_b.database_id_);
-  DCHECK(prefix_b.object_store_id_);
-  DCHECK_EQ(prefix_b.index_id_, ObjectStoreDataKey::kSpecialIndexNumber);
-  DCHECK(!slice_a.empty());
-  DCHECK(!slice_b.empty());
-  // Prefixes are not compared - it is assumed this was already done.
-  DCHECK(!prefix_a.Compare(prefix_b));
-
-  return CompareSuffix<ObjectStoreDataKey>(
-      &slice_a, &slice_b, only_compare_index_keys, ok);
 }
 
 template <>
@@ -887,34 +917,6 @@ int CompareSuffix<IndexDataKey>(StringPiece* slice_a,
     return result;
 
   return CompareInts(sequence_number_a, sequence_number_b);
-}
-
-template <>
-int Compare<IndexDataKey>(const StringPiece& a,
-                          const StringPiece& b,
-                          bool only_compare_index_keys,
-                          bool* ok) {
-  KeyPrefix prefix_a;
-  KeyPrefix prefix_b;
-  StringPiece slice_a(a);
-  StringPiece slice_b(b);
-  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
-  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
-  DCHECK(ok_a);
-  DCHECK(ok_b);
-  DCHECK(prefix_a.database_id_);
-  DCHECK(prefix_a.object_store_id_);
-  DCHECK_GE(prefix_a.index_id_, kMinimumIndexId);
-  DCHECK(prefix_b.database_id_);
-  DCHECK(prefix_b.object_store_id_);
-  DCHECK_GE(prefix_b.index_id_, kMinimumIndexId);
-  DCHECK(!slice_a.empty());
-  DCHECK(!slice_b.empty());
-  // Prefixes are not compared - it is assumed this was already done.
-  DCHECK(!prefix_a.Compare(prefix_b));
-
-  return CompareSuffix<IndexDataKey>(
-      &slice_a, &slice_b, only_compare_index_keys, ok);
 }
 
 int Compare(const StringPiece& a,
@@ -1813,6 +1815,23 @@ std::string IndexDataKey::Encode(int64 database_id,
   EncodeIDBKey(user_key, &encoded_key);
   return Encode(
       database_id, object_store_id, index_id, encoded_key, MinIDBKey(), 0);
+}
+
+std::string IndexDataKey::Encode(int64 database_id,
+                                 int64 object_store_id,
+                                 int64 index_id,
+                                 const IndexedDBKey& user_key,
+                                 const IndexedDBKey& user_primary_key) {
+  std::string encoded_key;
+  EncodeIDBKey(user_key, &encoded_key);
+  std::string encoded_primary_key;
+  EncodeIDBKey(user_primary_key, &encoded_primary_key);
+  return Encode(database_id,
+                object_store_id,
+                index_id,
+                encoded_key,
+                encoded_primary_key,
+                0);
 }
 
 std::string IndexDataKey::EncodeMinKey(int64 database_id,

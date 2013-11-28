@@ -25,9 +25,14 @@
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "extensions/browser/event_router.h"
 
 class Profile;
 using content::BrowserThread;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -40,6 +45,7 @@ class ActivityLogPolicy;
 // A utility for tracing interesting activity for each extension.
 // It writes to an ActivityDatabase on a separate thread to record the activity.
 class ActivityLog : public BrowserContextKeyedService,
+                    public EventRouter::EventDispatchObserver,
                     public TabHelper::ScriptExecutionObserver,
                     public InstallObserver {
  public:
@@ -52,7 +58,7 @@ class ActivityLog : public BrowserContextKeyedService,
 
   // ActivityLog is a singleton, so don't instantiate it with the constructor;
   // use GetInstance instead.
-  static ActivityLog* GetInstance(Profile* profile);
+  static ActivityLog* GetInstance(content::BrowserContext* context);
 
   // Add/remove observer: the activityLogPrivate API only listens when the
   // ActivityLog extension is registered for an event.
@@ -86,11 +92,8 @@ class ActivityLog : public BrowserContextKeyedService,
   virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE;
   virtual void OnExtensionUninstalled(const Extension* extension) OVERRIDE;
   // We also have to list the following from InstallObserver.
-  virtual void OnBeginExtensionInstall(const std::string& extension_id,
-                                       const std::string& extension_name,
-                                       const gfx::ImageSkia& installing_icon,
-                                       bool is_app,
-                                       bool is_platform_app) OVERRIDE {}
+  virtual void OnBeginExtensionInstall(
+      const ExtensionInstallParams& params) OVERRIDE {}
   virtual void OnDownloadProgress(const std::string& extension_id,
                                   int percent_downloaded) OVERRIDE {}
   virtual void OnInstallFailure(const std::string& extension_id) OVERRIDE {}
@@ -98,6 +101,10 @@ class ActivityLog : public BrowserContextKeyedService,
   virtual void OnAppInstalledToAppList(
       const std::string& extension_id) OVERRIDE {}
   virtual void OnShutdown() OVERRIDE {}
+
+  // EventRouter::EventDispatchObserver
+  virtual void OnWillDispatchEvent(scoped_ptr<EventDispatchInfo> details)
+      OVERRIDE;
 
   // BrowserContextKeyedService
   virtual void Shutdown() OVERRIDE;
@@ -206,9 +213,9 @@ class ActivityLog : public BrowserContextKeyedService,
 // each profile.
 class ActivityLogFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static ActivityLog* GetForProfile(Profile* profile) {
+  static ActivityLog* GetForBrowserContext(content::BrowserContext* context) {
     return static_cast<ActivityLog*>(
-        GetInstance()->GetServiceForBrowserContext(profile, true));
+        GetInstance()->GetServiceForBrowserContext(context, true));
   }
 
   static ActivityLogFactory* GetInstance();

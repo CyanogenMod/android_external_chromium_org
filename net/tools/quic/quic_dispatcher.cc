@@ -88,8 +88,9 @@ bool QuicDispatcher::IsWriteBlockedDataBuffered() const {
 void QuicDispatcher::ProcessPacket(const IPEndPoint& server_address,
                                    const IPEndPoint& client_address,
                                    QuicGuid guid,
+                                   bool has_version_flag,
                                    const QuicEncryptedPacket& packet) {
-  QuicSession* session;
+  QuicSession* session = NULL;
 
   SessionMap::iterator it = session_map_.find(guid);
   if (it == session_map_.end()) {
@@ -100,14 +101,22 @@ void QuicDispatcher::ProcessPacket(const IPEndPoint& server_address,
                                              packet);
       return;
     }
-    session = CreateQuicSession(guid, client_address);
+
+    // Ensure the packet has a version negotiation bit set before creating a new
+    // session for it.  All initial packets for a new connection are required to
+    // have the flag set.  Otherwise it may be a stray packet.
+    if (has_version_flag) {
+      session = CreateQuicSession(guid, client_address);
+    }
 
     if (session == NULL) {
       DLOG(INFO) << "Failed to create session for " << guid;
       // Add this guid fo the time-wait state, to safely reject future packets.
       // We don't know the version here, so assume latest.
+      // TODO(ianswett): Produce a no-version version negotiation packet.
       time_wait_list_manager_->AddGuidToTimeWait(guid,
-                                                 supported_versions_.front());
+                                                 supported_versions_.front(),
+                                                 NULL);
       time_wait_list_manager_->ProcessPacket(server_address,
                                              client_address,
                                              guid,
@@ -125,10 +134,13 @@ void QuicDispatcher::ProcessPacket(const IPEndPoint& server_address,
 }
 
 void QuicDispatcher::CleanUpSession(SessionMap::iterator it) {
-  QuicSession* session = it->second;
-  write_blocked_list_.erase(session->connection());
+  QuicConnection* connection = it->second->connection();
+  QuicEncryptedPacket* connection_close_packet =
+          connection->ReleaseConnectionClosePacket();
+  write_blocked_list_.erase(connection);
   time_wait_list_manager_->AddGuidToTimeWait(it->first,
-                                             session->connection()->version());
+                                             connection->version(),
+                                             connection_close_packet);
   session_map_.erase(it);
 }
 

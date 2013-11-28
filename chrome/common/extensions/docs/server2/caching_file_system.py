@@ -79,7 +79,8 @@ class CachingFileSystem(FileSystem):
     else:
       file_version = dir_stat.child_versions.get(file_path)
       if file_version is None:
-        raise FileNotFoundError('No stat found for %s in %s' % (path, dir_path))
+        raise FileNotFoundError('No stat found for %s in %s (found %s)' %
+                                (path, dir_path, dir_stat.child_versions))
       stat_info = StatInfo(file_version)
 
     return stat_info
@@ -126,5 +127,4 @@ class CachingFileSystem(FileSystem):
     return self._file_system.GetIdentity()
 
   def __repr__(self):
-    return '<%s of %s>' % (type(self).__name__,
-                           type(self._file_system).__name__)
+    return '%s of <%s>' % (type(self).__name__, repr(self._file_system))

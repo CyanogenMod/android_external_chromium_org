@@ -72,7 +72,6 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/browser/user_style_sheet_watcher.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
@@ -98,6 +97,9 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
@@ -379,9 +381,6 @@ ProfileImpl::ProfileImpl(
       host_content_settings_map_(NULL),
       last_session_exit_type_(EXIT_NORMAL),
       start_time_(Time::Now()),
-#if defined(OS_CHROMEOS)
-      is_login_profile_(false),
-#endif
       delegate_(delegate),
       predictor_(NULL) {
   TRACE_EVENT0("browser", "ProfileImpl::ctor")
@@ -405,14 +404,23 @@ ProfileImpl::ProfileImpl(
   // policy data immediately.
   bool force_immediate_policy_load = (create_mode == CREATE_MODE_SYNCHRONOUS);
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  policy::BrowserPolicyConnector* connector =
+      g_browser_process->browser_policy_connector();
+  schema_registry_service_ =
+      policy::SchemaRegistryServiceFactory::CreateForContext(
+          this, connector->GetChromeSchema(), connector->GetSchemaRegistry());
 #if defined(OS_CHROMEOS)
   cloud_policy_manager_ =
       policy::UserCloudPolicyManagerFactoryChromeOS::CreateForProfile(
           this, force_immediate_policy_load, sequenced_task_runner);
 #else
   cloud_policy_manager_ =
-      policy::UserCloudPolicyManagerFactory::CreateForProfile(
-          this, force_immediate_policy_load, sequenced_task_runner);
+      policy::UserCloudPolicyManagerFactory::CreateForOriginalBrowserContext(
+          this,
+          force_immediate_policy_load,
+          sequenced_task_runner,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 #endif
 #endif
   profile_policy_connector_ =
@@ -424,8 +432,7 @@ ProfileImpl::ProfileImpl(
   bool async_prefs = create_mode == CREATE_MODE_ASYNCHRONOUS;
 
 #if defined(OS_CHROMEOS)
-  is_login_profile_ = chromeos::ProfileHelper::IsSigninProfile(this);
-  if (is_login_profile_)
+  if (chromeos::ProfileHelper::IsSigninProfile(this))
     chrome::RegisterLoginProfilePrefs(pref_registry_.get());
   else
 #endif
@@ -444,7 +451,7 @@ ProfileImpl::ProfileImpl(
     // will work here.
     startup_metric_utils::ScopedSlowStartupUMA
         scoped_timer("Startup.SlowStartupPreferenceLoading");
-    prefs_.reset(chrome_prefs::CreateProfilePrefs(
+    prefs_ = chrome_prefs::CreateProfilePrefs(
         GetPrefFilePath(),
         sequenced_task_runner,
         profile_policy_connector_->policy_service(),
@@ -452,7 +459,7 @@ ProfileImpl::ProfileImpl(
         new ExtensionPrefStore(
             ExtensionPrefValueMapFactory::GetForBrowserContext(this), false),
         pref_registry_,
-        async_prefs));
+        async_prefs).Pass();
     // Register on BrowserContext.
     user_prefs::UserPrefs::Set(this, prefs_.get());
   }
@@ -511,6 +518,7 @@ void ProfileImpl::DoFinalInit() {
   // kGoogleServicesUsername, initialize components that depend on it to reflect
   // the current value.
   UpdateProfileUserNameCache();
+  UpdateProfileIsEphemeralCache();
   GAIAInfoUpdateServiceFactory::GetForProfile(this);
 
   PrefService* local_state = g_browser_process->local_state();
@@ -815,7 +823,7 @@ bool ProfileImpl::WasCreatedByVersionOrLater(const std::string& version) {
 
 void ProfileImpl::SetExitType(ExitType exit_type) {
 #if defined(OS_CHROMEOS)
-  if (is_login_profile_)
+  if (chromeos::ProfileHelper::IsSigninProfile(this))
     return;
 #endif
   if (!prefs_)
@@ -1128,10 +1136,6 @@ void ProfileImpl::InitChromeOSPreferences() {
       chromeos::UserManager::Get()->GetUserByProfile(this);
   chromeos_preferences_->Init(PrefServiceSyncable::FromProfile(this),
                               is_primary_user);
-}
-
-bool ProfileImpl::IsLoginProfile() {
-  return is_login_profile_;
 }
 
 #endif  // defined(OS_CHROMEOS)

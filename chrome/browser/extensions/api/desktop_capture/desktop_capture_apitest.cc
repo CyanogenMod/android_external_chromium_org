@@ -143,7 +143,8 @@ class DesktopCaptureApiTest : public ExtensionApiTest {
 }  // namespace
 
 // Flaky on Windows: http://crbug.com/301887
-#if defined(OS_WIN)
+// Failing on ChromeOS: http://crbug.com/324179
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
 #define MAYBE_ChooseDesktopMedia DISABLED_ChooseDesktopMedia
 #else
 #define MAYBE_ChooseDesktopMedia ChooseDesktopMedia
@@ -179,7 +180,8 @@ IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, MAYBE_ChooseDesktopMedia) {
   ASSERT_TRUE(RunExtensionTest("desktop_capture")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, Delegation) {
+// Does not work with Instant Extended. http://crbug.com/305391.
+IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, DISABLED_Delegation) {
   // Initialize test server.
   base::FilePath test_data;
   EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_data));

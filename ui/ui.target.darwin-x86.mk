@@ -16,8 +16,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,ui_base_strings_ui_strings_gyp)/ui_strings.stamp \
-	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
-	$(call intermediates-dir-for,GYP,ui_ui_jni_headers_gyp)/ui_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp)/ui_resources.stamp \
+	$(call intermediates-dir-for,GYP,ui_ui_base_jni_headers_gyp)/ui_base_jni_headers.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -32,7 +32,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	ui/base/accelerators/accelerator.cc \
 	ui/base/accelerators/accelerator_manager.cc \
-	ui/base/android/ui_jni_registrar.cc \
+	ui/base/android/ui_base_jni_registrar.cc \
 	ui/base/android/view_android.cc \
 	ui/base/android/window_android.cc \
 	ui/base/base_window.cc \
@@ -41,6 +41,7 @@ LOCAL_SRC_FILES := \
 	ui/base/clipboard/clipboard_constants.cc \
 	ui/base/clipboard/custom_data_helper.cc \
 	ui/base/clipboard/scoped_clipboard_writer.cc \
+	ui/base/device_form_factor_android.cc \
 	ui/base/l10n/l10n_util.cc \
 	ui/base/l10n/l10n_util_android.cc \
 	ui/base/l10n/l10n_util_plurals.cc \
@@ -123,6 +124,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DUI_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -130,6 +132,7 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -155,6 +158,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/ui \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -165,7 +169,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
@@ -241,6 +244,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DUI_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -248,6 +252,7 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -274,6 +279,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/ui \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -284,7 +290,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \

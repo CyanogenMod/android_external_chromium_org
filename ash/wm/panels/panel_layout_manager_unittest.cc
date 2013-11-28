@@ -6,12 +6,13 @@
 
 #include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_button.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
+#include "ash/shelf/shelf_button.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_types.h"
+#include "ash/shelf/shelf_util.h"
 #include "ash/shelf/shelf_view.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -21,6 +22,7 @@
 #include "ash/test/shelf_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_launcher_delegate.h"
+#include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_util.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
@@ -222,11 +224,8 @@ class PanelLayoutManagerTest : public test::AshTestBase {
     test::ShelfViewTestAPI test_api(shelf_view);
     test_api.SetAnimationDuration(1);
     test_api.RunMessageLoopUntilAnimationsDone();
-    LauncherModel* model =
-        test::ShellTestApi(Shell::GetInstance()).launcher_model();
-    test::TestLauncherDelegate* launcher_delegate =
-        test::TestLauncherDelegate::instance();
-    int index = model->ItemIndexByID(launcher_delegate->GetIDByWindow(window));
+    ShelfModel* model = test::ShellTestApi(Shell::GetInstance()).shelf_model();
+    int index = model->ItemIndexByID(GetLauncherIDForWindow(window));
     gfx::Rect bounds = test_api.GetButton(index)->GetBoundsInScreen();
 
     aura::test::EventGenerator& event_generator = GetEventGenerator();
@@ -336,7 +335,7 @@ TEST_F(PanelLayoutManagerTest, PanelAlignsToHiddenLauncherIconSecondDisplay) {
   // Keep the displays wide so that launchers have enough
   // space for launcher buttons.
   UpdateDisplay("400x400,600x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> normal_window(
       CreateNormalWindow(gfx::Rect(450, 0, 100, 100)));
@@ -603,7 +602,7 @@ TEST_F(PanelLayoutManagerTest, PanelMoveBetweenMultipleDisplays) {
   // Keep the displays wide so that launchers have enough
   // space for launcher buttons.
   UpdateDisplay("600x400,600x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> p1_d1(CreatePanelWindow(gfx::Rect(0, 0, 50, 50)));
   scoped_ptr<aura::Window> p2_d1(CreatePanelWindow(gfx::Rect(0, 0, 50, 50)));
@@ -683,7 +682,7 @@ TEST_F(PanelLayoutManagerTest, PanelAttachPositionMultipleDisplays) {
   // buttons. Use differently sized displays so the launcher is in a different
   // position on second display.
   UpdateDisplay("600x400,600x600");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> p1_d1(CreatePanelWindow(gfx::Rect(0, 0, 50, 50)));
   scoped_ptr<aura::Window> p1_d2(CreatePanelWindow(gfx::Rect(600, 0, 50, 50)));
@@ -702,7 +701,7 @@ TEST_F(PanelLayoutManagerTest, PanelAlignmentSecondDisplay) {
     return;
 
   UpdateDisplay("600x400,600x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   scoped_ptr<aura::Window> p1_d2(CreatePanelWindow(gfx::Rect(600, 0, 50, 50)));
   EXPECT_EQ(root_windows[1], p1_d2->GetRootWindow());
@@ -770,6 +769,21 @@ TEST_F(PanelLayoutManagerTest, PanelsHideAndRestoreWithShelf) {
   EXPECT_FALSE(w1->IsVisible());
   EXPECT_FALSE(w2->IsVisible());
   EXPECT_FALSE(w3->IsVisible());
+
+  // While in full-screen mode, the panel windows should still be in the
+  // switchable window list - http://crbug.com/313919.
+  MruWindowTracker::WindowList switchable_window_list =
+      Shell::GetInstance()->mru_window_tracker()->BuildMruWindowList();
+  EXPECT_EQ(3u, switchable_window_list.size());
+  EXPECT_NE(switchable_window_list.end(),
+      std::find(switchable_window_list.begin(), switchable_window_list.end(),
+          w1.get()));
+  EXPECT_NE(switchable_window_list.end(),
+      std::find(switchable_window_list.begin(), switchable_window_list.end(),
+          w2.get()));
+  EXPECT_NE(switchable_window_list.end(),
+      std::find(switchable_window_list.begin(), switchable_window_list.end(),
+          w3.get()));
 
   SetShelfVisibilityState(Shell::GetPrimaryRootWindow(), SHELF_VISIBLE);
   RunAllPendingInMessageLoop();

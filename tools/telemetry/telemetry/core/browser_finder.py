@@ -5,6 +5,7 @@
 """Finds browsers that can be controlled by telemetry."""
 
 import logging
+import operator
 
 from telemetry.core.backends.webdriver import webdriver_desktop_browser_finder
 from telemetry.core.backends.chrome import android_browser_finder
@@ -18,7 +19,8 @@ BROWSER_FINDERS = [
   webdriver_desktop_browser_finder,
   ]
 
-ALL_BROWSER_TYPES = ','.join([bf.ALL_BROWSER_TYPES for bf in BROWSER_FINDERS])
+ALL_BROWSER_TYPES = reduce(operator.add,
+                           [bf.ALL_BROWSER_TYPES for bf in BROWSER_FINDERS])
 
 
 class BrowserTypeRequiredException(Exception):
@@ -60,6 +62,9 @@ def FindBrowser(options):
   browsers = []
   default_browsers = []
   for finder in BROWSER_FINDERS:
+    if (options.browser_type and options.browser_type != 'any' and
+        options.browser_type not in finder.ALL_BROWSER_TYPES):
+      continue
     curr_browsers = finder.FindAllAvailableBrowsers(options)
     new_default_browser = finder.SelectDefaultBrowser(curr_browsers)
     if new_default_browser:
@@ -73,7 +78,6 @@ def FindBrowser(options):
 
       logging.warning('--browser omitted. Using most recent local build: %s' %
                       default_browser.browser_type)
-      options.browser_type = default_browser.browser_type
       # TODO: We should do this even when --browser is specified.
       default_browser.UpdateExecutableIfNeeded()
       return default_browser
@@ -88,7 +92,7 @@ def FindBrowser(options):
         '\n'.join(sorted(set([b.browser_type for b in browsers]))))
 
   if options.browser_type == 'any':
-    types = ALL_BROWSER_TYPES.split(',')
+    types = ALL_BROWSER_TYPES
     def CompareBrowsersOnTypePriority(x, y):
       x_idx = types.index(x.browser_type)
       y_idx = types.index(y.browser_type)

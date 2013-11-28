@@ -35,6 +35,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/ssl_status.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/animation/animation_delegate.h"
@@ -105,7 +106,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual string16 SaveLocallyText() const OVERRIDE;
   virtual string16 SaveLocallyTooltip() const OVERRIDE;
   virtual string16 LegalDocumentsText() OVERRIDE;
-  virtual bool ShouldDisableSignInLink() const OVERRIDE;
   virtual bool ShouldShowSpinner() const OVERRIDE;
   virtual bool ShouldShowSignInWebView() const OVERRIDE;
   virtual GURL SignInUrl() const OVERRIDE;
@@ -137,9 +137,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
                                         ServerFieldType type,
                                         const string16& value) OVERRIDE;
   virtual ValidityMessages InputsAreValid(
-      DialogSection section, const DetailOutputMap& inputs) OVERRIDE;
+      DialogSection section, const FieldValueMap& inputs) OVERRIDE;
   virtual void UserEditedOrActivatedInput(DialogSection section,
-                                          const DetailInput* input,
+                                          ServerFieldType type,
                                           gfx::NativeView parent_view,
                                           const gfx::Rect& content_bounds,
                                           const string16& field_contents,
@@ -206,16 +206,12 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // AccountChooserModelDelegate implementation.
   virtual void AccountChooserWillShow() OVERRIDE;
   virtual void AccountChoiceChanged() OVERRIDE;
+  virtual void AddAccount() OVERRIDE;
   virtual void UpdateAccountChooserView() OVERRIDE;
 
   // wallet::WalletSigninHelperDelegate implementation.
-  virtual void OnPassiveSigninSuccess(const std::vector<std::string>& username)
-      OVERRIDE;
+  virtual void OnPassiveSigninSuccess() OVERRIDE;
   virtual void OnPassiveSigninFailure(
-      const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void OnUserNameFetchSuccess(const std::vector<std::string>& username)
-      OVERRIDE;
-  virtual void OnUserNameFetchFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
   virtual void OnDidFetchWalletCookieValue(
       const std::string& cookie_value) OVERRIDE;
@@ -253,6 +249,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // Returns the WalletClient* this class uses to talk to Online Wallet. Exposed
   // for testing.
+  const wallet::WalletClient* GetWalletClient() const;
   virtual wallet::WalletClient* GetWalletClient();
 
   // Call to disable communication to Online Wallet for this dialog.
@@ -312,10 +309,11 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   void ClearLastWalletItemsFetchTimestampForTesting();
 
   // Allows tests to inspect the state of the account chooser.
-  const AccountChooserModel& AccountChooserModelForTesting() const;
+  AccountChooserModel* AccountChooserModelForTesting();
 
-  // Returns whether |url| matches the sign in continue URL.
-  virtual bool IsSignInContinueUrl(const GURL& url) const;
+  // Returns whether |url| matches the sign in continue URL. If so, also fills
+  // in |user_index| with the index of the user account that just signed in.
+  virtual bool IsSignInContinueUrl(const GURL& url, size_t* user_index) const;
 
   // Whether the user is known to be signed in.
   DialogSignedInState SignedInState() const;
@@ -359,11 +357,11 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
                       const base::string16& value);
 
   // Takes a snapshot of the newly inputted user data in |view_| (if it exists).
-  DetailOutputMap TakeUserInputSnapshot();
+  FieldValueMap TakeUserInputSnapshot();
 
   // Fills the detail inputs from a previously taken user input snapshot. Does
   // not update the view.
-  void RestoreUserInputFromSnapshot(const DetailOutputMap& snapshot);
+  void RestoreUserInputFromSnapshot(const FieldValueMap& snapshot);
 
   // Tells the view to update |section|.
   void UpdateSection(DialogSection section);
@@ -373,6 +371,12 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // invalid suggestions, so if no sections are based on existing data,
   // |view_->UpdateForErrors()| is not called.
   void UpdateForErrors();
+
+  // Renders and returns one frame of the generated card animation.
+  gfx::Image GetGeneratedCardImage(const base::string16& card_number,
+                                   const base::string16& name,
+                                   const SkColor& gradient_top,
+                                   const SkColor& gradient_bottom);
 
   // Kicks off |card_scrambling_refresher_|.
   void StartCardScramblingRefresher();
@@ -563,8 +567,8 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // Called when the delay for enabling the submit button ends.
   void OnSubmitButtonDelayEnd();
 
-  // Initiates a fetch of the user's current Wallet cookie and Google username.
-  void FetchWalletCookieAndUserName();
+  // Gets the user's current Wallet cookie (gdToken) from the cookie jar.
+  void FetchWalletCookie();
 
   // The |profile| for |contents_|.
   Profile* const profile_;
@@ -594,10 +598,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // sign-in. The helper is set only during fetch/sign-in, and NULL otherwise.
   scoped_ptr<wallet::WalletSigninHelper> signin_helper_;
 
-  // The sign-in helper to fetch the user's human-readable username. The helper
-  // is set only while fetching the username, and NULL otherwise.
-  scoped_ptr<wallet::WalletSigninHelper> username_fetcher_;
-
   // A client to talk to the Online Wallet API.
   wallet::WalletClient wallet_client_;
 
@@ -607,6 +607,10 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // True when the user has clicked the "Use Wallet" link and we're waiting to
   // figure out whether we need to ask them to actively sign in.
   bool handling_use_wallet_link_click_;
+
+  // True when the current WalletItems has a passive auth action which was
+  // attempted and failed.
+  bool passive_failed_;
 
   // Recently received items retrieved via |wallet_client_|.
   scoped_ptr<wallet::WalletItems> wallet_items_;

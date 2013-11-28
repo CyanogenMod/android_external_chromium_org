@@ -230,6 +230,9 @@ Press any key to continue exploring.
   <message name="IDS_UPDATE_MSG" desc="Chrome OS OOBE: message shown during update stage.">
     <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> updates automatically so you always have the freshest version. When this download completes, <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> will restart and you'll be on your way.
   </message>
+  <message name="IDS_REMORA_CONFIRM_MESSAGE" desc="Remora confirm message on the first OOBE screen">
+    This device is ready to be set up.
+  </message>
   <message name="IDS_WELCOME_SCREEN_GREETING" desc="Greeting message on the OOBE welcome screen">
     Welcome!
   </message>
@@ -321,7 +324,7 @@ Press any key to continue exploring.
     Accessibility
   </message>
   <message name="IDS_OOBE_SPOKEN_FEEDBACK_OPTION" desc="Spoken feedback option shown on OOBE screens accessibility menu.">
-    Spoken feedback
+    ChromeVox (spoken feedback)
   </message>
   <message name="IDS_OOBE_LARGE_CURSOR_OPTION" desc="Large mouse cursor option shown on OOBE screens accessibility menu.">
     Large mouse cursor
@@ -937,7 +940,7 @@ Press any key to continue exploring.
     Show large mouse cursor
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SPOKEN_FEEDBACK_DESCRIPTION" desc="In the settings tab, the text next to the checkbox for spoken feedback.">
-    Enable spoken feedback
+    Enable ChromeVox (spoken feedback)
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_HIGH_CONTRAST_DESCRIPTION" desc="In the settings tab, the text next to the checkbox for high contrast mode.">
     Use high contrast mode
@@ -2406,10 +2409,10 @@ Press any key to continue exploring.
     Mouse
   </message>
   <message name="IDS_STATUSBAR_SPOKEN_FEEDBACK_ENABLED" desc="The tooltip for the status bar button to indicate that spoken feedback has been enabled.">
-    Spoken feedback is enabled.
+    ChromeVox (spoken feedback) is enabled. Press Ctrl+Alt+Z to disable.
   </message>
   <message name="IDS_STATUSBAR_DISABLE_SPOKEN_FEEDBACK" desc="The menu option to disable spoken feedback accessibility feature.">
-    Disable spoken feedback
+    Disable ChromeVox (spoken feedback)
   </message>
   <message name="IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET" desc="The ethernet network device.">
     Ethernet
@@ -2672,12 +2675,6 @@ Battery full
   <message name="IDS_CHROMEOS_ACC_TEXT_UNSELECTED" desc="A phrase to indicate to the user that text has been unselected.">
     Unselected
   </message>
-  <message name="IDS_CHROMEOS_ACC_SPOKEN_FEEDBACK_ENABLED" desc="A phrase to speak when spoken feedback is enabled.">
-    Enabling spoken feedback.
-  </message>
-  <message name="IDS_CHROMEOS_ACC_SPOKEN_FEEDBACK_DISABLED" desc="A phrase to speak when spoken feedback is disabled.">
-    Disabling spoken feedback.
-  </message>
   <message name="IDS_CHROMEOS_ACC_USERNAME_LABEL" desc="Label for the username text field.">
     Username.
   </message>
@@ -2775,26 +2772,6 @@ Battery full
   </message>
   <message name="IDS_CHROMEOS_GDATA_SYNC_FINISHED_FAILURE_MESSAGE" desc="Text of notification message which is shown when there are some errors while gdata sync.">
     Unable to connect.
-  </message>
-
-  <!-- Captive Portal state strings for ChromeOS -->
-  <message name="IDS_CHROMEOS_CAPTIVE_PORTAL_STATUS_UNKNOWN" desc="Captive Portal status in about:network: Unknown">
-    Unknown
-  </message>
-  <message name="IDS_CHROMEOS_CAPTIVE_PORTAL_STATUS_OFFLINE" desc="Captive Portal status in about:network: Offline">
-    Offline
-  </message>
-  <message name="IDS_CHROMEOS_CAPTIVE_PORTAL_STATUS_ONLINE" desc="Captive Portal status in about:network: Online">
-    Online
-  </message>
-  <message name="IDS_CHROMEOS_CAPTIVE_PORTAL_STATUS_PORTAL" desc="Captive Portal status in about:network: Portal">
-    Portal
-  </message>
-  <message name="IDS_CHROMEOS_CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED" desc="Proxy authentication required for the active network">
-    Proxy authentication required
-  </message>
-  <message name="IDS_CHROMEOS_CAPTIVE_PORTAL_STATUS_UNRECOGNIZED" desc="Captive Portal status in about:network: Unrecognized">
-    Unrecognized
   </message>
 
   <!-- Cellular network technology description strings for ChromeOS -->
@@ -3274,7 +3251,7 @@ Battery full
     Toggle speech input
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_SPOKEN_FEEDBACK" desc="The text in the keyboard overlay to explain the shortcut (enable or disable spoken feedback).">
-    Toggle spoken feedback
+    Toggle ChromeVox (spoken feedback)
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_UNDO" desc="The text in the keyboard overlay to explain the shortcut.">
     Undo
@@ -3853,4 +3830,56 @@ Battery full
     Disable HD on <ph name="DOMAIN">$1<ex>example.com</ex></ph>
   </message>
 
+  <!-- First-run tutorial -->
+  <message name="IDS_FIRST_RUN_GREETING_STEP_HEADER" desc="Greeting message shown as header of the first dialog of first-run tutorial.">
+    Howdy, <ph name="USER_GIVEN_NAME">$1<ex>John</ex></ph>.
+  </message>
+  <message name="IDS_FIRST_RUN_GREETING_STEP_HEADER_GENERAL" desc="Greeting message shown as header of the first dialog of first-run tutorial in case when we don't know user's given name.">
+    Howdy.
+  </message>
+  <message name="IDS_FIRST_RUN_GREETING_STEP_TEXT_1" desc="First part of message shown on the first dialog of firsr-run tutorial.">
+    Welcome to the Chromebook family. This is no ordinary computer.
+  </message>
+  <message name="IDS_FIRST_RUN_GREETING_STEP_TEXT_2" desc="Second part of message shown on the first dialog of firsr-run tutorial.">
+    This Chromebook was designed to deliver the best experience of the web to you.
+  </message>
+  <message name="IDS_FIRST_RUN_GREETING_STEP_BUTTON" desc="Text on the button located on the first dialog of first-run tutorial.">
+    Take a tour
+  </message>
+  <message name="IDS_FIRST_RUN_APP_LIST_STEP_HEADER" desc="Header of the first-run bubble bubble pointing to application list button.">
+    Play, edit, share, get stuff done.
+  </message>
+  <message name="IDS_FIRST_RUN_APP_LIST_STEP_TEXT_1" desc="First part of message on the first-run tutorial bubble pointing to application list button.">
+    Access all your apps from this handy launcher. Play games, video chat, listen to music, edit documents, or get more apps from the Chrome Web Store.
+  </message>
+  <message name="IDS_FIRST_RUN_APP_LIST_STEP_TEXT_2" desc="Second part of message on the first-run tutorial bubble pointing to application list button. Part of the phrase &quot;Access all your apps from this handy launcher. Play games, video chat, listen to music, edit documents, or get more apps from the Chrome Web Store. It's all here.&quot;">
+    It's all here.
+  </message>
+  <message name="IDS_FIRST_RUN_TRAY_STEP_HEADER" desc="Header of the first-run tutorial bubble pointing to system tray bubble.">
+    Hassle-free goodness.
+  </message>
+  <message name="IDS_FIRST_RUN_TRAY_STEP_TEXT" desc="Text on the first-run tutorial bubble pointing to system tray bubble.">
+    The status tray shows you the current state of your network, battery and other things.
+  </message>
+  <message name="IDS_FIRST_RUN_HELP_STEP_HEADER" desc="Header of the first-run tutorial bubble pointing to help button in system tray.">
+    Have fun! We're here for you.
+  </message>
+  <message name="IDS_FIRST_RUN_HELP_STEP_TEXT_1" desc="First part of text shown on the first-run tutorial bubble pointing to help button in system tray.">
+    Enjoy your Chromebook. Question? You can always get help by clicking the "?" in the Status tray.
+  </message>
+  <message name="IDS_FIRST_RUN_HELP_STEP_TEXT_2" desc="Second part of text shown on the first-run tutorial bubble pointing to help button in system tray. Part of the phrase &quot;Want to discover more awesome features? It's just one click away.&quot;">
+    Want to discover more awesome features?
+  </message>
+  <message name="IDS_FIRST_RUN_HELP_STEP_TEXT_3" desc="Third part of text shown on the first-run tutorial bubble pointing to help button in system tray. Part of the phrase &quot;Want to discover more awesome features? It's just one click away.&quot;">
+    It's just one click away.
+  </message>
+  <message name="IDS_FIRST_RUN_HELP_STEP_KEEP_EXPLORING_BUTTON" desc="Text on the button located in the first-run tutorial bubble pointing to help button is system tray. After click on the button tutorial finishes and help app opens.">
+    Keep exploring
+  </message>
+  <message name="IDS_FIRST_RUN_HELP_STEP_FINISH_BUTTON" desc="Text on the button located in the first-run tutorial bubble pointing to help button is system tray. After click on the button tutorial finishes.">
+    Finish
+  </message>
+  <message name="IDS_FIRST_RUN_NEXT_BUTTON" desc="Text on the first-run tutorial button leading to next step of tutorial.">
+    Next
+  </message>
 </grit-part>

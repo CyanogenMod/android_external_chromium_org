@@ -21,8 +21,7 @@ class AppListServiceDisabled : public AppListService {
   AppListServiceDisabled() {}
 
   // AppListService overrides:
-  virtual void SetAppListNextPaintCallback(
-      const base::Closure& callback) OVERRIDE {}
+  virtual void SetAppListNextPaintCallback(void (*callback)()) OVERRIDE {}
   virtual void HandleFirstRun() OVERRIDE {}
   virtual void Init(Profile* initial_profile) OVERRIDE {}
 
@@ -41,7 +40,7 @@ class AppListServiceDisabled : public AppListService {
   virtual bool IsAppListVisible() const OVERRIDE { return false; }
   virtual void EnableAppList(Profile* initial_profile) OVERRIDE {}
 
-  virtual AppListControllerDelegate* CreateControllerDelegate() OVERRIDE {
+  virtual AppListControllerDelegate* GetControllerDelegate() OVERRIDE {
     return NULL;
   }
 

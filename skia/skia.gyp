@@ -66,10 +66,12 @@
           'defines': [
             'SKIA_DLL',
             'SKIA_IMPLEMENTATION=1',
+            'GR_GL_IGNORE_ES3_MSAA=0',
           ],
           'direct_dependent_settings': {
             'defines': [
               'SKIA_DLL',
+              'GR_GL_IGNORE_ES3_MSAA=0',
             ],
           },
         },
@@ -129,6 +131,17 @@
       ],
       'sources': [
         'ext/image_operations_bench.cc',
+      ],
+    },
+    {
+      'target_name': 'filter_fuzz_stub',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        'skia.gyp:skia',
+      ],
+      'sources': [
+        'tools/filter_fuzz_stub/filter_fuzz_stub.cc',
       ],
     },
   ],

@@ -21,8 +21,11 @@ struct ExtensionHostMsg_APIActionOrEvent_Params;
 struct ExtensionHostMsg_DOMAction_Params;
 struct ExtensionHostMsg_Request_Params;
 struct ExtensionMsg_ExternalConnectionInfo;
-class ExtensionInfoMap;
 class GURL;
+
+namespace extensions {
+class InfoMap;
+}
 
 namespace net {
 class HostResolver;
@@ -82,8 +85,8 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
 
   void OnDnsPrefetch(const std::vector<std::string>& hostnames);
   void OnPreconnect(const GURL& url);
-  void OnResourceTypeStats(const WebKit::WebCache::ResourceTypeStats& stats);
-  void OnUpdatedCacheStats(const WebKit::WebCache::UsageStats& stats);
+  void OnResourceTypeStats(const blink::WebCache::ResourceTypeStats& stats);
+  void OnUpdatedCacheStats(const blink::WebCache::UsageStats& stats);
   void OnFPS(int routing_id, float fps);
   void OnV8HeapStats(int v8_memory_allocated, int v8_memory_used);
   void OnOpenChannelToExtension(int routing_id,
@@ -195,8 +198,11 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   Profile* profile_;
   // Copied from the profile so that it can be read on the IO thread.
   bool off_the_record_;
+  // The Predictor for the associated Profile. It is stored so that it can be
+  // used on the IO thread.
+  chrome_browser_net::Predictor* predictor_;
   scoped_refptr<net::URLRequestContextGetter> request_context_;
-  scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  scoped_refptr<extensions::InfoMap> extension_info_map_;
   // Used to look up permissions at database creation time.
   scoped_refptr<CookieSettings> cookie_settings_;
 

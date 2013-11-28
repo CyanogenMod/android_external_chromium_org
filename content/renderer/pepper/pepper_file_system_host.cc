@@ -15,11 +15,10 @@
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -99,32 +98,20 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
     return PP_ERROR_INPROGRESS;
   called_open_ = true;
 
-  fileapi::FileSystemType file_system_type;
-  switch (type_) {
-    case PP_FILESYSTEMTYPE_LOCALTEMPORARY:
-      file_system_type = fileapi::kFileSystemTypeTemporary;
-      break;
-    case PP_FILESYSTEMTYPE_LOCALPERSISTENT:
-      file_system_type = fileapi::kFileSystemTypePersistent;
-      break;
-    case PP_FILESYSTEMTYPE_EXTERNAL:
-      file_system_type = fileapi::kFileSystemTypeExternal;
-      break;
-    default:
-      return PP_ERROR_FAILED;
-  }
+  fileapi::FileSystemType file_system_type =
+      ppapi::PepperFileSystemTypeToFileSystemType(type_);
+  if (file_system_type == fileapi::kFileSystemTypeUnknown)
+    return PP_ERROR_FAILED;
 
-  PepperPluginInstance* plugin_instance =
-      renderer_ppapi_host_->GetPluginInstance(pp_instance());
-  if (!plugin_instance)
+  GURL document_url = renderer_ppapi_host_->GetDocumentURL(pp_instance());
+  if (!document_url.is_valid())
     return PP_ERROR_FAILED;
 
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
   reply_context_ = context->MakeReplyMessageContext();
   file_system_dispatcher->OpenFileSystem(
-      GURL(plugin_instance->GetContainer()->element().document().url()).
-          GetOrigin(),
+      document_url.GetOrigin(),
       file_system_type,
       base::Bind(&PepperFileSystemHost::DidOpenFileSystem,
                  weak_factory_.GetWeakPtr()),
@@ -135,21 +122,28 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
 
 int32_t PepperFileSystemHost::OnHostMsgInitIsolatedFileSystem(
     ppapi::host::HostMessageContext* context,
-    const std::string& fsid) {
+    const std::string& fsid,
+    PP_IsolatedFileSystemType_Private type) {
   // Do not allow multiple opens.
   if (called_open_)
     return PP_ERROR_INPROGRESS;
   called_open_ = true;
+
   // Do a sanity check.
   if (!fileapi::ValidateIsolatedFileSystemId(fsid))
     return PP_ERROR_BADARGUMENT;
+
   RenderView* view =
       renderer_ppapi_host_->GetRenderViewForInstance(pp_instance());
   if (!view)
     return PP_ERROR_FAILED;
+
   const GURL& url = view->GetWebView()->mainFrame()->document().url();
+  const std::string root_name = ppapi::IsolatedFileSystemTypeToRootName(type);
+  if (root_name.empty())
+    return PP_ERROR_BADARGUMENT;
   root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
-      url.GetOrigin(), fsid, "crxfs"));
+      url.GetOrigin(), fsid, root_name));
   opened_ = true;
   return PP_OK;
 }

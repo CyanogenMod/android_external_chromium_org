@@ -64,6 +64,7 @@
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/cert_test_util.h"
+#include "net/websockets/websocket_handshake_stream_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "url/gurl.h"
@@ -7171,11 +7172,12 @@ TEST_P(HttpNetworkTransactionTest, GroupNameForDirectConnections) {
         new CaptureGroupNameTransportSocketPool(NULL, NULL);
     CaptureGroupNameSSLSocketPool* ssl_conn_pool =
         new CaptureGroupNameSSLSocketPool(NULL, NULL);
-    MockClientSocketPoolManager* mock_pool_manager =
-        new MockClientSocketPoolManager;
+    scoped_ptr<MockClientSocketPoolManager> mock_pool_manager(
+        new MockClientSocketPoolManager);
     mock_pool_manager->SetTransportSocketPool(transport_conn_pool);
     mock_pool_manager->SetSSLSocketPool(ssl_conn_pool);
-    peer.SetClientSocketPoolManager(mock_pool_manager);
+    peer.SetClientSocketPoolManager(
+        mock_pool_manager.PassAs<ClientSocketPoolManager>());
 
     EXPECT_EQ(ERR_IO_PENDING,
               GroupNameTransactionHelper(tests[i].url, session));
@@ -7237,11 +7239,12 @@ TEST_P(HttpNetworkTransactionTest, GroupNameForHTTPProxyConnections) {
     CaptureGroupNameSSLSocketPool* ssl_conn_pool =
         new CaptureGroupNameSSLSocketPool(NULL, NULL);
 
-    MockClientSocketPoolManager* mock_pool_manager =
-        new MockClientSocketPoolManager;
+    scoped_ptr<MockClientSocketPoolManager> mock_pool_manager(
+        new MockClientSocketPoolManager);
     mock_pool_manager->SetSocketPoolForHTTPProxy(proxy_host, http_proxy_pool);
     mock_pool_manager->SetSocketPoolForSSLWithProxy(proxy_host, ssl_conn_pool);
-    peer.SetClientSocketPoolManager(mock_pool_manager);
+    peer.SetClientSocketPoolManager(
+        mock_pool_manager.PassAs<ClientSocketPoolManager>());
 
     EXPECT_EQ(ERR_IO_PENDING,
               GroupNameTransactionHelper(tests[i].url, session));
@@ -7307,11 +7310,12 @@ TEST_P(HttpNetworkTransactionTest, GroupNameForSOCKSConnections) {
     CaptureGroupNameSSLSocketPool* ssl_conn_pool =
         new CaptureGroupNameSSLSocketPool(NULL, NULL);
 
-    MockClientSocketPoolManager* mock_pool_manager =
-        new MockClientSocketPoolManager;
+    scoped_ptr<MockClientSocketPoolManager> mock_pool_manager(
+        new MockClientSocketPoolManager);
     mock_pool_manager->SetSocketPoolForSOCKSProxy(proxy_host, socks_conn_pool);
     mock_pool_manager->SetSocketPoolForSSLWithProxy(proxy_host, ssl_conn_pool);
-    peer.SetClientSocketPoolManager(mock_pool_manager);
+    peer.SetClientSocketPoolManager(
+        mock_pool_manager.PassAs<ClientSocketPoolManager>());
 
     scoped_ptr<HttpTransaction> trans(
         new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -7724,25 +7728,12 @@ TEST_P(HttpNetworkTransactionTest, UploadUnreadableFile) {
   request.upload_data_stream = &upload_data_stream;
   request.load_flags = 0;
 
-  // If we try to upload an unreadable file, the network stack should report
-  // the file size as zero and upload zero bytes for that file.
+  // If we try to upload an unreadable file, the transaction should fail.
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
 
-  MockRead data_reads[] = {
-    MockRead("HTTP/1.0 200 OK\r\n\r\n"),
-    MockRead(SYNCHRONOUS, OK),
-  };
-  MockWrite data_writes[] = {
-    MockWrite("POST /upload HTTP/1.1\r\n"
-              "Host: www.google.com\r\n"
-              "Connection: keep-alive\r\n"
-              "Content-Length: 0\r\n\r\n"),
-    MockWrite(SYNCHRONOUS, OK),
-  };
-  StaticSocketDataProvider data(data_reads, arraysize(data_reads), data_writes,
-                                arraysize(data_writes));
+  StaticSocketDataProvider data(NULL, 0, NULL, 0);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   TestCompletionCallback callback;
@@ -7751,103 +7742,10 @@ TEST_P(HttpNetworkTransactionTest, UploadUnreadableFile) {
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(ERR_ACCESS_DENIED, rv);
 
   const HttpResponseInfo* response = trans->GetResponseInfo();
-  ASSERT_TRUE(response != NULL);
-  EXPECT_TRUE(response->headers.get() != NULL);
-  EXPECT_EQ("HTTP/1.0 200 OK", response->headers->GetStatusLine());
-
-  base::DeleteFile(temp_file, false);
-}
-
-TEST_P(HttpNetworkTransactionTest, UnreadableUploadFileAfterAuthRestart) {
-  base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFile(&temp_file));
-  std::string temp_file_contents("Unreadable file.");
-  std::string unreadable_contents(temp_file_contents.length(), '\0');
-  ASSERT_TRUE(file_util::WriteFile(temp_file, temp_file_contents.c_str(),
-                                   temp_file_contents.length()));
-
-  ScopedVector<UploadElementReader> element_readers;
-  element_readers.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
-  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
-
-  HttpRequestInfo request;
-  request.method = "POST";
-  request.url = GURL("http://www.google.com/upload");
-  request.upload_data_stream = &upload_data_stream;
-  request.load_flags = 0;
-
-  scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
-  scoped_ptr<HttpTransaction> trans(
-      new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
-
-  MockRead data_reads[] = {
-    MockRead("HTTP/1.1 401 Unauthorized\r\n"),
-    MockRead("WWW-Authenticate: Basic realm=\"MyRealm1\"\r\n"),
-    MockRead("Content-Length: 0\r\n\r\n"),  // No response body.
-
-    MockRead("HTTP/1.1 200 OK\r\n"),
-    MockRead("Content-Length: 0\r\n\r\n"),
-    MockRead(SYNCHRONOUS, OK),
-  };
-  MockWrite data_writes[] = {
-    MockWrite("POST /upload HTTP/1.1\r\n"
-              "Host: www.google.com\r\n"
-              "Connection: keep-alive\r\n"
-              "Content-Length: 16\r\n\r\n"),
-    MockWrite(SYNCHRONOUS, temp_file_contents.c_str()),
-
-    MockWrite("POST /upload HTTP/1.1\r\n"
-              "Host: www.google.com\r\n"
-              "Connection: keep-alive\r\n"
-              "Content-Length: 0\r\n"
-              "Authorization: Basic Zm9vOmJhcg==\r\n\r\n"),
-    MockWrite(SYNCHRONOUS, unreadable_contents.c_str(),
-              temp_file_contents.length()),
-    MockWrite(SYNCHRONOUS, OK),
-  };
-  StaticSocketDataProvider data(data_reads, arraysize(data_reads), data_writes,
-                                arraysize(data_writes));
-  session_deps_.socket_factory->AddSocketDataProvider(&data);
-
-  TestCompletionCallback callback1;
-
-  int rv = trans->Start(&request, callback1.callback(), BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
-
-  rv = callback1.WaitForResult();
-  EXPECT_EQ(OK, rv);
-
-  const HttpResponseInfo* response = trans->GetResponseInfo();
-  ASSERT_TRUE(response != NULL);
-  ASSERT_TRUE(response->headers.get() != NULL);
-  EXPECT_EQ("HTTP/1.1 401 Unauthorized", response->headers->GetStatusLine());
-  EXPECT_TRUE(CheckBasicServerAuth(response->auth_challenge.get()));
-
-  // Now make the file unreadable and try again.
-  ASSERT_TRUE(file_util::MakeFileUnreadable(temp_file));
-
-  TestCompletionCallback callback2;
-
-  rv = trans->RestartWithAuth(
-      AuthCredentials(kFoo, kBar), callback2.callback());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
-
-  rv = callback2.WaitForResult();
-  EXPECT_EQ(OK, rv);
-
-  response = trans->GetResponseInfo();
-  ASSERT_TRUE(response != NULL);
-  EXPECT_TRUE(response->headers.get() != NULL);
-  EXPECT_TRUE(response->auth_challenge.get() == NULL);
-  EXPECT_EQ("HTTP/1.1 200 OK", response->headers->GetStatusLine());
+  EXPECT_FALSE(response);
 
   base::DeleteFile(temp_file, false);
 }
@@ -9469,10 +9367,11 @@ TEST_P(HttpNetworkTransactionTest, MultiRoundAuth) {
       session_deps_.host_resolver.get(),
       session_deps_.socket_factory.get(),
       session_deps_.net_log);
-  MockClientSocketPoolManager* mock_pool_manager =
-      new MockClientSocketPoolManager;
+  scoped_ptr<MockClientSocketPoolManager> mock_pool_manager(
+      new MockClientSocketPoolManager);
   mock_pool_manager->SetTransportSocketPool(transport_pool);
-  session_peer.SetClientSocketPoolManager(mock_pool_manager);
+  session_peer.SetClientSocketPoolManager(
+      mock_pool_manager.PassAs<ClientSocketPoolManager>());
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -11957,11 +11856,24 @@ class FakeStreamRequest : public HttpStreamRequest,
   FakeStreamRequest(RequestPriority priority,
                     HttpStreamRequest::Delegate* delegate)
       : priority_(priority),
-        delegate_(delegate) {}
+        delegate_(delegate),
+        websocket_stream_create_helper_(NULL) {}
+
+  FakeStreamRequest(RequestPriority priority,
+                    HttpStreamRequest::Delegate* delegate,
+                    WebSocketHandshakeStreamBase::CreateHelper* create_helper)
+      : priority_(priority),
+        delegate_(delegate),
+        websocket_stream_create_helper_(create_helper) {}
 
   virtual ~FakeStreamRequest() {}
 
   RequestPriority priority() const { return priority_; }
+
+  const WebSocketHandshakeStreamBase::CreateHelper*
+  websocket_stream_create_helper() const {
+    return websocket_stream_create_helper_;
+  }
 
   // Create a new FakeStream and pass it to the request's
   // delegate. Returns a weak pointer to the FakeStream.
@@ -12004,6 +11916,7 @@ class FakeStreamRequest : public HttpStreamRequest,
  private:
   RequestPriority priority_;
   HttpStreamRequest::Delegate* const delegate_;
+  WebSocketHandshakeStreamBase::CreateHelper* websocket_stream_create_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeStreamRequest);
 };
@@ -12038,10 +11951,12 @@ class FakeStreamFactory : public HttpStreamFactory {
       const SSLConfig& server_ssl_config,
       const SSLConfig& proxy_ssl_config,
       HttpStreamRequest::Delegate* delegate,
-      WebSocketHandshakeStreamBase::Factory* factory,
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper,
       const BoundNetLog& net_log) OVERRIDE {
-    ADD_FAILURE();
-    return NULL;
+    FakeStreamRequest* fake_request =
+        new FakeStreamRequest(priority, delegate, create_helper);
+    last_stream_request_ = fake_request->AsWeakPtr();
+    return fake_request;
   }
 
   virtual void PreconnectStreams(int num_streams,
@@ -12068,6 +11983,33 @@ class FakeStreamFactory : public HttpStreamFactory {
   DISALLOW_COPY_AND_ASSIGN(FakeStreamFactory);
 };
 
+// TODO(yhirano): Split this class out into a net/websockets file, if it is
+// worth doing.
+class FakeWebSocketStreamCreateHelper :
+      public WebSocketHandshakeStreamBase::CreateHelper {
+ public:
+  virtual WebSocketHandshakeStreamBase* CreateBasicStream(
+      scoped_ptr<ClientSocketHandle> connection,
+      bool using_proxy) OVERRIDE {
+    NOTREACHED();
+    return NULL;
+  }
+
+  virtual WebSocketHandshakeStreamBase* CreateSpdyStream(
+      const base::WeakPtr<SpdySession>& session,
+      bool use_relative_url) OVERRIDE {
+    NOTREACHED();
+    return NULL;
+  };
+
+  virtual ~FakeWebSocketStreamCreateHelper() {}
+
+  virtual scoped_ptr<WebSocketStream> Upgrade() {
+    NOTREACHED();
+    return scoped_ptr<WebSocketStream>();
+  }
+};
+
 }  // namespace
 
 // Make sure that HttpNetworkTransaction passes on its priority to its
@@ -12076,7 +12018,7 @@ TEST_P(HttpNetworkTransactionTest, SetStreamRequestPriorityOnStart) {
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
   HttpNetworkSessionPeer peer(session);
   FakeStreamFactory* fake_factory = new FakeStreamFactory();
-  peer.SetHttpStreamFactory(fake_factory);
+  peer.SetHttpStreamFactory(scoped_ptr<HttpStreamFactory>(fake_factory));
 
   HttpNetworkTransaction trans(LOW, session);
 
@@ -12099,7 +12041,7 @@ TEST_P(HttpNetworkTransactionTest, SetStreamRequestPriority) {
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
   HttpNetworkSessionPeer peer(session);
   FakeStreamFactory* fake_factory = new FakeStreamFactory();
-  peer.SetHttpStreamFactory(fake_factory);
+  peer.SetHttpStreamFactory(scoped_ptr<HttpStreamFactory>(fake_factory));
 
   HttpNetworkTransaction trans(LOW, session);
 
@@ -12124,7 +12066,7 @@ TEST_P(HttpNetworkTransactionTest, SetStreamPriority) {
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
   HttpNetworkSessionPeer peer(session);
   FakeStreamFactory* fake_factory = new FakeStreamFactory();
-  peer.SetHttpStreamFactory(fake_factory);
+  peer.SetHttpStreamFactory(scoped_ptr<HttpStreamFactory>(fake_factory));
 
   HttpNetworkTransaction trans(LOW, session);
 
@@ -12142,6 +12084,39 @@ TEST_P(HttpNetworkTransactionTest, SetStreamPriority) {
 
   trans.SetPriority(LOWEST);
   EXPECT_EQ(LOWEST, fake_stream->priority());
+}
+
+TEST_P(HttpNetworkTransactionTest, CreateWebSocketHandshakeStream) {
+  // The same logic needs to be tested for both ws: and wss: schemes, but this
+  // test is already parameterised on NextProto, so it uses a loop to verify
+  // that the different schemes work.
+  std::string test_cases[] = {"ws://www.google.com/", "wss://www.google.com/"};
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
+    scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
+    HttpNetworkSessionPeer peer(session);
+    FakeStreamFactory* fake_factory = new FakeStreamFactory();
+    FakeWebSocketStreamCreateHelper websocket_stream_create_helper;
+    peer.SetHttpStreamFactoryForWebSocket(
+        scoped_ptr<HttpStreamFactory>(fake_factory));
+
+    HttpNetworkTransaction trans(LOW, session);
+    trans.SetWebSocketHandshakeStreamCreateHelper(
+        &websocket_stream_create_helper);
+
+    HttpRequestInfo request;
+    TestCompletionCallback callback;
+    request.method = "GET";
+    request.url = GURL(test_cases[i]);
+
+    EXPECT_EQ(ERR_IO_PENDING,
+              trans.Start(&request, callback.callback(), BoundNetLog()));
+
+    base::WeakPtr<FakeStreamRequest> fake_request =
+        fake_factory->last_stream_request();
+    ASSERT_TRUE(fake_request != NULL);
+    EXPECT_EQ(&websocket_stream_create_helper,
+              fake_request->websocket_stream_create_helper());
+  }
 }
 
 // Tests that when a used socket is returned to the SSL socket pool, it's closed

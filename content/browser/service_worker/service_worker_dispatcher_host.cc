@@ -4,21 +4,62 @@
 
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 
-#include "content/browser/service_worker/service_worker_context.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_context_wrapper.h"
+#include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/common/service_worker_messages.h"
 #include "ipc/ipc_message_macros.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
 #include "url/gurl.h"
 
 namespace content {
 
+namespace {
+
+const char kDisabledErrorMessage[] =
+    "ServiceWorker is disabled";
+const char kDomainMismatchErrorMessage[] =
+    "Scope and scripts do not have the same origin";
+
+// TODO(alecflett): Store the service_worker_id keyed by (domain+pattern,
+// script) so we don't always return a new service worker id.
+int64 NextWorkerId() {
+  static int64 service_worker_id = 0;
+  return service_worker_id++;
+}
+
+}  // namespace
+
 ServiceWorkerDispatcherHost::ServiceWorkerDispatcherHost(
-    int render_process_id,
-    ServiceWorkerContext* context) : context_(context) {}
+    int render_process_id)
+    : render_process_id_(render_process_id) {
+}
 
-ServiceWorkerDispatcherHost::~ServiceWorkerDispatcherHost() {}
+ServiceWorkerDispatcherHost::~ServiceWorkerDispatcherHost() {
+  if (context_)
+    context_->RemoveAllProviderHostsForProcess(render_process_id_);
+}
 
-bool ServiceWorkerDispatcherHost::OnMessageReceived(const IPC::Message& message,
-                                                    bool* message_was_ok) {
+void ServiceWorkerDispatcherHost::Init(
+    ServiceWorkerContextWrapper* context_wrapper) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ServiceWorkerDispatcherHost::Init,
+                    this, make_scoped_refptr(context_wrapper)));
+      return;
+  }
+  context_ = context_wrapper->context()->AsWeakPtr();
+}
+
+void ServiceWorkerDispatcherHost::OnDestruct() const {
+  BrowserThread::DeleteOnIOThread::Destruct(this);
+}
+
+bool ServiceWorkerDispatcherHost::OnMessageReceived(
+    const IPC::Message& message,
+    bool* message_was_ok) {
   if (IPC_MESSAGE_CLASS(message) != ServiceWorkerMsgStart)
     return false;
 
@@ -29,17 +70,14 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(const IPC::Message& message,
                         OnRegisterServiceWorker)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_UnregisterServiceWorker,
                         OnUnregisterServiceWorker)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderCreated,
+                        OnProviderCreated)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderDestroyed,
+                        OnProviderDestroyed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   return handled;
-}
-
-// TODO(alecflett): Store the service_worker_id keyed by (domain+pattern,
-// script) so we don't always return a new service worker id.
-static int64 NextWorkerId() {
-  static int64 service_worker_id = 0;
-  return service_worker_id++;
 }
 
 void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
@@ -47,13 +85,26 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     int32 request_id,
     const GURL& scope,
     const GURL& script_url) {
-  // TODO(alecflett): add a ServiceWorker-specific policy query in
-  // ChildProcessSecurityImpl. See http://crbug.com/311631.
-
-  // TODO(alecflett): Throw an error for origin mismatch, rather than
-  // just returning.
-  if (scope.GetOrigin() != script_url.GetOrigin())
+  if (!context_ || !context_->IsEnabled()) {
+    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+        thread_id,
+        request_id,
+        blink::WebServiceWorkerError::DisabledError,
+        ASCIIToUTF16(kDisabledErrorMessage)));
     return;
+  }
+
+  // TODO(alecflett): This check is insufficient for release. Add a
+  // ServiceWorker-specific policy query in
+  // ChildProcessSecurityImpl. See http://crbug.com/311631.
+  if (scope.GetOrigin() != script_url.GetOrigin()) {
+    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+        thread_id,
+        request_id,
+        blink::WebServiceWorkerError::SecurityError,
+        ASCIIToUTF16(kDomainMismatchErrorMessage)));
+    return;
+  }
 
   Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
       thread_id, request_id, NextWorkerId()));
@@ -62,10 +113,41 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
 void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(int32 thread_id,
                                                             int32 request_id,
                                                             const GURL& scope) {
-  // TODO(alecflett): add a ServiceWorker-specific policy query in
+  // TODO(alecflett): This check is insufficient for release. Add a
+  // ServiceWorker-specific policy query in
   // ChildProcessSecurityImpl. See http://crbug.com/311631.
+  if (!context_ || !context_->IsEnabled()) {
+    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+        thread_id,
+        request_id,
+        blink::WebServiceWorkerError::DisabledError,
+        ASCIIToUTF16(kDisabledErrorMessage)));
+    return;
+  }
 
   Send(new ServiceWorkerMsg_ServiceWorkerUnregistered(thread_id, request_id));
+}
+
+void ServiceWorkerDispatcherHost::OnProviderCreated(int provider_id) {
+  if (!context_)
+    return;
+  if (context_->GetProviderHost(render_process_id_, provider_id)) {
+    BadMessageReceived();
+    return;
+  }
+  scoped_ptr<ServiceWorkerProviderHost> provider_host(
+       new ServiceWorkerProviderHost(render_process_id_, provider_id));
+  context_->AddProviderHost(provider_host.Pass());
+}
+
+void ServiceWorkerDispatcherHost::OnProviderDestroyed(int provider_id) {
+  if (!context_)
+    return;
+  if (!context_->GetProviderHost(render_process_id_, provider_id)) {
+    BadMessageReceived();
+    return;
+  }
+  context_->RemoveProviderHost(render_process_id_, provider_id);
 }
 
 }  // namespace content

@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -33,8 +34,6 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
@@ -42,12 +41,19 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ipc/ipc_message.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
+
+#if defined(ENABLE_NOTIFICATIONS)
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/message_center_util.h"
+#endif
 
 using content::SiteInstance;
 using content::WebContents;
@@ -60,8 +66,17 @@ namespace {
 const char kNotificationPrefix[] = "app.background.crashed.";
 
 void CloseBalloon(const std::string& balloon_id) {
-  g_browser_process->notification_ui_manager()->
-      CancelById(balloon_id);
+  NotificationUIManager* notification_ui_manager =
+      g_browser_process->notification_ui_manager();
+  bool cancelled ALLOW_UNUSED = notification_ui_manager->CancelById(balloon_id);
+#if defined(ENABLE_NOTIFICATIONS)
+  if (cancelled && message_center::IsRichNotificationEnabled()) {
+    // TODO(dewittj): Add this functionality to the notification UI manager's
+    // API.
+    g_browser_process->message_center()->SetVisibility(
+        message_center::VISIBILITY_TRANSIENT);
+  }
+#endif
 }
 
 // Closes the crash notification balloon for the app/extension with this id.

@@ -13,6 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "remoting/base/auth_token_util.h"
 #include "remoting/base/auto_thread.h"
+#include "remoting/base/logging.h"
 #include "remoting/base/resources.h"
 #include "remoting/base/rsa_key_pair.h"
 #include "remoting/host/chromoting_host_context.h"
@@ -447,7 +448,7 @@ bool HostNPScriptObject::Connect(const NPVariant* args,
                                  NPVariant* result) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
-  LOG(INFO) << "Connecting...";
+  HOST_LOG << "Connecting...";
 
   if (arg_count != 2) {
     SetException("connect: bad number of arguments");
@@ -475,17 +476,20 @@ bool HostNPScriptObject::Connect(const NPVariant* args,
     return false;
   }
 
-  // Create threads for the Chromoting host & desktop environment to use.
-  scoped_ptr<ChromotingHostContext> host_context =
-    ChromotingHostContext::Create(plugin_task_runner_);
-  if (!host_context) {
+  // Create a host context to manage the threads for the it2me host.
+  // The plugin, rather than the It2MeHost object, owns and maintains the
+  // lifetime of the host context.
+  host_context_.reset(
+      ChromotingHostContext::Create(plugin_task_runner_).release());
+  if (!host_context_) {
     SetException("connect: failed to start threads");
     return false;
   }
 
   // Create the It2Me host and start connecting.
-  it2me_host_ = new It2MeHost(
-      host_context.Pass(), plugin_task_runner_, weak_ptr_,
+  scoped_ptr<It2MeHostFactory> factory(new It2MeHostFactory());
+  it2me_host_ = factory->CreateIt2MeHost(
+      host_context_.get(), plugin_task_runner_, weak_ptr_,
       xmpp_config, directory_bot_jid_);
   it2me_host_->Connect();
 
@@ -504,6 +508,7 @@ bool HostNPScriptObject::Disconnect(const NPVariant* args,
   if (it2me_host_.get()) {
     it2me_host_->Disconnect();
     it2me_host_ = NULL;
+    host_context_.reset();
   }
 
   return true;
@@ -1104,7 +1109,7 @@ void HostNPScriptObject::SetException(const std::string& exception_string) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
   g_npnetscape_funcs->setexception(parent_, exception_string.c_str());
-  LOG(INFO) << exception_string;
+  HOST_LOG << exception_string;
 }
 
 }  // namespace remoting

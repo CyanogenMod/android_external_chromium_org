@@ -9,14 +9,18 @@
 
 #include "apps/app_shim/app_shim_handler_mac.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/app_list/app_list_service_impl.h"
+
+class AppListControllerDelegateImpl;
 
 @class AppListAnimationController;
 @class AppListWindowController;
 template <typename T> struct DefaultSingletonTraits;
 
-namespace test {
-class AppListServiceTestApiMac;
+namespace gfx {
+class Display;
+class Point;
 }
 
 // AppListServiceMac manages global resources needed for the app list to
@@ -28,6 +32,22 @@ class AppListServiceMac : public AppListServiceImpl,
 
   static AppListServiceMac* GetInstance();
 
+  // Finds the position for a window to anchor it to the dock. This chooses the
+  // most appropriate position for the window based on whether the dock exists,
+  // the position of the dock (calculated by the difference between the display
+  // bounds and display work area), whether the mouse cursor is visible and its
+  // position. Sets |target_origin| to the coordinates for the window to appear
+  // at, and |start_origin| to the coordinates the window should begin animating
+  // from. Coordinates are for the bottom-left coordinate of the window, in
+  // AppKit space (Y positive is up).
+  static void FindAnchorPoint(const gfx::Size& window_size,
+                              const gfx::Display& display,
+                              int primary_display_height,
+                              bool cursor_is_visible,
+                              const gfx::Point& cursor,
+                              NSPoint* target_origin,
+                              NSPoint* start_origin);
+
   void ShowWindowNearDock();
 
   // AppListService overrides:
@@ -36,10 +56,10 @@ class AppListServiceMac : public AppListServiceImpl,
   virtual void ShowForProfile(Profile* requested_profile) OVERRIDE;
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
+  virtual void EnableAppList(Profile* initial_profile) OVERRIDE;
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
-  virtual AppListControllerDelegate* CreateControllerDelegate() OVERRIDE;
+  virtual AppListControllerDelegate* GetControllerDelegate() OVERRIDE;
   virtual Profile* GetCurrentAppListProfile() OVERRIDE;
-
 
   // AppListServiceImpl overrides:
   virtual void CreateShortcut() OVERRIDE;
@@ -58,7 +78,6 @@ class AppListServiceMac : public AppListServiceImpl,
 
  private:
   friend struct DefaultSingletonTraits<AppListServiceMac>;
-  friend class test::AppListServiceTestApiMac;
 
   AppListServiceMac();
 
@@ -67,6 +86,7 @@ class AppListServiceMac : public AppListServiceImpl,
   base::scoped_nsobject<NSRunningApplication> previously_active_application_;
   NSPoint last_start_origin_;
   Profile* profile_;
+  scoped_ptr<AppListControllerDelegateImpl> controller_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListServiceMac);
 };

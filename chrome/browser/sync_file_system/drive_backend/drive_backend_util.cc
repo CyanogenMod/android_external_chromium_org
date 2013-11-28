@@ -4,20 +4,27 @@
 
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 
-#include <string>
-
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
+#include "net/base/mime_util.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
 namespace sync_file_system {
 namespace drive_backend {
+
+namespace {
+
+const char kMimeTypeOctetStream[] = "application/octet-stream";
+
+}  // namespace
 
 void PutServiceMetadataToBatch(const ServiceMetadata& service_metadata,
                                leveldb::WriteBatch* batch) {
@@ -67,7 +74,7 @@ void PopulateFileDetailsByFileResource(
   details->set_creation_time(file_resource.created_date().ToInternalValue());
   details->set_modification_time(
       file_resource.modified_date().ToInternalValue());
-  details->set_deleted(false);
+  details->set_missing(false);
 }
 
 scoped_ptr<FileMetadata> CreateFileMetadataFromFileResource(
@@ -80,7 +87,7 @@ scoped_ptr<FileMetadata> CreateFileMetadataFromFileResource(
   details->set_change_id(change_id);
 
   if (resource.labels().is_trashed()) {
-    details->set_deleted(true);
+    details->set_missing(true);
     return file.Pass();
   }
 
@@ -97,12 +104,71 @@ scoped_ptr<FileMetadata> CreateFileMetadataFromChangeResource(
   details->set_change_id(change.change_id());
 
   if (change.is_deleted()) {
-    details->set_deleted(true);
+    details->set_missing(true);
     return file.Pass();
   }
 
   PopulateFileDetailsByFileResource(*change.file(), details);
   return file.Pass();
+}
+
+webkit_blob::ScopedFile CreateTemporaryFile() {
+  base::FilePath temp_file_path;
+  if (!file_util::CreateTemporaryFile(&temp_file_path))
+    return webkit_blob::ScopedFile();
+
+  return webkit_blob::ScopedFile(
+      temp_file_path,
+      webkit_blob::ScopedFile::DELETE_ON_SCOPE_OUT,
+      base::MessageLoopProxy::current().get());
+}
+
+std::string FileKindToString(FileKind file_kind) {
+  switch (file_kind) {
+    case FILE_KIND_UNSUPPORTED:
+      return "unsupported";
+    case FILE_KIND_FILE:
+      return "file";
+    case FILE_KIND_FOLDER:
+      return "folder";
+  }
+
+  NOTREACHED();
+  return "unknown";
+}
+
+bool HasFileAsParent(const FileDetails& details, const std::string& file_id) {
+  for (int i = 0; i < details.parent_folder_ids_size(); ++i) {
+    if (details.parent_folder_ids(i) == file_id)
+      return true;
+  }
+  return false;
+}
+
+std::string GetMimeTypeFromTitle(const base::FilePath& title) {
+  base::FilePath::StringType extension = title.Extension();
+  std::string mime_type;
+  if (extension.empty() ||
+      !net::GetWellKnownMimeTypeFromExtension(extension.substr(1), &mime_type))
+    return kMimeTypeOctetStream;
+  return mime_type;
+}
+
+scoped_ptr<google_apis::ResourceEntry> GetOldestCreatedFolderResource(
+    ScopedVector<google_apis::ResourceEntry> candidates) {
+  scoped_ptr<google_apis::ResourceEntry> oldest;
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    google_apis::ResourceEntry* entry = candidates[i];
+    if (!entry->is_folder())
+      continue;
+
+    if (!oldest || oldest->published_time() > entry->published_time()) {
+      oldest.reset(entry);
+      candidates[i] = NULL;
+    }
+  }
+
+  return oldest.Pass();
 }
 
 }  // namespace drive_backend

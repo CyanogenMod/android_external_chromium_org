@@ -15,13 +15,15 @@
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/ui_test_utils.cc"
+#include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/base/web_ui_browsertest.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
+#include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
 
 using testing::InvokeWithoutArgs;
@@ -294,10 +296,11 @@ class MockableFakeURLFetcherCreator {
       const GURL& url,
       net::URLFetcherDelegate* delegate,
       const std::string& response_data,
-      net::HttpStatusCode response_code) {
+      net::HttpStatusCode response_code,
+      net::URLRequestStatus::Status status) {
     OnCreateFakeURLFetcher(url.spec());
-    return scoped_ptr<net::FakeURLFetcher>(
-        new net::FakeURLFetcher(url, delegate, response_data, response_code));
+    return scoped_ptr<net::FakeURLFetcher>(new net::FakeURLFetcher(
+        url, delegate, response_data, response_code, status));
   }
 
   net::FakeURLFetcherFactory::FakeURLFetcherCreator callback() {
@@ -337,32 +340,38 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLInfo),
         kResponseInfo,
-        net::HTTP_OK);
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
 
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLRegisterStart),
         kResponseRegisterStart,
-        net::HTTP_OK);
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
 
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLRegisterClaimToken),
         kResponseRegisterClaimTokenNoConfirm,
-        net::HTTP_OK);
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
 
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLCloudPrintConfirm),
         kResponseCloudPrintConfirm,
-        net::HTTP_OK);
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
 
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLRegisterComplete),
         kResponseRegisterComplete,
-        net::HTTP_OK);
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
 
     fake_fetcher_factory().SetFakeResponse(
         GURL(kURLGaiaToken),
         kResponseGaiaToken,
-        net::HTTP_OK);
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
 
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
         kURLGaiaToken))
@@ -482,12 +491,14 @@ IN_PROC_BROWSER_TEST_F(LocalDiscoveryUITest, RegisterTest) {
   fake_fetcher_factory().SetFakeResponse(
       GURL(kURLRegisterClaimToken),
       kResponseRegisterClaimTokenConfirm,
-      net::HTTP_OK);
+      net::HTTP_OK,
+      net::URLRequestStatus::SUCCESS);
 
   fake_fetcher_factory().SetFakeResponse(
       GURL(kURLInfo),
       kResponseInfoWithID,
-      net::HTTP_OK);
+      net::HTTP_OK,
+      net::URLRequestStatus::SUCCESS);
 
   {
     InSequence s;

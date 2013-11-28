@@ -23,10 +23,14 @@ class TopSitesCacheTest : public testing::Test {
   }
 
  protected:
-  // Initializes |top_sites_| and |cache_| based on |spec|, which is a list of
-  // URL strings with optional indents: indentated URLs redirect to the last
-  // non-indented URL. Titles are assigned as "Title 1", "Title 2", etc., in the
-  // order of appearance. See |kTopSitesSpecBasic| for an example.
+  // Initializes |top_sites_| on |spec|, which is a list of URL strings with
+  // optional indents: indentated URLs redirect to the last non-indented URL.
+  // Titles are assigned as "Title 1", "Title 2", etc., in the order of
+  // appearance. See |kTopSitesSpecBasic| for an example. This function does not
+  // update |cache_| so you can manipulate |top_sites_| before you update it.
+  void BuildTopSites(const char** spec, size_t size);
+
+  // Initializes |top_sites_| and |cache_| based on |spec|.
   void InitTopSiteCache(const char** spec, size_t size);
 
   MostVisitedURLList top_sites_;
@@ -36,7 +40,7 @@ class TopSitesCacheTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(TopSitesCacheTest);
 };
 
-void TopSitesCacheTest::InitTopSiteCache(const char** spec, size_t size) {
+void TopSitesCacheTest::BuildTopSites(const char** spec, size_t size) {
   std::set<std::string> urls_seen;
   for (size_t i = 0; i < size; ++i) {
     const char* spec_item = spec[i];
@@ -54,6 +58,10 @@ void TopSitesCacheTest::InitTopSiteCache(const char** spec, size_t size) {
     // Set up redirect to canonical URL. Canonical URL redirects to itself, too.
     top_sites_.back().redirects.push_back(GURL(spec_item));
   }
+}
+
+void TopSitesCacheTest::InitTopSiteCache(const char** spec, size_t size) {
+  BuildTopSites(spec, size);
   cache_.SetTopSites(top_sites_);
 }
 
@@ -142,49 +150,9 @@ TEST_F(TopSitesCacheTest, GetCanonicalURLExactMatch) {
     // Get the answer from direct lookup.
     GURL stored_url(s);
     GURL expected(cache_.GetCanonicalURL(stored_url));
-    // Test specialization.
-    GURL result1(cache_.GetSpecializedCanonicalURL(stored_url));
-    EXPECT_EQ(expected, result1) << " for kTopSitesSpecPrefix[" << i << "]";
     // Test generalization.
-    GURL result2(cache_.GetGeneralizedCanonicalURL(stored_url));
-    EXPECT_EQ(expected, result2) << " for kTopSitesSpecPrefix[" << i << "]";
-  }
-}
-
-TEST_F(TopSitesCacheTest, GetSpecializedCanonicalURL) {
-  InitTopSiteCache(kTopSitesSpecPrefix, arraysize(kTopSitesSpecPrefix));
-  struct {
-    const char* expected;
-    const char* query;
-  } test_cases[] = {
-    // Exact match after trimming "?query": redirects.
-    {"http://www.google.com/", "http://www.google.com/test"},
-    // Specialized match: redirects.
-    {"http://www.google.com/sh", "http://www.google.com/sh/1/2"},
-    // Specialized match with trailing "/": redirects.
-    {"http://www.google.com/sh", "http://www.google.com/sh/1/2/"},
-    // Unique specialization match: redirects.
-    {"http://www.google.com/", "http://www.chromium.org/a"},
-    // Multiple exact matches after trimming: redirects to first.
-    {"http://www.google.com/2", "http://www.google.com/test/y"},
-    // Multiple specialized matches: redirects to least specialized.
-    {"http://www.google.com/2", "http://www.google.com/test/q"},
-    // No specialized match: fails.
-    {"", "http://www.google.com/no-match"},
-    // String prefix match but not URL-prefix match: fails.
-    {"", "http://www.google.com/t"},
-    // Different protocol: fails.
-    {"", "https://www.google.com/test"},
-    // Smart enough to know that port 80 is HTTP: redirects.
-    {"http://www.google.com/", "http://www.google.com:80/test"},
-    // Generalization match only: fails.
-    {"", "http://www.google.com/sh/1/2/3/4"},
-  };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
-    std::string expected(test_cases[i].expected);
-    std::string query(test_cases[i].query);
-    GURL result(cache_.GetSpecializedCanonicalURL(GURL(query)));
-    EXPECT_EQ(expected, result.spec()) << " for test_case[" << i << "]";
+    GURL result(cache_.GetGeneralizedCanonicalURL(stored_url));
+    EXPECT_EQ(expected, result) << " for kTopSitesSpecPrefix[" << i << "]";
   }
 }
 
@@ -240,8 +208,8 @@ TEST_F(TopSitesCacheTest, GetGeneralizedCanonicalURL) {
   }
 }
 
-// This tests a special case where there are 2 specialized and generalized
-// matches, and both should be checked to find the correct match.
+// This tests a special case where there are 2 generalized matches, and both
+// should be checked to find the correct match.
 TEST_F(TopSitesCacheTest, GetPrefixCanonicalURLDiffByQuery) {
   const char* top_sites_spec[] = {
     "http://www.dest.com/1",
@@ -251,7 +219,6 @@ TEST_F(TopSitesCacheTest, GetPrefixCanonicalURLDiffByQuery) {
   };
   InitTopSiteCache(top_sites_spec, arraysize(top_sites_spec));
 
-  // Shared by GetSpecializedCanonicalURL() and GetGeneralizedCanonicalURL
   struct {
     const char* expected;
     const char* query;
@@ -269,11 +236,21 @@ TEST_F(TopSitesCacheTest, GetPrefixCanonicalURLDiffByQuery) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     std::string expected(test_cases[i].expected);
     std::string query(test_cases[i].query);
-    GURL result1(cache_.GetSpecializedCanonicalURL(GURL(query)));
-    EXPECT_EQ(expected, result1.spec()) << " for test_case[" << i << "]";
-    GURL result2(cache_.GetGeneralizedCanonicalURL(GURL(query)));
-    EXPECT_EQ(expected, result2.spec()) << " for test_case[" << i << "]";
+    GURL result(cache_.GetGeneralizedCanonicalURL(GURL(query)));
+    EXPECT_EQ(expected, result.spec()) << " for test_case[" << i << "]";
   }
+}
+
+// This test ensures forced URLs behave in the expected way.
+TEST_F(TopSitesCacheTest, CacheForcedURLs) {
+  // Forced URLs must always appear at the beginning of the list.
+  BuildTopSites(kTopSitesSpecBasic, arraysize(kTopSitesSpecBasic));
+  top_sites_[0].last_forced_time = base::Time::FromJsTime(1000);
+  top_sites_[1].last_forced_time =  base::Time::FromJsTime(2000);
+  cache_.SetTopSites(top_sites_);
+
+  EXPECT_EQ(2u, cache_.GetNumForcedURLs());
+  EXPECT_EQ(2u, cache_.GetNumNonForcedURLs());
 }
 
 }  // namespace

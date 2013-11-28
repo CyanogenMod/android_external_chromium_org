@@ -7,16 +7,18 @@ import logging
 from cStringIO import StringIO
 import posixpath
 import sys
+import traceback
 from zipfile import BadZipfile, ZipFile
 
 import appengine_blobstore as blobstore
 from appengine_url_fetcher import AppEngineUrlFetcher
 from appengine_wrappers import urlfetch
 from docs_server_utils import StringIdentity
-from file_system import FileNotFoundError, FileSystem, StatInfo
+from file_system import FileNotFoundError, FileSystem, FileSystemError, StatInfo
 from future import Future, Gettable
 from object_store_creator import ObjectStoreCreator
 import url_constants
+
 
 _GITHUB_REPOS_NAMESPACE = 'GithubRepos'
 
@@ -30,8 +32,64 @@ def _LoadCredentials(object_store_creator):
       category='password',
       start_empty=False)
   password_data = password_store.GetMulti(('username', 'password')).Get()
-
   return password_data.get('username'), password_data.get('password')
+
+
+class _GithubZipFile(object):
+  '''A view of a ZipFile with a more convenient interface which ignores the
+  'zipball' prefix that all paths have. The zip files that come straight from
+  GitHub have paths like ['zipball/foo.txt', 'zipball/bar.txt'] but we only
+  care about ['foo.txt', 'bar.txt'].
+  '''
+
+  @classmethod
+  def Create(cls, repo_name, blob):
+    try:
+      zipball = ZipFile(StringIO(blob))
+    except:
+      logging.warning('zipball "%s" is not a valid zip' % repo_name)
+      return None
+
+    if not zipball.namelist():
+      logging.warning('zipball "%s" is empty' % repo_name)
+      return None
+
+    name_prefix = None  # probably 'zipball'
+    paths = []
+    for name in zipball.namelist():
+      prefix, path = name.split('/', 1)
+      if name_prefix and prefix != name_prefix:
+        logging.warning('zipball "%s" has names with inconsistent prefix: %s' %
+                        (repo_name, zipball.namelist()))
+        return None
+      name_prefix = prefix
+      paths.append(path)
+    return cls(zipball, name_prefix, paths)
+
+  def __init__(self, zipball, name_prefix, paths):
+    self._zipball = zipball
+    self._name_prefix = name_prefix
+    self._paths = paths
+
+  def Paths(self):
+    '''Return all file paths in this zip file.
+    '''
+    return self._paths
+
+  def List(self, path):
+    '''Returns all files within a directory at |path|. Not recursive. Paths
+    are returned relative to |path|.
+    '''
+    assert path == '' or path.endswith('/')
+    return [p[len(path):] for p in self._paths
+            if p != path and
+               p.startswith(path) and
+               '/' not in p[len(path):].rstrip('/')]
+
+  def Read(self, path):
+    '''Returns the contents of |path|. Raises a KeyError if it doesn't exist.
+    '''
+    return self._zipball.read(posixpath.join(self._name_prefix, path))
 
 
 class GithubFileSystem(FileSystem):
@@ -51,7 +109,7 @@ class GithubFileSystem(FileSystem):
 
   @staticmethod
   def ForTest(repo, fake_fetcher, path=None, object_store_creator=None):
-    '''Creates a GithubFIleSystem that can be used for testing. It reads zip
+    '''Creates a GithubFileSystem that can be used for testing. It reads zip
     files and commit data from server2/test_data/github_file_system/test_owner
     instead of github.com. It reads from files specified by |repo|.
     '''
@@ -65,82 +123,117 @@ class GithubFileSystem(FileSystem):
   def __init__(self, base_url, owner, repo, object_store_creator, Fetcher):
     self._repo_key = '%s/%s' % (owner, repo)
     self._repo_url = '%s/%s/%s' % (base_url, owner, repo)
-
-    self._blobstore = blobstore.AppEngineBlobstore()
-    # Lookup the chrome github api credentials.
     self._username, self._password = _LoadCredentials(object_store_creator)
+    self._blobstore = blobstore.AppEngineBlobstore()
     self._fetcher = Fetcher(self._repo_url)
-
+    # Stores whether the github is up-to-date. This will either be True or
+    # empty, the emptiness most likely due to this being a cron run.
+    self._up_to_date_cache = object_store_creator.Create(
+        GithubFileSystem, category='up-to-date')
+    # Caches the zip file's stat. Overrides start_empty=False and use
+    # |self._up_to_date_cache| to determine whether we need to refresh.
     self._stat_cache = object_store_creator.Create(
-        GithubFileSystem, category='stat-cache')
+        GithubFileSystem, category='stat-cache', start_empty=False)
 
-    self._repo_zip = Future(value=None)
+    # Created lazily in |_EnsureRepoZip|.
+    self._repo_zip = None
 
-  def _GetNamelist(self):
-    '''Returns a list of all file names in a repository zip file.
+  def _EnsureRepoZip(self):
+    '''Initializes |self._repo_zip| if it hasn't already been (i.e. if
+    _EnsureRepoZip has never been called before). In that case |self._repo_zip|
+    will be set to a Future of _GithubZipFile and the fetch process started,
+    whether that be from a blobstore or if necessary all the way from GitHub.
     '''
-    zipfile = self._repo_zip.Get()
-    if zipfile is None:
-      return []
+    if self._repo_zip is not None:
+      return
 
-    return zipfile.namelist()
+    repo_key, repo_url, username, password = (
+        self._repo_key, self._repo_url, self._username, self._password)
 
-  def _GetVersion(self):
-    '''Returns the currently cached version of the repository. The version is a
-    'sha' hash value.
-    '''
-    return self._stat_cache.Get(self._repo_key).Get()
+    def fetch_from_blobstore():
+      '''Returns a Future which resolves to the _GithubZipFile for this repo
+      fetched from blobstore.
+      '''
+      blob = self._blobstore.Get(repo_url, _GITHUB_REPOS_NAMESPACE)
+      if blob is None:
+        return FileSystemError.RaiseInFuture(
+            'No blob for %s found in datastore' % repo_key)
 
-  def _FetchLiveVersion(self):
+      repo_zip = _GithubZipFile.Create(repo_key, blob)
+      if repo_zip is None:
+        return FileSystemError.RaiseInFuture(
+            'Blob for %s was corrupted in blobstore!?' % repo_key)
+
+      return Future(value=repo_zip)
+
+    def fetch_from_github(version):
+      '''Returns a Future which resolves to the _GithubZipFile for this repo
+      fetched new from GitHub, then writes it to blobstore and |version| to the
+      stat caches.
+      '''
+      github_future = self._fetcher.FetchAsync(
+          'zipball', username=username, password=password)
+      def resolve():
+        try:
+          blob = github_future.Get().content
+        except urlfetch.DownloadError:
+          raise FileSystemError('Failed to download repo %s file from %s' %
+                                (repo_key, repo_url))
+
+        repo_zip = _GithubZipFile.Create(repo_key, blob)
+        if repo_zip is None:
+          raise FileSystemError('Blob for %s was fetched corrupted from %s' %
+                                (repo_key, repo_url))
+
+        self._blobstore.Set(self._repo_url, blob, _GITHUB_REPOS_NAMESPACE)
+        self._up_to_date_cache.Set(repo_key, True)
+        self._stat_cache.Set(repo_key, version)
+        return repo_zip
+      return Future(delegate=Gettable(resolve))
+
+    # To decide whether we need to re-stat, and from there whether to re-fetch,
+    # make use of ObjectStore's start-empty configuration. If
+    # |object_store_creator| is configured to start empty then our creator
+    # wants to refresh (e.g. running a cron), so fetch the live stat from
+    # GitHub. If the stat hasn't changed since last time then no reason to
+    # re-fetch from GitHub, just take from blobstore.
+
+    if self._up_to_date_cache.Get(repo_key).Get() is None:
+      # This is either a cron or an instance where a cron has never been run.
+      cached_version = self._stat_cache.Get(repo_key).Get()
+      live_version = self._FetchLiveVersion(username, password)
+      if cached_version != live_version:
+        # Note: branch intentionally triggered if |cached_version| is None.
+        logging.info('%s has changed, fetching from GitHub.' % repo_url)
+        self._repo_zip = fetch_from_github(live_version)
+      else:
+        # Already up to date. Fetch from blobstore. No need to set up-to-date
+        # to True here since it'll already be set for instances, and it'll
+        # never be set for crons.
+        logging.info('%s is up to date.' % repo_url)
+        self._repo_zip = fetch_from_blobstore()
+    else:
+      # Instance where cron has been run. It should be in blobstore.
+      self._repo_zip = fetch_from_blobstore()
+
+    assert self._repo_zip is not None
+
+  def _FetchLiveVersion(self, username, password):
     '''Fetches the current repository version from github.com and returns it.
     The version is a 'sha' hash value.
     '''
     # TODO(kalman): Do this asynchronously (use FetchAsync).
     result = self._fetcher.Fetch(
-        'commits/HEAD', username=self._username, password=self._password)
+        'commits/HEAD', username=username, password=password)
 
     try:
-      return json.loads(result.content)['commit']['tree']['sha']
+      return json.loads(result.content)['sha']
     except (KeyError, ValueError):
-      logging.warn('Error parsing JSON from repo %s' % self._repo_url)
+      raise FileSystemError('Error parsing JSON from repo %s: %s' %
+                            (self._repo_url, traceback.format_exc()))
 
   def Refresh(self):
-    '''Compares the cached and live stat versions to see if the cached
-    repository is out of date. If it is, an async fetch is started and a
-    Future is returned. When this Future is evaluated, the fetch will be
-    completed and the results cached.
-
-    If no update is needed, None will be returned.
-    '''
-    version = self._FetchLiveVersion()
-    repo_zip_url = self._repo_url + '/zipball'
-
-    def persist_fetch(fetch):
-      '''Completes |fetch| and stores the results in blobstore.
-      '''
-      try:
-        blob = fetch.Get().content
-      except urlfetch.DownloadError:
-        logging.error(
-            '%s: Failed to download zip file from repository %s' % repo_zip_url)
-      else:
-        try:
-          zipfile = ZipFile(StringIO(blob))
-        except BadZipfile as error:
-          logging.error(
-              '%s: Bad zip file returned from url %s' % (error, repo_zip_url))
-        else:
-          self._blobstore.Set(repo_zip_url, blob, _GITHUB_REPOS_NAMESPACE)
-          self._repo_zip = Future(value=zipfile)
-          self._stat_cache.Set(self._repo_key, version)
-
-    # If the cached and live stat versions are different fetch the new repo.
-    if version != self._stat_cache.Get('stat').Get():
-      fetch = self._fetcher.FetchAsync(
-          'zipball', username=self._username, password=self._password)
-      return Future(delegate=Gettable(lambda: persist_fetch(fetch)))
-
-    return Future(value=None)
+    return self.ReadSingle('')
 
   def Read(self, paths, binary=False):
     '''Returns a directory mapping |paths| to the contents of the file at each
@@ -149,33 +242,19 @@ class GithubFileSystem(FileSystem):
 
     |binary| is ignored.
     '''
-    names = self._GetNamelist()
-    if not names:
-      # No files in this repository.
-      def raise_file_not_found():
-        raise FileNotFoundError('No paths can be found, repository is empty')
-      return Future(delegate=Gettable(raise_file_not_found))
-    else:
-      prefix = names[0].split('/')[0]
-
-    reads = {}
-    for path in paths:
-      full_path = posixpath.join(prefix, path)
-      if path == '' or path.endswith('/'):  # If path is a directory...
-        trimmed_paths = []
-        for f in filter(lambda s: s.startswith(full_path), names):
-          if not '/' in f[len(full_path):-1] and not f == full_path:
-            trimmed_paths.append(f[len(full_path):])
-        reads[path] = trimmed_paths
-      else:
-        try:
-          reads[path] = self._repo_zip.Get().read(full_path)
-        except KeyError as error:
-          return Future(exc_info=(FileNotFoundError,
-                                  FileNotFoundError(error),
-                                  sys.exc_info()[2]))
-
-    return Future(value=reads)
+    self._EnsureRepoZip()
+    def resolve():
+      repo_zip = self._repo_zip.Get()
+      reads = {}
+      for path in paths:
+        if path not in repo_zip.Paths():
+          raise FileNotFoundError('"%s": %s not found' % (self._repo_key, path))
+        if path == '' or path.endswith('/'):
+          reads[path] = repo_zip.List(path)
+        else:
+          reads[path] = repo_zip.Read(path)
+      return reads
+    return Future(delegate=Gettable(resolve))
 
   def Stat(self, path):
     '''Stats |path| returning its version as as StatInfo object. If |path| ends
@@ -188,28 +267,27 @@ class GithubFileSystem(FileSystem):
     Because the repository will only be downloaded once per server version, all
     stat versions are always 0.
     '''
-    # Trim off the zip file's name.
-    path = path.lstrip('/')
-    trimmed = [f.split('/', 1)[1] for f in self._GetNamelist()]
+    self._EnsureRepoZip()
+    repo_zip = self._repo_zip.Get()
 
-    if path not in trimmed:
-      raise FileNotFoundError("No stat found for '%s' in %s" % (path, trimmed))
+    if path not in repo_zip.Paths():
+      raise FileNotFoundError('"%s" does not contain file "%s"' %
+                              (self._repo_key, path))
 
-    version = self._GetVersion()
-    child_paths = {}
+    version = self._stat_cache.Get(self._repo_key).Get()
+    assert version is not None, ('There was a zipball in datastore; there '
+                                 'should be a version cached for it')
+
+    stat_info = StatInfo(version)
     if path == '' or path.endswith('/'):
-      # Deal with a directory
-      for f in filter(lambda s: s.startswith(path), trimmed):
-        filename = f[len(path):]
-        if not '/' in filename and not f == path:
-          child_paths[filename] = StatInfo(version)
-
-    return StatInfo(version, child_paths or None)
+      stat_info.child_versions = dict((p, StatInfo(version))
+                                      for p in repo_zip.List(path))
+    return stat_info
 
   def GetIdentity(self):
     return '%s' % StringIdentity(self.__class__.__name__ + self._repo_key)
 
   def __repr__(self):
-    return '<%s: key=%s, url=%s>' % (type(self).__name__,
-                                     self._repo_key,
-                                     self._repo_url)
+    return '%s(key=%s, url=%s)' % (type(self).__name__,
+                                   self._repo_key,
+                                   self._repo_url)

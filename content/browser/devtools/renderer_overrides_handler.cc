@@ -33,6 +33,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "ipc/ipc_sender.h"
@@ -45,9 +46,9 @@
 #include "url/gurl.h"
 #include "webkit/browser/quota/quota_manager.h"
 
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
 
 namespace content {
 
@@ -233,11 +234,10 @@ void RendererOverridesHandler::ParseCaptureParameters(
   RenderViewHost* host = agent_->GetRenderViewHost();
   CHECK(host->GetView());
   gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-  float device_sf = last_compositor_frame_metadata_.device_scale_factor;
   if (max_width > 0)
-    *scale = std::min(*scale, max_width / view_bounds.width() / device_sf);
+    *scale = std::min(*scale, max_width / view_bounds.width());
   if (max_height > 0)
-    *scale = std::min(*scale, max_height / view_bounds.height() / device_sf);
+    *scale = std::min(*scale, max_height / view_bounds.height());
 
   if (format->empty())
     *format = kPng;
@@ -475,7 +475,10 @@ RendererOverridesHandler::PageCanScreencast(
     scoped_refptr<DevToolsProtocol::Command> command) {
   base::DictionaryValue* result = new base::DictionaryValue();
 #if defined(OS_ANDROID)
-  result->SetBoolean(devtools::kResult, true);
+  // Android WebView does not support Screencast.
+  std::string product = GetContentClient()->GetProduct();
+  bool isChrome = product.find("Chrome/") == 0;
+  result->SetBoolean(devtools::kResult, isChrome);
 #else
   result->SetBoolean(devtools::kResult, false);
 #endif  // defined(OS_ANDROID)
@@ -572,17 +575,19 @@ void RendererOverridesHandler::ScreenshotCaptured(
 
   // Consider metadata empty in case it has no device scale factor.
   if (metadata.device_scale_factor != 0) {
-    response->SetDouble(devtools::Page::kParamDeviceScaleFactor,
+    base::DictionaryValue* response_metadata = new base::DictionaryValue();
+
+    response_metadata->SetDouble(devtools::Page::kParamDeviceScaleFactor,
                         metadata.device_scale_factor);
-    response->SetDouble(devtools::Page::kParamPageScaleFactor,
+    response_metadata->SetDouble(devtools::Page::kParamPageScaleFactor,
                         metadata.page_scale_factor);
-    response->SetDouble(devtools::Page::kParamPageScaleFactorMin,
+    response_metadata->SetDouble(devtools::Page::kParamPageScaleFactorMin,
                         metadata.min_page_scale_factor);
-    response->SetDouble(devtools::Page::kParamPageScaleFactorMax,
+    response_metadata->SetDouble(devtools::Page::kParamPageScaleFactorMax,
                         metadata.max_page_scale_factor);
-    response->SetDouble(devtools::Page::kParamOffsetTop,
+    response_metadata->SetDouble(devtools::Page::kParamOffsetTop,
                         metadata.location_bar_content_translation.y());
-    response->SetDouble(devtools::Page::kParamOffsetBottom,
+    response_metadata->SetDouble(devtools::Page::kParamOffsetBottom,
                         metadata.overdraw_bottom_height);
 
     base::DictionaryValue* viewport = new base::DictionaryValue();
@@ -591,7 +596,13 @@ void RendererOverridesHandler::ScreenshotCaptured(
     viewport->SetDouble(devtools::kParamWidth, metadata.viewport_size.width());
     viewport->SetDouble(devtools::kParamHeight,
                         metadata.viewport_size.height());
-    response->Set(devtools::Page::kParamViewport, viewport);
+    response_metadata->Set(devtools::Page::kParamViewport, viewport);
+
+    // Temporarily duplicate properties to refactor API smoothly.
+    // TODO(dzvorygin): remove after refactor.
+    response->MergeDictionary(response_metadata);
+
+    response->Set(devtools::Page::kMetadata, response_metadata);
   }
 
   if (command) {
@@ -825,7 +836,7 @@ RendererOverridesHandler::InputDispatchMouseEvent(
   }
 
   RenderViewHost* host = agent_->GetRenderViewHost();
-  WebKit::WebMouseEvent mouse_event;
+  blink::WebMouseEvent mouse_event;
   ParseGenericInputParams(params, &mouse_event);
 
   std::string type;
@@ -890,7 +901,7 @@ RendererOverridesHandler::InputDispatchGestureEvent(
 
   RenderViewHostImpl* host = static_cast<RenderViewHostImpl*>(
       agent_->GetRenderViewHost());
-  WebKit::WebGestureEvent event;
+  blink::WebGestureEvent event;
   ParseGenericInputParams(params, &event);
 
   std::string type;

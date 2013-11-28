@@ -140,7 +140,7 @@ void LabelButton::SetIsDefault(bool is_default) {
 void LabelButton::SetStyle(ButtonStyle style) {
   // Use the new button style instead of the native button style.
   // TODO(msw): Officialy deprecate and remove STYLE_NATIVE_TEXTBUTTON.
-  if (DialogDelegate::UseNewStyle() && style == STYLE_NATIVE_TEXTBUTTON)
+  if (style == STYLE_NATIVE_TEXTBUTTON)
     style = STYLE_BUTTON;
 
   style_ = style;
@@ -187,6 +187,9 @@ gfx::Size LabelButton::GetPreferredSize() {
   size.SetToMax(gfx::Size(0, image_size.height()));
   const gfx::Insets insets(GetInsets());
   size.Enlarge(image_size.width() + insets.width(), insets.height());
+
+  // Make the size at least as large as the minimum size needed by the border.
+  size.SetToMax(border()->GetMinimumSize());
 
   // Increase the minimum size monotonically with the preferred size.
   size.SetToMax(min_size_);

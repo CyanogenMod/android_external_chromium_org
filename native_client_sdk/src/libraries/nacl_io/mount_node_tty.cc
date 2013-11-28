@@ -16,6 +16,7 @@
 
 #include "nacl_io/ioctl.h"
 #include "nacl_io/kernel_handle.h"
+#include "nacl_io/kernel_intercept.h"
 #include "nacl_io/mount.h"
 #include "nacl_io/pepper_interface.h"
 #include "sdk_util/auto_lock.h"
@@ -257,10 +258,12 @@ Error MountNodeTty::VIoctl(int request, va_list args) {
       struct winsize* size = va_arg(args, struct winsize*);
       {
         AUTO_LOCK(node_lock_);
+        if (rows_ == size->ws_row && cols_ == size->ws_col)
+          return 0;
         rows_ = size->ws_row;
         cols_ = size->ws_col;
       }
-      kill(getpid(), SIGWINCH);
+      ki_kill(getpid(), SIGWINCH);
       {
         // Wake up any thread waiting on Read with POLLERR then immediate
         // clear it to signal EINTR.

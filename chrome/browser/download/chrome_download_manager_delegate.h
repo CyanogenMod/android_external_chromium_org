@@ -9,8 +9,10 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/download/download_path_reservation_tracker.h"
 #include "chrome/browser/download/download_target_determiner_delegate.h"
+#include "chrome/browser/download/download_target_info.h"
 #include "chrome/browser/safe_browsing/download_protection_service.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
@@ -95,6 +97,11 @@ class ChromeDownloadManagerDelegate
       const content::CheckForFileExistenceCallback& callback) OVERRIDE;
   virtual std::string ApplicationClientIdForFileScanning() const OVERRIDE;
 
+  // Opens a download using the platform handler. DownloadItem::OpenDownload,
+  // which ends up being handled by OpenDownload(), will open a download in the
+  // browser if doing so is preferred.
+  void OpenDownloadUsingPlatformHandler(content::DownloadItem* download);
+
   DownloadPrefs* download_prefs() { return download_prefs_.get(); }
 
  protected:
@@ -131,6 +138,9 @@ class ChromeDownloadManagerDelegate
       content::DownloadItem* download,
       const base::FilePath& suggested_virtual_path,
       const CheckDownloadUrlCallback& callback) OVERRIDE;
+  virtual void GetFileMimeType(
+      const base::FilePath& path,
+      const GetFileMimeTypeCallback& callback) OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<ChromeDownloadManagerDelegate>;
@@ -157,6 +167,11 @@ class ChromeDownloadManagerDelegate
 
   void ReturnNextId(const content::DownloadIdCallback& callback);
 
+  void OnDownloadTargetDetermined(
+      int32 download_id,
+      const content::DownloadTargetCallback& callback,
+      scoped_ptr<DownloadTargetInfo> target_info);
+
   Profile* profile_;
   uint32 next_download_id_;
   IdCallbackVector id_callbacks_;
@@ -168,6 +183,8 @@ class ChromeDownloadManagerDelegate
   CrxInstallerMap crx_installers_;
 
   content::NotificationRegistrar registrar_;
+
+  base::WeakPtrFactory<ChromeDownloadManagerDelegate> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeDownloadManagerDelegate);
 };

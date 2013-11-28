@@ -138,7 +138,7 @@ class BASE_PREFS_EXPORT PrefService : public base::NonThreadSafe {
     const PrefService* pref_service_;
   };
 
-  // You may wish to use PrefServiceBuilder or one of its subclasses
+  // You may wish to use PrefServiceFactory or one of its subclasses
   // for simplified construction.
   PrefService(
       PrefNotifierImpl* pref_notifier,
@@ -261,17 +261,6 @@ class BASE_PREFS_EXPORT PrefService : public base::NonThreadSafe {
   PrefRegistry* DeprecatedGetPrefRegistry();
 
  protected:
-  // Adds the registered preferences from the PrefRegistry instance
-  // passed to us at construction time.
-  void AddInitialPreferences();
-
-  // Updates local caches for a preference registered at |path|. The
-  // |default_value| must not be NULL as it determines the preference
-  // value's type.  AddRegisteredPreference must not be called twice
-  // for the same path.
-  void AddRegisteredPreference(const char* path,
-                               base::Value* default_value);
-
   // The PrefNotifier handles registering and notifying preference observers.
   // It is created and owned by this PrefService. Subclasses may access it for
   // unit testing.

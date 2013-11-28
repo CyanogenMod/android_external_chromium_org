@@ -22,18 +22,6 @@ static const char kSPKIHash_VeriSignClass3_G3[] =
     "\x22\xf1\x9e\x2e\xc6\xea\xcc\xfc\x5d\x23"
     "\x46\xf4\xc2\xe8\xf6\xc5\x54\xdd\x5e\x07";
 
-static const char kSPKIHash_Google1024[] =
-    "\x40\xc5\x40\x1d\x6f\x8c\xba\xf0\x8b\x00"
-    "\xed\xef\xb1\xee\x87\xd0\x05\xb3\xb9\xcd";
-
-static const char kSPKIHash_Google2048[] =
-    "\x01\xb9\x21\xc5\x8d\x0b\xdf\x8d\xe0\x29"
-    "\xff\x9c\x92\x2e\xcd\x55\x6a\x7e\xa3\x39";
-
-static const char kSPKIHash_GoogleBackup1024[] =
-    "\x7d\x5b\xa3\xca\x8e\x37\x65\x1d\x7c\x71"
-    "\xc3\xe3\xb7\x74\xcd\xe9\x7b\x1b\x59\x43";
-
 static const char kSPKIHash_GoogleBackup2048[] =
     "\xbe\xae\xce\xca\x34\xa7\xa8\xe7\x28\xf6"
     "\x7c\x8c\x08\x31\x9d\xcb\xbe\xde\x8a\x33";
@@ -42,22 +30,6 @@ static const char kSPKIHash_GoogleG2[] =
     "\x43\xda\xd6\x30\xee\x53\xf8\xa9\x80\xca"
     "\x6e\xfd\x85\xf4\x6a\xa3\x79\x90\xe0\xea";
 
-static const char kSPKIHash_ThawteSGCCA[] =
-    "\x87\x31\xea\x0e\x3d\xf5\xe8\x70\x3e\x83"
-    "\x72\x57\x77\xa9\x65\x3b\x3b\xfa\x5e\x14";
-
-static const char kSPKIHash_VeriSignClass3SSPIntermediateCA[] =
-    "\x99\x6a\x20\x6a\x85\x57\x62\xcb\x9a\xf2"
-    "\x02\x37\xb3\xc0\x69\x5d\xa9\x1e\xc2\x22";
-
-static const char kSPKIHash_EquifaxSecureCA[] =
-    "\x48\xe6\x68\xf9\x2b\xd2\xb2\x95\xd7\x47"
-    "\xd8\x23\x20\x10\x4f\x33\x98\x90\x9f\xd4";
-
-static const char kSPKIHash_Aetna[] =
-    "\x92\x52\xaa\x14\xde\xbf\x80\xae\x30\xaa"
-    "\xd9\x4e\x60\x38\x70\x24\xa5\x43\x2f\x1a";
-
 static const char kSPKIHash_GeoTrustGlobal[] =
     "\xc0\x7a\x98\x68\x8d\x89\xfb\xab\x05\x64"
     "\x0c\x11\x7d\xaa\x7d\x65\xb8\xca\xcc\x4e";
@@ -65,18 +37,6 @@ static const char kSPKIHash_GeoTrustGlobal[] =
 static const char kSPKIHash_GeoTrustPrimary[] =
     "\xb0\x19\x89\xe7\xef\xfb\x4a\xaf\xcb\x14"
     "\x8f\x58\x46\x39\x76\x22\x41\x50\xe1\xba";
-
-static const char kSPKIHash_Intel[] =
-    "\x0e\xc6\x2a\xf7\x59\xb2\x08\x10\x90\x25"
-    "\x6f\xc3\xdd\xfd\x8a\x66\x31\x30\x2b\xc5";
-
-static const char kSPKIHash_TCTrustCenter[] =
-    "\x83\x3b\x84\x10\x00\x7f\x6e\x4a\x9d\x41"
-    "\x2d\xc4\x22\x39\x36\x6f\x2e\xe5\x5b\xe9";
-
-static const char kSPKIHash_Vodafone[] =
-    "\x0d\x7f\xe1\x5c\x55\x14\x36\x68\x99\xfc"
-    "\x40\xd6\x22\x08\xef\x22\xeb\xd1\x15\x1c";
 
 static const char kSPKIHash_RapidSSL[] =
     "\xa3\x93\x99\xc4\x04\xc3\xb2\x09\xb0\x81"
@@ -234,6 +194,10 @@ static const char kSPKIHash_GTECyberTrustGlobalRoot[] =
     "\x59\x79\x12\xde\x61\x75\xd6\x6f\xc4\x23"
     "\xb7\x77\x13\x74\xc7\x96\xde\x6f\x88\x72";
 
+static const char kSPKIHash_BaltimoreCyberTrustRoot[] =
+    "\x30\xa4\xe6\x4f\xde\x76\x8a\xfc\xed\x5a"
+    "\x90\x84\x28\x30\x46\x79\x2c\x29\x15\x70";
+
 static const char kSPKIHash_Tor2web[] =
     "\x19\xe5\xb5\x87\x1b\xd4\x83\x2e\xc8\xf5"
     "\x94\x97\xfe\xc6\x5e\xfb\x48\xe3\x33\xb1";
@@ -268,29 +232,13 @@ static const char* const kTestAcceptableCerts[] = {
 }
 
 static const char* const kGoogleAcceptableCerts[] = {
-  kSPKIHash_VeriSignClass3,
-  kSPKIHash_VeriSignClass3_G3,
-  kSPKIHash_Google1024,
-  kSPKIHash_Google2048,
-  kSPKIHash_GoogleBackup1024,
   kSPKIHash_GoogleBackup2048,
   kSPKIHash_GoogleG2,
-  kSPKIHash_EquifaxSecureCA,
-  kSPKIHash_GeoTrustGlobal,
-  NULL,
-};
-static const char* const kGoogleRejectedCerts[] = {
-  kSPKIHash_Aetna,
-  kSPKIHash_Intel,
-  kSPKIHash_TCTrustCenter,
-  kSPKIHash_Vodafone,
-  kSPKIHash_ThawteSGCCA,
-  kSPKIHash_VeriSignClass3SSPIntermediateCA,
   NULL,
 };
 #define kGooglePins { \
   kGoogleAcceptableCerts, \
-  kGoogleRejectedCerts, \
+  kNoRejectedPublicKeys, \
 }
 
 static const char* const kTorAcceptableCerts[] = {
@@ -376,6 +324,7 @@ static const char* const kTwitterCDNAcceptableCerts[] = {
   kSPKIHash_UTNUSERFirstHardware,
   kSPKIHash_UTNUSERFirstObject,
   kSPKIHash_GTECyberTrustGlobalRoot,
+  kSPKIHash_BaltimoreCyberTrustRoot,
   NULL,
 };
 #define kTwitterCDNPins { \
@@ -438,6 +387,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {19, true, "\006script\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {20, true, "\007history\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {21, true, "\010security\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {17, true, "\004goto\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {20, true, "\006market\007android\003com", true, kGooglePins, DOMAIN_ANDROID_COM },
   {26, true, "\003ssl\020google-analytics\003com", true, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
   {18, true, "\005drive\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -453,8 +403,6 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {15, true, "\002dl\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {26, true, "\011translate\012googleapis\003com", true, kGooglePins, DOMAIN_GOOGLEAPIS_COM },
   {23, true, "\005chart\004apis\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
-  {28, true, "\012oraprodsso\004corp\006google\003com", true, kNoPins, DOMAIN_NOT_PINNED },
-  {27, true, "\011oraprodmv\004corp\006google\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\005ytimg\003com", false, kGooglePins, DOMAIN_YTIMG_COM },
   {23, true, "\021googleusercontent\003com", false, kGooglePins, DOMAIN_GOOGLEUSERCONTENT_COM },
   {13, true, "\007youtube\003com", false, kGooglePins, DOMAIN_YOUTUBE_COM },
@@ -804,8 +752,12 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, false, "\003www\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {15, false, "\011mylookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {19, false, "\003www\011mylookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
-  {16, false, "\002dm\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
-  {18, false, "\002dm\011mylookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, true, "\002dm\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {22, true, "\010business\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, true, "\004blog\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\003faq\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {22, true, "\010platform\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, true, "\005email\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {15, true, "\011itriskltd\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {15, true, "\012stocktrade\002de", true, kNoPins, DOMAIN_NOT_PINNED },
   {22, true, "\011openshift\006redhat\003com", true, kNoPins, DOMAIN_NOT_PINNED },
@@ -894,6 +846,17 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, true, "\013davidlyness\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {12, true, "\006medium\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {21, true, "\007liberty\007lavabit\003com", true, kLavabitPins, DOMAIN_LAVABIT_COM },
+  {16, true, "\012getlantern\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\011kinsights\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\007simbolo\002co\002uk", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, false, "\003www\007simbolo\002co\002uk", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, false, "\012zenpayroll\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\003www\012zenpayroll\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\003get\012zenpayroll\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {23, false, "\006errors\012zenpayroll\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {23, false, "\006manage\012zenpayroll\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, true, "\016gernert-server\002de", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, true, "\010skydrive\004live\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

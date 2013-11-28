@@ -10,6 +10,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "content/common/gpu/devtools_gpu_instrumentation.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
@@ -149,6 +150,7 @@ GpuCommandBufferStub::GpuCommandBufferStub(
         image_manager,
         new GpuCommandBufferMemoryTracker(channel),
         stream_texture_manager,
+        NULL,
         true);
   }
 
@@ -168,6 +170,7 @@ GpuMemoryManager* GpuCommandBufferStub::GetMemoryManager() {
 }
 
 bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
+  devtools_gpu_instrumentation::ScopedGpuTask task(channel());
   FastSetActiveURL(active_url_, active_url_hash_);
 
   // Ensure the appropriate GL context is current before handling any IPC
@@ -573,6 +576,18 @@ void GpuCommandBufferStub::OnSetLatencyInfo(
 void GpuCommandBufferStub::SetLatencyInfoCallback(
     const LatencyInfoCallback& callback) {
   latency_info_callback_ = callback;
+}
+
+int32 GpuCommandBufferStub::GetRequestedAttribute(int attr) const {
+  // The command buffer is pairs of enum, value
+  // search for the requested attribute, return the value.
+  for (std::vector<int32>::const_iterator it = requested_attribs_.begin();
+       it != requested_attribs_.end(); ++it) {
+    if (*it++ == attr) {
+      return *it;
+    }
+  }
+  return -1;
 }
 
 void GpuCommandBufferStub::OnSetGetBuffer(int32 shm_id,

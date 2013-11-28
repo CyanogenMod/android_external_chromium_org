@@ -16,7 +16,6 @@
         '<(DEPTH)/cc/cc.gyp:cc',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
-        '<(DEPTH)/ui/events/events.gyp:events',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
       ],
@@ -64,7 +63,7 @@
           # TODO(sky): before we make this real need to remove
           # IDR_BITMAP_BRUSH_IMAGE.
           'dependencies': [
-            '<(DEPTH)/ui/ui.gyp:ui_resources',
+            '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
             '<(angle_path)/src/build_angle.gyp:libEGL',
             '<(angle_path)/src/build_angle.gyp:libGLESv2',
           ],
@@ -80,7 +79,6 @@
         '<(DEPTH)/cc/cc_tests.gyp:cc_test_support',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
-        '<(DEPTH)/ui/events/events.gyp:events',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/ui.gyp:ui',
@@ -110,11 +108,10 @@
         '<(DEPTH)/cc/cc_tests.gyp:cc_test_support',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
-        '<(DEPTH)/ui/events/events.gyp:events',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/ui/ui.gyp:ui',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
         'compositor',
         'compositor_test_support',
       ],

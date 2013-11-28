@@ -4,10 +4,10 @@
 
 #include "base/command_line.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,16 +23,13 @@ TEST_F(AppLaunchManifestTest, AppLaunchContainer) {
   scoped_refptr<Extension> extension;
 
   extension = LoadAndExpectSuccess("launch_tab.json");
-  EXPECT_EQ(extension_misc::LAUNCH_TAB,
-            AppLaunchInfo::GetLaunchContainer(extension.get()));
+  EXPECT_EQ(LAUNCH_TAB, AppLaunchInfo::GetLaunchContainer(extension.get()));
 
   extension = LoadAndExpectSuccess("launch_panel.json");
-  EXPECT_EQ(extension_misc::LAUNCH_PANEL,
-            AppLaunchInfo::GetLaunchContainer(extension.get()));
+  EXPECT_EQ(LAUNCH_PANEL, AppLaunchInfo::GetLaunchContainer(extension.get()));
 
   extension = LoadAndExpectSuccess("launch_default.json");
-  EXPECT_EQ(extension_misc::LAUNCH_TAB,
-            AppLaunchInfo::GetLaunchContainer(extension.get()));
+  EXPECT_EQ(LAUNCH_TAB, AppLaunchInfo::GetLaunchContainer(extension.get()));
 
   extension = LoadAndExpectSuccess("launch_width.json");
   EXPECT_EQ(640, AppLaunchInfo::GetLaunchWidth(extension.get()));

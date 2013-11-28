@@ -259,6 +259,10 @@ class WalletItems {
   const std::vector<Address*>& addresses() const { return addresses_.get(); }
   const std::string& default_address_id() const { return default_address_id_; }
   const std::string& obfuscated_gaia_id() const { return obfuscated_gaia_id_; }
+  size_t active_account_index() const { return active_account_index_; }
+  const std::vector<std::string>& gaia_accounts() const {
+    return gaia_accounts_;
+  }
   const std::vector<LegalDocument*>& legal_documents() const {
     return legal_documents_.get();
   }
@@ -267,7 +271,11 @@ class WalletItems {
   friend class WalletItemsTest;
   friend scoped_ptr<WalletItems> GetTestWalletItems(
       const std::vector<RequiredAction>&,
-      const std::string&, const std::string&, AmexPermission);
+      const std::string&,
+      const std::string&,
+      AmexPermission,
+      const std::vector<std::string>&,
+      size_t);
   friend scoped_ptr<WalletItems> GetTestWalletItemsWithDefaultIds(
       RequiredAction action);
   FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateWalletItems);
@@ -279,7 +287,9 @@ class WalletItems {
               const std::string& default_instrument_id,
               const std::string& default_address_id,
               const std::string& obfuscated_gaia_id,
-              AmexPermission amex_permission);
+              size_t active_account_index,
+              AmexPermission amex_permission,
+              const std::vector<std::string>& gaia_accounts);
 
   // Actions that must be completed by the user before a FullWallet can be
   // issued to them by the Online Wallet service.
@@ -294,8 +304,13 @@ class WalletItems {
   // The id of the user's default address.
   std::string default_address_id_;
 
-  // The externalized Gaia id of the user.
+  // The externalized Gaia id of the user. TODO(estade): we can remove this
+  // if |gaia_accounts_| is made to hold more metadata about the accounts.
   std::string obfuscated_gaia_id_;
+
+  // The index into |gaia_accounts_| of the account for which this object
+  // holds data.
+  size_t active_account_index_;
 
   // The user's backing instruments.
   ScopedVector<MaskedInstrument> instruments_;
@@ -308,6 +323,11 @@ class WalletItems {
 
   // Whether Google Wallet allows American Express card for this merchant.
   AmexPermission amex_permission_;
+
+  // The complete set of logged in GAIA accounts. This just stores email
+  // addresses. The actual response has more metadata which we currently
+  // ignore.
+  std::vector<std::string> gaia_accounts_;
 
   DISALLOW_COPY_AND_ASSIGN(WalletItems);
 };

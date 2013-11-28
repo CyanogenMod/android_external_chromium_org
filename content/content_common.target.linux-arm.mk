@@ -58,12 +58,12 @@ LOCAL_SRC_FILES := \
 	content/common/accessibility_node_data.cc \
 	content/common/android/address_parser.cc \
 	content/common/android/address_parser_internal.cc \
-	content/common/android/command_line.cc \
 	content/common/android/common_jni_registrar.cc \
 	content/common/android/device_telephony_info.cc \
 	content/common/android/hash_set.cc \
 	content/common/android/surface_texture_peer.cc \
 	content/common/android/trace_event_binding.cc \
+	content/common/android/view_configuration.cc \
 	content/common/browser_plugin/browser_plugin_constants.cc \
 	content/common/browser_rendering_stats.cc \
 	content/common/cc_messages.cc \
@@ -87,6 +87,8 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
 	content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc \
+	content/common/gpu/devtools_gpu_agent.cc \
+	content/common/gpu/devtools_gpu_instrumentation.cc \
 	content/common/gpu/gpu_channel.cc \
 	content/common/gpu/gpu_channel_manager.cc \
 	content/common/gpu/gpu_command_buffer_stub.cc \
@@ -114,6 +116,7 @@ LOCAL_SRC_FILES := \
 	content/common/input/scoped_web_input_event.cc \
 	content/common/input/synthetic_gesture_packet.cc \
 	content/common/input/synthetic_gesture_params.cc \
+	content/common/input/synthetic_pinch_gesture_params.cc \
 	content/common/input/synthetic_smooth_scroll_gesture_params.cc \
 	content/common/input/web_input_event_traits.cc \
 	content/common/inter_process_time_ticks_converter.cc \
@@ -137,6 +140,7 @@ LOCAL_SRC_FILES := \
 	content/common/swapped_out_messages.cc \
 	content/common/url_schemes.cc \
 	content/common/webplugin_geometry.cc \
+	content/common/websocket.cc \
 	content/public/common/common_param_traits.cc \
 	content/public/common/content_client.cc \
 	content/public/common/window_container_type.cc \
@@ -192,6 +196,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -199,6 +204,7 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -224,6 +230,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/third_party/skia/src/core \
@@ -236,7 +243,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
@@ -309,6 +315,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -316,6 +323,7 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -342,6 +350,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/third_party/skia/src/core \
@@ -354,7 +363,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \

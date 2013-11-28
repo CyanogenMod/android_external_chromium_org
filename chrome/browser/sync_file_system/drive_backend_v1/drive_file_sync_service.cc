@@ -32,9 +32,9 @@
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
 #include "chrome/browser/sync_file_system/sync_file_type.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/common/blob/scoped_file.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -570,7 +570,10 @@ void DriveFileSyncService::DoUninstallOrigin(
   //    origin directory on the remote drive was created.
   // 2) origin or sync root folder is deleted on Drive.
   if (resource_id.empty()) {
-    callback.Run(SYNC_STATUS_UNKNOWN_ORIGIN);
+    if (metadata_store_->IsKnownOrigin(origin))
+      DidUninstallOrigin(origin, callback, google_apis::HTTP_SUCCESS);
+    else
+      callback.Run(SYNC_STATUS_UNKNOWN_ORIGIN);
     return;
   }
 
@@ -1189,7 +1192,8 @@ void DriveFileSyncService::MaybeScheduleNextTask() {
 }
 
 void DriveFileSyncService::NotifyLastOperationStatus(
-    SyncStatusCode sync_status) {
+    SyncStatusCode sync_status,
+    bool used_network) {
   UpdateServiceStateFromLastOperationStatus(sync_status, last_gdata_error_);
 }
 

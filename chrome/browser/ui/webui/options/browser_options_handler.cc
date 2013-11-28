@@ -47,7 +47,6 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/service/service_process_control.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -81,6 +80,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/page_zoom.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -371,7 +371,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "factoryResetDataRestart", IDS_RELAUNCH_BUTTON },
     { "factoryResetWarning", IDS_OPTIONS_FACTORY_RESET_WARNING },
     { "factoryResetHelpUrl", IDS_FACTORY_RESET_HELP_URL },
-    { "changePicture", IDS_OPTIONS_CHANGE_PICTURE_CAPTION },
+    { "changePicture", IDS_OPTIONS_CHANGE_PICTURE },
+    { "changePictureCaption", IDS_OPTIONS_CHANGE_PICTURE_CAPTION },
     { "datetimeTitle", IDS_OPTIONS_SETTINGS_SECTION_TITLE_DATETIME },
     { "deviceGroupDescription", IDS_OPTIONS_DEVICE_GROUP_DESCRIPTION },
     { "deviceGroupPointer", IDS_OPTIONS_DEVICE_GROUP_POINTER_SECTION },
@@ -468,8 +469,11 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       l10n_util::GetStringFUTF16(IDS_SEARCH_PREF_EXPLANATION, omnibox_url));
 
 #if defined(OS_CHROMEOS)
-  const chromeos::User* user = chromeos::UserManager::Get()->GetLoggedInUser();
-  values->SetString("username", user ? user->email() : std::string());
+  Profile* profile = Profile::FromWebUI(web_ui());
+  std::string name = profile->GetProfileName();
+  std::string username =
+      name.empty() ? name : gaia::SanitizeEmail(gaia::CanonicalizeEmail(name));
+  values->SetString("username", username);
 #endif
 
   // Pass along sync status early so it will be available during page init.
@@ -787,6 +791,7 @@ void BrowserOptionsHandler::InitializePage() {
   SetupPageZoomSelector();
   SetupAutoOpenFileTypes();
   SetupProxySettingsSection();
+  SetupManageCertificatesSection();
   SetupManagingSupervisedUsers();
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
@@ -973,7 +978,8 @@ void BrowserOptionsHandler::OnTemplateURLServiceChanged() {
       search_engines,
       base::FundamentalValue(default_index),
       base::FundamentalValue(
-          template_url_service_->is_default_search_managed()));
+          template_url_service_->is_default_search_managed() ||
+          template_url_service_->IsExtensionControlledDefaultSearch()));
 }
 
 void BrowserOptionsHandler::SetDefaultSearchEngine(const ListValue* args) {
@@ -1295,6 +1301,21 @@ void BrowserOptionsHandler::HandleDefaultZoomFactor(const ListValue* args) {
 }
 
 void BrowserOptionsHandler::HandleRestartBrowser(const ListValue* args) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // If hardware acceleration is disabled then we need to force restart
+  // browser in desktop mode.
+  // TODO(shrikant): Remove this once we fix start mode logic for browser.
+  // Currently there are issues with determining correct browser mode
+  // at startup.
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH) {
+    PrefService* pref_service = g_browser_process->local_state();
+    if (!pref_service->GetBoolean(prefs::kHardwareAccelerationModeEnabled)) {
+      chrome::AttemptRestartToDesktopMode();
+      return;
+    }
+  }
+#endif
+
   chrome::AttemptRestart();
 }
 
@@ -1560,7 +1581,8 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
   // to a user in Ash).
   bool is_win_ash = false;
 #if defined(OS_WIN)
-  is_win_ash = (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH);
+  chrome::HostDesktopType desktop_type = helper::GetDesktopType(web_ui());
+  is_win_ash = (desktop_type == chrome::HOST_DESKTOP_TYPE_ASH);
 #endif
   PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   const PrefService::Preference* proxy_config =
@@ -1575,6 +1597,19 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
                                    disabled, extension_controlled);
 
 #endif  // !defined(OS_CHROMEOS)
+}
+
+void BrowserOptionsHandler::SetupManageCertificatesSection() {
+#if defined(OS_WIN)
+  // Disable the button if the settings page is displayed in Windows Ash,
+  // otherwise the proxy settings dialog will open on the Windows desktop and
+  // be invisible to a user in Ash.
+  if (helper::GetDesktopType(web_ui()) == chrome::HOST_DESKTOP_TYPE_ASH) {
+    base::FundamentalValue enabled(false);
+    web_ui()->CallJavascriptFunction("BrowserOptions.enableCertificateButton",
+                                     enabled);
+  }
+#endif  // defined(OS_WIN)
 }
 
 void BrowserOptionsHandler::SetupManagingSupervisedUsers() {

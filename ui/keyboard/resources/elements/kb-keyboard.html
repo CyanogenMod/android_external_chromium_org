@@ -4,11 +4,12 @@
   -- found in the LICENSE file.
   -->
 
-<polymer-element name="kb-keyboard" on-key-over="keyOver" on-key-up="keyUp"
-    on-key-down="keyDown" on-key-longpress="keyLongpress" on-pointerup="up"
-    on-pointerdown="down" on-enable-sel="enableSel"
-    on-enable-dbl="enableDbl"  on-key-out="keyOut" on-show-options="showOptions"
-    on-set-layout="setLayout"
+<polymer-element name="kb-keyboard" on-key-over="{{keyOver}}"
+    on-key-up="{{keyUp}}" on-key-down="{{keyDown}}"
+    on-key-longpress="{{keyLongpress}}" on-pointerup="{{up}}"
+    on-pointerdown="{{down}}" on-enable-sel="{{enableSel}}"
+    on-enable-dbl="{{enableDbl}}"  on-key-out="{{keyOut}}"
+    on-show-options="{{showOptions}}" on-set-layout="{{setLayout}}"
     attributes="keyset layout inputType inputTypeToLayoutMap">
   <template>
     <style>
@@ -24,7 +25,7 @@
       -- allowing the shift and spacebar keys to be common across multiple
       -- keyboard layouts.
       -->
-    <content select="#{{layout}}-{{keyset}}"></content>
+    <content id="content" select="#{{layout}}-{{keyset}}"></content>
     <kb-keyboard-overlay id="overlay" hidden></kb-keyboard-overlay>
     <kb-key-codes id="keyCodeMetadata"></kb-key-codes>
   </template>
@@ -123,14 +124,6 @@
      * @type {boolean}
      */
     var swipeInProgress = false;
-
-    /**
-     * A boolean used to track if the keyboard is ready for user input. As
-     * alternate layouts are dynamically loaded, the keyboard may be in a state
-     * where it is not fully initialized until all links, key-sequences, and
-     * imports are fully resolved.
-     */
-    var isReady = false;
 
     // Flag values for ctrl, alt and shift as defined by EventFlags
     // in "event_constants.h".
@@ -250,6 +243,38 @@
       ready: function() {
         this.voiceInput_ = new VoiceInput(this);
         this.swipeHandler = this.onSwipeUpdate.bind(this);
+      },
+
+      /**
+       * Registers a callback for state change events. Lazy initializes a
+       * mutation observer used to detect when the keyset selection is changed.
+       * @param{!Function} callback Callback function to register.
+       */
+      addKeysetChangedObserver: function(callback) {
+        if (!this.keysetChangedObserver) {
+          var target = this.$.content;
+          var self = this;
+          var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(m) {
+              if (m.type == 'attributes' && m.attributeName == 'select') {
+                var value = m.target.getAttribute('select');
+                self.fire('stateChange', {
+                  state: 'keysetChanged',
+                  value: value
+                });
+              }
+            });
+          });
+
+          observer.observe(target, {
+            attributes: true,
+            childList: true,
+            subtree: true
+          });
+          this.keysetChangedObserver = observer;
+
+        }
+        this.addEventListener('stateChange', callback);
       },
 
       /**
@@ -526,41 +551,54 @@
         if (toLayoutId)
           this.layout = toLayoutId;
         var char = detail.char;
-        if (enterUpperOnSpace) {
-          enterUpperOnSpace = false;
-          if (char == ' ') {
-            // If shift key defined in layout.
-            if (this.shift) {
-              var shiftDetail = this.shift.onSpaceAfterPunctuation();
-              // Check if transition defined.
-              this.changeKeyset(shiftDetail);
-            } else {
-              console.error('Capitalization on space after punctuation \
-                            enabled, but cannot find target keyset.');
-            }
-          }
-        }
         this.lastPressedKey = null;
+        // Characters that should not be typed.
         switch(char) {
           case 'Invalid':
           case 'Shift':
           case 'Ctrl':
           case 'Alt':
+            enterUpperOnSpace = false;
             swipeStatus.swipeFlags = 0;
             return;
           case 'Microphone':
             this.voiceInput_.onDown();
             return;
+          default:
+            break;
+        }
+        // Tries to type the character. Resorts to insertText if that fails.
+        if(!this.keyTyped(detail))
+          insertText(char);
+        // Post-typing logic.
+        switch(char) {
+          case ' ':
+            if(enterUpperOnSpace) {
+              enterUpperOnSpace = false;
+              if (this.shift) {
+                var shiftDetail = this.shift.onSpaceAfterPunctuation();
+                // Check if transition defined.
+                this.changeKeyset(shiftDetail);
+              } else {
+                console.error('Capitalization on space after punctuation \
+                            enabled, but cannot find target keyset.');
+              }
+              // Immediately return to maintain shift-state. Space is a
+              // non-control key and would otherwise trigger a reset of the
+              // shift key, causing a transition to lower case.
+              // TODO(rsadam): Add unit test after Polymer uprev complete.
+              return;
+            }
+            break;
           case '.':
           case '?':
           case '!':
-            enterUpperOnSpace = true;
+            enterUpperOnSpace = this.shouldUpperOnSpace();
             break;
           default:
             break;
         }
-        if(!this.keyTyped(detail))
-          insertText(char);
+        // Reset control keys.
         this.onNonControlKeyTyped();
       },
 
@@ -582,6 +620,17 @@
           if (this.lastPressedKey)
             this.lastPressedKey.classList.remove('active');
         }
+      },
+
+      /**
+       * Whether we should transit to upper case when seeing a space after
+       * punctuation.
+       * @return {boolean}
+       */
+      shouldUpperOnSpace: function() {
+        // TODO(rsadam): Add other input types in which we should not
+        // transition to upper after a space.
+        return this.inputTypeValue != 'password';
       },
 
       /**
@@ -625,13 +674,13 @@
        */
       layoutChanged: function() {
         if (!this.selectDefaultKeyset()) {
-          this.isReady = false;
           this.fire('stateChange', {state: 'loadingKeyset'});
 
           // Keyset selection fails if the keysets have not been loaded yet.
           var keysets = document.querySelector('#' + this.layout);
-          if (keysets) {
-            keyboard.appendChild(flattenKeysets(keysets.content));
+          if (keysets && keysets.content) {
+            var content = flattenKeysets(keysets.content);
+            this.appendChild(content);
             this.selectDefaultKeyset();
           } else {
             // Add link for the keysets if missing from the document. Force
@@ -673,14 +722,6 @@
       },
 
       /**
-       * Indicate if the keyboard is ready for user input.
-       * @type {boolean}
-       */
-      get initialized() {
-        return this.isReady;
-      },
-
-      /**
        * Id for the active keyset.
        * @type {string}
        */
@@ -701,7 +742,7 @@
        * @type {string}
        */
       get inputTypeValue() {
-        return inputType;
+        return this.inputType;
       },
 
       /**
@@ -714,6 +755,19 @@
           this.selectDefaultKeyset();
         else
           this.inputType = value;
+      },
+
+      /**
+       * The keyboard is ready for input once the target keyset appears
+       * in the distributed nodes for the keyboard.
+       * @return {boolean} Indicates if the keyboard is ready for input.
+       */
+      isReady: function() {
+        var keyset =  this.activeKeyset;
+        if (!keyset)
+          return false;
+        var content = this.$.content.getDistributedNodes()[0];
+        return content == keyset;
       },
 
       /**
@@ -753,7 +807,13 @@
           var matches = keysets[i].id.match(regex);
           if (matches && matches.length == REGEX_MATCH_COUNT) {
              keysetsLoaded = true;
-             if (keysets[i].isDefault) {
+             // Without both tests for a default keyset, it is possible to get
+             // into a state where multiple layouts are displayed.  A
+             // reproducable test case is do the following set of keyset
+             // transitions: qwerty -> system -> dvorak -> qwerty.
+             // TODO(kevers): Investigate why this is the case.
+             if (keysets[i].isDefault ||
+                 keysets[i].getAttribute('isDefault') == 'true') {
                this.keyset = matches[REGEX_KEYSET_INDEX];
                this.classList.remove('caps-locked');
                this.classList.remove('alt-active');
@@ -763,17 +823,16 @@
                if (this.shift)
                  this.shift.reset();
                // Caches control key.
-               this.ctrl = this.querySelector('kb-modifier-key[char=Ctrl');
+               this.ctrl = this.querySelector('kb-modifier-key[char=Ctrl]');
                if (this.ctrl)
                  this.ctrl.reset();
                // Caches alt key.
-               this.alt = this.querySelector('kb-modifier-key[char=Alt');
+               this.alt = this.querySelector('kb-modifier-key[char=Alt]');
                if (this.alt)
                  this.alt.reset();
-               this.isReady = true;
                this.fire('stateChange', {
                  state: 'keysetLoaded',
-                 keyset: this.keyset,
+                 value: this.keyset,
                });
                keyboardLoaded();
                return true;

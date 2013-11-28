@@ -26,11 +26,11 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
 using base::StringPiece;
-using WebKit::WebDocument;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLResponse;
-using WebKit::WebURLRequest;
+using blink::WebDocument;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLResponse;
+using blink::WebURLRequest;
 
 namespace content {
 
@@ -156,21 +156,6 @@ void HistogramCountNotBlockedResponse(const std::string& bucket_prefix,
   IncrementHistogramCount(bucket_prefix + ".NotBlocked");
   if (sniffed_as_js)
     IncrementHistogramCount(bucket_prefix + ".NotBlocked.MaybeJS");
-}
-
-void HistogramCountPolicyDecision(
-    const std::string& bucket_prefix,
-    bool sniffed_as_document,
-    bool sniffed_as_js,
-    const SiteIsolationPolicy::ResponseMetaData& resp_data) {
-  if (sniffed_as_document) {
-    HistogramCountBlockedResponse(bucket_prefix, resp_data, false);
-  } else {
-    if (resp_data.no_sniff)
-      HistogramCountBlockedResponse(bucket_prefix, resp_data, true);
-    else
-      HistogramCountNotBlockedResponse(bucket_prefix, sniffed_as_js);
-  }
 }
 
 }  // namespace

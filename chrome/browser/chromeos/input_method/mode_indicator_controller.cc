@@ -13,35 +13,9 @@
 namespace chromeos {
 namespace input_method {
 
-namespace {
-// Show mode indicator with the current ime's short name.
-void ShowModeIndicator(InputMethodManager* manager,
-                       ModeIndicatorWidget* mi_widget) {
-  // Need the flag, --enable-ime-mode-indicator at this moment.
-  // TODO(komatsu): When this is enabled by defalut, delete command_line.h
-  // and chromeos_switches.h from the header files.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableIMEModeIndicator))
-    return;
-
-  DCHECK(manager);
-  DCHECK(mi_widget);
-
-  // Get the short name of the changed input method (e.g. US, JA, etc.)
-  const InputMethodDescriptor descriptor = manager->GetCurrentInputMethod();
-  const std::string short_name = UTF16ToUTF8(
-      manager->GetInputMethodUtil()->GetInputMethodShortName(descriptor));
-  mi_widget->SetLabelTextUtf8(short_name);
-
-  // Show the widget and hide it after 750msec.
-  mi_widget->Show();
-  const int kDelayMSec = 750;
-  mi_widget->DelayHide(kDelayMSec);
-}
-}  // namespace
-
 ModeIndicatorController::ModeIndicatorController(
-    ModeIndicatorWidget* mi_widget) {
+    ModeIndicatorWidget* mi_widget)
+    : is_focused_(false) {
   mi_widget_.reset(mi_widget);
 
   InputMethodManager* imm = InputMethodManager::Get();
@@ -55,9 +29,13 @@ ModeIndicatorController::~ModeIndicatorController() {
   imm->RemoveObserver(this);
 }
 
-void ModeIndicatorController::SetCursorLocation(
-    const gfx::Rect& cursor_location) {
-  mi_widget_->SetCursorLocation(cursor_location);
+void ModeIndicatorController::SetCursorBounds(
+    const gfx::Rect& cursor_bounds) {
+  mi_widget_->SetCursorBounds(cursor_bounds);
+}
+
+void ModeIndicatorController::FocusStateChanged(bool is_focused) {
+  is_focused_ = is_focused;
 }
 
 void ModeIndicatorController::InputMethodChanged(InputMethodManager* manager,
@@ -65,12 +43,43 @@ void ModeIndicatorController::InputMethodChanged(InputMethodManager* manager,
   if (!show_message)
     return;
 
-  ShowModeIndicator(manager, mi_widget_.get());
+  ShowModeIndicator(manager);
 }
 
 void ModeIndicatorController::InputMethodPropertyChanged(
     InputMethodManager* manager) {
   // Do nothing.
+}
+
+void ModeIndicatorController::ShowModeIndicator(InputMethodManager* manager) {
+  // TODO(komatsu): When this is permanently enabled by defalut,
+  // delete command_line.h and chromeos_switches.h from the header
+  // files.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableIMEModeIndicator))
+    return;
+
+  // TODO(komatsu): Show the mode indicator in the right bottom of the
+  // display when the launch bar is hidden and the focus is out.  To
+  // implement it, we should consider to use message center or system
+  // notification.  Note, launch bar can be vertical and can be placed
+  // right/left side of display.
+  if (!is_focused_)
+    return;
+
+  DCHECK(manager);
+  DCHECK(mi_widget_.get());
+
+  // Get the short name of the changed input method (e.g. US, JA, etc.)
+  const InputMethodDescriptor descriptor = manager->GetCurrentInputMethod();
+  const std::string short_name = UTF16ToUTF8(
+      manager->GetInputMethodUtil()->GetInputMethodShortName(descriptor));
+  mi_widget_->SetLabelTextUtf8(short_name);
+
+  // Show the widget and hide it after 750msec.
+  mi_widget_->Show();
+  const int kDelayMSec = 750;
+  mi_widget_->DelayHide(kDelayMSec);
 }
 
 }  // namespace input_method

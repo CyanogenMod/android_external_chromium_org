@@ -19,13 +19,14 @@
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/obfuscated_file_util.h"
+#include "webkit/browser/fileapi/quota/quota_reservation.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace fileapi {
 
 class PluginPrivateFileSystemBackend::FileSystemIDToPluginMap {
  public:
-  FileSystemIDToPluginMap(base::SequencedTaskRunner* task_runner)
+  explicit FileSystemIDToPluginMap(base::SequencedTaskRunner* task_runner)
       : task_runner_(task_runner) {}
   ~FileSystemIDToPluginMap() {}
 
@@ -42,8 +43,8 @@ class PluginPrivateFileSystemBackend::FileSystemIDToPluginMap {
   void RegisterFileSystem(const std::string& filesystem_id,
                           const std::string& plugin_id) {
     DCHECK(task_runner_->RunsTasksOnCurrentThread());
-    DCHECK(!filesystem_id.empty() &&
-           !ContainsKey(map_, filesystem_id)) << filesystem_id;
+    DCHECK(!filesystem_id.empty());
+    DCHECK(!ContainsKey(map_, filesystem_id)) << filesystem_id;
     map_[filesystem_id] = plugin_id;
   }
 
@@ -76,9 +77,7 @@ base::PlatformFileError OpenFileSystemOnFileThread(
   const bool create = (mode == OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT);
   file_util->GetDirectoryForOriginAndType(
       origin_url, plugin_id, create, &error);
-  if (error != base::PLATFORM_FILE_OK)
-    IsolatedContext::GetInstance()->RevokeFileSystem(filesystem_id);
-  else
+  if (error == base::PLATFORM_FILE_OK)
     plugin_map->RegisterFileSystem(filesystem_id, plugin_id);
   return error;
 }
@@ -118,21 +117,15 @@ PluginPrivateFileSystemBackend::~PluginPrivateFileSystemBackend() {
 void PluginPrivateFileSystemBackend::OpenPrivateFileSystem(
     const GURL& origin_url,
     FileSystemType type,
+    const std::string& filesystem_id,
     const std::string& plugin_id,
     OpenFileSystemMode mode,
-    const OpenPrivateFileSystemCallback& callback) {
+    const StatusCallback& callback) {
   if (!CanHandleType(type) || file_system_options_.is_incognito()) {
     base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE, base::Bind(callback, GURL(), std::string(),
-                              base::PLATFORM_FILE_ERROR_SECURITY));
+        FROM_HERE, base::Bind(callback, base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
-
-  // TODO(nhiroki,kinuko): This constant should be somehow shared.
-  const std::string name("PluginPrivate");
-  std::string filesystem_id =
-      IsolatedContext::GetInstance()->RegisterFileSystemForVirtualPath(
-          type, name, base::FilePath());
 
   PostTaskAndReplyWithResult(
       file_task_runner_.get(),
@@ -140,10 +133,7 @@ void PluginPrivateFileSystemBackend::OpenPrivateFileSystem(
       base::Bind(&OpenFileSystemOnFileThread,
                  obfuscated_file_util(), plugin_map_,
                  origin_url, filesystem_id, plugin_id, mode),
-      base::Bind(callback,
-                 GURL(GetIsolatedFileSystemRootURIString(
-                     origin_url, filesystem_id, name)),
-                 filesystem_id));
+      callback);
 }
 
 bool PluginPrivateFileSystemBackend::CanHandleType(FileSystemType type) const {
@@ -258,6 +248,15 @@ int64 PluginPrivateFileSystemBackend::GetOriginUsageOnFileThread(
     FileSystemType type) {
   // We don't track usage on this filesystem.
   return 0;
+}
+
+scoped_refptr<QuotaReservation>
+PluginPrivateFileSystemBackend::CreateQuotaReservationOnFileTaskRunner(
+    const GURL& origin_url,
+    FileSystemType type) {
+  // We don't track usage on this filesystem.
+  NOTREACHED();
+  return scoped_refptr<QuotaReservation>();
 }
 
 void PluginPrivateFileSystemBackend::AddFileUpdateObserver(

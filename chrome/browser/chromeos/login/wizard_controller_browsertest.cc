@@ -8,17 +8,17 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/pref_service_factory.h"
 #include "base/prefs/testing_pref_store.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/enrollment/mock_enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/language_switch_menu.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
 #include "chrome/browser/chromeos/login/mock_login_status_consumer.h"
@@ -36,6 +36,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
+#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -78,6 +79,45 @@ class PrefStoreStub : public TestingPrefStore {
  private:
   virtual ~PrefStoreStub() {}
 };
+
+struct SwitchLanguageTestData {
+  SwitchLanguageTestData() : success(false), done(false) {}
+
+  std::string requested_locale;
+  std::string loaded_locale;
+  bool success;
+  bool done;
+};
+
+void OnLocaleSwitched(SwitchLanguageTestData* self,
+                      const std::string& locale,
+                      const std::string& loaded_locale,
+                      const bool success) {
+  self->requested_locale = locale;
+  self->loaded_locale = loaded_locale;
+  self->success = success;
+  self->done = true;
+}
+
+void RunSwitchLanguageTest(const std::string& locale,
+                                  const std::string& expected_locale,
+                                  const bool expect_success) {
+  SwitchLanguageTestData data;
+  scoped_ptr<locale_util::SwitchLanguageCallback> callback(
+      new locale_util::SwitchLanguageCallback(
+          base::Bind(&OnLocaleSwitched, base::Unretained(&data))));
+  locale_util::SwitchLanguage(locale, true, callback.Pass());
+
+  // Token writing moves control to BlockingPool and back.
+  base::RunLoop().RunUntilIdle();
+  content::BrowserThread::GetBlockingPool()->FlushForTesting();
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(data.done, true);
+  EXPECT_EQ(data.requested_locale, locale);
+  EXPECT_EQ(data.loaded_locale, expected_locale);
+  EXPECT_EQ(data.success, expect_success);
+}
 
 }  // namespace
 
@@ -128,7 +168,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerTest, SwitchLanguage) {
   const std::wstring en_str =
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE));
 
-  LanguageSwitchMenu::SwitchLanguage("fr");
+  RunSwitchLanguageTest("fr", "fr", true);
   EXPECT_EQ("fr", g_browser_process->GetApplicationLocale());
   EXPECT_STREQ("fr", icu::Locale::getDefault().getLanguage());
   EXPECT_FALSE(base::i18n::IsRTL());
@@ -137,7 +177,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerTest, SwitchLanguage) {
 
   EXPECT_NE(en_str, fr_str);
 
-  LanguageSwitchMenu::SwitchLanguage("ar");
+  RunSwitchLanguageTest("ar", "ar", true);
   EXPECT_EQ("ar", g_browser_process->GetApplicationLocale());
   EXPECT_STREQ("ar", icu::Locale::getDefault().getLanguage());
   EXPECT_TRUE(base::i18n::IsRTL());
@@ -336,7 +376,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   MockConsumer mock_consumer;
 
   // Must have a pending signin to resume after auto-enrollment:
-  LoginDisplayHostImpl::default_host()->StartSignInScreen();
+  LoginDisplayHostImpl::default_host()->StartSignInScreen(LoginScreenContext());
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
   ExistingUserController::current_controller()->DoAutoEnrollment();
   ExistingUserController::current_controller()->set_login_status_consumer(
@@ -364,7 +404,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowResetScreen) {
   EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
             WizardController::default_controller()->current_screen());
 
-  LoginDisplayHostImpl::default_host()->StartSignInScreen();
+  LoginDisplayHostImpl::default_host()->StartSignInScreen(LoginScreenContext());
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
   ExistingUserController::current_controller()->OnStartDeviceReset();
 
@@ -383,7 +423,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
             WizardController::default_controller()->current_screen());
 
-  LoginDisplayHostImpl::default_host()->StartSignInScreen();
+  LoginDisplayHostImpl::default_host()->StartSignInScreen(LoginScreenContext());
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
   ExistingUserController::current_controller()->ShowWrongHWIDScreen();
 
@@ -410,16 +450,17 @@ class WizardControllerBrokenLocalStateTest : public WizardControllerTest {
 
     FakeDBusThreadManager* fake_dbus_thread_manager =
         new FakeDBusThreadManager();
-    fake_session_manager_client_ =
-        fake_dbus_thread_manager->fake_session_manager_client();
+    fake_dbus_thread_manager->SetFakeClients();
+    fake_session_manager_client_ = new FakeSessionManagerClient;
+    fake_dbus_thread_manager->SetSessionManagerClient(
+        scoped_ptr<SessionManagerClient>(fake_session_manager_client_));
     DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    PrefServiceBuilder builder;
-    local_state_.reset(builder
-                       .WithUserPrefs(new PrefStoreStub())
-                       .Create(new PrefRegistrySimple()));
+    base::PrefServiceFactory factory;
+    factory.set_user_prefs(make_scoped_refptr(new PrefStoreStub()));
+    local_state_ = factory.Create(new PrefRegistrySimple()).Pass();
     WizardController::set_local_state_for_testing(local_state_.get());
 
     WizardControllerTest::SetUpOnMainThread();
@@ -552,7 +593,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerProxyAuthOnSigninTest,
   EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
             WizardController::default_controller()->current_screen());
 
-  LoginDisplayHostImpl::default_host()->StartSignInScreen();
+  LoginDisplayHostImpl::default_host()->StartSignInScreen(LoginScreenContext());
   auth_needed_waiter.Wait();
 }
 
@@ -616,11 +657,59 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
   EXPECT_TRUE(StartupUtils::IsOobeCompleted());
 }
 
+
+IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
+                       ControlFlowEnrollmentBack) {
+
+  EXPECT_CALL(*mock_enrollment_screen_->actor(),
+              SetParameters(mock_enrollment_screen_,
+                            false,  // is_auto_enrollment
+                            false,  // can_exit_enrollment
+                            ""))
+      .Times(1);
+
+  EXPECT_TRUE(ExistingUserController::current_controller() == NULL);
+  EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_network_screen_, Show()).Times(1);
+  EXPECT_CALL(*mock_network_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_eula_screen_, Show()).Times(1);
+  OnExit(ScreenObserver::NETWORK_CONNECTED);
+
+  EXPECT_EQ(WizardController::default_controller()->GetEulaScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_eula_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_update_screen_, StartNetworkCheck()).Times(1);
+  EXPECT_CALL(*mock_update_screen_, Show()).Times(1);
+  OnExit(ScreenObserver::EULA_ACCEPTED);
+  // Let update screen smooth time process (time = 0ms).
+  content::RunAllPendingInMessageLoop();
+
+  EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
+  EXPECT_CALL(*mock_enrollment_screen_, Hide()).Times(1);
+  OnExit(ScreenObserver::UPDATE_INSTALLED);
+
+  EXPECT_FALSE(StartupUtils::IsOobeCompleted());
+
+  // Make sure enterprise enrollment page shows up right after update screen.
+  EnrollmentScreen* screen =
+      WizardController::default_controller()->GetEnrollmentScreen();
+  EXPECT_EQ(screen, WizardController::default_controller()->current_screen());
+  OnExit(ScreenObserver::ENTERPRISE_ENROLLMENT_BACK);
+
+  EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_FALSE(StartupUtils::IsOobeCompleted());
+}
+
 // TODO(dzhioev): Add test emaulating device with wrong HWID.
 
 // TODO(nkostylev): Add test for WebUI accelerators http://crosbug.com/22571
 
-COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 18,
+COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 19,
                add_tests_for_new_control_flow_you_just_introduced);
 
 }  // namespace chromeos

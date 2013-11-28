@@ -26,6 +26,20 @@
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START WebSocketMsgStart
 
+IPC_STRUCT_TRAITS_BEGIN(content::WebSocketHandshakeRequest)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(request_time)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::WebSocketHandshakeResponse)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(status_code)
+  IPC_STRUCT_TRAITS_MEMBER(status_text)
+  IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(response_time)
+IPC_STRUCT_TRAITS_END()
+
 // WebSocket messages sent from the renderer to the browser.
 
 // Open new virtual WebSocket connection to |socket_url|. |channel_id| is an
@@ -43,7 +57,7 @@ IPC_MESSAGE_ROUTED3(WebSocketHostMsg_AddChannelRequest,
                     std::vector<std::string> /* requested_protocols */,
                     GURL /* origin */)
 
-// Web Socket messages sent from the browser to the renderer.
+// WebSocket messages sent from the browser to the renderer.
 
 // Respond to an AddChannelRequest for channel |channel_id|. |channel_id| is
 // scoped to the renderer process; while it is unique per-renderer, the browser
@@ -58,6 +72,32 @@ IPC_MESSAGE_ROUTED3(WebSocketMsg_AddChannelResponse,
                     bool /* fail */,
                     std::string /* selected_protocol */,
                     std::string /* extensions */)
+
+// Notify the renderer that the browser has started an opening handshake.
+// This message is for showing the request in the inspector and
+// can be omitted if the inspector is not active.
+IPC_MESSAGE_ROUTED1(WebSocketMsg_NotifyStartOpeningHandshake,
+                    content::WebSocketHandshakeRequest /* request */)
+
+// Notify the renderer that the browser has finished an opening handshake.
+// This message precedes AddChannelResponse.
+// This message is for showing the response in the inspector and
+// can be omitted if the inspector is not active.
+IPC_MESSAGE_ROUTED1(WebSocketMsg_NotifyFinishOpeningHandshake,
+                    content::WebSocketHandshakeResponse /* response */)
+
+// Notify the renderer that the browser is required to fail the connection
+// (see RFC6455 7.1.7 for details).
+// When the renderer process receives this messages it does the following:
+// 1. Fire an error event.
+// 2. Show |message| to the inspector.
+// 3. Close the channel immediately uncleanly, as if it received
+//    DropChannel(was_clean = false, code = 1006, reason = "").
+// |message| will be shown in the inspector and won't be passed to the script.
+// TODO(yhirano): Find the way to pass |message| directly to the inspector
+// process.
+IPC_MESSAGE_ROUTED1(WebSocketMsg_NotifyFailure,
+                    std::string /* message */)
 
 // WebSocket messages that can be sent in either direction.
 
@@ -100,6 +140,12 @@ IPC_MESSAGE_ROUTED1(WebSocketMsg_FlowControl,
 // UTF-8 encoded string which may be useful for debugging but is not necessarily
 // human-readable, as supplied by the server in the Close or DropChannel
 // message.
-IPC_MESSAGE_ROUTED2(WebSocketMsg_DropChannel,
+// If |was_clean| is false on a message from the browser, then the WebSocket
+// connection was not closed cleanly. If |was_clean| is false on a message from
+// the renderer, then the connection should be closed immediately without a
+// closing handshake and the renderer cannot accept any new messages on this
+// connection.
+IPC_MESSAGE_ROUTED3(WebSocketMsg_DropChannel,
+                    bool /* was_clean */,
                     unsigned short /* code */,
                     std::string /* reason */)

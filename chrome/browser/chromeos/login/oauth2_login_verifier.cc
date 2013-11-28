@@ -97,17 +97,17 @@ void OAuth2LoginVerifier::StartFetchingOAuthLoginAccessToken(Profile* profile) {
 
 void OAuth2LoginVerifier::StartOAuthLoginForUberToken() {
   // No service will fetch us uber auth token.
-  gaia_system_fetcher_.reset(
+  gaia_fetcher_.reset(
       new GaiaAuthFetcher(this,
                           std::string(GaiaConstants::kChromeOSSource),
-                          system_request_context_.get()));
-  gaia_system_fetcher_->StartTokenFetchForUberAuthExchange(access_token_);
+                          user_request_context_.get()));
+  gaia_fetcher_->StartTokenFetchForUberAuthExchange(access_token_);
 }
 
 
 void OAuth2LoginVerifier::OnUberAuthTokenSuccess(
     const std::string& uber_token) {
-  LOG(INFO) << "OAuthLogin(uber_token) successful!";
+  VLOG(1) << "OAuthLogin(uber_token) successful!";
   retry_count_ = 0;
   gaia_token_ = uber_token;
   StartMergeSession();
@@ -117,7 +117,7 @@ void OAuth2LoginVerifier::OnUberAuthTokenFailure(
     const GoogleServiceAuthError& error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   LOG(WARNING) << "OAuthLogin(uber_token) failed,"
-             << " error: " << error.state();
+               << " error: " << error.state();
   RetryOnError("OAuthLoginUberToken", error,
                base::Bind(&OAuth2LoginVerifier::StartOAuthLoginForUberToken,
                           AsWeakPtr()),
@@ -127,16 +127,16 @@ void OAuth2LoginVerifier::OnUberAuthTokenFailure(
 
 void OAuth2LoginVerifier::StartOAuthLoginForGaiaCredentials() {
   // No service will fetch us uber auth token.
-  gaia_system_fetcher_.reset(
+  gaia_fetcher_.reset(
       new GaiaAuthFetcher(this,
                           std::string(GaiaConstants::kChromeOSSource),
-                          system_request_context_.get()));
-  gaia_system_fetcher_->StartOAuthLogin(access_token_, EmptyString());
+                          user_request_context_.get()));
+  gaia_fetcher_->StartOAuthLogin(access_token_, std::string());
 }
 
 void OAuth2LoginVerifier::OnClientLoginSuccess(
     const ClientLoginResult& gaia_credentials) {
-  LOG(INFO) << "OAuthLogin(SID+LSID) successful!";
+  VLOG(1) << "OAuthLogin(SID+LSID) successful!";
   retry_count_ = 0;
   delegate_->OnOAuthLoginSuccess(gaia_credentials);
 }
@@ -144,8 +144,7 @@ void OAuth2LoginVerifier::OnClientLoginSuccess(
 void OAuth2LoginVerifier::OnClientLoginFailure(
     const GoogleServiceAuthError& error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  LOG(WARNING) << "OAuthLogin(SID+LSID failed),"
-             << " error: " << error.state();
+  LOG(WARNING) << "OAuthLogin(SID+LSID failed)," << " error: " << error.state();
   RetryOnError(
       "OAuthLoginGaiaCred", error,
       base::Bind(&OAuth2LoginVerifier::StartOAuthLoginForGaiaCredentials,
@@ -165,16 +164,15 @@ void OAuth2LoginVerifier::StartMergeSession() {
 
 void OAuth2LoginVerifier::OnMergeSessionSuccess(const std::string& data) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  LOG(INFO) << "MergeSession successful.";
+  VLOG(1) << "MergeSession successful.";
   delegate_->OnSessionMergeSuccess();
-  // Get GAIA credentials needed to kick off TokenService and friends.
+  // Get GAIA credentials needed to kick off OAuth2TokenService and friends.
   StartOAuthLoginForGaiaCredentials();
 }
 
 void OAuth2LoginVerifier::OnMergeSessionFailure(
     const GoogleServiceAuthError& error) {
-  LOG(WARNING) << "Failed MergeSession request,"
-             << " error: " << error.state();
+  LOG(WARNING) << "Failed MergeSession request," << " error: " << error.state();
   // If MergeSession from GAIA service token fails, retry the session restore
   // from OAuth2 refresh token. If that failed too, signal the delegate.
   RetryOnError(
@@ -193,7 +191,7 @@ void OAuth2LoginVerifier::OnGetTokenSuccess(
   DCHECK_EQ(login_token_request_.get(), request);
   login_token_request_.reset();
 
-  LOG(INFO) << "Got OAuth2 access token!";
+  VLOG(1) << "Got OAuth2 access token!";
   retry_count_ = 0;
   access_token_ = access_token;
   StartOAuthLoginForUberToken();
@@ -207,7 +205,7 @@ void OAuth2LoginVerifier::OnGetTokenFailure(
   login_token_request_.reset();
 
   LOG(WARNING) << "Failed to get OAuth2 access token, "
-             << " error: " << error.state();
+               << " error: " << error.state();
   UMA_HISTOGRAM_ENUMERATION(
       base::StringPrintf("OAuth2Login.%sFailure", "GetOAuth2AccessToken"),
       error.state(),
@@ -233,7 +231,7 @@ void OAuth2LoginVerifier::RetryOnError(const char* operation_id,
   }
 
   LOG(WARNING) << "Unrecoverable error or retry count max reached for "
-             << operation_id;
+               << operation_id;
   UMA_HISTOGRAM_ENUMERATION(
       base::StringPrintf("OAuth2Login.%sFailure", operation_id),
       error.state(),

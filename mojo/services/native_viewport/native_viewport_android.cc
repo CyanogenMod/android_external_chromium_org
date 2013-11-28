@@ -5,17 +5,20 @@
 #include "mojo/services/native_viewport/native_viewport_android.h"
 
 #include <android/native_window_jni.h>
-#include "gpu/command_buffer/client/gl_in_process_context.h"
-#include "gpu/command_buffer/client/gles2_implementation.h"
 #include "mojo/services/native_viewport/android/mojo_viewport.h"
 #include "mojo/shell/context.h"
+#include "ui/events/event.h"
+#include "ui/gfx/point.h"
 
 namespace mojo {
 namespace services {
 
-NativeViewportAndroid::NativeViewportAndroid(NativeViewportDelegate* delegate)
+NativeViewportAndroid::NativeViewportAndroid(shell::Context* context,
+                                             NativeViewportDelegate* delegate)
     : delegate_(delegate),
+      context_(context),
       window_(NULL),
+      id_generator_(0),
       weak_factory_(this) {
 }
 
@@ -27,19 +30,7 @@ NativeViewportAndroid::~NativeViewportAndroid() {
 void NativeViewportAndroid::OnNativeWindowCreated(ANativeWindow* window) {
   DCHECK(!window_);
   window_ = window;
-
-  gpu::GLInProcessContextAttribs attribs;
-  gl_context_.reset(gpu::GLInProcessContext::CreateContext(
-      false, window_, size_, false, attribs, gfx::PreferDiscreteGpu));
-  gl_context_->SetContextLostCallback(base::Bind(
-      &NativeViewportAndroid::OnGLContextLost, base::Unretained(this)));
-
-  delegate_->OnGLContextAvailable(gl_context_->GetImplementation());
-}
-
-void NativeViewportAndroid::OnGLContextLost() {
-  gl_context_.reset();
-  delegate_->OnGLContextLost();
+  delegate_->OnAcceleratedWidgetAvailable(window_);
 }
 
 void NativeViewportAndroid::OnNativeWindowDestroyed() {
@@ -52,10 +43,38 @@ void NativeViewportAndroid::OnResized(const gfx::Size& size) {
   delegate_->OnResized(size);
 }
 
+void NativeViewportAndroid::OnTouchEvent(int pointer_id,
+                                         ui::EventType action,
+                                         float x, float y,
+                                         int64 time_ms) {
+  gfx::Point location(static_cast<int>(x), static_cast<int>(y));
+  ui::TouchEvent event(action, location,
+                       id_generator_.GetGeneratedID(pointer_id),
+                       base::TimeDelta::FromMilliseconds(time_ms));
+  // TODO(beng): handle multiple touch-points.
+  delegate_->OnEvent(&event);
+  if (action == ui::ET_TOUCH_RELEASED)
+    id_generator_.ReleaseNumber(pointer_id);
+}
+
 void NativeViewportAndroid::ReleaseWindow() {
-  gl_context_.reset();
   ANativeWindow_release(window_);
   window_ = NULL;
+}
+
+gfx::Size NativeViewportAndroid::GetSize() {
+  return size_;
+}
+
+void NativeViewportAndroid::Init() {
+  MojoViewportInit* init = new MojoViewportInit();
+  init->ui_runner = context_->task_runners()->ui_runner();
+  init->native_viewport = GetWeakPtr();
+
+  context_->task_runners()->java_runner()->PostTask(FROM_HERE,
+      base::Bind(MojoViewport::CreateForActivity,
+                 context_->activity(),
+                 init));
 }
 
 void NativeViewportAndroid::Close() {
@@ -69,19 +88,8 @@ void NativeViewportAndroid::Close() {
 scoped_ptr<NativeViewport> NativeViewport::Create(
     shell::Context* context,
     NativeViewportDelegate* delegate) {
-  scoped_ptr<NativeViewportAndroid> native_viewport(
-      new NativeViewportAndroid(delegate));
-
-  MojoViewportInit* init = new MojoViewportInit();
-  init->ui_runner = context->task_runners()->ui_runner();
-  init->native_viewport = native_viewport->GetWeakPtr();
-
-  context->task_runners()->java_runner()->PostTask(FROM_HERE,
-      base::Bind(MojoViewport::CreateForActivity,
-                 context->activity(),
-                 init));
-
-   return scoped_ptr<NativeViewport>(native_viewport.Pass());
+  return scoped_ptr<NativeViewport>(
+      new NativeViewportAndroid(context, delegate)).Pass();
 }
 
 }  // namespace services

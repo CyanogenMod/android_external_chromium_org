@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/format_macros.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -131,13 +132,13 @@ GURL GetSaveToWalletUrl(size_t user_index) {
       .Resolve("saveToWallet?s7e=card_number%3Bcvn");
 }
 
-GURL GetPassiveAuthUrl() {
-  return GetBaseWalletUrl(0).Resolve("passiveauth?isChromePayments=true");
+GURL GetPassiveAuthUrl(size_t user_index) {
+  return GetBaseWalletUrl(user_index)
+      .Resolve("passiveauth?isChromePayments=true");
 }
 
 GURL GetSignInUrl() {
-  GURL url(GaiaUrls::GetInstance()->service_login_url());
-  url = net::AppendQueryParameter(url, "service", "toolbar");
+  GURL url(GaiaUrls::GetInstance()->add_account_url());
   url = net::AppendQueryParameter(url, "nui", "1");
   // Prevents promos from showing (see http://crbug.com/235227).
   url = net::AppendQueryParameter(url, "sarp", "1");
@@ -147,16 +148,38 @@ GURL GetSignInUrl() {
   return url;
 }
 
-// The continue url portion of the sign-in URL.
+// The continue url portion of the sign-in URL. This URL is used as a milestone
+// to determine that the sign-in process is finished. It has to be a Google
+// domain, use https://, and do almost nothing, but otherwise it's not too
+// important what the URL actually is: it's not important that this URL has the
+// ability to generate a gdToken.
 GURL GetSignInContinueUrl() {
-  return GetPassiveAuthUrl();
+  return GetPassiveAuthUrl(0);
 }
 
-bool IsSignInContinueUrl(const GURL& url) {
+bool IsSignInContinueUrl(const GURL& url, size_t* user_index) {
   GURL final_url = wallet::GetSignInContinueUrl();
-  return url.SchemeIsSecure() &&
-         url.host() == final_url.host() &&
-         url.path() == final_url.path();
+  if (!url.SchemeIsSecure() ||
+      url.host() != final_url.host() ||
+      url.path() != final_url.path()) {
+    return false;
+  }
+
+  *user_index = 0;
+  std::string query_str = url.query();
+  url_parse::Component query(0, query_str.length());
+  url_parse::Component key, value;
+  const char kUserIndexKey[] = "authuser";
+  while (url_parse::ExtractQueryKeyValue(query_str.c_str(), &query, &key,
+                                         &value)) {
+    if (key.is_nonempty() &&
+        query_str.substr(key.begin, key.len) == kUserIndexKey) {
+      base::StringToSizeT(query_str.substr(value.begin, value.len), user_index);
+      break;
+    }
+  }
+
+  return true;
 }
 
 bool IsUsingProd() {

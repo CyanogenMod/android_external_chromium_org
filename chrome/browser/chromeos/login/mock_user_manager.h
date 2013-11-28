@@ -38,12 +38,14 @@ class MockUserManager : public UserManager {
   MOCK_METHOD1(RemoveUserFromList, void(const std::string&));
   MOCK_CONST_METHOD1(IsKnownUser, bool(const std::string&));
   MOCK_CONST_METHOD1(FindUser, const User*(const std::string&));
+  MOCK_METHOD1(FindUserAndModify, User*(const std::string&));
   MOCK_METHOD2(SaveUserOAuthStatus, void(const std::string&,
                                          User::OAuthTokenStatus));
+  MOCK_CONST_METHOD1(GetProfileByUser, Profile*(const User*));
   MOCK_METHOD2(SaveUserDisplayName, void(const std::string&,
                                          const string16&));
-  MOCK_METHOD3(UpdateUserAccountData,
-               void(const std::string&, const string16&, const std::string&));
+  MOCK_METHOD2(UpdateUserAccountData,
+               void(const std::string&, const UserAccountData&));
   MOCK_CONST_METHOD1(GetUserDisplayName, string16(const std::string&));
   MOCK_METHOD2(SaveUserDisplayEmail, void(const std::string&,
                                           const std::string&));
@@ -100,8 +102,10 @@ class MockUserManager : public UserManager {
 
   virtual UserFlow* GetCurrentUserFlow() const OVERRIDE;
   virtual UserFlow* GetUserFlow(const std::string&) const OVERRIDE;
-  virtual void RespectLocalePreference(Profile* profile, const User* user) const
-      OVERRIDE;
+  virtual bool RespectLocalePreference(
+      Profile* profile,
+      const User* user,
+      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
   // Sets a new User instance. Users previously created by this MockUserManager
   // become invalid.

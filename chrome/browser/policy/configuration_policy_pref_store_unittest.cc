@@ -12,9 +12,9 @@
 #include "base/run_loop.h"
 #include "chrome/browser/policy/configuration_policy_handler.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/policy_service_impl.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -48,9 +48,9 @@ ConfigurationPolicyPrefStoreTest::ConfigurationPolicyPrefStoreTest() {
   EXPECT_CALL(provider_, IsInitializationComplete(_))
       .WillRepeatedly(Return(false));
   provider_.Init();
-  PolicyServiceImpl::Providers providers;
-  providers.push_back(&provider_);
-  policy_service_.reset(new PolicyServiceImpl(providers));
+  providers_.push_back(&provider_);
+  policy_service_.reset(new PolicyServiceImpl(
+      providers_, PolicyServiceImpl::PreprocessCallback()));
   store_ = new ConfigurationPolicyPrefStore(
       policy_service_.get(), &handler_list_, POLICY_LEVEL_MANDATORY);
 }

@@ -24,6 +24,8 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	third_party/opus/src/celt/bands.c \
 	third_party/opus/src/celt/celt.c \
+	third_party/opus/src/celt/celt_decoder.c \
+	third_party/opus/src/celt/celt_encoder.c \
 	third_party/opus/src/celt/celt_lpc.c \
 	third_party/opus/src/celt/cwrs.c \
 	third_party/opus/src/celt/entcode.c \
@@ -139,10 +141,15 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/silk/tables_pulses_per_block.c \
 	third_party/opus/src/silk/VAD.c \
 	third_party/opus/src/silk/VQ_WMat_EC.c \
+	third_party/opus/src/src/analysis.c \
+	third_party/opus/src/src/mlp.c \
+	third_party/opus/src/src/mlp_data.c \
 	third_party/opus/src/src/opus.c \
 	third_party/opus/src/src/opus_decoder.c \
 	third_party/opus/src/src/opus_encoder.c \
 	third_party/opus/src/src/opus_multistream.c \
+	third_party/opus/src/src/opus_multistream_decoder.c \
+	third_party/opus/src/src/opus_multistream_encoder.c \
 	third_party/opus/src/src/repacketizer.c
 
 
@@ -196,6 +203,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DOPUS_BUILD' \
 	'-DOPUS_EXPORT=' \
 	'-DHAVE_LRINT' \
@@ -286,6 +294,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DOPUS_BUILD' \
 	'-DOPUS_EXPORT=' \
 	'-DHAVE_LRINT' \

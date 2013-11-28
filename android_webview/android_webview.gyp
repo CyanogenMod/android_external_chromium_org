@@ -55,7 +55,7 @@
       'dependencies': [
         '<(DEPTH)/content/content_resources.gyp:content_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
       ],
       'variables': {
@@ -155,6 +155,7 @@
         'browser/in_process_view_renderer.cc',
         'browser/in_process_view_renderer.h',
         'browser/input_stream.h',
+        'browser/intercepted_request_data.cc',
         'browser/intercepted_request_data.h',
         'browser/jni_dependency_factory.h',
         'browser/gl_view_renderer_manager.cc',
@@ -199,6 +200,8 @@
         'public/browser/draw_gl.h',
         'renderer/aw_content_renderer_client.cc',
         'renderer/aw_content_renderer_client.h',
+        'renderer/aw_key_systems.cc',
+        'renderer/aw_key_systems.h',
         'renderer/aw_render_process_observer.cc',
         'renderer/aw_render_process_observer.h',
         'renderer/aw_render_view_ext.cc',
@@ -212,7 +215,7 @@
         '../components/components.gyp:navigation_interception_java',
         '../components/components.gyp:web_contents_delegate_android_java',
         '../content/content.gyp:content_java',
-        '../ui/ui.gyp:ui_java',
+        '../ui/android/ui_android.gyp:ui_java',
       ],
       'variables': {
         'java_in_dir': '../android_webview/java',

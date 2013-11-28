@@ -34,7 +34,6 @@ class MediaMetric(Metric):
 
   def AddResults(self, tab, results):
     """Reports all recorded metrics as Telemetry perf results."""
-    assert self._results
     trace_names = []
     for media_metric in self._results:
       trace_names.append(self._AddResultsForMediaElement(media_metric, results))
@@ -77,4 +76,5 @@ class MediaMetric(Metric):
 
     AddOneResult('avg_loop_time', 'ms')
     AddOneResult('seek', 'ms')
+    AddOneResult('mse', 'ms')
     return trace

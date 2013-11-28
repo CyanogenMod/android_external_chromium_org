@@ -6,8 +6,10 @@
 import json
 import unittest
 
+from extensions_paths import EXTENSIONS
 from server_instance import ServerInstance
 from test_file_system import TestFileSystem
+
 
 _TEST_FILESYSTEM = {
   'api': {
@@ -132,9 +134,11 @@ _TEST_FILESYSTEM = {
   }
 }
 
+
 class FeaturesBundleTest(unittest.TestCase):
   def setUp(self):
-    self._server = ServerInstance.ForTest(TestFileSystem(_TEST_FILESYSTEM))
+    self._server = ServerInstance.ForTest(
+        TestFileSystem(_TEST_FILESYSTEM, relative_to=EXTENSIONS))
 
   def testManifestFeatures(self):
     expected_features = {
@@ -173,7 +177,7 @@ class FeaturesBundleTest(unittest.TestCase):
     }
     self.assertEqual(
         expected_features,
-        self._server.features_bundle.GetManifestFeatures())
+        self._server.features_bundle.GetManifestFeatures().Get())
 
   def testPermissionFeatures(self):
     expected_features = {
@@ -206,7 +210,7 @@ class FeaturesBundleTest(unittest.TestCase):
     }
     self.assertEqual(
         expected_features,
-        self._server.features_bundle.GetPermissionFeatures())
+        self._server.features_bundle.GetPermissionFeatures().Get())
 
   def testAPIFeatures(self):
     expected_features = {
@@ -254,7 +258,8 @@ class FeaturesBundleTest(unittest.TestCase):
     }
     self.assertEqual(
         expected_features,
-        self._server.features_bundle.GetAPIFeatures())
+        self._server.features_bundle.GetAPIFeatures().Get())
+
 
 if __name__ == '__main__':
   unittest.main()

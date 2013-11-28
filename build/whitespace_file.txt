@@ -8,7 +8,7 @@ any modification below this line.
 
 =====================================================================
 
-Let's make a story. Add one sentence for every commit:
+Let's make a story. Add one sentence for every commit: 
 
 CHAPTER 1:
 It was a dark and blinky night; the rain fell in torrents -- except at
@@ -22,7 +22,7 @@ It was a Domo-Kun.
 "What took you so long?", inquired his wife.
 
 Silence. Oblivious to his silence, she continued, "Did Mr. Usagi enjoy the
-waffles you brought him?""You know him, he's not one to forego a waffle,
+waffles you brought him?" "You know him, he's not one to forego a waffle,
 no matter how burnt," he snickered.
 
 The pause was filled with the sound of compile errors.
@@ -76,4 +76,4 @@ BEING SURE OF YOURSELF MEANS YOU'RE A FOOL
 AM NOT
 ARE TOO
 IF AT FIRST YOU DON'T SUCCEED: TRY, EXCEPT, FINALLY
-AND THEN, TIME LEAPT BACKWARDS
+AND THEN, TIME LEAPT BACKWARDS 

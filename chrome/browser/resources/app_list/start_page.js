@@ -7,9 +7,12 @@
  */
 
 <include src="recommended_apps.js"/>
+<include src="speech_manager.js"/>
 
 cr.define('appList.startPage', function() {
   'use strict';
+
+  var speechManager = null;
 
   /**
    * Creates a StartPage object.
@@ -51,6 +54,7 @@ cr.define('appList.startPage', function() {
    */
   function initialize() {
     StartPage.decorate($('start-page'));
+    speechManager = new speech.SpeechManager();
     chrome.send('initialize');
   }
 
@@ -62,9 +66,34 @@ cr.define('appList.startPage', function() {
     $('start-page').setRecommendedApps(apps);
   }
 
+  /**
+   * Invoked when the app-list bubble is shown.
+   */
+  function onAppListShown() {
+    speechManager.start();
+  }
+
+  /**
+   * Invoked when the app-list bubble is hidden.
+   */
+  function onAppListHidden() {
+    speechManager.stop();
+  }
+
+  /**
+   * Invoked when the user explicitly wants to toggle the speech recognition
+   * state.
+   */
+  function toggleSpeechRecognition() {
+    speechManager.toggleSpeechRecognition();
+  }
+
   return {
     initialize: initialize,
-    setRecommendedApps: setRecommendedApps
+    setRecommendedApps: setRecommendedApps,
+    onAppListShown: onAppListShown,
+    onAppListHidden: onAppListHidden,
+    toggleSpeechRecognition: toggleSpeechRecognition
   };
 });
 

@@ -4,7 +4,6 @@
 
 #include "ui/app_list/views/app_list_view.h"
 
-#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
@@ -32,16 +31,40 @@
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
 #endif
+#if !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #endif
+#endif  // defined(USE_AURA)
 
 namespace app_list {
 
 namespace {
 
-base::Closure g_next_paint_callback;
+void (*g_next_paint_callback)();
 
 // The distance between the arrow tip and edge of the anchor view.
 const int kArrowOffset = 10;
+
+#if defined(OS_LINUX)
+// The WM_CLASS name for the app launcher window on Linux.
+const char* kAppListWMClass = "chrome_app_list";
+#endif
+
+// Determines whether the current environment supports shadows bubble borders.
+bool SupportsShadow() {
+#if defined(USE_AURA) && defined(OS_WIN)
+  // Shadows are not supported on Windows Aura without Aero Glass.
+  if (!ui::win::IsAeroGlassEnabled() ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDwmComposition)) {
+    return false;
+  }
+#elif defined(OS_LINUX) && !defined(USE_ASH)
+  // Shadows are not supported on (non-ChromeOS) Linux.
+  return false;
+#endif
+  return true;
+}
 
 }  // namespace
 
@@ -49,18 +72,16 @@ const int kArrowOffset = 10;
 // AppListView:
 
 AppListView::AppListView(AppListViewDelegate* delegate)
-    : model_(new AppListModel),
-      delegate_(delegate),
+    : delegate_(delegate),
       app_list_main_view_(NULL),
       signin_view_(NULL) {
-  if (delegate_)
-    delegate_->InitModel(model_.get());
-  model_->AddObserver(this);
+  CHECK(delegate);
+  delegate_->GetModel()->AddObserver(this);
 }
 
 AppListView::~AppListView() {
-  model_->RemoveObserver(this);
-  // Models are going away, ensure their references are cleared.
+  delegate_->GetModel()->RemoveObserver(this);
+  // Remove child views first to ensure no remaining dependencies on delegate_.
   RemoveAllChildViews(true);
 }
 
@@ -83,7 +104,7 @@ void AppListView::InitAsBubbleAtFixedLocation(
     views::BubbleBorder::Arrow arrow,
     bool border_accepts_events) {
   SetAnchorView(NULL);
-  set_anchor_rect(gfx::Rect(anchor_point_in_screen, gfx::Size()));
+  SetAnchorRect(gfx::Rect(anchor_point_in_screen, gfx::Size()));
   InitAsBubbleInternal(
       parent, pagination_model, arrow, border_accepts_events, gfx::Vector2d());
 }
@@ -95,8 +116,7 @@ void AppListView::SetBubbleArrow(views::BubbleBorder::Arrow arrow) {
 }
 
 void AppListView::SetAnchorPoint(const gfx::Point& anchor_point) {
-  set_anchor_rect(gfx::Rect(anchor_point, gfx::Size()));
-  SizeToContents();  // Repositions view relative to the anchor.
+  SetAnchorRect(gfx::Rect(anchor_point, gfx::Size()));
 }
 
 void AppListView::SetDragAndDropHostOfCurrentAppList(
@@ -110,10 +130,7 @@ void AppListView::ShowWhenReady() {
 
 void AppListView::Close() {
   app_list_main_view_->Close();
-  if (delegate_)
-    delegate_->Dismiss();
-  else
-    GetWidget()->Close();
+  delegate_->Dismiss();
 }
 
 void AppListView::UpdateBounds() {
@@ -126,9 +143,9 @@ gfx::Size AppListView::GetPreferredSize() {
 
 void AppListView::Paint(gfx::Canvas* canvas) {
   views::BubbleDelegateView::Paint(canvas);
-  if (!g_next_paint_callback.is_null()) {
-    g_next_paint_callback.Run();
-    g_next_paint_callback.Reset();
+  if (g_next_paint_callback) {
+    g_next_paint_callback();
+    g_next_paint_callback = NULL;
   }
 }
 
@@ -141,8 +158,9 @@ void AppListView::Prerender() {
 }
 
 void AppListView::OnSigninStatusChanged() {
-  signin_view_->SetVisible(!model_->signed_in());
-  app_list_main_view_->SetVisible(model_->signed_in());
+  AppListModel* model = delegate_->GetModel();
+  signin_view_->SetVisible(!model->signed_in());
+  app_list_main_view_->SetVisible(model->signed_in());
   app_list_main_view_->search_box_view()->InvalidateMenu();
 }
 
@@ -159,7 +177,7 @@ void AppListView::RemoveObserver(Observer* observer) {
 }
 
 // static
-void AppListView::SetNextPaintCallback(const base::Closure& callback) {
+void AppListView::SetNextPaintCallback(void (*callback)()) {
   g_next_paint_callback = callback;
 }
 
@@ -168,7 +186,7 @@ HWND AppListView::GetHWND() const {
 #if defined(USE_AURA)
   gfx::NativeWindow window =
       GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-  return window->GetDispatcher()->GetAcceleratedWidget();
+  return window->GetDispatcher()->host()->GetAcceleratedWidget();
 #else
   return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
 #endif
@@ -181,7 +199,6 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
                                        bool border_accepts_events,
                                        const gfx::Vector2d& anchor_offset) {
   app_list_main_view_ = new AppListMainView(delegate_.get(),
-                                            model_.get(),
                                             pagination_model,
                                             parent);
   AddChildView(app_list_main_view_);
@@ -191,10 +208,9 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   app_list_main_view_->layer()->SetMasksToBounds(true);
 #endif
 
-  signin_view_ = new SigninView(
-      delegate_ ? delegate_->GetSigninDelegate()
-                : NULL,
-      app_list_main_view_->GetPreferredSize().width());
+  signin_view_ =
+      new SigninView(delegate_->GetSigninDelegate(),
+                     app_list_main_view_->GetPreferredSize().width());
   AddChildView(signin_view_);
 
   OnSigninStatusChanged();
@@ -209,14 +225,8 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
                                      kArrowOffset - anchor_offset.y(),
                                      kArrowOffset - anchor_offset.x()));
   set_border_accepts_events(border_accepts_events);
-  set_shadow(views::BubbleBorder::BIG_SHADOW);
-#if defined(USE_AURA) && defined(OS_WIN)
-  if (!ui::win::IsAeroGlassEnabled() ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableDwmComposition)) {
-    set_shadow(views::BubbleBorder::NO_SHADOW_OPAQUE_BORDER);
-  }
-#endif
+  set_shadow(SupportsShadow() ? views::BubbleBorder::BIG_SHADOW
+                              : views::BubbleBorder::NO_SHADOW_OPAQUE_BORDER);
   views::BubbleDelegateView::CreateBubble(this);
   SetBubbleArrow(arrow);
 
@@ -237,6 +247,20 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   // window manager do not have the SWP_SHOWWINDOW flag set which would cause
   // the border to be shown. See http://crbug.com/231687 .
   GetWidget()->Hide();
+#endif
+}
+
+void AppListView::OnBeforeBubbleWidgetInit(
+    views::Widget::InitParams* params,
+    views::Widget* widget) const {
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+  if (delegate_ && delegate_->ForceNativeDesktop())
+    params->native_widget = new views::DesktopNativeWidgetAura(widget);
+#endif
+#if defined(OS_LINUX)
+  // Set up a custom WM_CLASS for the app launcher window. This allows task
+  // switchers in X11 environments to distinguish it from main browser windows.
+  params->wm_class_name = kAppListWMClass;
 #endif
 }
 
@@ -315,10 +339,6 @@ void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
 }
 
 void AppListView::OnAppListModelSigninStatusChanged() {
-  OnSigninStatusChanged();
-}
-
-void AppListView::OnAppListModelUsersChanged() {
   OnSigninStatusChanged();
 }
 

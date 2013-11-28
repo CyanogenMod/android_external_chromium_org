@@ -91,6 +91,7 @@ class CC_EXPORT Scheduler {
   void FinishCommit();
   void BeginMainFrameAborted(bool did_handle);
 
+  void DidManageTiles();
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
   bool HasInitializedOutputSurface() const {
@@ -101,6 +102,9 @@ class CC_EXPORT Scheduler {
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
   bool ManageTilesPending() const {
     return state_machine_.ManageTilesPending();
+  }
+  bool MainThreadIsInHighLatencyMode() const {
+    return state_machine_.MainThreadIsInHighLatencyMode();
   }
 
   bool WillDrawIfNeeded() const;
@@ -133,6 +137,9 @@ class CC_EXPORT Scheduler {
   void DrawAndReadback();
   void ProcessScheduledActions();
 
+  bool CanCommitAndActivateBeforeDeadline() const;
+  void AdvanceCommitStateIfPossible();
+
   const SchedulerSettings settings_;
   SchedulerClient* client_;
 
@@ -140,6 +147,7 @@ class CC_EXPORT Scheduler {
   BeginFrameArgs last_begin_impl_frame_args_;
   base::CancelableClosure begin_impl_frame_deadline_closure_;
   base::CancelableClosure poll_for_draw_triggers_closure_;
+  base::RepeatingTimer<Scheduler> advance_commit_state_timer_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;

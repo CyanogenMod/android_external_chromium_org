@@ -6,8 +6,8 @@
 
 #include <cmath>
 
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
+#include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,12 +16,12 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
 #include "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -69,15 +69,15 @@ class InfobarBridge : public ExtensionInfoBarDelegate::DelegateObserver {
 
   // Load the Extension's icon image.
   void LoadIcon() {
-    const extensions::Extension* extension = delegate_->extension_host()->
+    const extensions::Extension* extension = delegate_->extension_view_host()->
         extension();
     extensions::ExtensionResource icon_resource =
         extensions::IconsInfo::GetIconResource(
             extension,
             extension_misc::EXTENSION_ICON_BITTY,
             ExtensionIconSet::MATCH_EXACTLY);
-    extensions::ImageLoader* loader =
-        extensions::ImageLoader::Get(delegate_->extension_host()->profile());
+    extensions::ImageLoader* loader = extensions::ImageLoader::Get(
+        delegate_->extension_view_host()->browser_context());
     loader->LoadImageAsync(extension, icon_resource,
                            gfx::Size(extension_misc::EXTENSION_ICON_BITTY,
                                      extension_misc::EXTENSION_ICON_BITTY),
@@ -146,12 +146,12 @@ class InfobarBridge : public ExtensionInfoBarDelegate::DelegateObserver {
     dropdownButton_.reset([[MenuButton alloc] init]);
     [dropdownButton_ setOpenMenuOnClick:YES];
 
-    extensions::ExtensionHost* extensionHost =
-        [self delegate]->AsExtensionInfoBarDelegate()->extension_host();
+    extensions::ExtensionViewHost* extensionViewHost =
+        [self delegate]->AsExtensionInfoBarDelegate()->extension_view_host();
     Browser* browser = chrome::FindBrowserWithWebContents(
         [self infobar]->OwnerCocoa()->web_contents());
     contextMenuController_.reset([[ExtensionActionContextMenuController alloc]
-        initWithExtension:extensionHost->extension()
+        initWithExtension:extensionViewHost->extension()
                   browser:browser
           extensionAction:NULL]);
 
@@ -176,7 +176,7 @@ class InfobarBridge : public ExtensionInfoBarDelegate::DelegateObserver {
   [self removeButtons];
 
   extensionView_ = [self delegate]->AsExtensionInfoBarDelegate()
-      ->extension_host()->view()->native_view();
+      ->extension_view_host()->view()->native_view();
 
   // Add the extension's RenderWidgetHostView to the view hierarchy of the
   // InfoBar and make sure to place it below the Close button.

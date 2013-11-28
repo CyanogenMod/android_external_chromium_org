@@ -258,27 +258,24 @@ class WebViewInteractiveTest
   }
 
   void SimulateRWHMouseClick(content::RenderWidgetHost* rwh, int x, int y) {
-    WebKit::WebMouseEvent mouse_event;
-    mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+    blink::WebMouseEvent mouse_event;
+    mouse_event.button = blink::WebMouseEvent::ButtonLeft;
     mouse_event.x = mouse_event.windowX = x;
     mouse_event.y = mouse_event.windowY = y;
     mouse_event.modifiers = 0;
 
-    mouse_event.type = WebKit::WebInputEvent::MouseDown;
+    mouse_event.type = blink::WebInputEvent::MouseDown;
     rwh->ForwardMouseEvent(mouse_event);
-    mouse_event.type = WebKit::WebInputEvent::MouseUp;
+    mouse_event.type = blink::WebInputEvent::MouseUp;
     rwh->ForwardMouseEvent(mouse_event);
   }
 
+  // TODO(lazyboy): implement
   class PopupCreatedObserver {
    public:
     PopupCreatedObserver() : created_(false), last_render_widget_host_(NULL) {
-      created_callback_ = base::Bind(
-          &PopupCreatedObserver::CreatedCallback, base::Unretained(this));
-      content::RenderWidgetHost::AddCreatedCallback(created_callback_);
     }
     virtual ~PopupCreatedObserver() {
-      content::RenderWidgetHost::RemoveCreatedCallback(created_callback_);
     }
     void Reset() {
       created_ = false;
@@ -294,14 +291,6 @@ class WebViewInteractiveTest
     }
 
    private:
-    void CreatedCallback(content::RenderWidgetHost* rwh) {
-      last_render_widget_host_ = rwh;
-      if (message_loop_.get())
-        message_loop_->Quit();
-      else
-        created_ = true;
-    }
-    content::RenderWidgetHost::CreatedCallback created_callback_;
     scoped_refptr<content::MessageLoopRunner> message_loop_;
     bool created_;
     content::RenderWidgetHost* last_render_widget_host_;
@@ -594,6 +583,13 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_Close) {
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_ExecuteScript) {
   TestHelper("testNewWindowExecuteScript",
+             "web_view/newwindow",
+             NEEDS_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
+                       NewWindow_DeclarativeWebRequest) {
+  TestHelper("testNewWindowDeclarativeWebRequest",
              "web_view/newwindow",
              NEEDS_TEST_SERVER);
 }

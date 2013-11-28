@@ -9,6 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_item_model.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/cached_label.h"
 #include "ui/app_list/views/progress_bar_view.h"
@@ -35,6 +36,9 @@ namespace {
 const int kTopPadding = 20;
 const int kIconTitleSpacing = 7;
 const int kProgressBarHorizontalPadding = 12;
+
+// Radius of the folder dropping preview circle.
+const int kFolderPreviewRadius = 40;
 
 const int kLeftRightPaddingChars = 1;
 
@@ -146,7 +150,7 @@ void AppListItemView::SetUIState(UIState state) {
       progress_bar_->SetVisible(model_->is_installing());
       layer()->SetTransform(gfx::Transform());
       break;
-    case UI_STATE_DRAGGING:
+    case UI_STATE_DRAGGING: {
       title_->SetVisible(false);
       progress_bar_->SetVisible(false);
       const gfx::Rect bounds(layer()->bounds().size());
@@ -154,7 +158,12 @@ void AppListItemView::SetUIState(UIState state) {
           bounds.CenterPoint(),
           kDraggingIconScale));
       break;
+    }
+    case UI_STATE_DROPPING_IN_FOLDER:
+      break;
   }
+
+  SchedulePaint();
 #endif
 }
 
@@ -182,6 +191,18 @@ void AppListItemView::CancelContextMenu() {
 
 gfx::ImageSkia AppListItemView::GetDragImage() {
   return icon_->GetImage();
+}
+
+void AppListItemView::OnDragEnded() {
+  mouse_drag_timer_.Stop();
+  SetUIState(UI_STATE_NORMAL);
+}
+
+void AppListItemView::SetAsAttemptedFolderTarget(bool is_target_folder) {
+  if (is_target_folder)
+    SetUIState(UI_STATE_DROPPING_IN_FOLDER);
+  else
+    SetUIState(UI_STATE_NORMAL);
 }
 
 void AppListItemView::ItemIconChanged() {
@@ -253,13 +274,28 @@ void AppListItemView::OnPaint(gfx::Canvas* canvas) {
     return;
 
   gfx::Rect rect(GetContentsBounds());
+  if (model_->highlighted() && !model_->is_installing()) {
+    canvas->FillRect(rect, kHighlightedColor);
+    return;
+  } else if (apps_grid_view_->IsSelectedView(this)) {
+      canvas->FillRect(rect, kSelectedColor);
+  }
 
-  if (apps_grid_view_->IsSelectedView(this)) {
-    canvas->FillRect(rect, kSelectedColor);
-  } else if (model_->highlighted() && !model_->is_installing()) {
-    canvas->FillRect(rect, kHighlightedColor);
-  } else if (state() == STATE_HOVERED || state() == STATE_PRESSED) {
-    canvas->FillRect(rect, kHighlightedColor);
+  if (!switches::IsFolderUIEnabled()) {
+    if (apps_grid_view_->IsSelectedView(this)) {
+      canvas->FillRect(rect, kSelectedColor);
+    } else if (state() == STATE_HOVERED || state() == STATE_PRESSED) {
+      canvas->FillRect(rect, kHighlightedColor);
+    }
+  } else if (ui_state_ == UI_STATE_DROPPING_IN_FOLDER) {
+    // Draw folder dropping preview circle.
+    gfx::Point center = gfx::Point(icon_->x() + icon_->size().width() / 2,
+                                   icon_->y() + icon_->size().height() / 2);
+    SkPaint paint;
+    paint.setStyle(SkPaint::kFill_Style);
+    paint.setAntiAlias(true);
+    paint.setColor(kFolderBubbleColor);
+    canvas->DrawCircle(center, kFolderPreviewRadius, paint);
   }
 }
 
@@ -285,11 +321,17 @@ void AppListItemView::ShowContextMenuForView(views::View* source,
 }
 
 void AppListItemView::StateChanged() {
+  const bool is_folder_ui_enabled = switches::IsFolderUIEnabled();
+  if (is_folder_ui_enabled)
+    apps_grid_view_->ClearAnySelectedView();
+
   if (state() == STATE_HOVERED || state() == STATE_PRESSED) {
-    apps_grid_view_->SetSelectedView(this);
+    if (!is_folder_ui_enabled)
+      apps_grid_view_->SetSelectedView(this);
     title_->SetEnabledColor(kGridTitleHoverColor);
   } else {
-    apps_grid_view_->ClearSelectedView(this);
+    if (!is_folder_ui_enabled)
+      apps_grid_view_->ClearSelectedView(this);
     model_->SetHighlighted(false);
     title_->SetEnabledColor(kGridTitleColor);
   }
@@ -335,8 +377,6 @@ bool AppListItemView::OnKeyPressed(const ui::KeyEvent& event) {
 void AppListItemView::OnMouseReleased(const ui::MouseEvent& event) {
   CustomButton::OnMouseReleased(event);
   apps_grid_view_->EndDrag(false);
-  mouse_drag_timer_.Stop();
-  SetUIState(UI_STATE_NORMAL);
 }
 
 void AppListItemView::OnMouseCaptureLost() {
@@ -346,8 +386,6 @@ void AppListItemView::OnMouseCaptureLost() {
 #if !defined(OS_WIN)
   CustomButton::OnMouseCaptureLost();
   apps_grid_view_->EndDrag(true);
-  mouse_drag_timer_.Stop();
-  SetUIState(UI_STATE_NORMAL);
 #endif
 }
 

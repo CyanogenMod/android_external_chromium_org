@@ -116,6 +116,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
+  virtual void AcceleratedSurfaceInitialized(int host_id,
+                                             int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
       int gpu_host_id) OVERRIDE;
@@ -141,7 +143,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #endif  // defined(OS_WIN) || defined(USE_AURA)
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual void OnAccessibilityEvents(
       const std::vector<AccessibilityHostMsg_EventParams>&
           params) OVERRIDE;
@@ -183,6 +185,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) OVERRIDE;
+  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const OVERRIDE;
 #endif
 
   // Overridden from ui::GestureEventHelper.

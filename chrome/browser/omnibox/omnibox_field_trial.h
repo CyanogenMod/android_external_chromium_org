@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_OMNIBOX_OMNIBOX_FIELD_TRIAL_H_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,9 @@ class OmniboxFieldTrial {
   // specified type should have their relevance score multiplied by the
   // given number.  Omitted types are assumed to have multipliers of 1.0.
   typedef std::map<AutocompleteMatchType::Type, float> DemotionMultipliers;
+
+  // A set of types that should not be demoted when they are the top match.
+  typedef std::set<AutocompleteMatchType::Type> UndemotableTopMatchTypes;
 
   // Creates the static field trial groups.
   // *** MUST NOT BE CALLED MORE THAN ONCE. ***
@@ -102,6 +106,10 @@ class OmniboxFieldTrial {
   // ZeroSuggest and most visited suggestions.
   static bool InZeroSuggestMostVisitedFieldTrial();
 
+  // Returns whether the user is in a ZeroSuggest field trial and URL-based
+  // suggestions can continue to appear after the user has started typing.
+  static bool InZeroSuggestAfterTypingFieldTrial();
+
   // ---------------------------------------------------------
   // For the ShortcutsScoringMaxRelevance experiment that's part of the
   // bundled omnibox field trial.
@@ -148,6 +156,11 @@ class OmniboxFieldTrial {
       AutocompleteInput::PageClassification current_page_classification,
       DemotionMultipliers* demotions_by_type);
 
+  // Get the set of types that should not be demoted if they are the top
+  // match.
+  static UndemotableTopMatchTypes GetUndemotableTopTypes(
+      AutocompleteInput::PageClassification current_page_classification);
+
   // ---------------------------------------------------------
   // For the ReorderForLegalDefaultMatch experiment that's part of the
   // bundled omnibox field trial.
@@ -162,13 +175,25 @@ class OmniboxFieldTrial {
       AutocompleteInput::PageClassification current_page_classification);
 
   // ---------------------------------------------------------
+  // For the HQPBookmarkValue experiment that's part of the
+  // bundled omnibox field trial.
+
+  // Returns the value an untyped visit to a bookmark should receive.
+  // Compare this value with the default of 1 for non-bookmarked untyped
+  // visits to pages and the default of 20 for typed visits.  Returns
+  // 1 if the bookmark value experiment isn't active.
+  static int HQPBookmarkValue();
+
+  // ---------------------------------------------------------
   // Exposed publicly for the sake of unittests.
   static const char kBundledExperimentFieldTrialName[];
   // Rule names used by the bundled experiment.
   static const char kShortcutsScoringMaxRelevanceRule[];
   static const char kSearchHistoryRule[];
   static const char kDemoteByTypeRule[];
+  static const char kUndemotableTopTypeRule[];
   static const char kReorderForLegalDefaultMatchRule[];
+  static const char kHQPBookmarkValueRule[];
   // Rule values.
   static const char kReorderForLegalDefaultMatchRuleEnabled[];
 

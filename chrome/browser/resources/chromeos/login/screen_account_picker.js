@@ -26,16 +26,39 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       'updateUserImage',
       'updateUserGaiaNeeded',
       'setCapsLockState',
-      'forceLockedUserPodFocus'
+      'forceLockedUserPodFocus',
+      'onWallpaperLoaded',
+      'removeUser',
     ],
+
+    preferredWidth_: 0,
+    preferredHeight_: 0,
+
+    // Whether this screen is shown for the first time.
+    firstShown_: true,
 
     /** @override */
     decorate: function() {
       login.PodRow.decorate($('pod-row'));
     },
 
-    // Whether this screen is shown for the first time.
-    firstShown_: true,
+    /** @override */
+    getPreferredSize: function() {
+      return {width: this.preferredWidth_, height: this.preferredHeight_};
+    },
+
+    /** @override */
+    onWindowResize: function() {
+      $('pod-row').onWindowResize();
+    },
+
+    /**
+     * Sets preferred size for account picker screen.
+     */
+    setPreferredSize: function(width, height) {
+      this.preferredWidth_ = width;
+      this.preferredHeight_ = height;
+    },
 
     /**
      * When the account picker is being used to lock the screen, pressing the
@@ -138,7 +161,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     },
 
     /**
-     * Loads givens users in pod row.
+     * Loads given users in pod row.
      * @param {array} users Array of user.
      * @param {boolean} animated Whether to use init animation.
      * @param {boolean} showGuest Whether to show guest session button.
@@ -188,7 +211,22 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       var row = $('pod-row');
       if (row.lockedPod)
         row.focusPod(row.lockedPod, true);
-    }
+    },
+
+    /**
+     * Mark wallpaper loaded
+     */
+    onWallpaperLoaded: function(username) {
+      $('pod-row').onWallpaperLoaded(username);
+    },
+
+    /**
+     * Remove given user from pod row if it is there.
+     * @param {string} user name.
+     */
+    removeUser: function(username) {
+      $('pod-row').removeUserPod(username);
+    },
   };
 });
 

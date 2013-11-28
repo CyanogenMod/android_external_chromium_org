@@ -51,6 +51,7 @@
 namespace chrome {
 namespace {
 
+#if !defined(OS_ANDROID)
 // Returns true if all browsers can be closed without user interaction.
 // This currently checks if there is pending download, or if it needs to
 // handle unload handler.
@@ -71,6 +72,7 @@ bool AreAllBrowsersCloseable() {
   }
   return true;
 }
+#endif  // !defined(OS_ANDROID)
 
 int g_keep_alive_count = 0;
 
@@ -113,9 +115,7 @@ void CloseAllBrowsers() {
   // sent by RemoveBrowser() when the last browser has closed.
   if (browser_shutdown::ShuttingDownWithoutClosingBrowsers() ||
       (chrome::GetTotalBrowserCount() == 0 &&
-       (browser_shutdown::IsTryingToQuit() || !chrome::WillKeepAlive() ||
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableBatchedShutdown)))) {
+       (browser_shutdown::IsTryingToQuit() || !chrome::WillKeepAlive()))) {
     // Tell everyone that we are shutting down.
     browser_shutdown::SetTryingToQuit(true);
 

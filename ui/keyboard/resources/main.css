@@ -21,58 +21,6 @@ kb-keyboard {
   width: 1280px;
 }
 
-kb-abc-key,
-kb-shift-key,
-kb-modifier-key,
-kb-hide-keyboard-key,
-kb-layout-selector,
-kb-key {
-  background-color: #3b3b3e;
-  background-position: center center;
-  background-repeat: no-repeat;
-  background-size: contain;
-  border-top: 2px solid #4b4b4e;
-  border-radius: 2px;
-  color: #ffffff;
-  display: -webkit-box;
-  font-family: 'Open Sans', 'Noto Sans UI', sans-serif;
-  font-weight: 300;
-  margin-left: 0.25em;
-  position: relative;
-}
-
-kb-abc-key::x-key,
-kb-modifier-key::x-key,
-kb-shift-key::x-key,
-kb-layout-selector::x-key,
-kb-key::x-key {
-  bottom: 0;
-  height: 1.2em;
-  left: 0;
-  margin: auto;
-  padding-left: 0.7em;
-  padding-right: 0.7em;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
-kb-key::x-hinttext {
-  color: #7c7c7c;
-  font-size: 70%;
-  position: absolute;
-  right: 7%;
-  top: 5%;
-}
-
-kb-key::x-key[inverted] {
-  color: #7c7c7c;
-}
-
-kb-key::x-hinttext[inverted] {
-  color: #ffffff;
-}
-
 kb-keyboard.ctrl-active kb-modifier-key[char=Ctrl],
 kb-keyboard.alt-active kb-modifier-key[char=Alt] {
   color: lightblue;
@@ -91,17 +39,6 @@ kb-keyboard:not(.caps-locked)[keyset=upper] kb-shift-key {
   border-top: 2px solid #3a3a3c;
 }
 
-/* TODO(stevet): We can probably share most of this with kb-key::x-key. */
-kb-altkey::x-key {
-  bottom: 0;
-  height: 1.2em;
-  left: 0;
-  margin: auto;
-  position: absolute;
-  right: 0;
-  top: 0;
-  text-align: center;
-}
 
 .caps-locked kb-shift-key,
 .active {
@@ -171,120 +108,15 @@ kb-key:-webkit-any(.backspace,
 }
 
 /**
- * Images for keys.
+ * The microphone key is handled separately from other images since the image
+ * displayed changes depending on whether it's pressed or not.
  */
-.arrow-down {
- background-image: url('images/down.svg');
-}
-
-.arrow-left {
- background-image: url('images/left.svg');
-}
-
-.arrow-right {
- background-image: url('images/right.svg');
-}
-
-.arrow-up {
- background-image: url('images/up.svg');
-}
-
-.back {
-  background-image: url('images/back.svg');
-}
-
-.brightness-down {
-  background-image: url('images/brightness-down.svg');
-}
-
-.brightness-up {
-  background-image: url('images/brightness-up.svg');
-}
-
-.change-window {
-  background-image: url('images/change-window.svg');
-}
-
-.down {
-  background-image: url('images/down.svg');
-}
-
-.forward {
-  background-image: url('images/forward.svg');
-}
-
-.fullscreen {
-  background-image: url('images/fullscreen.svg');
-}
-
-.keyboard {
-  background-image: url('images/keyboard.svg');
-}
-
-.hide-keyboard,
-.layout-selector {
-  background-image: url('images/keyboard.svg');
-}
-
-.left {
-  background-image: url('images/left.svg');
-}
-
 .microphone {
   background-image: url('images/microphone.svg');
   background-position: 4%;
-  background-size: 25%;
+  background-size: 25% !important;
 }
 
 .audio .microphone {
   background-image: url('images/microphone-green.svg');
-}
-
-.mute {
-  background-image: url('images/mute.svg');
-}
-
-.reload {
-  background-image: url('images/reload.svg');
-}
-
-.right {
-  background-image: url('images/right.svg');
-}
-
-.shutdown {
-  background-image: url('images/shutdown.svg');
-}
-
-.up {
-  background-image: url('images/up.svg');
-}
-
-.volume-down {
-  background-image: url('images/volume-down.svg');
-}
-
-.volume-up {
-  background-image: url('images/volume-up.svg');
-}
-
-/**
- * Background size for all images should be the same.
- */
-.back,
-.brightness-down,
-.brightness-up,
-.change-window,
-.down,
-.forward,
-.fullscreen,
-.left,
-.mute,
-.reload,
-.right,
-.shutdown,
-.up,
-.volume-down,
-.volume-up {
-  background-size:50%;
 }

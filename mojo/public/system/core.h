@@ -89,6 +89,10 @@ const MojoHandle MOJO_HANDLE_INVALID = 0;
 //        unavailable. The caller may simply retry the operation (possibly with
 //        a backoff).
 //    |MOJO_RESULT_DATA_LOSS| - Unrecoverable data loss or corruption.
+//    |MOJO_RESULT_BUSY| - One of the resources involved is currently being used
+//        (possibly on another thread) in a way that prevents the current
+//        operation from proceeding, e.g., if the other operation may result in
+//        the resource being invalidated.
 //
 // Note that positive values are also available as success codes.
 //
@@ -111,6 +115,7 @@ const MojoResult MOJO_RESULT_UNIMPLEMENTED = -12;
 const MojoResult MOJO_RESULT_INTERNAL = -13;
 const MojoResult MOJO_RESULT_UNAVAILABLE = -14;
 const MojoResult MOJO_RESULT_DATA_LOSS = -15;
+const MojoResult MOJO_RESULT_BUSY = -16;
 #else
 #define MOJO_RESULT_OK ((MojoResult) 0)
 #define MOJO_RESULT_CANCELLED ((MojoResult) -1)
@@ -128,6 +133,7 @@ const MojoResult MOJO_RESULT_DATA_LOSS = -15;
 #define MOJO_RESULT_INTERNAL ((MojoResult) -13)
 #define MOJO_RESULT_UNAVAILABLE ((MojoResult) -14)
 #define MOJO_RESULT_DATA_LOSS ((MojoResult) -15)
+#define MOJO_RESULT_BUSY ((MojoResult) -16)
 #endif
 
 // |MojoDeadline|:
@@ -252,65 +258,6 @@ MOJO_SYSTEM_EXPORT MojoResult MojoReadMessage(MojoHandle handle,
 
 #ifdef __cplusplus
 }  // extern "C"
-#endif
-
-// C++ wrapper functions -------------------------------------------------------
-
-#ifdef __cplusplus
-
-namespace mojo {
-
-struct Handle { MojoHandle value; };
-
-const Handle kInvalidHandle = { MOJO_HANDLE_INVALID };
-
-// A |mojo::Handle| must take no extra space, since we'll treat arrays of them
-// as if they were arrays of |MojoHandle|s.
-MOJO_COMPILE_ASSERT(sizeof(Handle) == sizeof(MojoHandle),
-                    bad_size_for_cplusplus_handle);
-
-inline MojoResult Close(Handle handle) {
-  return MojoClose(handle.value);
-}
-
-inline MojoResult Wait(Handle handle,
-                       MojoWaitFlags flags,
-                       MojoDeadline deadline) {
-  return MojoWait(handle.value, flags, deadline);
-}
-
-inline MojoResult WaitMany(const Handle* handles,
-                           const MojoWaitFlags* flags,
-                           uint32_t num_handles,
-                           MojoDeadline deadline) {
-  return MojoWaitMany(&handles[0].value, flags, num_handles, deadline);
-}
-
-inline MojoResult CreateMessagePipe(Handle* handle_0, Handle* handle_1) {
-  return MojoCreateMessagePipe(&handle_0->value, &handle_1->value);
-}
-
-inline MojoResult WriteMessage(Handle handle,
-                               const void* bytes, uint32_t num_bytes,
-                               const Handle* handles, uint32_t num_handles,
-                               MojoWriteMessageFlags flags) {
-  return MojoWriteMessage(handle.value,
-                          bytes, num_bytes,
-                          &handles[0].value, num_handles,
-                          flags);
-}
-
-inline MojoResult ReadMessage(Handle handle,
-                              void* bytes, uint32_t* num_bytes,
-                              Handle* handles, uint32_t* num_handles,
-                              MojoReadMessageFlags flags) {
-  return MojoReadMessage(handle.value,
-                         bytes, num_bytes,
-                         &handles[0].value, num_handles,
-                         flags);
-}
-
-}  // namespace mojo
 #endif
 
 #endif  // MOJO_PUBLIC_SYSTEM_CORE_H_

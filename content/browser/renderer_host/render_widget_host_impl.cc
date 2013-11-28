@@ -31,6 +31,9 @@
 #include "content/browser/renderer_host/backing_store_manager.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/input/immediate_input_router.h"
+#include "content/browser/renderer_host/input/synthetic_gesture.h"
+#include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
+#include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -73,12 +76,12 @@
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
-using WebKit::WebTextDirection;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
+using blink::WebTextDirection;
 
 namespace content {
 namespace {
@@ -90,9 +93,6 @@ bool g_check_for_pending_resize_ack = true;
 // returning a null or incorrectly sized backing-store from GetBackingStore.
 // This timeout impacts the "choppiness" of our window resize perf.
 const int kPaintMsgTimeoutMS = 50;
-
-base::LazyInstance<std::vector<RenderWidgetHost::CreatedCallback> >
-g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 
 typedef std::pair<int32, int32> RenderWidgetHostID;
 typedef base::hash_map<RenderWidgetHostID, RenderWidgetHostImpl*>
@@ -182,14 +182,14 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       ignore_input_events_(false),
       input_method_active_(false),
       text_direction_updated_(false),
-      text_direction_(WebKit::WebTextDirectionLeftToRight),
+      text_direction_(blink::WebTextDirectionLeftToRight),
       text_direction_canceled_(false),
       suppress_next_char_events_(false),
       pending_mouse_lock_request_(false),
       allow_privileged_mouse_lock_(false),
       has_touch_handler_(false),
       weak_factory_(this),
-      last_input_number_(0) {
+      last_input_number_(static_cast<int64>(GetProcess()->GetID()) << 32) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
     routing_id_ = process_->GetNextRoutingID();
@@ -224,9 +224,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 
   accessibility_mode_ =
       BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode();
-
-  for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
-    g_created_callbacks.Get().at(i).Run(this);
 
   input_router_.reset(
       new ImmediateInputRouter(process_, this, this, routing_id_));
@@ -315,21 +312,6 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
   return rwh->AsRenderWidgetHostImpl();
 }
 
-// static
-void RenderWidgetHost::AddCreatedCallback(const CreatedCallback& callback) {
-  g_created_callbacks.Get().push_back(callback);
-}
-
-// static
-void RenderWidgetHost::RemoveCreatedCallback(const CreatedCallback& callback) {
-  for (size_t i = 0; i < g_created_callbacks.Get().size(); ++i) {
-    if (g_created_callbacks.Get().at(i).Equals(callback)) {
-      g_created_callbacks.Get().erase(g_created_callbacks.Get().begin() + i);
-      return;
-    }
-  }
-}
-
 void RenderWidgetHostImpl::SetView(RenderWidgetHostView* view) {
   view_ = RenderWidgetHostViewPort::FromRWHV(view);
 
@@ -337,6 +319,8 @@ void RenderWidgetHostImpl::SetView(RenderWidgetHostView* view) {
     GpuSurfaceTracker::Get()->SetSurfaceHandle(
         surface_id_, gfx::GLSurfaceHandle());
   }
+
+  synthetic_gesture_controller_.reset();
 }
 
 RenderProcessHost* RenderWidgetHostImpl::GetProcess() const {
@@ -405,11 +389,6 @@ void RenderWidgetHostImpl::SendScreenRects() {
   waiting_for_screen_rects_ack_ = true;
 }
 
-base::TimeDelta
-    RenderWidgetHostImpl::GetSyntheticGestureMessageInterval() const {
-  return synthetic_gesture_controller_.GetSyntheticGestureMessageInterval();
-}
-
 void RenderWidgetHostImpl::SetOverscrollControllerEnabled(bool enabled) {
   if (!enabled)
     overscroll_controller_.reset();
@@ -423,6 +402,13 @@ void RenderWidgetHostImpl::SuppressNextCharEvents() {
 
 void RenderWidgetHostImpl::FlushInput() {
   input_router_->Flush();
+  if (synthetic_gesture_controller_)
+    synthetic_gesture_controller_->Flush(base::TimeTicks::Now());
+}
+
+void RenderWidgetHostImpl::SetNeedsFlush() {
+  if (view_)
+    view_->OnSetNeedsFlushInput();
 }
 
 void RenderWidgetHostImpl::Init() {
@@ -464,6 +450,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool handled = true;
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderWidgetHostImpl, msg, msg_is_ok)
+    IPC_MESSAGE_HANDLER(InputHostMsg_QueueSyntheticGesture,
+                        OnQueueSyntheticGesture)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
@@ -481,8 +469,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidOverscroll, OnOverscrolled)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_BeginSmoothScroll, OnBeginSmoothScroll)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_BeginPinch, OnBeginPinch)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
@@ -631,7 +617,7 @@ void RenderWidgetHostImpl::WasResized() {
     return;
 
   if (!screen_info_) {
-    screen_info_.reset(new WebKit::WebScreenInfo);
+    screen_info_.reset(new blink::WebScreenInfo);
     GetWebScreenInfo(screen_info_.get());
   }
 
@@ -1009,12 +995,12 @@ void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
 }
 
 void RenderWidgetHostImpl::ForwardGestureEvent(
-    const WebKit::WebGestureEvent& gesture_event) {
+    const blink::WebGestureEvent& gesture_event) {
   ForwardGestureEventWithLatencyInfo(gesture_event, ui::LatencyInfo());
 }
 
 void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
-    const WebKit::WebGestureEvent& gesture_event,
+    const blink::WebGestureEvent& gesture_event,
     const ui::LatencyInfo& ui_latency) {
   TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardGestureEvent");
   // Early out if necessary, prior to performing latency logic.
@@ -1023,7 +1009,7 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
 
   ui::LatencyInfo latency_info = CreateRWHLatencyInfoIfNotExist(&ui_latency);
 
-  if (gesture_event.type == WebKit::WebInputEvent::GestureScrollUpdate) {
+  if (gesture_event.type == blink::WebInputEvent::GestureScrollUpdate) {
     latency_info.AddLatencyNumber(
         ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_RWH_COMPONENT,
         GetLatencyComponentId(),
@@ -1051,7 +1037,7 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
 }
 
 void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
-      const WebKit::WebTouchEvent& touch_event,
+      const blink::WebTouchEvent& touch_event,
       const ui::LatencyInfo& ui_latency) {
   TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardTouchEvent");
 
@@ -1191,7 +1177,7 @@ void RenderWidgetHostImpl::RemoveMouseEventCallback(
   }
 }
 
-void RenderWidgetHostImpl::GetWebScreenInfo(WebKit::WebScreenInfo* result) {
+void RenderWidgetHostImpl::GetWebScreenInfo(blink::WebScreenInfo* result) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::GetWebScreenInfo");
   if (GetView())
     static_cast<RenderWidgetHostViewPort*>(GetView())->GetScreenInfo(result);
@@ -1296,6 +1282,8 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   }
 
   BackingStoreManager::RemoveBackingStore(this);
+
+  synthetic_gesture_controller_.reset();
 }
 
 void RenderWidgetHostImpl::UpdateTextDirection(WebTextDirection direction) {
@@ -1324,7 +1312,7 @@ void RenderWidgetHostImpl::SetInputMethodActive(bool activate) {
 
 void RenderWidgetHostImpl::ImeSetComposition(
     const string16& text,
-    const std::vector<WebKit::WebCompositionUnderline>& underlines,
+    const std::vector<blink::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
   Send(new ViewMsg_ImeSetComposition(
@@ -1341,7 +1329,7 @@ void RenderWidgetHostImpl::ImeConfirmComposition(
 
 void RenderWidgetHostImpl::ImeCancelComposition() {
   Send(new ViewMsg_ImeSetComposition(GetRoutingID(), string16(),
-            std::vector<WebKit::WebCompositionUnderline>(), 0, 0));
+            std::vector<blink::WebCompositionUnderline>(), 0, 0));
 }
 
 void RenderWidgetHostImpl::ExtendSelectionAndDelete(
@@ -1413,7 +1401,7 @@ void RenderWidgetHostImpl::CheckRendererIsUnresponsive() {
 
   // OK, looks like we have a hung renderer!
   NotificationService::current()->Notify(
-      NOTIFICATION_RENDERER_PROCESS_HANG,
+      NOTIFICATION_RENDER_WIDGET_HOST_HANG,
       Source<RenderWidgetHost>(this),
       NotificationService::NoDetails());
   is_unresponsive_ = true;
@@ -1461,11 +1449,11 @@ void RenderWidgetHostImpl::OnSetTooltipText(
   // but we use the current approach to match Fx & IE's behavior.
   string16 wrapped_tooltip_text = tooltip_text;
   if (!tooltip_text.empty()) {
-    if (text_direction_hint == WebKit::WebTextDirectionLeftToRight) {
+    if (text_direction_hint == blink::WebTextDirectionLeftToRight) {
       // Force the tooltip to have LTR directionality.
       wrapped_tooltip_text =
           base::i18n::GetDisplayStringInLTRDirectionality(wrapped_tooltip_text);
-    } else if (text_direction_hint == WebKit::WebTextDirectionRightToLeft &&
+    } else if (text_direction_hint == blink::WebTextDirectionRightToLeft &&
                !base::i18n::IsRTL()) {
       // Force the tooltip to have RTL directionality.
       base::i18n::WrapStringWithRTLFormatting(&wrapped_tooltip_text);
@@ -1728,18 +1716,18 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   UMA_HISTOGRAM_TIMES("MPArch.RWH_TotalPaintTime", delta);
 }
 
-void RenderWidgetHostImpl::OnBeginSmoothScroll(
-    const ViewHostMsg_BeginSmoothScroll_Params& params) {
-  if (!view_)
-    return;
-  synthetic_gesture_controller_.BeginSmoothScroll(view_, params);
-}
+void RenderWidgetHostImpl::OnQueueSyntheticGesture(
+    const SyntheticGesturePacket& gesture_packet) {
+  if (!synthetic_gesture_controller_) {
+    if (!view_)
+      return;
+    synthetic_gesture_controller_.reset(
+        new SyntheticGestureController(
+            view_->CreateSyntheticGestureTarget().Pass()));
+  }
 
-void RenderWidgetHostImpl::OnBeginPinch(
-    const ViewHostMsg_BeginPinch_Params& params) {
-  if (!view_)
-    return;
-  synthetic_gesture_controller_.BeginPinch(view_, params);
+  synthetic_gesture_controller_->QueueSyntheticGesture(
+      SyntheticGesture::Create(*gesture_packet.gesture_params()));
 }
 
 void RenderWidgetHostImpl::OnFocus() {
@@ -1860,7 +1848,8 @@ void RenderWidgetHostImpl::OnWindowlessPluginDummyWindowCreated(
     return;
   }
 
-  SetParent(hwnd, reinterpret_cast<HWND>(GetNativeViewId()));
+  SetParent(hwnd,
+            reinterpret_cast<HWND>(view_->GetParentForWindowlessPlugin()));
   dummy_windows_for_activation_.push_back(hwnd);
 }
 
@@ -1971,7 +1960,7 @@ bool RenderWidgetHostImpl::KeyPressListenersHandleEvent(
 }
 
 InputEventAckState RenderWidgetHostImpl::FilterInputEvent(
-    const WebKit::WebInputEvent& event, const ui::LatencyInfo& latency_info) {
+    const blink::WebInputEvent& event, const ui::LatencyInfo& latency_info) {
   // Don't ignore touch cancel events, since they may be sent while input
   // events are being ignored in order to keep the renderer from getting
   // confused about how many touches are active.
@@ -2013,11 +2002,6 @@ void RenderWidgetHostImpl::OnHasTouchEventHandlers(bool has_handlers) {
 
 OverscrollController* RenderWidgetHostImpl::GetOverscrollController() const {
   return overscroll_controller_.get();
-}
-
-void RenderWidgetHostImpl::SetNeedsFlush() {
-  if (view_)
-    view_->OnSetNeedsFlushInput();
 }
 
 void RenderWidgetHostImpl::DidFlush() {
@@ -2321,10 +2305,12 @@ void RenderWidgetHostImpl::ParentChanged(gfx::NativeViewId new_parent) {
   HWND hwnd = reinterpret_cast<HWND>(new_parent);
   if (!hwnd)
     hwnd = GetDesktopWindow();
-  for (std::list<HWND>::iterator i = dummy_windows_for_activation_.begin();
-        i != dummy_windows_for_activation_.end(); ++i) {
-    SetParent(*i, hwnd);
-  }
+  // On Windows GetParentForWindowlessPlugin returns the dummy window used as
+  // the parent for windowless NPAPI plugins. Reparenting this window to the
+  // new parent should be good enough.
+  if (view_ && view_->GetParentForWindowlessPlugin())
+    SetParent(reinterpret_cast<HWND>(view_->GetParentForWindowlessPlugin()),
+              reinterpret_cast<HWND>(new_parent));
 #endif
 }
 

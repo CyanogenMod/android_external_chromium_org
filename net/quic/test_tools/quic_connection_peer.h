@@ -48,9 +48,6 @@ class QuicConnectionPeer {
 
   static QuicPacketCreator* GetPacketCreator(QuicConnection* connection);
 
-  static QuicCongestionManager* GetCongestionManager(
-      QuicConnection* connection);
-
   static bool GetReceivedTruncatedAck(QuicConnection* connection);
 
   static QuicTime::Delta GetNetworkTimeout(QuicConnection* connection);
@@ -59,9 +56,8 @@ class QuicConnectionPeer {
       QuicConnection* connection,
       QuicPacketSequenceNumber sequence_number);
 
-  static size_t GetRetransmissionCount(
-      QuicConnection* connection,
-      QuicPacketSequenceNumber sequence_number);
+  static bool IsRetransmission(QuicConnection* connection,
+                               QuicPacketSequenceNumber sequence_number);
 
   static QuicPacketEntropyHash GetSentEntropyHash(
       QuicConnection* connection,
@@ -101,6 +97,7 @@ class QuicConnectionPeer {
 
   static QuicAlarm* GetAckAlarm(QuicConnection* connection);
   static QuicAlarm* GetRetransmissionAlarm(QuicConnection* connection);
+  static QuicAlarm* GetAbandonFecAlarm(QuicConnection* connection);
   static QuicAlarm* GetSendAlarm(QuicConnection* connection);
   static QuicAlarm* GetResumeWritesAlarm(QuicConnection* connection);
   static QuicAlarm* GetTimeoutAlarm(QuicConnection* connection);

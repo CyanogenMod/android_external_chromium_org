@@ -165,8 +165,16 @@ void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
 
+  if (type == ui::AccessibilityTypes::EVENT_ALERT &&
+      !(state.role == ui::AccessibilityTypes::ROLE_ALERT ||
+        state.role == ui::AccessibilityTypes::ROLE_WINDOW)) {
+    SendAlertControlNotification(view, type, profile);
+    return;
+  }
+
   switch (state.role) {
   case ui::AccessibilityTypes::ROLE_ALERT:
+  case ui::AccessibilityTypes::ROLE_DIALOG:
   case ui::AccessibilityTypes::ROLE_WINDOW:
     SendWindowNotification(view, type, profile);
     break;
@@ -356,6 +364,21 @@ void AccessibilityEventRouterViews::SendSliderNotification(
 }
 
 // static
+void AccessibilityEventRouterViews::SendAlertControlNotification(
+    views::View* view,
+    ui::AccessibilityTypes::Event event,
+    Profile* profile) {
+  ui::AccessibleViewState state;
+  view->GetAccessibleState(&state);
+
+  std::string name = UTF16ToUTF8(state.name);
+  AccessibilityAlertInfo info(
+      profile,
+      name);
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
 std::string AccessibilityEventRouterViews::GetViewName(views::View* view) {
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
@@ -373,9 +396,11 @@ std::string AccessibilityEventRouterViews::GetViewContext(views::View* view) {
     // Two cases are handled right now. More could be added in the future
     // depending on how the UI evolves.
 
-    // A control in a toolbar should use the toolbar's accessible name
-    // as the context.
-    if (state.role == ui::AccessibilityTypes::ROLE_TOOLBAR &&
+    // A control inside of alert, toolbar or dialog should use that container's
+    // accessible name.
+    if ((state.role == ui::AccessibilityTypes::ROLE_ALERT ||
+         state.role == ui::AccessibilityTypes::ROLE_DIALOG ||
+         state.role == ui::AccessibilityTypes::ROLE_TOOLBAR) &&
         !state.name.empty()) {
       return UTF16ToUTF8(state.name);
     }
@@ -426,6 +451,9 @@ void AccessibilityEventRouterViews::RecursiveGetMenuItemIndexAndCount(
     int* count) {
   for (int i = 0; i < menu->child_count(); ++i) {
     views::View* child = menu->child_at(i);
+    if (!child->visible())
+      continue;
+
     int previous_count = *count;
     RecursiveGetMenuItemIndexAndCount(child, item, index, count);
     ui::AccessibleViewState state;

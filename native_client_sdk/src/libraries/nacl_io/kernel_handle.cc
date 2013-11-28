@@ -55,7 +55,7 @@ Error KernelHandle::Init(int open_flags) {
 Error KernelHandle::Seek(off_t offset, int whence, off_t* out_offset) {
   // By default, don't move the offset.
   *out_offset = offset;
-  size_t base;
+  ssize_t base;
   size_t node_size;
 
   AUTO_LOCK(handle_lock_);
@@ -64,8 +64,6 @@ Error KernelHandle::Seek(off_t offset, int whence, off_t* out_offset) {
     return error;
 
   switch (whence) {
-    default:
-      return -1;
     case SEEK_SET:
       base = 0;
       break;
@@ -75,12 +73,14 @@ Error KernelHandle::Seek(off_t offset, int whence, off_t* out_offset) {
     case SEEK_END:
       base = node_size;
       break;
+    default:
+      return -1;
   }
 
   if (base + offset < 0)
     return EINVAL;
 
-  off_t new_offset = base + offset;
+  size_t new_offset = base + offset;
 
   // Seeking past the end of the file will zero out the space between the old
   // end and the new end.
@@ -177,6 +177,8 @@ Error KernelHandle::Recv(void* buf, size_t len, int flags, int* out_len) {
   MountNodeSocket* sock = socket_node();
   if (!sock)
     return ENOTSOCK;
+  if (OpenMode() == O_WRONLY)
+    return EACCES;
 
   AUTO_LOCK(handle_lock_);
   return sock->Recv(handle_attr_, buf, len, flags, out_len);
@@ -191,6 +193,8 @@ Error KernelHandle::RecvFrom(void* buf,
   MountNodeSocket* sock = socket_node();
   if (!sock)
     return ENOTSOCK;
+  if (OpenMode() == O_WRONLY)
+    return EACCES;
 
   AUTO_LOCK(handle_lock_);
   return sock->RecvFrom(handle_attr_, buf, len, flags, src_addr, addrlen,
@@ -204,6 +208,8 @@ Error KernelHandle::Send(const void* buf,
   MountNodeSocket* sock = socket_node();
   if (!sock)
     return ENOTSOCK;
+  if (OpenMode() == O_RDONLY)
+    return EACCES;
 
   AUTO_LOCK(handle_lock_);
   return sock->Send(handle_attr_, buf, len, flags, out_len);
@@ -218,6 +224,8 @@ Error KernelHandle::SendTo(const void* buf,
   MountNodeSocket* sock = socket_node();
   if (!sock)
     return ENOTSOCK;
+  if (OpenMode() == O_RDONLY)
+    return EACCES;
 
   AUTO_LOCK(handle_lock_);
   return sock->SendTo(handle_attr_, buf, len, flags, dest_addr, addrlen,

@@ -36,6 +36,7 @@
 #endif
 
 using content::WebContents;
+using content::UserMetricsAction;
 
 namespace {
 
@@ -49,6 +50,9 @@ static std::string TerminationStatusToString(base::TerminationStatus status) {
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
       return "killed";
     case base::TERMINATION_STATUS_PROCESS_CRASHED:
+#if defined(OS_ANDROID)
+    case base::TERMINATION_STATUS_OOM_PROTECTED:
+#endif
       return "crashed";
     case base::TERMINATION_STATUS_MAX_ENUM:
       break;
@@ -143,6 +147,98 @@ WebViewGuest* WebViewGuest::FromWebContents(WebContents* contents) {
   return guest ? guest->AsWebView() : NULL;
 }
 
+// static
+void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
+                                          bool allow) {
+  if (allow) {
+    // Note that |allow| == true means the embedder explicitly allowed the
+    // request. For some requests they might still fail. An example of such
+    // scenario would be: an embedder allows geolocation request but doesn't
+    // have geolocation access on its own.
+    switch (info.permission_type) {
+      case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionAllow.Download"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_GEOLOCATION:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionAllow.Geolocation"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionAllow.Media"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionAllow.PointerLock"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionAllow.NewWindow"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionAllow.JSDialog"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
+        break;
+      default: {
+        WebViewPermissionType webview_permission_type =
+            static_cast<WebViewPermissionType>(info.permission_type);
+        switch (webview_permission_type) {
+          case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
+            RecordAction(
+                UserMetricsAction("WebView.Guest.PermissionAllow.PluginLoad"));
+            break;
+          default:
+            break;
+        }
+      }
+    }
+  } else {
+    switch (info.permission_type) {
+      case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionDeny.Download"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_GEOLOCATION:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionDeny.Geolocation"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionDeny.Media"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionDeny.PointerLock"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionDeny.NewWindow"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
+        RecordAction(
+            UserMetricsAction("BrowserPlugin.PermissionDeny.JSDialog"));
+        break;
+      case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
+        break;
+      default: {
+        WebViewPermissionType webview_permission_type =
+            static_cast<WebViewPermissionType>(info.permission_type);
+        switch (webview_permission_type) {
+          case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
+            RecordAction(
+                UserMetricsAction("WebView.Guest.PermissionDeny.PluginLoad"));
+            break;
+          default:
+            break;
+        }
+      }
+    }
+  }
+}
+
 void WebViewGuest::Attach(WebContents* embedder_web_contents,
                           const base::DictionaryValue& args) {
   std::string user_agent_override;
@@ -218,11 +314,11 @@ void WebViewGuest::GuestProcessGone(base::TerminationStatus status) {
 
 bool WebViewGuest::HandleKeyboardEvent(
     const content::NativeWebKeyboardEvent& event) {
-  if (event.type != WebKit::WebInputEvent::RawKeyDown)
+  if (event.type != blink::WebInputEvent::RawKeyDown)
     return false;
 
 #if defined(OS_MACOSX)
-  if (event.modifiers != WebKit::WebInputEvent::MetaKey)
+  if (event.modifiers != blink::WebInputEvent::MetaKey)
     return false;
 
   if (event.windowsKeyCode == ui::VKEY_OEM_4) {
@@ -315,7 +411,7 @@ bool WebViewGuest::RequestPermission(
 
   int request_id = next_permission_request_id_++;
   pending_permission_requests_[request_id] =
-      PermissionResponseInfo(callback, allowed_by_default);
+      PermissionResponseInfo(callback, permission_type, allowed_by_default);
   scoped_ptr<base::DictionaryValue> args(request_info.DeepCopy());
   args->SetInteger(webview::kRequestId, request_id);
   switch (permission_type) {
@@ -401,6 +497,11 @@ WebViewGuest::SetPermissionResult WebViewGuest::SetPermission(
       ((action == DEFAULT) && info.allowed_by_default);
 
   info.callback.Run(allow, user_input);
+
+  // Only record user initiated (i.e. non-default) actions.
+  if (action != DEFAULT)
+    RecordUserInitiatedUMA(info, allow);
+
   pending_permission_requests_.erase(request_itr);
 
   return allow ? SET_PERMISSION_ALLOWED : SET_PERMISSION_DENIED;
@@ -410,8 +511,7 @@ void WebViewGuest::SetUserAgentOverride(
     const std::string& user_agent_override) {
   is_overriding_user_agent_ = !user_agent_override.empty();
   if (is_overriding_user_agent_) {
-    content::RecordAction(content::UserMetricsAction(
-                              "WebView.Guest.OverrideUA"));
+    content::RecordAction(UserMetricsAction("WebView.Guest.OverrideUA"));
   }
   guest_web_contents()->SetUserAgentOverride(user_agent_override);
 }
@@ -421,7 +521,7 @@ void WebViewGuest::Stop() {
 }
 
 void WebViewGuest::Terminate() {
-  content::RecordAction(content::UserMetricsAction("WebView.Guest.Terminate"));
+  content::RecordAction(UserMetricsAction("WebView.Guest.Terminate"));
   base::ProcessHandle process_handle =
       guest_web_contents()->GetRenderProcessHost()->GetHandle();
   if (process_handle)
@@ -431,6 +531,7 @@ void WebViewGuest::Terminate() {
 bool WebViewGuest::ClearData(const base::Time remove_since,
                              uint32 removal_mask,
                              const base::Closure& callback) {
+  content::RecordAction(UserMetricsAction("WebView.Guest.ClearData"));
   content::StoragePartition* partition =
       content::BrowserContext::GetStoragePartition(
           web_contents()->GetBrowserContext(),
@@ -439,9 +540,11 @@ bool WebViewGuest::ClearData(const base::Time remove_since,
   if (!partition)
     return false;
 
-  partition->ClearDataForRange(
+  partition->ClearData(
       removal_mask,
       content::StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+      NULL,
+      content::StoragePartition::OriginMatcherFunction(),
       remove_since,
       base::Time::Now(),
       callback);
@@ -530,12 +633,21 @@ bool WebViewGuest::AllowChromeExtensionURLs() {
 
 void WebViewGuest::AddWebViewToExtensionRendererState() {
   const GURL& site_url = web_contents()->GetSiteInstance()->GetSiteURL();
+  std::string partition_domain;
+  std::string partition_id;
+  bool in_memory;
+  if (!GetGuestPartitionConfigForSite(
+          site_url, &partition_domain, &partition_id, &in_memory)) {
+    NOTREACHED();
+    return;
+  }
+  DCHECK(extension_id() == partition_domain);
+
   ExtensionRendererState::WebViewInfo webview_info;
   webview_info.embedder_process_id = embedder_render_process_id();
   webview_info.instance_id = view_instance_id();
-  // TODO(fsamuel): Partition IDs should probably be a chrome-only concept. They
-  // should probably be passed in via attach args.
-  webview_info.partition_id =  site_url.query();
+  webview_info.partition_id =  partition_id;
+  webview_info.extension_id = extension_id();
   webview_info.allow_chrome_extension_urls = AllowChromeExtensionURLs();
 
   content::BrowserThread::PostTask(
@@ -582,13 +694,16 @@ void WebViewGuest::SizeChanged(const gfx::Size& old_size,
 }
 
 WebViewGuest::PermissionResponseInfo::PermissionResponseInfo()
-    : allowed_by_default(false) {
+    : permission_type(BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN),
+      allowed_by_default(false) {
 }
 
 WebViewGuest::PermissionResponseInfo::PermissionResponseInfo(
     const PermissionResponseCallback& callback,
+    BrowserPluginPermissionType permission_type,
     bool allowed_by_default)
     : callback(callback),
+      permission_type(permission_type),
       allowed_by_default(allowed_by_default) {
 }
 

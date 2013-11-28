@@ -228,9 +228,6 @@ Error UrandomNode::Read(const HandleAttr& attr,
   int error = (*random_interface_.get_random_bytes)(buf, count, &nread);
   if (error)
     return error;
-
-  *out_bytes = count;
-  return 0;
 #elif defined(WIN32)
   char* out = static_cast<char*>(buf);
   size_t bytes_left = count;
@@ -247,10 +244,10 @@ Error UrandomNode::Read(const HandleAttr& attr,
     out += bytes_to_copy;
     bytes_left -= bytes_to_copy;
   }
+#endif
 
   *out_bytes = count;
   return 0;
-#endif
 }
 
 Error UrandomNode::Write(const HandleAttr& attr,
@@ -288,13 +285,15 @@ Error MountDev::Open(const Path& path,
   return root_->FindChild(path.Join(), out_node);
 }
 
-Error MountDev::Unlink(const Path& path) { return EINVAL; }
+Error MountDev::Unlink(const Path& path) { return EPERM; }
 
-Error MountDev::Mkdir(const Path& path, int permissions) { return EINVAL; }
+Error MountDev::Mkdir(const Path& path, int permissions) { return EPERM; }
 
-Error MountDev::Rmdir(const Path& path) { return EINVAL; }
+Error MountDev::Rmdir(const Path& path) { return EPERM; }
 
-Error MountDev::Remove(const Path& path) { return EINVAL; }
+Error MountDev::Remove(const Path& path) { return EPERM; }
+
+Error MountDev::Rename(const Path& path, const Path& newpath) { return EPERM; }
 
 MountDev::MountDev() {}
 

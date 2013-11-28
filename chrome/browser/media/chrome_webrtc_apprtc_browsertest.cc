@@ -78,7 +78,7 @@ class WebrtcApprtcBrowserTest : public WebRtcTestBase {
     command_line.AppendArg("--admin_port=9998");
     command_line.AppendArg("--skip_sdk_update_check");
 
-    LOG(INFO) << "Running " << command_line.GetCommandLineString();
+    VLOG(0) << "Running " << command_line.GetCommandLineString();
     return base::LaunchProcess(command_line, base::LaunchOptions(),
                                &dev_appserver_);
   }
@@ -119,26 +119,20 @@ class WebrtcApprtcBrowserTest : public WebRtcTestBase {
   base::ProcessHandle dev_appserver_;
 };
 
-#if defined(OS_WIN)
-#define MAYBE_MANUAL_WorksOnApprtc DISABLED_MANUAL_WorksOnApprtc
-#else
-#define MAYBE_MANUAL_WorksOnApprtc MANUAL_WorksOnApprtc
-#endif
-
-IN_PROC_BROWSER_TEST_F(WebrtcApprtcBrowserTest, MAYBE_MANUAL_WorksOnApprtc) {
+IN_PROC_BROWSER_TEST_F(WebrtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
   ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
   while (!LocalApprtcInstanceIsUp())
-    LOG(INFO) << "Waiting for AppRTC to come up...";
+    VLOG(0) << "Waiting for AppRTC to come up...";
 
   GURL room_url = GURL(base::StringPrintf("localhost:9999?r=room_%d",
                                           base::RandInt(0, 65536)));
 
-  chrome::AddBlankTabAt(browser(), -1, true);
+  chrome::AddTabAt(browser(), GURL(), -1, true);
   content::WebContents* left_tab = OpenPageAndAcceptUserMedia(room_url);
   // TODO(phoglund): Remove when this bug gets fixed:
   // http://code.google.com/p/webrtc/issues/detail?id=1742
   SleepInJavascript(left_tab, 5000);
-  chrome::AddBlankTabAt(browser(), -1, true);
+  chrome::AddTabAt(browser(), GURL(), -1, true);
   content::WebContents* right_tab = OpenPageAndAcceptUserMedia(room_url);
 
   ASSERT_TRUE(WaitForCallToComeUp(left_tab));

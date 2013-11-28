@@ -6,12 +6,12 @@
 
 #include "base/logging.h"
 
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
-using WebKit::WebTouchEvent;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
+using blink::WebTouchEvent;
 
 namespace content {
 namespace {
@@ -106,8 +106,8 @@ void Coalesce(const WebTouchEvent& event_to_coalesce, WebTouchEvent* event) {
   WebTouchEvent old_event = *event;
   *event = event_to_coalesce;
   for (unsigned i = 0; i < event->touchesLength; ++i) {
-    if (old_event.touches[i].state == WebKit::WebTouchPoint::StateMoved)
-      event->touches[i].state = WebKit::WebTouchPoint::StateMoved;
+    if (old_event.touches[i].state == blink::WebTouchPoint::StateMoved)
+      event->touches[i].state = blink::WebTouchPoint::StateMoved;
   }
 }
 
@@ -237,7 +237,7 @@ const char* WebInputEventTraits::GetName(WebInputEvent::Type type) {
     CASE_TYPE(TouchEnd);
     CASE_TYPE(TouchCancel);
     default:
-      // Must include default to let WebKit::WebInputEvent add new event types
+      // Must include default to let blink::WebInputEvent add new event types
       // before they're added here.
       DLOG(WARNING) <<
           "Unhandled WebInputEvent type in WebInputEventTraits::GetName.\n";
@@ -281,6 +281,24 @@ void WebInputEventTraits::Coalesce(const WebInputEvent& event_to_coalesce,
                                    WebInputEvent* event) {
   DCHECK(event);
   Apply(WebInputEventCoalesce(), event->type, event_to_coalesce, event);
+}
+
+bool WebInputEventTraits::IgnoresAckDisposition(
+    blink::WebInputEvent::Type type) {
+  switch (type) {
+    case WebInputEvent::GestureTapDown:
+    case WebInputEvent::GestureShowPress:
+    case WebInputEvent::GestureTapCancel:
+    case WebInputEvent::GesturePinchBegin:
+    case WebInputEvent::GesturePinchEnd:
+    case WebInputEvent::GestureScrollBegin:
+    case WebInputEvent::GestureScrollEnd:
+    case WebInputEvent::TouchCancel:
+      return true;
+    default:
+      break;
+  }
+  return false;
 }
 
 }  // namespace content

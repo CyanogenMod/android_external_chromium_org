@@ -4,12 +4,15 @@
 
 #include "ui/app_list/views/apps_container_view.h"
 
+#include <algorithm>
+
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_folder_view.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
+#include "ui/events/event.h"
 
 namespace app_list {
 
@@ -63,7 +66,7 @@ void AppsContainerView::Layout() {
   if (rect.IsEmpty())
     return;
 
-  switch(show_state_) {
+  switch (show_state_) {
     case SHOW_APPS:
       app_list_folder_view_->SetVisible(false);
       apps_grid_view_->SetBoundsRect(rect);
@@ -77,6 +80,13 @@ void AppsContainerView::Layout() {
     default:
       NOTREACHED();
   }
+}
+
+bool AppsContainerView::OnKeyPressed(const ui::KeyEvent& event) {
+  if (show_state_ == SHOW_APPS)
+    return apps_grid_view_->OnKeyPressed(event);
+  else
+    return app_list_folder_view_->OnKeyPressed(event);
 }
 
 void AppsContainerView::SetShowState(ShowState show_state) {

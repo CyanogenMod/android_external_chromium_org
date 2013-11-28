@@ -18,6 +18,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "ui/events/event_switches.h"
+#include "ui/events/x/device_data_manager.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/gfx/x/x11_types.h"
 
@@ -28,11 +29,10 @@ TouchFactory::TouchFactory()
       touch_device_available_(false),
       touch_events_disabled_(false),
       touch_device_list_(),
+      max_touch_points_(-1),
       id_generator_(0) {
-#if defined(USE_AURA)
-  if (!base::MessagePumpForUI::HasXInput2())
+  if (!DeviceDataManager::GetInstance()->IsXInput2Available())
     return;
-#endif
 
   XDisplay* display = gfx::GetXDisplay();
   UpdateDeviceList(display);
@@ -81,6 +81,7 @@ void TouchFactory::UpdateDeviceList(Display* display) {
   touch_device_available_ = false;
   touch_device_lookup_.reset();
   touch_device_list_.clear();
+  max_touch_points_ = -1;
 
 #if !defined(USE_XI2_MT)
   // NOTE: The new API for retrieving the list of devices (XIQueryDevice) does
@@ -100,6 +101,9 @@ void TouchFactory::UpdateDeviceList(Display* display) {
     }
   }
 #endif
+
+  if (!DeviceDataManager::GetInstance()->IsXInput2Available())
+    return;
 
   // Instead of asking X for the list of devices all the time, let's maintain a
   // list of pointer devices we care about.
@@ -130,6 +134,8 @@ void TouchFactory::UpdateDeviceList(Display* display) {
             touch_device_lookup_[devinfo->deviceid] = true;
             touch_device_list_[devinfo->deviceid] = true;
             touch_device_available_ = true;
+            if (tci->num_touches > 0 && tci->num_touches > max_touch_points_)
+              max_touch_points_ = tci->num_touches;
           }
         }
       }
@@ -235,6 +241,10 @@ bool TouchFactory::IsTouchDevicePresent() {
   return !touch_events_disabled_ && touch_device_available_;
 }
 
+int TouchFactory::GetMaxTouchPoints() const {
+  return max_touch_points_;
+}
+
 void TouchFactory::SetTouchDeviceForTest(
     const std::vector<unsigned int>& devices) {
   touch_device_lookup_.reset();
@@ -247,6 +257,15 @@ void TouchFactory::SetTouchDeviceForTest(
   }
   touch_device_available_ = true;
   touch_events_disabled_ = false;
+}
+
+void TouchFactory::SetPointerDeviceForTest(
+    const std::vector<unsigned int>& devices) {
+  pointer_device_lookup_.reset();
+  for (std::vector<unsigned int>::const_iterator iter = devices.begin();
+       iter != devices.end(); ++iter) {
+    pointer_device_lookup_[*iter] = true;
+  }
 }
 
 }  // namespace ui

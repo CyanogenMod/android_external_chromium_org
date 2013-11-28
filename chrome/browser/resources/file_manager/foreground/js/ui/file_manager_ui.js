@@ -121,7 +121,7 @@ FileManagerUI.prototype.initDialogType_ = function() {
   // Obtain elements.
   var hasFooterPanel =
       this.dialogType_ == DialogType.SELECT_SAVEAS_FILE ||
-      this.dialogType_ == DialogType.SELECT_FOLDER;
+      DialogType.isFolderDialog(this.dialogType_);
 
   // If the footer panel exists, the buttons are placed there. Otherwise,
   // the buttons are on the preview panel.
@@ -133,32 +133,20 @@ FileManagerUI.prototype.initDialogType_ = function() {
   this.cancelButton = parentPanelOfButtons.querySelector('.cancel');
 
   // Set attributes.
-  var defaultTitle;
   var okLabel = str('OPEN_LABEL');
 
   switch (this.dialogType_) {
-    case DialogType.SELECT_FOLDER:
-      defaultTitle = str('SELECT_FOLDER_TITLE');
-      break;
-
     case DialogType.SELECT_UPLOAD_FOLDER:
-      defaultTitle = str('SELECT_UPLOAD_FOLDER_TITLE');
       okLabel = str('UPLOAD_LABEL');
       break;
 
-    case DialogType.SELECT_OPEN_FILE:
-      defaultTitle = str('SELECT_OPEN_FILE_TITLE');
-      break;
-
-    case DialogType.SELECT_OPEN_MULTI_FILE:
-      defaultTitle = str('SELECT_OPEN_MULTI_FILE_TITLE');
-      break;
-
     case DialogType.SELECT_SAVEAS_FILE:
-      defaultTitle = str('SELECT_SAVEAS_FILE_TITLE');
       okLabel = str('SAVE_LABEL');
       break;
 
+    case DialogType.SELECT_FOLDER:
+    case DialogType.SELECT_OPEN_FILE:
+    case DialogType.SELECT_OPEN_MULTI_FILE:
     case DialogType.FULL_PAGE:
       break;
 

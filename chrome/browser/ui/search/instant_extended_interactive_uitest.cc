@@ -79,6 +79,7 @@
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_impl.h"
+#include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -86,15 +87,6 @@
 using testing::HasSubstr;
 
 namespace {
-
-// Creates a bitmap of the specified color. Caller takes ownership.
-gfx::Image CreateBitmap(SkColor color) {
-  SkBitmap thumbnail;
-  thumbnail.setConfig(SkBitmap::kARGB_8888_Config, 4, 4);
-  thumbnail.allocPixels();
-  thumbnail.eraseColor(color);
-  return gfx::Image::CreateFrom1xBitmap(thumbnail);  // adds ref.
-}
 
 // Task used to make sure history has finished processing a request. Intended
 // for use with BlockUntilHistoryProcessesPendingRequests.
@@ -156,7 +148,7 @@ class InstantExtendedTest : public InProcessBrowserTest,
   }
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    chrome::EnableInstantExtendedAPIForTesting();
+    chrome::EnableQueryExtractionForTesting();
     ASSERT_TRUE(https_test_server().Start());
     GURL instant_url = https_test_server().GetURL(
         "files/instant_extended.html?strk=1&");
@@ -282,7 +274,7 @@ class InstantExtendedPrefetchTest : public InstantExtendedTest {
   }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    chrome::EnableInstantExtendedAPIForTesting();
+    chrome::EnableQueryExtractionForTesting();
     ASSERT_TRUE(https_test_server().Start());
     GURL instant_url = https_test_server().GetURL(
         "files/instant_extended.html?strk=1&");
@@ -333,7 +325,6 @@ class InstantPolicyTest : public ExtensionBrowserTest, public InstantTestBase {
 
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    chrome::EnableInstantExtendedAPIForTesting();
     ASSERT_TRUE(https_test_server().Start());
     GURL instant_url = https_test_server().GetURL(
         "files/instant_extended.html?strk=1&");
@@ -924,7 +915,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedPrefetchTest, SetPrefetchQuery) {
       "{\"google:clientdata\":{\"phi\": 0},"
           "\"google:suggesttype\":[\"QUERY\", \"QUERY\"],"
           "\"google:suggestrelevance\":[1400, 9]}]",
-      net::HTTP_OK);
+      net::HTTP_OK,
+      net::URLRequestStatus::SUCCESS);
 
   SetOmniboxText("pupp");
   while (!omnibox()->model()->autocomplete_controller()->done()) {
@@ -969,7 +961,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedPrefetchTest, ClearPrefetchedResults) {
       "[\"dogs\",[\"https://dogs.com\"],[],[],"
           "{\"google:suggesttype\":[\"NAVIGATION\"],"
           "\"google:suggestrelevance\":[2]}]",
-      net::HTTP_OK);
+      net::HTTP_OK,
+      net::URLRequestStatus::SUCCESS);
 
   SetOmniboxText("dogs");
   while (!omnibox()->model()->autocomplete_controller()->done()) {

@@ -6,6 +6,7 @@
 
 #include "ash/magnifier/magnifier_constants.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
+#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chromeos/chromeos_constants.h"
@@ -91,6 +93,14 @@ void CoreOobeHandler::DeclareLocalizedValues(LocalizedValuesBuilder* builder) {
                IDS_ENTERPRISE_DEVICE_REQUISITION_PROMPT_OK);
   builder->Add("deviceRequisitionPromptText",
                IDS_ENTERPRISE_DEVICE_REQUISITION_PROMPT_TEXT);
+  builder->Add("deviceRequisitionRemoraPromptCancel",
+               IDS_CONFIRM_MESSAGEBOX_NO_BUTTON_LABEL);
+  builder->Add("deviceRequisitionRemoraPromptOk",
+               IDS_CONFIRM_MESSAGEBOX_YES_BUTTON_LABEL);
+  builder->Add("deviceRequisitionRemoraPromptTitle",
+               IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TITLE);
+  builder->Add("deviceRequisitionRemoraPromptText",
+               IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TEXT);
 }
 
 void CoreOobeHandler::Initialize() {
@@ -121,8 +131,8 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleEnableSpokenFeedback);
   AddCallback("setDeviceRequisition",
               &CoreOobeHandler::HandleSetDeviceRequisition);
-  AddCallback("skipToLoginForTesting",
-              &CoreOobeHandler::HandleSkipToLoginForTesting);
+  AddRawCallback("skipToLoginForTesting",
+                 &CoreOobeHandler::HandleSkipToLoginForTesting);
 }
 
 void CoreOobeHandler::ShowSignInError(
@@ -130,6 +140,7 @@ void CoreOobeHandler::ShowSignInError(
     const std::string& error_text,
     const std::string& help_link_text,
     HelpAppLauncher::HelpTopic help_topic_id) {
+  LOG(ERROR) << "CoreOobeHandler::ShowSignInError: error_text=" << error_text;
   CallJS("showSignInError", login_attempts, error_text,
          help_link_text, static_cast<int>(help_topic_id));
 }
@@ -227,9 +238,11 @@ void CoreOobeHandler::HandleSetDeviceRequisition(
   chrome::ExitCleanly();
 }
 
-void CoreOobeHandler::HandleSkipToLoginForTesting() {
+void CoreOobeHandler::HandleSkipToLoginForTesting(
+    const base::ListValue* args) {
+  LoginScreenContext context(args);
   if (WizardController::default_controller())
-      WizardController::default_controller()->SkipToLoginForTesting();
+      WizardController::default_controller()->SkipToLoginForTesting(context);
 }
 
 void CoreOobeHandler::ShowOobeUI(bool show) {

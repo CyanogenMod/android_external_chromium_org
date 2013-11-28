@@ -11,7 +11,6 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api_constants.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,6 +18,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/event_filtering_info.h"
 #include "net/base/net_errors.h"
 
@@ -47,7 +47,7 @@ void DispatchEvent(content::BrowserContext* browser_context,
   Profile* profile = Profile::FromBrowserContext(browser_context);
   if (profile && extensions::ExtensionSystem::Get(profile)->event_router()) {
     scoped_ptr<Event> event(new Event(event_name, args.Pass()));
-    event->restrict_to_profile = profile;
+    event->restrict_to_browser_context = profile;
     event->filter_info = info;
     ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
   }

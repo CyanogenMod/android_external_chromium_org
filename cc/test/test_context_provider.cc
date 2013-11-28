@@ -16,7 +16,7 @@
 namespace cc {
 
 class TestContextProvider::LostContextCallbackProxy
-    : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
+    : public blink::WebGraphicsContext3D::WebGraphicsContextLostCallback {
  public:
   explicit LostContextCallbackProxy(TestContextProvider* provider)
       : provider_(provider) {
@@ -36,7 +36,7 @@ class TestContextProvider::LostContextCallbackProxy
 };
 
 class TestContextProvider::SwapBuffersCompleteCallbackProxy
-    : public WebKit::WebGraphicsContext3D::
+    : public blink::WebGraphicsContext3D::
           WebGraphicsSwapBuffersCompleteCallbackCHROMIUM {
  public:
   explicit SwapBuffersCompleteCallbackProxy(TestContextProvider* provider)
@@ -71,7 +71,9 @@ scoped_refptr<TestContextProvider> TestContextProvider::Create(
 
 TestContextProvider::TestContextProvider(
     scoped_ptr<TestWebGraphicsContext3D> context)
-    : context3d_(context.Pass()), bound_(false), destroyed_(false) {
+    : context3d_(context.Pass()),
+      bound_(false),
+      destroyed_(false) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(context3d_);
   context_thread_checker_.DetachFromThread();
@@ -114,7 +116,7 @@ ContextProvider::Capabilities TestContextProvider::ContextCapabilities() {
   return context3d_->test_capabilities();
 }
 
-WebKit::WebGraphicsContext3D* TestContextProvider::Context3d() {
+blink::WebGraphicsContext3D* TestContextProvider::Context3d() {
   DCHECK(context3d_);
   DCHECK(bound_);
   DCHECK(context_thread_checker_.CalledOnValidThread());
@@ -137,6 +139,14 @@ class GrContext* TestContextProvider::GrContext() {
 
   // TODO(danakj): Make a test GrContext that works with a test Context3d.
   return NULL;
+}
+
+bool TestContextProvider::IsContextLost() {
+  DCHECK(context3d_);
+  DCHECK(bound_);
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return context3d_->isContextLost();
 }
 
 void TestContextProvider::VerifyContexts() {
@@ -185,7 +195,6 @@ TestWebGraphicsContext3D* TestContextProvider::TestContext3d() {
 
 TestWebGraphicsContext3D* TestContextProvider::UnboundTestContext3d() {
   DCHECK(context3d_);
-  DCHECK(context_thread_checker_.CalledOnValidThread());
 
   return context3d_.get();
 }

@@ -7,8 +7,12 @@
       "third_party/WebKit/PerformanceTests/"
     ]
   },
+  "browsermark": {
+    "description": "Runs Browsermark CSS, DOM, WebGL, JS, resize and page load benchmarks.\n\nAdditionally Browsermark will test your browsers conformance, but conformance tests are not included in this suite. [Browsermark 2.0 by Rightware](http://browsermark.rightware.com/)",
+    "code": ["chrome/src/tools/perf/benchmarks/browsermark.py"]
+  },
   "canvasmark": {
-    "description": "Runs Canvasmark HTML5, Canvas 2D rendering and javascript benchmark.\n\nCanvasMark tests the HTML5 <canvas> rendering performance for commonly used operations in HTML5 games: bitmaps, canvas drawing, alpha blending, polygon fills, shadows and text functions.(http://www.kevs3d.co.uk/dev/canvasmark/)",
+    "description": "Runs Canvasmark HTML5, Canvas 2D rendering and javascript benchmark.\n\nCanvasMark tests the HTML5 <canvas> rendering performance for commonly used operations in HTML5 games: bitmaps, canvas drawing, alpha blending, polygon fills, shadows and text functions.[HTML5 Canvas demo by Kevin Roast](http://www.kevs3d.co.uk/dev/canvasmark/)",
     "code": ["chrome/src/tools/perf/benchmarks/canvasmark.py"]
   },
   "cc_perftests":{
@@ -77,6 +81,12 @@
   "image_decoding.image_decoding_measurement ":{
     "description":"Milliseconds to decode a large image of various formats (gif, jpg, png, webp)."
   },
+  "indexed_db":{
+    "description":"Benchmarks for a variety of IndexedDB operations.",
+    "code":[
+      "chrome/src/chrome/test/data/indexeddb/perf_test.html"
+    ]
+  },
   "jsgamebench":{
     "description":"Score on [Facebook's JSGameBench benchmark](https://github.com/facebook/jsgamebench).\n\nThe focus is sprite performance a player is likely to see. Scoring is how many sprites are drawn, so large scores are better.\n\nFor each render path, JSGameBench draws as many moving, animating sprites as possible at 30fps against a background with both axis-aligned and rotated sprites. We try both because significant performance differences between the two indicate flaws or oversights in current rendering techniques. More importantly, while animation can be used instead of sprite rotations, it is often an unacceptable trade off that game developers should not be forced to make.\n\nThe final score is the geometric mean of the axis aligned and rotated scores. Geometric mean is used to prevent a high axis aligned score from hiding the poor rotated performance."
   },
@@ -91,6 +101,12 @@
   },
   "media.tough_video_cases":{
     "description":"Obtains media metrics for key user scenarios."
+  },
+  "media_perftests":{
+    "description":"Microbenchmarks for media (media/) component.",
+    "code":[
+      "chrome/src/media/media.gyp",
+    ]
   },
   "memory.reload.2012Q3":{
     "description":"Memory consumption for a set of top pages from 2012, reloading and garbage collecting on each page load."
@@ -143,6 +159,9 @@
   "page_cycler.netsim.top_10":{
     "description":"Page loading benchmark for a set of 10 top pages recorded in June, 2013.  Pages are loaded under the simplisticly simulated bandwidth and RTT constraints of a cable modem (5Mbit/s down, 1Mbit/s up, 28ms RTT). Contention is realistically simulated, but slow start is not. DNS lookups are 'free'."
   },
+  "page_cycler.top_10_mobile":{
+    "description":"Page load time benchmark for the top 10 mobile web pages. Runs against pages recorded in November, 2013."
+  },
   "page_cycler.tough_layout_cases":{
     "description":"Page loading benchmark for the slowest layouts observed in the Alexa top 1 million sites in July 2013."
   },
@@ -151,6 +170,18 @@
   },
   "robohornet_pro":{
     "description":"Milliseconds to complete the [RoboHornetPro demo by Microsoft](http://ie.microsoft.com/testdrive/performance/robohornetpro/)"
+  },
+  "peacekeeper":{
+    "description":"Peacekeeper measures browser's performance by testing its JavaScript functionality.\n\nJavaScript is a widely used programming language used in the creation of modern websites to provide features such as animation, navigation,forms and other common requirements. By measuring a browser's ability to handle commonly used JavaScript functions Peacekeeper can evaluate its performance. Peacekeeper scores are measured in operations per second or rendered frames per second depending on the test. Final Score is computed by calculating geometric mean of individual tests scores. [Peacekeeper by Futuremark](http://peacekeeper.futuremark.com)",
+    "code":[
+      "chrome/src/tools/perf/benchmark/peacekeeper.py"
+    ]
+  },
+  "scirra":{
+    "description":"The Scirra WebGL performance test measures the number of 2D triangles represented onscreen when the animation reaches the 30 FPS threshold. [Scirra demos](https://www.scirra.com/)",
+    "code":[
+      "chrome/src/tools/perf/benchmark/scirra.py"
+    ]
   },
   "sizes":{
     "description":"Tracks binary sizes and number of static initializers.",

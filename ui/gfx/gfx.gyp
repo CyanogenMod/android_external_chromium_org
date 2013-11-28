@@ -23,6 +23,12 @@
         '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
         '<(DEPTH)/url/url.gyp:url_lib',
       ],
+      # text_elider.h includes ICU headers.
+      'export_dependent_settings': [
+        '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
+        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+      ],
       'defines': [
         'GFX_IMPLEMENTATION',
       ],
@@ -138,18 +144,20 @@
         'matrix3_f.cc',
         'matrix3_f.h',
         'native_widget_types.h',
-        'ozone/impl/drm_skbitmap_ozone.cc',
-        'ozone/impl/drm_skbitmap_ozone.h',
-        'ozone/impl/drm_wrapper_ozone.cc',
-        'ozone/impl/drm_wrapper_ozone.h',
-        'ozone/impl/file_surface_factory_ozone.cc',
-        'ozone/impl/file_surface_factory_ozone.h',
-        'ozone/impl/hardware_display_controller_ozone.cc',
-        'ozone/impl/hardware_display_controller_ozone.h',
-        'ozone/impl/software_surface_factory_ozone.cc',
-        'ozone/impl/software_surface_factory_ozone.h',
-        'ozone/impl/software_surface_ozone.cc',
-        'ozone/impl/software_surface_ozone.h',
+        'ozone/dri/dri_skbitmap.cc',
+        'ozone/dri/dri_skbitmap.h',
+        'ozone/dri/dri_surface.cc',
+        'ozone/dri/dri_surface.h',
+        'ozone/dri/dri_surface_factory.cc',
+        'ozone/dri/dri_surface_factory.h',
+        'ozone/dri/dri_vsync_provider.cc',
+        'ozone/dri/dri_vsync_provider.h',
+        'ozone/dri/dri_wrapper.cc',
+        'ozone/dri/dri_wrapper.h',
+        'ozone/dri/hardware_display_controller.cc',
+        'ozone/dri/hardware_display_controller.h',
+        'ozone/impl/file_surface_factory.cc',
+        'ozone/impl/file_surface_factory.h',
         'ozone/surface_factory_ozone.cc',
         'ozone/surface_factory_ozone.h',
         'pango_util.cc',
@@ -168,6 +176,7 @@
         'platform_font_ios.mm',
         'platform_font_mac.h',
         'platform_font_mac.mm',
+        'platform_font_ozone.cc',
         'platform_font_pango.cc',
         'platform_font_pango.h',
         'platform_font_win.cc',
@@ -197,10 +206,11 @@
         'rect_f.h',
         'render_text.cc',
         'render_text.h',
-        'render_text_linux.cc',
-        'render_text_linux.h',
         'render_text_mac.cc',
         'render_text_mac.h',
+        'render_text_ozone.cc',
+        'render_text_pango.cc',
+        'render_text_pango.h',
         'render_text_win.cc',
         'render_text_win.h',
         'safe_integer_conversions.h',
@@ -256,6 +266,7 @@
         'transform.h',
         'transform_util.cc',
         'transform_util.h',
+        'ui_gfx_exports.cc',
         'utf16_indexing.cc',
         'utf16_indexing.h',
         'vector2d.cc',
@@ -266,6 +277,7 @@
         'vector2d_f.h',
         'vector3d_f.cc',
         'vector3d_f.h',
+        'vsync_provider.h',
         'win/dpi.cc',
         'win/dpi.h',
         'win/hwnd_util.cc',
@@ -300,12 +312,6 @@
         }, {  # use_canvas_skia!=1
           'sources!': [
             'canvas_skia.cc',
-          ],
-        }],
-        ['use_pango==0', {
-          'sources/': [
-            ['exclude', '^pango_util\\.'],
-            ['exclude', '^platform_font_pango\\.'],
           ],
         }],
         ['toolkit_uses_gtk == 1', {
@@ -371,8 +377,12 @@
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:pangocairo',
           ],
+          'sources!': [
+            'platform_font_ozone.cc',
+            'render_text_ozone.cc',
+          ],
         }],
-        ['use_ozone==1', {
+        ['ozone_platform_dri==1', {
           'dependencies': [
           '<(DEPTH)/build/linux/system.gyp:dridrm',
           ],
@@ -406,6 +416,7 @@
          ],
          'variables': {
            'jni_gen_package': 'ui/gfx',
+           'jni_generator_ptr_type': 'long',
          },
          'includes': [ '../../build/jni_generator.gypi' ],
        },

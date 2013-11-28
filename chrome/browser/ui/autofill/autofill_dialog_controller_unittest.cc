@@ -33,9 +33,10 @@
 #include "components/autofill/content/browser/wallet/wallet_address.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/content/browser/wallet/wallet_test_util.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_personal_data_manager.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/user_prefs/user_prefs.h"
@@ -93,19 +94,18 @@ const char kTestCCNumberInvalid[] = "4111111111111112";
 void SetOutputValue(const DetailInputs& inputs,
                     ServerFieldType type,
                     const base::string16& value,
-                    DetailOutputMap* outputs) {
+                    FieldValueMap* outputs) {
   for (size_t i = 0; i < inputs.size(); ++i) {
-    const DetailInput& input = inputs[i];
-    if (input.type == type)
-      (*outputs)[&input] = value;
+    if (inputs[i].type == type)
+      (*outputs)[type] = value;
   }
 }
 
 // Copies the initial values from |inputs| into |outputs|.
-void CopyInitialValues(const DetailInputs& inputs, DetailOutputMap* outputs) {
+void CopyInitialValues(const DetailInputs& inputs, FieldValueMap* outputs) {
   for (size_t i = 0; i < inputs.size(); ++i) {
     const DetailInput& input = inputs[i];
-    (*outputs)[&input] = input.initial_value;
+    (*outputs)[input.type] = input.initial_value;
   }
 }
 
@@ -182,7 +182,7 @@ class TestAutofillDialogView : public AutofillDialogView {
 
   virtual void FillSection(DialogSection section,
                            const DetailInput& originating_input) OVERRIDE {};
-  virtual void GetUserInput(DialogSection section, DetailOutputMap* output)
+  virtual void GetUserInput(DialogSection section, FieldValueMap* output)
       OVERRIDE {
     *output = outputs_[section];
   }
@@ -210,7 +210,7 @@ class TestAutofillDialogView : public AutofillDialogView {
 
   virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE {}
 
-  void SetUserInput(DialogSection section, const DetailOutputMap& map) {
+  void SetUserInput(DialogSection section, const FieldValueMap& map) {
     outputs_[section] = map;
   }
 
@@ -219,7 +219,7 @@ class TestAutofillDialogView : public AutofillDialogView {
   }
 
  private:
-  std::map<DialogSection, DetailOutputMap> outputs_;
+  std::map<DialogSection, FieldValueMap> outputs_;
 
   int updates_started_;
   bool save_details_locally_checked_;
@@ -256,8 +256,10 @@ class TestAutofillDialogController
   }
 
   void Init(content::BrowserContext* browser_context) {
-    test_manager_.Init(browser_context,
-                       user_prefs::UserPrefs::Get(browser_context));
+    test_manager_.Init(
+        AutofillWebDataService::FromBrowserContext(browser_context),
+        user_prefs::UserPrefs::Get(browser_context),
+        browser_context->IsOffTheRecord());
   }
 
   TestAutofillDialogView* GetView() {
@@ -385,9 +387,6 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
     mock_new_card_bubble_controller_.reset(
         new MockNewCreditCardBubbleController);
 
-    // Don't get stuck on the first run wallet interstitial.
-    profile()->GetPrefs()->SetBoolean(::prefs::kAutofillDialogHasPaidWithWallet,
-                                      true);
     profile()->GetPrefs()->ClearPref(::prefs::kAutofillDialogSaveData);
 
     // We have to clear the old local state before creating a new one.
@@ -431,21 +430,21 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   // data for it.
   void SetUpControllerWithFormData(const FormData& form_data) {
     ResetControllerWithFormData(form_data);
-    std::vector<std::string> usernames;
-    usernames.push_back(kFakeEmail);
-    controller_->OnUserNameFetchSuccess(usernames);
-    EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
-    controller_->OnDidFetchWalletCookieValue(std::string());
-    controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
+    if (!profile()->GetPrefs()->GetBoolean(
+            ::prefs::kAutofillDialogPayWithoutWallet)) {
+      EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+      controller_->OnDidFetchWalletCookieValue(std::string());
+      controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
+    }
   }
 
   // Fills the inputs in SECTION_CC with data.
   void FillCreditCardInputs() {
-    DetailOutputMap cc_outputs;
+    FieldValueMap cc_outputs;
     const DetailInputs& cc_inputs =
         controller()->RequestedFieldsForSection(SECTION_CC);
     for (size_t i = 0; i < cc_inputs.size(); ++i) {
-      cc_outputs[&cc_inputs[i]] = cc_inputs[i].type == CREDIT_CARD_NUMBER ?
+      cc_outputs[cc_inputs[i].type] = cc_inputs[i].type == CREDIT_CARD_NUMBER ?
           ASCIIToUTF16(kTestCCNumberVisa) : ASCIIToUTF16("11");
     }
     controller()->GetView()->SetUserInput(SECTION_CC, cc_outputs);
@@ -453,18 +452,17 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
 
   // Fills the inputs in SECTION_CC_BILLING with valid data.
   void FillCCBillingInputs() {
-    DetailOutputMap outputs;
+    FieldValueMap outputs;
     const DetailInputs& inputs =
         controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
     AutofillProfile full_profile(test::GetVerifiedProfile());
     CreditCard full_card(test::GetCreditCard());
     for (size_t i = 0; i < inputs.size(); ++i) {
-      const DetailInput& input = inputs[i];
-      outputs[&input] = full_profile.GetInfo(AutofillType(input.type),
-                                             "en-US");
+      const ServerFieldType type = inputs[i].type;
+      outputs[type] = full_profile.GetInfo(AutofillType(type), "en-US");
 
-      if (outputs[&input].empty())
-        outputs[&input] = full_card.GetInfo(AutofillType(input.type), "en-US");
+      if (outputs[type].empty())
+        outputs[type] = full_card.GetInfo(AutofillType(type), "en-US");
     }
     controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
   }
@@ -479,7 +477,7 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
       model->ActivatedAt(model->GetItemCount() - 2);
 
     // Fill the inputs.
-    DetailOutputMap outputs;
+    FieldValueMap outputs;
     const DetailInputs& inputs =
         controller()->RequestedFieldsForSection(section);
     for (size_t i = 0; i < inputs.size(); ++i) {
@@ -489,7 +487,7 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
         output = ASCIIToUTF16("123");
       else
         output = data_model.GetInfo(AutofillType(type), "en-US");
-      outputs[&inputs[i]] = output;
+      outputs[inputs[i].type] = output;
     }
     controller()->GetView()->SetUserInput(section, outputs);
   }
@@ -526,7 +524,7 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   void ValidateCCNumber(DialogSection section,
                         const std::string& cc_number,
                         bool should_pass) {
-    DetailOutputMap outputs;
+    FieldValueMap outputs;
     const DetailInputs& inputs =
         controller()->RequestedFieldsForSection(section);
 
@@ -644,7 +642,7 @@ TEST_F(AutofillDialogControllerTest, ValidityCheck) {
 
 // Test for phone number validation.
 TEST_F(AutofillDialogControllerTest, PhoneNumberValidation) {
-  // Construct DetailOutputMap from existing data.
+  // Construct FieldValueMap from existing data.
   SwitchToAutofill();
 
   for (size_t i = 0; i < 2; ++i) {
@@ -654,14 +652,13 @@ TEST_F(AutofillDialogControllerTest, PhoneNumberValidation) {
                                        ADDRESS_BILLING_COUNTRY;
     DialogSection section = i == 0 ? SECTION_SHIPPING : SECTION_BILLING;
 
-    DetailOutputMap outputs;
+    FieldValueMap outputs;
     const DetailInputs& inputs =
         controller()->RequestedFieldsForSection(section);
     AutofillProfile full_profile(test::GetVerifiedProfile());
     for (size_t i = 0; i < inputs.size(); ++i) {
-      const DetailInput& input = inputs[i];
-      outputs[&input] = full_profile.GetInfo(AutofillType(input.type),
-                                             "en-US");
+      const ServerFieldType type = inputs[i].type;
+      outputs[type] = full_profile.GetInfo(AutofillType(type), "en-US");
     }
 
     // Make sure country is United States.
@@ -705,7 +702,7 @@ TEST_F(AutofillDialogControllerTest, PhoneNumberValidation) {
 }
 
 TEST_F(AutofillDialogControllerTest, ExpirationDateValidity) {
-  DetailOutputMap outputs;
+  FieldValueMap outputs;
   const DetailInputs& inputs =
       controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
 
@@ -753,10 +750,10 @@ TEST_F(AutofillDialogControllerTest, ExpirationDateValidity) {
 }
 
 TEST_F(AutofillDialogControllerTest, BillingNameValidation) {
-  // Construct DetailOutputMap from AutofillProfile data.
+  // Construct FieldValueMap from AutofillProfile data.
   SwitchToAutofill();
 
-  DetailOutputMap outputs;
+  FieldValueMap outputs;
   const DetailInputs& inputs =
       controller()->RequestedFieldsForSection(SECTION_BILLING);
 
@@ -780,7 +777,7 @@ TEST_F(AutofillDialogControllerTest, BillingNameValidation) {
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
   controller()->OnDidGetWalletItems(wallet_items.Pass());
 
-  DetailOutputMap wallet_outputs;
+  FieldValueMap wallet_outputs;
   const DetailInputs& wallet_inputs =
       controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
 
@@ -819,7 +816,7 @@ TEST_F(AutofillDialogControllerTest, BillingNameValidation) {
 }
 
 TEST_F(AutofillDialogControllerTest, CreditCardNumberValidation) {
-  // Construct DetailOutputMap from AutofillProfile data.
+  // Construct FieldValueMap from AutofillProfile data.
   SwitchToAutofill();
 
   // Should accept AMEX, Visa, Master and Discover.
@@ -1585,22 +1582,20 @@ TEST_F(AutofillDialogControllerTest, SaveInstrumentSameAsBilling) {
   ui::MenuModel* model = controller()->MenuModelForSection(SECTION_CC_BILLING);
   model->ActivatedAt(model->GetItemCount() - 2);
 
-  DetailOutputMap outputs;
+  FieldValueMap outputs;
   const DetailInputs& inputs =
       controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
   AutofillProfile full_profile(test::GetVerifiedProfile());
   CreditCard full_card(test::GetCreditCard());
   for (size_t i = 0; i < inputs.size(); ++i) {
-    const DetailInput& input = inputs[i];
-    if (input.type == ADDRESS_BILLING_LINE1) {
-      outputs[&input] = ASCIIToUTF16(kEditedBillingAddress);
-    } else {
-      outputs[&input] = full_profile.GetInfo(AutofillType(input.type),
-                                             "en-US");
-    }
+    const ServerFieldType type = inputs[i].type;
+    if (type == ADDRESS_BILLING_LINE1)
+      outputs[type] = ASCIIToUTF16(kEditedBillingAddress);
+    else
+      outputs[type] = full_profile.GetInfo(AutofillType(type), "en-US");
 
-    if (outputs[&input].empty())
-      outputs[&input] = full_card.GetInfo(AutofillType(input.type), "en-US");
+    if (outputs[type].empty())
+      outputs[type] = full_card.GetInfo(AutofillType(type), "en-US");
   }
   controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
 
@@ -1670,13 +1665,13 @@ TEST_F(AutofillDialogControllerTest, AddAutofillProfile) {
   model->ActivatedAt(model->GetItemCount() - 2);
 
   // Fill in the inputs from the profile.
-  DetailOutputMap outputs;
+  FieldValueMap outputs;
   const DetailInputs& inputs =
       controller()->RequestedFieldsForSection(SECTION_BILLING);
   AutofillProfile full_profile2(test::GetVerifiedProfile2());
   for (size_t i = 0; i < inputs.size(); ++i) {
-    const DetailInput& input = inputs[i];
-    outputs[&input] = full_profile2.GetInfo(AutofillType(input.type), "en-US");
+    const ServerFieldType type = inputs[i].type;
+    outputs[type] = full_profile2.GetInfo(AutofillType(type), "en-US");
   }
   controller()->GetView()->SetUserInput(SECTION_BILLING, outputs);
 
@@ -1687,9 +1682,9 @@ TEST_F(AutofillDialogControllerTest, AddAutofillProfile) {
   const DetailInputs& shipping_inputs =
       controller()->RequestedFieldsForSection(SECTION_SHIPPING);
   for (size_t i = 0; i < shipping_inputs.size(); ++i) {
-    const DetailInput& input = shipping_inputs[i];
-    EXPECT_EQ(full_profile2.GetInfo(AutofillType(input.type), "en-US"),
-              added_profile.GetInfo(AutofillType(input.type), "en-US"));
+    const ServerFieldType type = shipping_inputs[i].type;
+    EXPECT_EQ(full_profile2.GetInfo(AutofillType(type), "en-US"),
+              added_profile.GetInfo(AutofillType(type), "en-US"));
   }
 }
 
@@ -1885,26 +1880,17 @@ TEST_F(AutofillDialogControllerTest, SubmitWithSigninErrorDoesntSetPref) {
 }
 
 // Tests that there's an overlay shown while waiting for full wallet items.
-// TODO(estade): enable on other platforms when overlays are supported there.
 TEST_F(AutofillDialogControllerTest, WalletFirstRun) {
-  // Simulate fist run.
-  PrefService* prefs = profile()->GetPrefs();
-  prefs->SetBoolean(::prefs::kAutofillDialogHasPaidWithWallet, false);
-  SetUpControllerWithFormData(DefaultFormData());
-
-  SwitchToWallet();
   EXPECT_TRUE(controller()->GetDialogOverlay().image.IsEmpty());
 
   SubmitWithWalletItems(CompleteAndValidWalletItems());
   EXPECT_FALSE(controller()->GetDialogOverlay().image.IsEmpty());
 
-  EXPECT_FALSE(prefs->GetBoolean(::prefs::kAutofillDialogHasPaidWithWallet));
   controller()->OnDidGetFullWallet(wallet::GetTestFullWallet());
-  EXPECT_FALSE(prefs->GetBoolean(::prefs::kAutofillDialogHasPaidWithWallet));
   EXPECT_FALSE(controller()->GetDialogOverlay().image.IsEmpty());
   EXPECT_FALSE(form_structure());
 
-  // Don't wait for 2 seconds.
+  // Don't make the test wait for 2 seconds.
   controller()->ForceFinishSubmit();
   EXPECT_TRUE(form_structure());
 }
@@ -1940,9 +1926,10 @@ TEST_F(AutofillDialogControllerTest, ViewSubmitSetsPref) {
       ::prefs::kAutofillDialogPayWithoutWallet));
 
   // Successfully choosing wallet does set the pref.
+  // Note that OnDidGetWalletItems sets the account chooser to wallet mode.
   SetUpControllerWithFormData(DefaultFormData());
 
-  SwitchToWallet();
+  controller()->OnDidFetchWalletCookieValue(std::string());
   scoped_ptr<wallet::WalletItems> wallet_items =
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
   wallet_items->AddInstrument(wallet::GetTestMaskedInstrument());
@@ -2147,8 +2134,6 @@ TEST_F(AutofillDialogControllerTest, ShippingSectionCanBeHidden) {
 }
 
 TEST_F(AutofillDialogControllerTest, ShippingSectionCanBeHiddenForWallet) {
-  SwitchToWallet();
-
   FormFieldData email_field;
   email_field.autocomplete_attribute = "email";
   FormFieldData cc_field;
@@ -2212,7 +2197,7 @@ TEST_F(AutofillDialogControllerTest, WalletExpiredCard) {
   // Use |SetOutputValue()| to put the right ServerFieldTypes into the map.
   const DetailInputs& inputs =
       controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
-  DetailOutputMap outputs;
+  FieldValueMap outputs;
   CopyInitialValues(inputs, &outputs);
   SetOutputValue(inputs, COMPANY_NAME, ASCIIToUTF16("Bluth Company"), &outputs);
 
@@ -2282,9 +2267,7 @@ TEST_F(AutofillDialogControllerTest, GeneratedCardBubbleShown) {
 // tab hosting the Autofill dialog and back. Also verify that the user's
 // selection is preserved across this re-fetch.
 TEST_F(AutofillDialogControllerTest, ReloadWalletItemsOnActivation) {
-  // Switch into Wallet mode and initialize some Wallet data.
-  SwitchToWallet();
-
+  // Initialize some Wallet data.
   scoped_ptr<wallet::WalletItems> wallet_items =
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
   wallet_items->AddInstrument(wallet::GetTestMaskedInstrument());
@@ -2342,9 +2325,7 @@ TEST_F(AutofillDialogControllerTest, ReloadWalletItemsOnActivation) {
 // new default values are selected in the dialog.
 TEST_F(AutofillDialogControllerTest,
        ReloadWalletItemsOnActivationWithNewDefaults) {
-  // Switch into Wallet mode and initialize some Wallet data.
-  SwitchToWallet();
-
+  // Initialize some Wallet data.
   scoped_ptr<wallet::WalletItems> wallet_items =
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
   wallet_items->AddInstrument(wallet::GetTestMaskedInstrument());
@@ -2400,8 +2381,6 @@ TEST_F(AutofillDialogControllerTest,
 }
 
 TEST_F(AutofillDialogControllerTest, ReloadWithEmptyWalletItems) {
-  SwitchToWallet();
-
   controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
   controller()->MenuModelForSection(SECTION_CC_BILLING)->ActivatedAt(1);
   controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(1);
@@ -2625,7 +2604,7 @@ TEST_F(AutofillDialogControllerTest, InputEditability) {
 
   const DetailInputs& inputs =
       controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
-  DetailOutputMap outputs;
+  FieldValueMap outputs;
   CopyInitialValues(inputs, &outputs);
   controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
 
@@ -2680,7 +2659,6 @@ TEST_F(AutofillDialogControllerTest, DontGetWalletTillNecessary) {
   profile()->GetPrefs()->SetBoolean(
       ::prefs::kAutofillDialogPayWithoutWallet, true);
   ResetControllerWithFormData(DefaultFormData());
-  EXPECT_FALSE(controller()->ShouldDisableSignInLink());
   base::string16 use_wallet_text = controller()->SignInLinkText();
   EXPECT_EQ(TestAutofillDialogController::NOT_CHECKED,
             controller()->SignedInState());
@@ -2691,15 +2669,39 @@ TEST_F(AutofillDialogControllerTest, DontGetWalletTillNecessary) {
   controller()->SignInLinkClicked();
   EXPECT_NE(TestAutofillDialogController::NOT_CHECKED,
             controller()->SignedInState());
-  std::vector<std::string> usernames;
-  usernames.push_back(kFakeEmail);
-  controller()->OnUserNameFetchSuccess(usernames);
   controller()->OnDidFetchWalletCookieValue(std::string());
   controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
   controller()->OnPassiveSigninFailure(GoogleServiceAuthError(
       GoogleServiceAuthError::CONNECTION_FAILED));
-  EXPECT_FALSE(controller()->ShouldDisableSignInLink());
   EXPECT_NE(use_wallet_text, controller()->SignInLinkText());
+}
+
+TEST_F(AutofillDialogControllerTest, MultiAccountSwitch) {
+  std::vector<std::string> users;
+  users.push_back("user_1@example.com");
+  users.push_back("user_2@example.com");
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItemsWithUsers(users, 0));
+
+  // Items should be: Account 1, account 2, add account, disable wallet.
+  EXPECT_EQ(4, controller()->MenuModelForAccountChooser()->GetItemCount());
+  EXPECT_EQ(0U, controller()->GetTestingWalletClient()->user_index());
+
+  // GetWalletItems should be called when the user switches accounts.
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  controller()->MenuModelForAccountChooser()->ActivatedAt(1);
+  // The wallet client should be updated to the new user index.
+  EXPECT_EQ(1U, controller()->GetTestingWalletClient()->user_index());
+}
+
+TEST_F(AutofillDialogControllerTest, PassiveAuthFailure) {
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItemsWithRequiredAction(
+           wallet::PASSIVE_GAIA_AUTH));
+  EXPECT_TRUE(controller()->ShouldShowSpinner());
+  controller()->OnPassiveSigninFailure(GoogleServiceAuthError(
+      GoogleServiceAuthError::NONE));
+  EXPECT_FALSE(controller()->ShouldShowSpinner());
 }
 
 }  // namespace autofill

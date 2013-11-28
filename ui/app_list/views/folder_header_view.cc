@@ -21,7 +21,7 @@ namespace {
 
 const int kPreferredWidth = 360;
 const int kPreferredHeight = 48;
-const int kIconDimension = 32;
+const int kIconDimension = 24;
 const int kPadding = 14;
 const int kFolderNameWidth = 150;
 const int kFolderNameHeight = 30;
@@ -48,7 +48,7 @@ class FolderHeaderView::FolderNameView : public views::Textfield {
 
   virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE {
     const SkColor kFocusBorderColor = SkColorSetRGB(64, 128, 250);
-    if (HasFocus() && focusable()) {
+    if (HasFocus()) {
       gfx::Rect rect = GetLocalBounds();
       rect.Inset(0, 0, 1, 1);
       canvas->DrawRect(rect, kFocusBorderColor);

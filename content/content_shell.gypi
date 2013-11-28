@@ -47,7 +47,7 @@
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink_test_runner.gyp:blink_test_runner',
-        '../ui/events/events.gyp:events',
+        '../ui/events/events.gyp:events_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
@@ -234,10 +234,10 @@
           'conditions': [
             ['toolkit_views==1', {
               'dependencies': [
+                '../ui/resources/ui_resources.gyp:ui_resources',
                 '../ui/views/controls/webview/webview.gyp:webview',
                 '../ui/views/views.gyp:views',
                 '../ui/views/views.gyp:views_test_support',
-                '../ui/ui.gyp:ui_resources',
               ],
               'sources/': [
                 ['exclude', 'shell/browser/shell_aura.cc'],
@@ -257,14 +257,9 @@
         ['chromeos==1', {
           'dependencies': [
             '../chromeos/chromeos.gyp:chromeos',
-            '../ui/shell/shell.gyp:shell',
+            '../ui/wm/wm.gyp:wm_test_support',
            ],
         }], # chromeos==1
-        ['use_ash==1', {
-          'dependencies': [
-            '../ash/ash.gyp:ash',
-           ],
-        }],
         ['use_custom_freetype==1', {
           'dependencies': [
              '../third_party/freetype2/freetype2.gyp:freetype2',
@@ -324,7 +319,7 @@
         'content_shell_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
       ],
@@ -786,7 +781,7 @@
             '../media/media.gyp:media_java',
             '../net/net.gyp:net_java',
             '../tools/android/forwarder/forwarder.gyp:forwarder',
-            '../ui/ui.gyp:ui_java',
+            '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {
             'apk_name': 'ContentShell',
@@ -795,7 +790,7 @@
             'resource_dir': 'shell/android/shell_apk/res',
             'native_lib_target': 'libcontent_shell_content_view',
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
-            'asset_location': '<(ant_build_out)/content_shell/assets',
+            'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
           },
           'conditions': [
             ['android_webview_build==0', {

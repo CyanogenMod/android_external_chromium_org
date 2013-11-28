@@ -6,10 +6,10 @@
 
 #include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -46,10 +46,6 @@ class DockedWindowLayoutManagerTest
   virtual ~DockedWindowLayoutManagerTest() {}
 
   virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        ash::switches::kAshEnableStickyEdges);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        ash::switches::kAshEnableDockedWindows);
     AshTestBase::SetUp();
     UpdateDisplay("600x600");
     ASSERT_TRUE(test::TestLauncherDelegate::instance());

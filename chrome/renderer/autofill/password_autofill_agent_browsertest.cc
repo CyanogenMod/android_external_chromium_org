@@ -18,18 +18,19 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 using autofill::PasswordForm;
-using WebKit::WebDocument;
-using WebKit::WebElement;
-using WebKit::WebFrame;
-using WebKit::WebInputElement;
-using WebKit::WebString;
-using WebKit::WebView;
+using blink::WebDocument;
+using blink::WebElement;
+using blink::WebFrame;
+using blink::WebInputElement;
+using blink::WebString;
+using blink::WebView;
 
 namespace {
 
@@ -199,10 +200,10 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     WebElement element =
         document.getElementById(WebString::fromUTF8(kUsernameName));
     ASSERT_FALSE(element.isNull());
-    username_element_ = element.to<WebKit::WebInputElement>();
+    username_element_ = element.to<blink::WebInputElement>();
     element = document.getElementById(WebString::fromUTF8(kPasswordName));
     ASSERT_FALSE(element.isNull());
-    password_element_ = element.to<WebKit::WebInputElement>();
+    password_element_ = element.to<blink::WebInputElement>();
   }
 
   virtual void TearDown() {
@@ -218,38 +219,58 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     password_element_.setAutofilled(false);
   }
 
-  void SimulateUsernameChange(const std::string& username,
-                              bool move_caret_to_end) {
-    username_element_.setValue(WebString::fromUTF8(username));
+  void SimulateUsernameChangeForElement(const std::string& username,
+                                        bool move_caret_to_end,
+                                        WebFrame* input_frame,
+                                        WebInputElement& username_input) {
+    username_input.setValue(WebString::fromUTF8(username));
     // The field must have focus or AutofillAgent will think the
     // change should be ignored.
-    while (!username_element_.focused())
-      GetMainFrame()->document().frame()->view()->advanceFocus(false);
+    while (!username_input.focused())
+      input_frame->document().frame()->view()->advanceFocus(false);
     if (move_caret_to_end)
-      username_element_.setSelectionRange(username.length(), username.length());
-    autofill_agent_->textFieldDidChange(username_element_);
+      username_input.setSelectionRange(username.length(), username.length());
+    autofill_agent_->textFieldDidChange(username_input);
     // Processing is delayed because of a WebKit bug, see
     // PasswordAutocompleteManager::TextDidChangeInTextField() for details.
     base::MessageLoop::current()->RunUntilIdle();
   }
 
+  void SimulateUsernameChange(const std::string& username,
+                              bool move_caret_to_end) {
+    SimulateUsernameChangeForElement(username, move_caret_to_end,
+                                     GetMainFrame(), username_element_);
+  }
+
+
   void SimulateKeyDownEvent(const WebInputElement& element,
                             ui::KeyboardCode key_code) {
-    WebKit::WebKeyboardEvent key_event;
+    blink::WebKeyboardEvent key_event;
     key_event.windowsKeyCode = key_code;
     autofill_agent_->textFieldDidReceiveKeyDown(element, key_event);
+  }
+
+  void CheckTextFieldsStateForElements(const WebInputElement& username_element,
+                                       const std::string& username,
+                                       bool username_autofilled,
+                                       const WebInputElement& password_element,
+                                       const std::string& password,
+                                       bool password_autofilled) {
+    EXPECT_EQ(username,
+              static_cast<std::string>(username_element.value().utf8()));
+    EXPECT_EQ(username_autofilled, username_element.isAutofilled());
+    EXPECT_EQ(password,
+              static_cast<std::string>(password_element.value().utf8()));
+    EXPECT_EQ(password_autofilled, password_element.isAutofilled());
   }
 
   void CheckTextFieldsState(const std::string& username,
                             bool username_autofilled,
                             const std::string& password,
                             bool password_autofilled) {
-    EXPECT_EQ(username,
-              static_cast<std::string>(username_element_.value().utf8()));
-    EXPECT_EQ(username_autofilled, username_element_.isAutofilled());
-    EXPECT_EQ(password,
-              static_cast<std::string>(password_element_.value().utf8()));
-    EXPECT_EQ(password_autofilled, password_element_.isAutofilled());
+    CheckTextFieldsStateForElements(username_element_, username,
+                                    username_autofilled, password_element_,
+                                    password, password_autofilled);
   }
 
   void CheckUsernameSelection(int start, int end) {
@@ -321,10 +342,10 @@ TEST_F(PasswordAutofillAgentTest, InitialAutocompleteForEmptyAction) {
   WebElement element =
       document.getElementById(WebString::fromUTF8(kUsernameName));
   ASSERT_FALSE(element.isNull());
-  username_element_ = element.to<WebKit::WebInputElement>();
+  username_element_ = element.to<blink::WebInputElement>();
   element = document.getElementById(WebString::fromUTF8(kPasswordName));
   ASSERT_FALSE(element.isNull());
-  password_element_ = element.to<WebKit::WebInputElement>();
+  password_element_ = element.to<blink::WebInputElement>();
 
   // Set the expected form origin and action URLs.
   std::string origin("data:text/html;charset=utf-8,");
@@ -340,9 +361,9 @@ TEST_F(PasswordAutofillAgentTest, InitialAutocompleteForEmptyAction) {
   CheckTextFieldsState(kAliceUsername, true, kAlicePassword, true);
 }
 
-// Tests that if a password or input element is marked as readonly, neither
-// field is autofilled on page load.
-TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForReadOnly) {
+// Tests that if a password is marked as readonly, neither field is autofilled
+// on page load.
+TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForReadOnlyPassword) {
   password_element_.setAttribute(WebString::fromUTF8("readonly"),
                                  WebString::fromUTF8("true"));
 
@@ -353,8 +374,33 @@ TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForReadOnly) {
   CheckTextFieldsState(std::string(), false, std::string(), false);
 }
 
+// Can still fill a password field if the username is set to a value that
+// matches.
+TEST_F(PasswordAutofillAgentTest,
+       AutocompletePasswordForReadonlyUsernameMatched) {
+  username_element_.setValue(username3_);
+  username_element_.setAttribute(WebString::fromUTF8("readonly"),
+                                 WebString::fromUTF8("true"));
+
+  // Filled even though username is not the preferred match.
+  SimulateOnFillPasswordForm(fill_data_);
+  CheckTextFieldsState(UTF16ToUTF8(username3_), false,
+                       UTF16ToUTF8(password3_), true);
+}
+
+// If a username field is empty and readonly, don't autofill.
+TEST_F(PasswordAutofillAgentTest,
+       NoAutocompletePasswordForReadonlyUsernameUnmatched) {
+  username_element_.setValue(WebString::fromUTF8(""));
+  username_element_.setAttribute(WebString::fromUTF8("readonly"),
+                                 WebString::fromUTF8("true"));
+
+  SimulateOnFillPasswordForm(fill_data_);
+  CheckTextFieldsState(std::string(), false, std::string(), false);
+}
+
 // Tests that having a non-matching username precludes the autocomplete.
-TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForFilledField) {
+TEST_F(PasswordAutofillAgentTest, NoAutocompleteForFilledFieldUnmatched) {
   username_element_.setValue(WebString::fromUTF8("bogus"));
 
   // Simulate the browser sending back the login info, it triggers the
@@ -363,6 +409,28 @@ TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForFilledField) {
 
   // Neither field should be autocompleted.
   CheckTextFieldsState("bogus", false, std::string(), false);
+}
+
+// Don't try to complete a prefilled value even if it's a partial match
+// to a username.
+TEST_F(PasswordAutofillAgentTest, NoPartialMatchForPrefilledUsername) {
+  username_element_.setValue(WebString::fromUTF8("ali"));
+
+  SimulateOnFillPasswordForm(fill_data_);
+
+  CheckTextFieldsState("ali", false, std::string(), false);
+}
+
+TEST_F(PasswordAutofillAgentTest, InputWithNoForms) {
+  const char kNoFormInputs[] =
+      "<input type='text' id='username'/>"
+      "<input type='password' id='password'/>";
+  LoadHTML(kNoFormInputs);
+
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // Input elements that aren't in a <form> won't autofill.
+  CheckTextFieldsState(std::string(), false, std::string(), false);
 }
 
 // Tests that we do not autofill username/passwords if marked as
@@ -392,10 +460,10 @@ TEST_F(PasswordAutofillAgentTest, NoAutocompleteForTextFieldPasswords) {
   WebElement element =
       document.getElementById(WebString::fromUTF8(kUsernameName));
   ASSERT_FALSE(element.isNull());
-  username_element_ = element.to<WebKit::WebInputElement>();
+  username_element_ = element.to<blink::WebInputElement>();
   element = document.getElementById(WebString::fromUTF8(kPasswordName));
   ASSERT_FALSE(element.isNull());
-  password_element_ = element.to<WebKit::WebInputElement>();
+  password_element_ = element.to<blink::WebInputElement>();
 
   // Set the expected form origin URL.
   std::string origin("data:text/html;charset=utf-8,");
@@ -422,10 +490,10 @@ TEST_F(PasswordAutofillAgentTest, NoAutocompleteForPasswordFieldUsernames) {
   WebElement element =
       document.getElementById(WebString::fromUTF8(kUsernameName));
   ASSERT_FALSE(element.isNull());
-  username_element_ = element.to<WebKit::WebInputElement>();
+  username_element_ = element.to<blink::WebInputElement>();
   element = document.getElementById(WebString::fromUTF8(kPasswordName));
   ASSERT_FALSE(element.isNull());
-  password_element_ = element.to<WebKit::WebInputElement>();
+  password_element_ = element.to<blink::WebInputElement>();
 
   // Set the expected form origin URL.
   std::string origin("data:text/html;charset=utf-8,");
@@ -573,15 +641,15 @@ TEST_F(PasswordAutofillAgentTest, SuggestionSelect) {
   // didSelectAutofillSuggestion on the renderer.
   autofill_agent_->didSelectAutofillSuggestion(username_element_,
                                                ASCIIToUTF16(kAliceUsername),
-                                               WebKit::WebString(),
+                                               blink::WebString(),
                                                0);
   // Autocomplete should not have kicked in.
   CheckTextFieldsState(std::string(), false, std::string(), false);
 }
 
 TEST_F(PasswordAutofillAgentTest, IsWebNodeVisibleTest) {
-  WebKit::WebVector<WebKit::WebFormElement> forms1, forms2, forms3;
-  WebKit::WebFrame* frame;
+  blink::WebVector<blink::WebFormElement> forms1, forms2, forms3;
+  blink::WebFrame* frame;
 
   LoadHTML(kVisibleFormHTML);
   frame = GetMainFrame();
@@ -649,6 +717,65 @@ TEST_F(PasswordAutofillAgentTest, SendPasswordFormsTest_Redirection) {
   LoadHTML(kWebpageWithDynamicContent);
   EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_PasswordFormsRendered::ID));
+}
+
+// Tests that a password form in an iframe will not be filled in until a user
+// interaction with the form.
+TEST_F(PasswordAutofillAgentTest, IframeNoFillTest) {
+  const char kIframeName[] = "iframe";
+  const char kWebpageWithIframeStart[] =
+      "<html>"
+      "   <head>"
+      "       <meta charset='utf-8' />"
+      "       <title>Title</title>"
+      "   </head>"
+      "   <body>"
+      "       <iframe id='iframe' src=\"";
+  const char kWebpageWithIframeEnd[] =
+      "\"></iframe>"
+      "   </body>"
+      "</html>";
+
+  std::string origin("data:text/html;charset=utf-8,");
+  origin += kSimpleWebpage;
+
+  std::string page_html(kWebpageWithIframeStart);
+  page_html += origin;
+  page_html += kWebpageWithIframeEnd;
+
+  LoadHTML(page_html.c_str());
+
+  // Set the expected form origin and action URLs.
+  fill_data_.basic_data.origin = GURL(origin);
+  fill_data_.basic_data.action = GURL(origin);
+
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // Retrieve the input elements from the iframe since that is where we want to
+  // test the autofill.
+  WebFrame* iframe = GetMainFrame()->findChildByName(kIframeName);
+  ASSERT_TRUE(iframe);
+  WebDocument document = iframe->document();
+
+  WebElement username_element = document.getElementById(kUsernameName);
+  WebElement password_element = document.getElementById(kPasswordName);
+  ASSERT_FALSE(username_element.isNull());
+  ASSERT_FALSE(password_element.isNull());
+
+  WebInputElement username_input = username_element.to<WebInputElement>();
+  WebInputElement password_input = password_element.to<WebInputElement>();
+  ASSERT_FALSE(username_element.isNull());
+
+  CheckTextFieldsStateForElements(username_input, "", false,
+                                  password_input, "", false);
+
+  // Simulate the user typing in the username in the iframe, which should cause
+  // an autofill.
+  SimulateUsernameChangeForElement(kAliceUsername, true,
+                                   iframe, username_input);
+
+  CheckTextFieldsStateForElements(username_input, kAliceUsername, true,
+                                  password_input, kAlicePassword, true);
 }
 
 }  // namespace autofill

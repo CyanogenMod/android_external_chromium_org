@@ -22,6 +22,7 @@
 #include "printing/print_job_constants.h"
 #include "printing/print_settings_initializer_win.h"
 #include "printing/printed_document.h"
+#include "printing/printing_utils.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
 #include "win8/util/win8_util.h"
@@ -40,7 +41,7 @@ HWND GetRootWindow(gfx::NativeView view) {
   HWND window = NULL;
 #if defined(USE_AURA)
   if (view)
-    window = view->GetDispatcher()->GetAcceleratedWidget();
+    window = view->GetDispatcher()->host()->GetAcceleratedWidget();
 #else
   if (view && IsWindow(view)) {
     window = GetAncestor(view, GA_ROOTOWNER);
@@ -431,7 +432,7 @@ PrintingContext::Result PrintingContextWin::NewDocument(
   if (SP_ERROR == SetAbortProc(context_, &AbortProc))
     return OnError();
 
-  DCHECK(PrintBackend::SimplifyDocumentTitle(document_name) == document_name);
+  DCHECK(SimplifyDocumentTitle(document_name) == document_name);
   DOCINFO di = { sizeof(DOCINFO) };
   const std::wstring& document_name_wide = UTF16ToWide(document_name);
   di.lpszDocName = document_name_wide.c_str();

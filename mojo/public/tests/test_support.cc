@@ -6,21 +6,9 @@
 
 #include "base/test/perf_log.h"
 #include "base/time/time.h"
-#include "mojo/system/core_impl.h"
 
 namespace mojo {
 namespace test {
-
-TestBase::TestBase() {
-}
-
-TestBase::~TestBase() {
-}
-
-void TestBase::SetUp() {
-  if (!system::CoreImpl::Get())
-    system::CoreImpl::Init();
-}
 
 void IterateAndReportPerf(const char* test_name,
                           base::Callback<void()> single_iteration) {

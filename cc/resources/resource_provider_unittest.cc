@@ -34,12 +34,12 @@ using testing::Return;
 using testing::SetArgPointee;
 using testing::StrictMock;
 using testing::_;
-using WebKit::WGC3Dbyte;
-using WebKit::WGC3Denum;
-using WebKit::WGC3Dint;
-using WebKit::WGC3Dsizei;
-using WebKit::WGC3Duint;
-using WebKit::WebGLId;
+using blink::WGC3Dbyte;
+using blink::WGC3Denum;
+using blink::WGC3Dint;
+using blink::WGC3Dsizei;
+using blink::WGC3Duint;
+using blink::WebGLId;
 
 namespace cc {
 namespace {
@@ -95,11 +95,11 @@ class TextureStateTrackingContext : public TestWebGraphicsContext3D {
 
   // Force all textures to be consecutive numbers starting at "1",
   // so we easily can test for them.
-  virtual WebKit::WebGLId NextTextureId() OVERRIDE {
+  virtual blink::WebGLId NextTextureId() OVERRIDE {
     base::AutoLock lock(namespace_->lock);
     return namespace_->next_texture_id++;
   }
-  virtual void RetireTextureId(WebKit::WebGLId) OVERRIDE {
+  virtual void RetireTextureId(blink::WebGLId) OVERRIDE {
   }
 };
 
@@ -244,16 +244,6 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
     SetPixels(xoffset, yoffset, width, height, pixels);
   }
 
-  virtual void texParameteri(WGC3Denum target, WGC3Denum param, WGC3Dint value)
-      OVERRIDE {
-    CheckTextureIsBound(target);
-    base::AutoLock lock_for_texture_access(namespace_->lock);
-    scoped_refptr<TestTexture> texture = BoundTexture(target);
-    if (param != GL_TEXTURE_MIN_FILTER)
-      return;
-    texture->filter = value;
-  }
-
   virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox) OVERRIDE {
     return shared_data_->GenMailbox(mailbox);
   }
@@ -288,22 +278,6 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
     ASSERT_EQ(texture->size, size);
     ASSERT_EQ(texture->format, format);
     memcpy(pixels, texture->data.get(), TextureSizeBytes(size, format));
-  }
-
-  WGC3Denum GetTextureFilter() {
-    CheckTextureIsBound(GL_TEXTURE_2D);
-    base::AutoLock lock_for_texture_access(namespace_->lock);
-    return BoundTexture(GL_TEXTURE_2D)->filter;
-  }
-
-  scoped_refptr<TestTexture> BoundTexture(WGC3Denum target) {
-    // The caller is expected to lock the namespace for texture access.
-    namespace_->lock.AssertAcquired();
-    return namespace_->textures.TextureForId(BoundTextureId(target));
-  }
-
-  void CheckTextureIsBound(WGC3Denum target) {
-    ASSERT_TRUE(BoundTextureId(target));
   }
 
  protected:
@@ -1345,33 +1319,43 @@ TEST_P(ResourceProviderTest, DestroyChildWithExportedResources) {
     ResourceProvider::ResourceIdArray no_resources;
     resource_provider_->DeclareUsedResourcesFromChild(child_id, no_resources);
 
-    // Destroy the child, the resources should be returned immediately from the
-    // parent and marked as lost.
+    // Destroy the child, the resources should not be returned yet.
     EXPECT_EQ(0u, returned_to_child.size());
     EXPECT_EQ(2u, resource_provider_->num_resources());
 
     resource_provider_->DestroyChild(child_id);
 
-    EXPECT_EQ(0u, resource_provider_->num_resources());
-    ASSERT_EQ(2u, returned_to_child.size());
-    if (GetParam() == ResourceProvider::GLTexture) {
-      EXPECT_NE(0u, returned_to_child[0].sync_point);
-      EXPECT_NE(0u, returned_to_child[1].sync_point);
-    }
-    EXPECT_TRUE(returned_to_child[0].lost);
-    EXPECT_TRUE(returned_to_child[1].lost);
-    returned_to_child.clear();
+    EXPECT_EQ(2u, resource_provider_->num_resources());
+    ASSERT_EQ(0u, returned_to_child.size());
 
-    // Return the resources from the grandparent to the parent. They should be
-    // dropped on the floor since they were already returned to the child.
+    // Return a resource from the grandparent, it should be returned at this
+    // point.
     EXPECT_EQ(2u, list.size());
     EXPECT_EQ(mapped_id1, list[0].id);
     EXPECT_EQ(mapped_id2, list[1].id);
+    TransferableResourceArray return_list;
+    return_list.push_back(list[1]);
+    list.pop_back();
     ReturnedResourceArray returned;
-    TransferableResource::ReturnResources(list, &returned);
+    TransferableResource::ReturnResources(return_list, &returned);
     resource_provider_->ReceiveReturnsFromParent(returned);
 
-    EXPECT_EQ(0u, returned_to_child.size());
+    EXPECT_EQ(1u, resource_provider_->num_resources());
+    ASSERT_EQ(1u, returned_to_child.size());
+    if (GetParam() == ResourceProvider::GLTexture) {
+      EXPECT_NE(0u, returned_to_child[0].sync_point);
+    }
+    EXPECT_FALSE(returned_to_child[0].lost);
+    returned_to_child.clear();
+
+    // Destroy the parent resource provider. The resource that's left should be
+    // lost at this point, and returned.
+    resource_provider_.reset();
+    ASSERT_EQ(1u, returned_to_child.size());
+    if (GetParam() == ResourceProvider::GLTexture) {
+      EXPECT_NE(0u, returned_to_child[0].sync_point);
+    }
+    EXPECT_TRUE(returned_to_child[0].lost);
   }
 }
 
@@ -2148,7 +2132,11 @@ TEST_P(ResourceProviderTest, ManagedResource) {
 
   // Check that the texture gets created with the right sampler settings.
   ResourceProvider::ResourceId id = resource_provider->CreateManagedResource(
-      size, GL_CLAMP_TO_EDGE, ResourceProvider::TextureUsageAny, format);
+      size,
+      GL_TEXTURE_2D,
+      GL_CLAMP_TO_EDGE,
+      ResourceProvider::TextureUsageAny,
+      format);
   EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id));
   EXPECT_CALL(*context,
               texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
@@ -2196,6 +2184,7 @@ TEST_P(ResourceProviderTest, TextureWrapMode) {
     // Check that the texture gets created with the right sampler settings.
     ResourceProvider::ResourceId id =
         resource_provider->CreateGLTexture(size,
+                                           GL_TEXTURE_2D,
                                            texture_pool,
                                            wrap_mode,
                                            ResourceProvider::TextureUsageAny,
@@ -2391,6 +2380,12 @@ class AllocationTrackingContext3D : public TestWebGraphicsContext3D {
   MOCK_METHOD0(NextTextureId, WebGLId());
   MOCK_METHOD1(RetireTextureId, void(WebGLId id));
   MOCK_METHOD2(bindTexture, void(WGC3Denum target, WebGLId texture));
+  MOCK_METHOD5(texStorage2DEXT,
+               void(WGC3Denum target,
+                    WGC3Dint levels,
+                    WGC3Duint internalformat,
+                    WGC3Dint width,
+                    WGC3Dint height));
   MOCK_METHOD9(texImage2D,
                void(WGC3Denum target,
                     WGC3Dint level,
@@ -2450,6 +2445,13 @@ class AllocationTrackingContext3D : public TestWebGraphicsContext3D {
   MOCK_METHOD1(unmapImageCHROMIUM, void(WGC3Duint));
   MOCK_METHOD2(bindTexImage2DCHROMIUM, void(WGC3Denum, WGC3Dint));
   MOCK_METHOD2(releaseTexImage2DCHROMIUM, void(WGC3Denum, WGC3Dint));
+
+  // We're mocking bindTexture, so we override
+  // TestWebGraphicsContext3D::texParameteri to avoid assertions related to the
+  // currently bound texture.
+  virtual void texParameteri(blink::WGC3Denum target,
+                             blink::WGC3Denum pname,
+                             blink::WGC3Dint param) {}
 };
 
 TEST_P(ResourceProviderTest, TextureAllocation) {
@@ -2517,6 +2519,83 @@ TEST_P(ResourceProviderTest, TextureAllocation) {
   ASSERT_TRUE(resource_provider->DidSetPixelsComplete(id));
 
   resource_provider->ReleasePixelBuffer(id);
+
+  EXPECT_CALL(*context, RetireTextureId(texture_id)).Times(1);
+  resource_provider->DeleteResource(id);
+
+  Mock::VerifyAndClearExpectations(context);
+}
+
+TEST_P(ResourceProviderTest, TextureAllocationStorageUsageAny) {
+  // Only for GL textures.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+  scoped_ptr<AllocationTrackingContext3D> context_owned(
+      new StrictMock<AllocationTrackingContext3D>);
+  AllocationTrackingContext3D* context = context_owned.get();
+  context->set_support_texture_storage(true);
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
+
+  gfx::Size size(2, 2);
+  ResourceFormat format = RGBA_8888;
+  ResourceProvider::ResourceId id = 0;
+  int texture_id = 123;
+
+  // Lazy allocation. Don't allocate when creating the resource.
+  id = resource_provider->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TextureUsageAny, format);
+
+  EXPECT_CALL(*context, NextTextureId()).WillOnce(Return(texture_id));
+  EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id)).Times(2);
+  EXPECT_CALL(*context, texStorage2DEXT(_, _, _, 2, 2)).Times(1);
+  resource_provider->AllocateForTesting(id);
+
+  EXPECT_CALL(*context, RetireTextureId(texture_id)).Times(1);
+  resource_provider->DeleteResource(id);
+
+  Mock::VerifyAndClearExpectations(context);
+}
+
+TEST_P(ResourceProviderTest, TextureAllocationStorageUsageFramebuffer) {
+  // Only for GL textures.
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+  scoped_ptr<AllocationTrackingContext3D> context_owned(
+      new StrictMock<AllocationTrackingContext3D>);
+  AllocationTrackingContext3D* context = context_owned.get();
+  context->set_support_texture_storage(true);
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
+
+  gfx::Size size(2, 2);
+  ResourceFormat format = RGBA_8888;
+  ResourceProvider::ResourceId id = 0;
+  int texture_id = 123;
+
+  // Lazy allocation. Don't allocate when creating the resource.
+  id = resource_provider->CreateResource(
+      size,
+      GL_CLAMP_TO_EDGE,
+      ResourceProvider::TextureUsageFramebuffer,
+      format);
+
+  EXPECT_CALL(*context, NextTextureId()).WillOnce(Return(texture_id));
+  EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id)).Times(2);
+  EXPECT_CALL(*context, texImage2D(_, _, _, 2, 2, _, _, _, _)).Times(1);
+  resource_provider->AllocateForTesting(id);
 
   EXPECT_CALL(*context, RetireTextureId(texture_id)).Times(1);
   resource_provider->DeleteResource(id);
@@ -2944,13 +3023,13 @@ INSTANTIATE_TEST_CASE_P(
 
 class TextureIdAllocationTrackingContext : public TestWebGraphicsContext3D {
  public:
-  virtual WebKit::WebGLId NextTextureId() OVERRIDE {
+  virtual blink::WebGLId NextTextureId() OVERRIDE {
     base::AutoLock lock(namespace_->lock);
     return namespace_->next_texture_id++;
   }
-  virtual void RetireTextureId(WebKit::WebGLId) OVERRIDE {
+  virtual void RetireTextureId(blink::WebGLId) OVERRIDE {
   }
-  WebKit::WebGLId PeekTextureId() {
+  blink::WebGLId PeekTextureId() {
     base::AutoLock lock(namespace_->lock);
     return namespace_->next_texture_id;
   }

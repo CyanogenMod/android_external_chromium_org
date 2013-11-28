@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
@@ -22,26 +23,27 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/csp_handler.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/web_accessible_resources_handler.h"
 #include "chrome/common/extensions/webview_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/file_util.h"
+#include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/csp_info.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "grit/component_extension_resources_map.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
@@ -54,6 +56,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "url/url_util.h"
 
+using content::BrowserThread;
 using content::ResourceRequestInfo;
 using extensions::Extension;
 using extensions::SharedModuleInfo;
@@ -98,21 +101,6 @@ net::HttpResponseHeaders* BuildHttpHeaders(
   return new net::HttpResponseHeaders(raw_headers);
 }
 
-void ReadMimeTypeFromFile(const base::FilePath& filename,
-                          std::string* mime_type,
-                          bool* result) {
-  *result = net::GetMimeTypeFromFile(filename, mime_type);
-}
-
-void GetLastModifiedTime(const base::FilePath& filename,
-                         base::Time* last_modified_time) {
-  if (base::PathExists(filename)) {
-    base::PlatformFileInfo info;
-    if (file_util::GetFileInfo(filename, &info))
-      *last_modified_time = info.last_modified;
-  }
-}
-
 class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
  public:
   URLRequestResourceBundleJob(net::URLRequest* request,
@@ -145,17 +133,15 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
         base::UintToString(data->size()).c_str()));
 
     std::string* read_mime_type = new std::string;
-    bool* read_result = new bool;
-    bool posted = content::BrowserThread::PostBlockingPoolTaskAndReply(
+    bool posted = base::PostTaskAndReplyWithResult(
+        BrowserThread::GetBlockingPool(),
         FROM_HERE,
-        base::Bind(&ReadMimeTypeFromFile, filename_,
-                   base::Unretained(read_mime_type),
-                   base::Unretained(read_result)),
+        base::Bind(&net::GetMimeTypeFromFile, filename_,
+                   base::Unretained(read_mime_type)),
         base::Bind(&URLRequestResourceBundleJob::OnMimeTypeRead,
                    weak_factory_.GetWeakPtr(),
                    mime_type, charset, data,
                    base::Owned(read_mime_type),
-                   base::Owned(read_result),
                    callback));
     DCHECK(posted);
 
@@ -173,8 +159,8 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
                       std::string* charset,
                       std::string* data,
                       std::string* read_mime_type,
-                      bool* read_result,
-                      const net::CompletionCallback& callback) {
+                      const net::CompletionCallback& callback,
+                      bool read_result) {
     *out_mime_type = *read_mime_type;
     if (StartsWithASCII(*read_mime_type, "text/", false)) {
       // All of our HTML files should be UTF-8 and for other resource types
@@ -182,7 +168,7 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
       DCHECK(IsStringUTF8(*data));
       *charset = "utf-8";
     }
-    int result = *read_result? net::OK: net::ERR_INVALID_URL;
+    int result = read_result ? net::OK : net::ERR_INVALID_URL;
     callback.Run(result);
   }
 
@@ -243,12 +229,51 @@ class GeneratedBackgroundPageJob : public net::URLRequestSimpleJob {
   net::HttpResponseInfo response_info_;
 };
 
+base::Time GetFileLastModifiedTime(const base::FilePath& filename) {
+  if (base::PathExists(filename)) {
+    base::PlatformFileInfo info;
+    if (file_util::GetFileInfo(filename, &info))
+      return info.last_modified;
+  }
+  return base::Time();
+}
+
+base::Time GetFileCreationTime(const base::FilePath& filename) {
+  if (base::PathExists(filename)) {
+    base::PlatformFileInfo info;
+    if (file_util::GetFileInfo(filename, &info))
+      return info.creation_time;
+  }
+  return base::Time();
+}
+
 void ReadResourceFilePathAndLastModifiedTime(
     const extensions::ExtensionResource& resource,
+    const base::FilePath& directory,
     base::FilePath* file_path,
     base::Time* last_modified_time) {
   *file_path = resource.GetFilePath();
-  GetLastModifiedTime(*file_path, last_modified_time);
+  *last_modified_time = GetFileLastModifiedTime(*file_path);
+  // While we're here, log the delta between extension directory
+  // creation time and the resource's last modification time.
+  base::ElapsedTimer query_timer;
+  base::Time dir_creation_time = GetFileCreationTime(directory);
+  UMA_HISTOGRAM_TIMES("Extensions.ResourceDirectoryTimestampQueryLatency",
+                      query_timer.Elapsed());
+  int64 delta_seconds = (*last_modified_time - dir_creation_time).InSeconds();
+  if (delta_seconds >= 0) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ResourceLastModifiedDelta",
+                                delta_seconds,
+                                0,
+                                base::TimeDelta::FromDays(30).InSeconds(),
+                                50);
+  } else {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ResourceLastModifiedNegativeDelta",
+                                -delta_seconds,
+                                1,
+                                base::TimeDelta::FromDays(30).InSeconds(),
+                                50);
+  }
 }
 
 class URLRequestExtensionJob : public net::URLRequestFileJob {
@@ -262,9 +287,9 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
                          bool send_cors_header)
     : net::URLRequestFileJob(
           request, network_delegate, base::FilePath(),
-          content::BrowserThread::GetBlockingPool()->
-              GetTaskRunnerWithShutdownBehavior(
+          BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
                   base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)),
+      directory_path_(directory_path),
       // TODO(tc): Move all of these files into resources.pak so we don't break
       // when updating on Linux.
       resource_(extension_id, directory_path, relative_path),
@@ -280,9 +305,10 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
   virtual void Start() OVERRIDE {
     base::FilePath* read_file_path = new base::FilePath;
     base::Time* last_modified_time = new base::Time();
-    bool posted = content::BrowserThread::PostBlockingPoolTaskAndReply(
+    bool posted = BrowserThread::PostBlockingPoolTaskAndReply(
         FROM_HERE,
         base::Bind(&ReadResourceFilePathAndLastModifiedTime, resource_,
+                   directory_path_,
                    base::Unretained(read_file_path),
                    base::Unretained(last_modified_time)),
         base::Bind(&URLRequestExtensionJob::OnFilePathAndLastModifiedTimeRead,
@@ -306,6 +332,7 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
   }
 
   net::HttpResponseInfo response_info_;
+  base::FilePath directory_path_;
   extensions::ExtensionResource resource_;
   std::string content_security_policy_;
   bool send_cors_header_;
@@ -314,7 +341,7 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
 
 bool ExtensionCanLoadInIncognito(const ResourceRequestInfo* info,
                                  const std::string& extension_id,
-                                 ExtensionInfoMap* extension_info_map) {
+                                 extensions::InfoMap* extension_info_map) {
   if (!extension_info_map->IsIncognitoEnabled(extension_id))
     return false;
 
@@ -336,7 +363,7 @@ bool ExtensionCanLoadInIncognito(const ResourceRequestInfo* info,
 bool AllowExtensionResourceLoad(net::URLRequest* request,
                                 bool is_incognito,
                                 const Extension* extension,
-                                ExtensionInfoMap* extension_info_map) {
+                                extensions::InfoMap* extension_info_map) {
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
 
   // We have seen crashes where info is NULL: crbug.com/52374.
@@ -452,9 +479,8 @@ class ExtensionProtocolHandler
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
   ExtensionProtocolHandler(bool is_incognito,
-                           ExtensionInfoMap* extension_info_map)
-      : is_incognito_(is_incognito),
-        extension_info_map_(extension_info_map) {}
+                           extensions::InfoMap* extension_info_map)
+      : is_incognito_(is_incognito), extension_info_map_(extension_info_map) {}
 
   virtual ~ExtensionProtocolHandler() {}
 
@@ -464,7 +490,7 @@ class ExtensionProtocolHandler
 
  private:
   const bool is_incognito_;
-  ExtensionInfoMap* const extension_info_map_;
+  extensions::InfoMap* const extension_info_map_;
   DISALLOW_COPY_AND_ASSIGN(ExtensionProtocolHandler);
 };
 
@@ -531,7 +557,7 @@ ExtensionProtocolHandler::MaybeCreateJob(
       // extension relative path against resources_path.
       resources_path.AppendRelativePath(directory_path, &relative_path)) {
     base::FilePath request_path =
-        extension_file_util::ExtensionURLToRelativeFilePath(request->url());
+        extensions::file_util::ExtensionURLToRelativeFilePath(request->url());
     int resource_id;
     if (extensions::ImageLoader::IsComponentExtensionResource(
         directory_path, request_path, &resource_id)) {
@@ -548,7 +574,7 @@ ExtensionProtocolHandler::MaybeCreateJob(
   }
 
   relative_path =
-      extension_file_util::ExtensionURLToRelativeFilePath(request->url());
+      extensions::file_util::ExtensionURLToRelativeFilePath(request->url());
 
   if (SharedModuleInfo::IsImportedPath(path)) {
     std::string new_extension_id;
@@ -599,6 +625,6 @@ ExtensionProtocolHandler::MaybeCreateJob(
 
 net::URLRequestJobFactory::ProtocolHandler* CreateExtensionProtocolHandler(
     bool is_incognito,
-    ExtensionInfoMap* extension_info_map) {
+    extensions::InfoMap* extension_info_map) {
   return new ExtensionProtocolHandler(is_incognito, extension_info_map);
 }

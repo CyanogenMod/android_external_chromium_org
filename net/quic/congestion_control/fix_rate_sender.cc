@@ -25,14 +25,17 @@ FixRateSender::FixRateSender(const QuicClock* clock)
       paced_sender_(bitrate_, max_segment_size_),
       data_in_flight_(0),
       latest_rtt_(QuicTime::Delta::Zero()) {
-  DLOG(INFO) << "FixRateSender";
+  DVLOG(1) << "FixRateSender";
 }
 
 FixRateSender::~FixRateSender() {
 }
 
 void FixRateSender::SetFromConfig(const QuicConfig& config, bool is_server) {
-  max_segment_size_ = config.server_max_packet_size();
+}
+
+void FixRateSender::SetMaxPacketSize(QuicByteCount max_packet_size) {
+  max_segment_size_ = max_packet_size;
   paced_sender_.set_max_segment_size(max_segment_size_);
 }
 
@@ -51,7 +54,7 @@ void FixRateSender::OnIncomingQuicCongestionFeedbackFrame(
   // Silently ignore invalid messages in release mode.
 }
 
-void FixRateSender::OnIncomingAck(
+void FixRateSender::OnPacketAcked(
     QuicPacketSequenceNumber /*acked_sequence_number*/,
     QuicByteCount bytes_acked,
     QuicTime::Delta rtt) {
@@ -65,7 +68,8 @@ void FixRateSender::OnIncomingAck(
   latest_rtt_ = rtt;
 }
 
-void FixRateSender::OnIncomingLoss(QuicTime /*ack_receive_time*/) {
+void FixRateSender::OnPacketLost(QuicPacketSequenceNumber /*sequence_number*/,
+                                 QuicTime /*ack_receive_time*/) {
   // Ignore losses for fix rate sender.
 }
 
@@ -82,6 +86,8 @@ bool FixRateSender::OnPacketSent(
   }
   return true;
 }
+
+void FixRateSender::OnRetransmissionTimeout() { }
 
 void FixRateSender::OnPacketAbandoned(
     QuicPacketSequenceNumber /*sequence_number*/,
@@ -115,22 +121,22 @@ QuicByteCount FixRateSender::CongestionWindow() {
   return std::max(kDefaultMaxPacketSize, window_size_bytes);
 }
 
-QuicBandwidth FixRateSender::BandwidthEstimate() {
+QuicBandwidth FixRateSender::BandwidthEstimate() const {
   return bitrate_;
 }
 
-QuicTime::Delta FixRateSender::SmoothedRtt() {
+QuicTime::Delta FixRateSender::SmoothedRtt() const {
   // TODO(satyamshekhar): Calculate and return smoothed rtt.
   return latest_rtt_;
 }
 
-QuicTime::Delta FixRateSender::RetransmissionDelay() {
+QuicTime::Delta FixRateSender::RetransmissionDelay() const {
   // TODO(pwestin): Calculate and return retransmission delay.
   // Use 2 * the latest RTT for now.
   return latest_rtt_.Add(latest_rtt_);
 }
 
-QuicByteCount FixRateSender::GetCongestionWindow() {
+QuicByteCount FixRateSender::GetCongestionWindow() const {
   return 0;
 }
 

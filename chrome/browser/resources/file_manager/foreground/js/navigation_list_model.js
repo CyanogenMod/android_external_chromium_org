@@ -6,7 +6,7 @@
 
 /**
  * Entry of NavigationListModel. This constructor should be called only from
- * the helper methods (NavigationModelItem.createFromPath/createFromEntry).
+ * the helper methods (NavigationModelItem.create).
  *
  * @param {string} path Path.
  * @param {DirectoryEntry} entry Entry. Can be null.
@@ -38,39 +38,34 @@ NavigationModelItem.prototype.getCachedEntry = function() {
 /**
  * @param {VolumeManagerWrapper} volumeManager VolumeManagerWrapper instance.
  * @param {string} path Path.
+ * @param {DirectoryEntry} entry Entry. Can be null.
  * @param {function(FileError)} errorCallback Called when the resolving is
  *     failed with the error.
  * @return {NavigationModelItem} Created NavigationModelItem.
  */
-NavigationModelItem.createFromPath = function(
-    volumeManager, path, errorCallback) {
-  var item = new NavigationModelItem(path, null);
-  item.resolvingQueue_.run(function(continueCallback) {
-    volumeManager.resolvePath(
-        path,
-        function(entry) {
-          if (entry.isDirectory)
-            item.entry_ = entry;
-          else
-            errorCallback(util.createFileError(FileError.TYPE_MISMATCH_ERR));
-          continueCallback();
-        },
-        function(error) {
-          errorCallback(error);
-          continueCallback();
-        });
-  });
-  return item;
-};
+NavigationModelItem.create = function(
+    volumeManager, path, entry, errorCallback) {
+  var item = new NavigationModelItem(path, entry);
 
-/**
- * @param {DirectoryEntry} entry Entry. Can be null.
- * @return {NavigationModelItem} Created NavigationModelItem.
- */
-NavigationModelItem.createFromEntry = function(entry) {
-  if (!entry)
-    return null;
-  return new NavigationModelItem(entry.fullPath, entry);
+  // If the given entry is null, try to resolve path to get an entry.
+  if (!entry) {
+    item.resolvingQueue_.run(function(continueCallback) {
+      volumeManager.resolvePath(
+          path,
+          function(entry) {
+            if (entry.isDirectory)
+              item.entry_ = entry;
+            else
+              errorCallback(util.createFileError(FileError.TYPE_MISMATCH_ERR));
+            continueCallback();
+          },
+          function(error) {
+            errorCallback(error);
+            continueCallback();
+          });
+    });
+  }
+  return item;
 };
 
 /**
@@ -111,19 +106,25 @@ function NavigationListModel(volumeManager, shortcutListModel) {
   var volumeInfoToModelItem = function(volumeInfo) {
     if (volumeInfo.volumeType == util.VolumeType.DRIVE) {
       // For drive volume, we assign the path to "My Drive".
-      return NavigationModelItem.createFromPath(
+      return NavigationModelItem.create(
           this.volumeManager_,
           volumeInfo.mountPath + '/root',
+          null,
           function() {});
     } else {
-      return NavigationModelItem.createFromEntry(volumeInfo.root);
+      return NavigationModelItem.create(
+          this.volumeManager_,
+          volumeInfo.mountPath,
+          volumeInfo.root,
+          function() {});
     }
   }.bind(this);
 
   var pathToModelItem = function(path) {
-    var item = NavigationModelItem.createFromPath(
+    var item = NavigationModelItem.create(
         this.volumeManager_,
         path,
+        null,  // Entry will be resolved.
         function(error) {
           if (error.code == FileError.NOT_FOUND_ERR)
             this.onItemNotFoundError(item);
@@ -149,10 +150,7 @@ function NavigationListModel(volumeManager, shortcutListModel) {
   this.shortcutList_ = [];
   for (var i = 0; i < this.shortcutListModel_.length; i++) {
     var shortcutPath = this.shortcutListModel_.item(i);
-    var mountPath = PathUtil.isDriveBasedPath(shortcutPath) ?
-        RootDirectory.DRIVE :
-        PathUtil.getRootPath(shortcutPath);
-    var volumeInfo = this.volumeManager_.getVolumeInfo(mountPath);
+    var volumeInfo = this.volumeManager_.getVolumeInfo(shortcutPath);
     var isMounted = volumeInfo && !volumeInfo.error;
     if (isMounted)
       this.shortcutList_.push(pathToModelItem(shortcutPath));
@@ -215,10 +213,7 @@ function NavigationListModel(volumeManager, shortcutListModel) {
       }
 
       // Check if the volume where the shortcutPath is is mounted or not.
-      var mountPath = PathUtil.isDriveBasedPath(shortcutPath) ?
-          RootDirectory.DRIVE :
-          PathUtil.getRootPath(shortcutPath);
-      var volumeInfo = this.volumeManager_.getVolumeInfo(mountPath);
+      var volumeInfo = this.volumeManager_.getVolumeInfo(shortcutPath);
       var isMounted = volumeInfo && !volumeInfo.error;
       if (cmp == 0) {
         // There exists an old NavigationModelItem instance.
@@ -241,10 +236,7 @@ function NavigationListModel(volumeManager, shortcutListModel) {
     // Add remaining (new) shortcuts if necessary.
     for (; modelIndex < this.shortcutListModel_.length; modelIndex++) {
       var shortcutPath = this.shortcutListModel_.item(modelIndex);
-      var mountPath = PathUtil.isDriveBasedPath(shortcutPath) ?
-          RootDirectory.DRIVE :
-          PathUtil.getRootPath(shortcutPath);
-      var volumeInfo = this.volumeManager_.getVolumeInfo(mountPath);
+      var volumeInfo = this.volumeManager_.getVolumeInfo(shortcutPath);
       var isMounted = volumeInfo && !volumeInfo.error;
       if (isMounted)
         newList.push(pathToModelItem(shortcutPath));

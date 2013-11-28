@@ -4,6 +4,7 @@
 
 #include "ash/test/shell_test_api.h"
 
+#include "ash/launcher/launcher_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 
@@ -44,8 +45,8 @@ AshNativeCursorManager* ShellTestApi::ash_native_cursor_manager() {
   return shell_->native_cursor_manager_;
 }
 
-LauncherModel* ShellTestApi::launcher_model() {
-  return shell_->launcher_model_.get();
+ShelfModel* ShellTestApi::shelf_model() {
+  return shell_->shelf_model_.get();
 }
 
 internal::DragDropController* ShellTestApi::drag_drop_controller() {
@@ -64,6 +65,10 @@ void ShellTestApi::DisableOutputConfiguratorAnimation() {
     shell_->output_configurator_animation_.reset();
   }
 #endif  // defined(OS_CHROMEOS)
+}
+
+void ShellTestApi::SetLauncherDelegate(LauncherDelegate* delegate) {
+  shell_->launcher_delegate_.reset(delegate);
 }
 
 }  // namespace test

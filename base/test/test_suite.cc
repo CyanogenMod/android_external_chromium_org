@@ -7,6 +7,7 @@
 #include "base/at_exit.h"
 #include "base/base_paths.h"
 #include "base/base_switches.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/debug_on_start_win.h"
 #include "base/debug/debugger.h"
@@ -19,10 +20,12 @@
 #include "base/path_service.h"
 #include "base/process/memory.h"
 #include "base/test/gtest_xml_util.h"
+#include "base/test/launcher/unit_test_launcher.h"
 #include "base/test/multiprocess_test.h"
 #include "base/test/test_switches.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
 
@@ -81,6 +84,16 @@ class TestClientInitializer : public testing::EmptyTestEventListener {
 
 }  // namespace
 
+namespace base {
+
+int RunUnitTestsUsingBaseTestSuite(int argc, char **argv) {
+  TestSuite test_suite(argc, argv);
+  return base::LaunchUnitTests(
+      argc, argv, Bind(&TestSuite::Run, Unretained(&test_suite)));
+}
+
+}  // namespace base
+
 TestSuite::TestSuite(int argc, char** argv) : initialized_command_line_(false) {
   PreInitialize(argc, argv, true);
 }
@@ -104,6 +117,7 @@ void TestSuite::PreInitialize(int argc, char** argv,
   base::EnableTerminationOnHeapCorruption();
   initialized_command_line_ = CommandLine::Init(argc, argv);
   testing::InitGoogleTest(&argc, argv);
+  testing::InitGoogleMock(&argc, argv);
 #if defined(OS_LINUX) && defined(USE_AURA)
   // When calling native char conversion functions (e.g wrctomb) we need to
   // have the locale set. In the absence of such a call the "C" locale is the

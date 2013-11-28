@@ -12,11 +12,6 @@ namespace {
 
 typedef std::set<const Config*> ConfigSet;
 
-void TargetResolvedThunk(const base::Callback<void(const Target*)>& cb,
-                         const Target* t) {
-  cb.Run(t);
-}
-
 // Merges the dependent configs from the given target to the given config list.
 // The unique_configs list is used for de-duping so values already added will
 // not be added again.
@@ -60,9 +55,7 @@ Target::Target(const Settings* settings, const Label& label)
     : Item(settings, label),
       output_type_(UNKNOWN),
       hard_dep_(false),
-      external_(false),
-      generated_(false),
-      generator_function_(NULL) {
+      external_(false) {
 }
 
 Target::~Target() {
@@ -152,23 +145,6 @@ void Target::OnResolved() {
     // pulled from G to A in case G has configs directly on it).
     PullDependentTargetInfo(&unique_configs);
   }
-
-  // Mark as resolved.
-  if (!settings()->build_settings()->target_resolved_callback().is_null()) {
-    g_scheduler->ScheduleWork(base::Bind(&TargetResolvedThunk,
-        settings()->build_settings()->target_resolved_callback(),
-        this));
-  }
-}
-
-bool Target::HasBeenGenerated() const {
-  return generated_;
-}
-
-void Target::SetGenerated(const Token* token) {
-  DCHECK(!generated_);
-  generated_ = true;
-  generator_function_ = token;
 }
 
 bool Target::IsLinkable() const {
@@ -190,11 +166,8 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
       inherited_libraries_.insert(dep);
 
     // Inherited libraries and flags are inherited across static library
-    // boundaries. For external targets, assume that the external_link_deps
-    // will take care of this.
-    if ((!dep->external() ||
-         !settings()->build_settings()->using_external_generator()) &&
-        dep->output_type() != SHARED_LIBRARY &&
+    // boundaries.
+    if (dep->output_type() != SHARED_LIBRARY &&
         dep->output_type() != EXECUTABLE) {
       const std::set<const Target*> inherited = dep->inherited_libraries();
       for (std::set<const Target*>::const_iterator i = inherited.begin();

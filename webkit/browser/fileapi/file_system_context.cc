@@ -23,6 +23,7 @@
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/isolated_file_system_backend.h"
 #include "webkit/browser/fileapi/mount_points.h"
+#include "webkit/browser/fileapi/quota/quota_reservation.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
@@ -191,6 +192,18 @@ bool FileSystemContext::DeleteDataForOriginOnFileThread(
   return success;
 }
 
+scoped_refptr<QuotaReservation>
+FileSystemContext::CreateQuotaReservationOnFileTaskRunner(
+    const GURL& origin_url,
+    FileSystemType type) {
+  DCHECK(default_file_task_runner()->RunsTasksOnCurrentThread());
+  FileSystemBackend* backend = GetFileSystemBackend(type);
+  if (!backend || !backend->GetQuotaUtil())
+    return scoped_refptr<QuotaReservation>();
+  return backend->GetQuotaUtil()->CreateQuotaReservationOnFileTaskRunner(
+      origin_url, type);
+}
+
 void FileSystemContext::Shutdown() {
   if (!io_task_runner_->RunsTasksOnCurrentThread()) {
     io_task_runner_->PostTask(
@@ -335,7 +348,7 @@ void FileSystemContext::ResolveURL(
 void FileSystemContext::DeleteFileSystem(
     const GURL& origin_url,
     FileSystemType type,
-    const DeleteFileSystemCallback& callback) {
+    const StatusCallback& callback) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin_url == origin_url.GetOrigin());
   DCHECK(!callback.is_null());
@@ -426,12 +439,13 @@ bool FileSystemContext::CanServeURLRequest(const FileSystemURL& url) const {
 void FileSystemContext::OpenPluginPrivateFileSystem(
     const GURL& origin_url,
     FileSystemType type,
+    const std::string& filesystem_id,
     const std::string& plugin_id,
     OpenFileSystemMode mode,
-    const OpenPluginPrivateFileSystemCallback& callback) {
+    const StatusCallback& callback) {
   DCHECK(plugin_private_backend_);
   plugin_private_backend_->OpenPrivateFileSystem(
-      origin_url, type, plugin_id, mode, callback);
+      origin_url, type, filesystem_id, plugin_id, mode, callback);
 }
 
 FileSystemContext::~FileSystemContext() {

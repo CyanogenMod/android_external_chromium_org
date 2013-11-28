@@ -25,13 +25,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif
 
-using WebKit::WebURLError;
+using blink::WebURLError;
 
 // Some error pages have no details.
 const unsigned int kErrorPagesNoDetails = 0;
@@ -770,7 +769,7 @@ void LocalizedError::GetStrings(int error_code,
   error_strings->Set("suggestions", suggestions);
 }
 
-string16 LocalizedError::GetErrorDetails(const WebKit::WebURLError& error,
+string16 LocalizedError::GetErrorDetails(const blink::WebURLError& error,
                                          bool is_post) {
   const LocalizedErrorMap* error_map =
       LookupErrorMap(error.domain.utf8(), error.reason, is_post);

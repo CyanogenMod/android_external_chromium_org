@@ -18,7 +18,8 @@
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/navigation_controller_delegate.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
-#include "content/browser/frame_host/render_view_host_manager.h"
+#include "content/browser/frame_host/navigator_delegate.h"
+#include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/common/content_export.h"
@@ -48,6 +49,7 @@ class DownloadItem;
 class InterstitialPageImpl;
 class JavaBridgeDispatcherHostManager;
 class JavaScriptDialogManager;
+class Navigator;
 class PowerSaveBlocker;
 class RenderViewHost;
 class RenderViewHostDelegateView;
@@ -77,9 +79,10 @@ class CONTENT_EXPORT WebContentsImpl
     : public NON_EXPORTED_BASE(WebContents),
       public RenderViewHostDelegate,
       public RenderWidgetHostDelegate,
-      public RenderViewHostManager::Delegate,
+      public RenderFrameHostManager::Delegate,
       public NotificationObserver,
-      public NON_EXPORTED_BASE(NavigationControllerDelegate) {
+      public NON_EXPORTED_BASE(NavigationControllerDelegate),
+      public NON_EXPORTED_BASE(NavigatorDelegate) {
  public:
   virtual ~WebContentsImpl();
 
@@ -125,7 +128,7 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Expose the render manager for testing.
-  RenderViewHostManager* GetRenderManagerForTesting();
+  RenderFrameHostManager* GetRenderManagerForTesting();
 
   // Returns guest browser plugin object, or NULL if this WebContents is not a
   // guest.
@@ -154,7 +157,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Informs the render view host and the BrowserPluginEmbedder, if present, of
   // a Drag Source End.
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
-      int screen_y, WebKit::WebDragOperation operation);
+      int screen_y, blink::WebDragOperation operation);
 
   // Informs the render view host and the BrowserPluginEmbedder, if present, of
   // a Drag Source Move.
@@ -407,7 +410,7 @@ class CONTENT_EXPORT WebContentsImpl
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) OVERRIDE;
   virtual void CreateNewWidget(int route_id,
-                               WebKit::WebPopupType popup_type) OVERRIDE;
+                               blink::WebPopupType popup_type) OVERRIDE;
   virtual void CreateNewFullscreenWidget(int route_id) OVERRIDE;
   virtual void ShowCreatedWindow(int route_id,
                                  WindowOpenDisposition disposition,
@@ -434,13 +437,13 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void HandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool PreHandleWheelEvent(
-      const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+      const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
 
-  // RenderViewHostManager::Delegate -------------------------------------------
+  // RenderFrameHostManager::Delegate ------------------------------------------
 
   virtual bool CreateRenderViewForRenderManager(
       RenderViewHost* render_view_host, int opener_route_id) OVERRIDE;
@@ -538,9 +541,11 @@ class CONTENT_EXPORT WebContentsImpl
                             bool is_loading,
                             LoadNotificationDetails* details) OVERRIDE;
 
+  typedef base::Callback<void(WebContents*)> CreatedCallback;
 
  private:
   friend class NavigationControllerImpl;
+  friend class TestNavigationObserver;
   friend class WebContentsObserver;
   friend class WebContents;  // To implement factory methods.
 
@@ -553,7 +558,7 @@ class CONTENT_EXPORT WebContentsImpl
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, FrameTreeShape);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewHostManagerTest, PageDoesBackAndReload);
+  FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest, PageDoesBackAndReload);
 
   // So InterstitialPageImpl can access SetIsLoading.
   friend class InterstitialPageImpl;
@@ -567,10 +572,9 @@ class CONTENT_EXPORT WebContentsImpl
   WebContentsImpl(BrowserContext* browser_context,
                   WebContentsImpl* opener);
 
-  // Add and remove observers for page navigation notifications. Adding or
-  // removing multiple times has no effect. The order in which notifications
-  // are sent to observers is undefined. Clients must be sure to remove the
-  // observer before they go away.
+  // Add and remove observers for page navigation notifications. The order in
+  // which notifications are sent to observers is undefined. Clients must be
+  // sure to remove the observer before they go away.
   void AddObserver(WebContentsObserver* observer);
   void RemoveObserver(WebContentsObserver* observer);
 
@@ -661,7 +665,7 @@ class CONTENT_EXPORT WebContentsImpl
                           const std::vector<gfx::Size>& original_bitmap_sizes);
   void OnUpdateFaviconURL(int32 page_id,
                           const std::vector<FaviconURL>& candidates);
-
+  void OnFirstVisuallyNonEmptyPaint(int32 page_id);
   void OnMediaNotification(int64 player_cookie,
                            bool has_video,
                            bool has_audio,
@@ -724,7 +728,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Helper for CreateNewWidget/CreateNewFullscreenWidget.
   void CreateNewWidget(int route_id,
                        bool is_fullscreen,
-                       WebKit::WebPopupType popup_type);
+                       blink::WebPopupType popup_type);
 
   // Helper for ShowCreatedWidget/ShowCreatedFullscreenWidget.
   void ShowCreatedWidget(int route_id,
@@ -755,6 +759,10 @@ class CONTENT_EXPORT WebContentsImpl
 
   void SetEncoding(const std::string& encoding);
 
+  // TODO(creis): This should take in a FrameTreeNode to know which node's
+  // render manager to return.  For now, we just return the root's.
+  RenderFrameHostManager* GetRenderManager() const;
+
   RenderViewHostImpl* GetRenderViewHostImpl();
 
   // Removes browser plugin embedder if there is one.
@@ -770,6 +778,11 @@ class CONTENT_EXPORT WebContentsImpl
   gfx::Size GetSizeForNewRenderView() const;
 
   void OnFrameRemoved(RenderViewHostImpl* render_view_host, int64 frame_id);
+
+  // Adds/removes a callback called on creation of each new WebContents.
+  // Deprecated, about to remove.
+  static void AddCreatedCallback(const CreatedCallback& callback);
+  static void RemoveCreatedCallback(const CreatedCallback& callback);
 
   // Data for core operation ---------------------------------------------------
 
@@ -801,7 +814,7 @@ class CONTENT_EXPORT WebContentsImpl
   DestructionObservers destruction_observers_;
 
   // A list of observers notified when page state changes. Weak references.
-  // This MUST be listed above render_manager_ since at destruction time the
+  // This MUST be listed above frame_tree_ since at destruction time the
   // latter might cause RenderViewHost's destructor to call us and we might use
   // the observer list then.
   ObserverList<WebContentsObserver> observers_;
@@ -823,10 +836,7 @@ class CONTENT_EXPORT WebContentsImpl
       PowerSaveBlockerMap;
   PowerSaveBlockerMap power_save_blockers_;
 
-  // Manages creation and swapping of render views.
-  RenderViewHostManager render_manager_;
-
-  // The frame tree structure of the current page.
+  // Manages the frame tree of the page and process swaps in each node.
   FrameTree frame_tree_;
 
 #if defined(OS_ANDROID)

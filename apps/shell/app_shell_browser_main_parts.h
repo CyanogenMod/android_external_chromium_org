@@ -15,12 +15,12 @@ class ShellBrowserContext;
 struct MainFunctionParams;
 }
 
-namespace shell {
-class MinimalShell;
-}
-
 namespace views {
 class ViewsDelegate;
+}
+
+namespace wm {
+class WMTestHelper;
 }
 
 namespace apps {
@@ -48,7 +48,7 @@ class AppShellBrowserMainParts : public content::BrowserMainParts {
   scoped_ptr<content::ShellBrowserContext> browser_context_;
 
   // Enable a minimal set of views::corewm to be initialized.
-  scoped_ptr<shell::MinimalShell> minimal_shell_;
+  scoped_ptr<wm::WMTestHelper> wm_test_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(AppShellBrowserMainParts);
 };

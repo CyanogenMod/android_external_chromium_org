@@ -219,18 +219,18 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
 
           const char* kModes[] = { "readonly", "readwrite", "versionchange" };
           transaction_info->SetString("mode", kModes[transaction->mode()]);
-          switch (transaction->queue_status()) {
+          switch (transaction->state()) {
             case IndexedDBTransaction::CREATED:
-              transaction_info->SetString("status", "created");
-              break;
-            case IndexedDBTransaction::BLOCKED:
               transaction_info->SetString("status", "blocked");
               break;
-            case IndexedDBTransaction::UNBLOCKED:
-              if (transaction->IsRunning())
+            case IndexedDBTransaction::STARTED:
+              if (transaction->diagnostics().tasks_scheduled > 0)
                 transaction_info->SetString("status", "running");
               else
                 transaction_info->SetString("status", "started");
+              break;
+            case IndexedDBTransaction::FINISHED:
+              transaction_info->SetString("status", "finished");
               break;
           }
 
@@ -244,16 +244,16 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
                   transaction->id()));
           transaction_info->SetDouble(
               "age",
-              (base::Time::Now() - transaction->creation_time())
+              (base::Time::Now() - transaction->diagnostics().creation_time)
                   .InMillisecondsF());
           transaction_info->SetDouble(
               "runtime",
-              (base::Time::Now() - transaction->start_time())
+              (base::Time::Now() - transaction->diagnostics().start_time)
                   .InMillisecondsF());
-          transaction_info->SetDouble("tasks_scheduled",
-                                      transaction->tasks_scheduled());
-          transaction_info->SetDouble("tasks_completed",
-                                      transaction->tasks_completed());
+          transaction_info->SetDouble(
+              "tasks_scheduled", transaction->diagnostics().tasks_scheduled);
+          transaction_info->SetDouble(
+              "tasks_completed", transaction->diagnostics().tasks_completed);
 
           scoped_ptr<ListValue> scope(new ListValue());
           for (std::set<int64>::const_iterator scope_it =

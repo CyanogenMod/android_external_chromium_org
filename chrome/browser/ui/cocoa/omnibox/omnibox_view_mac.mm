@@ -7,6 +7,7 @@
 #include <Carbon/Carbon.h>  // kVK_Return
 
 #include "base/mac/foundation_util.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -514,6 +515,9 @@ bool OmniboxViewMac::OnInlineAutocompleteTextMaybeChanged(
   return true;
 }
 
+void OmniboxViewMac::OnInlineAutocompleteTextCleared() {
+}
+
 void OmniboxViewMac::OnRevertTemporaryText() {
   SetSelectedRange(saved_temporary_selection_);
   // We got here because the user hit the Escape key. We explicitly don't call
@@ -801,6 +805,9 @@ void OmniboxViewMac::CopyToPasteboard(NSPasteboard* pb) {
                                &write_url);
   }
 
+  if (IsSelectAll())
+    UMA_HISTOGRAM_COUNTS(OmniboxEditModel::kCutOrCopyAllTextHistogram, 1);
+
   NSString* nstext = base::SysUTF16ToNSString(text);
   [pb declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
   [pb setString:nstext forType:NSStringPboardType];
@@ -836,7 +843,7 @@ void OmniboxViewMac::OnPaste() {
   const NSRange selectedRange = GetSelectedRange();
   if ([editor shouldChangeTextInRange:selectedRange replacementString:s]) {
     // Record this paste, so we can do different behavior.
-    model()->on_paste();
+    model()->OnPaste();
 
     // Force a Paste operation to trigger the text_changed code in
     // OnAfterPossibleChange(), even if identical contents are pasted

@@ -16,7 +16,6 @@
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/libgtk2ui/app_indicator_icon.h"
 #include "chrome/browser/ui/libgtk2ui/chrome_gtk_frame.h"
-#include "chrome/browser/ui/libgtk2ui/gconf_titlebar_listener.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/native_theme_gtk2.h"
 #include "chrome/browser/ui/libgtk2ui/select_file_dialog_impl.h"
@@ -38,6 +37,10 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/views/linux_ui/window_button_order_observer.h"
 
+#if defined(USE_GCONF)
+#include "chrome/browser/ui/libgtk2ui/gconf_titlebar_listener.h"
+#endif
+
 // A minimized port of GtkThemeService into something that can provide colors
 // and images for aura.
 //
@@ -53,6 +56,20 @@
 // - Everything else that we're not doing.
 
 namespace {
+
+struct GObjectDeleter {
+  void operator()(void* ptr) {
+    g_object_unref(ptr);
+  }
+};
+struct GtkIconInfoDeleter {
+  void operator()(GtkIconInfo* ptr) {
+    gtk_icon_info_free(ptr);
+  }
+};
+typedef scoped_ptr<GIcon, GObjectDeleter> ScopedGIcon;
+typedef scoped_ptr<GtkIconInfo, GtkIconInfoDeleter> ScopedGtkIconInfo;
+typedef scoped_ptr<GdkPixbuf, GObjectDeleter> ScopedGdkPixbuf;
 
 // Prefix for app indicator ids
 const char kAppIndicatorIdPrefix[] = "chrome_app_indicator_";
@@ -293,7 +310,7 @@ color_utils::HSL GetDefaultTint(int id) {
 
 namespace libgtk2ui {
 
-Gtk2UI::Gtk2UI() {
+Gtk2UI::Gtk2UI() : use_gtk_(false) {
   GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
 }
 
@@ -316,8 +333,10 @@ void Gtk2UI::Initialize() {
   LoadGtkValues();
   SetXDGIconTheme();
 
+#if defined(USE_GCONF)
   // We must build this after GTK gets initialized.
   titlebar_listener_.reset(new GConfTitlebarListener(this));
+#endif  // defined(USE_GCONF)
 
   indicators_count = 0;
 }
@@ -329,10 +348,6 @@ Gtk2UI::~Gtk2UI() {
   fake_entry_.Destroy();
 
   ClearAllThemeData();
-}
-
-bool Gtk2UI::UseNativeTheme() const {
-  return true;
 }
 
 gfx::Image Gtk2UI::GetThemeImageNamed(int id) const {
@@ -418,7 +433,12 @@ double Gtk2UI::GetCursorBlinkInterval() const {
 }
 
 ui::NativeTheme* Gtk2UI::GetNativeTheme() const {
-  return NativeThemeGtk2::instance();
+  return use_gtk_ ? NativeThemeGtk2::instance() :
+                    ui::NativeTheme::instance();
+}
+
+void Gtk2UI::SetUseSystemTheme(bool use_system_theme) {
+  use_gtk_ = use_system_theme;
 }
 
 bool Gtk2UI::GetDefaultUsesSystemTheme() const {
@@ -465,6 +485,31 @@ scoped_ptr<views::StatusIconLinux> Gtk2UI::CreateLinuxStatusIcon(
   } else {
     return scoped_ptr<views::StatusIconLinux>();
   }
+}
+
+gfx::Image Gtk2UI::GetIconForContentType(
+    const std::string& content_type,
+    int size) const {
+  // This call doesn't take a reference.
+  GtkIconTheme* theme = gtk_icon_theme_get_default();
+
+  ScopedGIcon icon(g_content_type_get_icon(content_type.c_str()));
+  ScopedGtkIconInfo icon_info(
+      gtk_icon_theme_lookup_by_gicon(
+          theme, icon.get(), size,
+          static_cast<GtkIconLookupFlags>(GTK_ICON_LOOKUP_FORCE_SIZE)));
+  if (!icon_info)
+    return gfx::Image();
+  ScopedGdkPixbuf pixbuf(gtk_icon_info_load_icon(icon_info.get(), NULL));
+  if (!pixbuf)
+    return gfx::Image();
+
+  SkBitmap bitmap = GdkPixbufToImageSkia(pixbuf.get());
+  DCHECK_EQ(size, bitmap.width());
+  DCHECK_EQ(size, bitmap.height());
+  gfx::ImageSkia image_skia = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+  image_skia.MakeThreadSafe();
+  return gfx::Image(image_skia);
 }
 
 void Gtk2UI::AddWindowButtonOrderObserver(
@@ -636,6 +681,7 @@ void Gtk2UI::LoadGtkValues() {
   GdkColor label_color = label_style->fg[GTK_STATE_NORMAL];
   SetThemeColorFromGtk(ThemeProperties::COLOR_TAB_TEXT, &label_color);
   SetThemeColorFromGtk(ThemeProperties::COLOR_BOOKMARK_TEXT, &label_color);
+  SetThemeColorFromGtk(ThemeProperties::COLOR_STATUS_BAR_TEXT, &label_color);
 
   // Build the various icon tints.
   GetNormalButtonTintHSL(&button_tint_);

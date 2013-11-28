@@ -8,6 +8,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/extensions/chrome_notification_observer.h"
 #include "extensions/browser/extensions_browser_client.h"
 
 namespace content {
@@ -29,18 +31,29 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
 
   // BrowserClient overrides:
   virtual bool IsShuttingDown() OVERRIDE;
+  virtual bool IsValidContext(content::BrowserContext* context) OVERRIDE;
   virtual bool IsSameContext(content::BrowserContext* first,
                              content::BrowserContext* second) OVERRIDE;
   virtual bool HasOffTheRecordContext(
       content::BrowserContext* context) OVERRIDE;
   virtual content::BrowserContext* GetOffTheRecordContext(
       content::BrowserContext* context) OVERRIDE;
+  virtual content::BrowserContext* GetOriginalContext(
+      content::BrowserContext* context) OVERRIDE;
+  virtual bool DeferLoadingBackgroundHosts(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual bool DidVersionUpdate(content::BrowserContext* context) OVERRIDE;
+  virtual scoped_ptr<AppSorting> CreateAppSorting() OVERRIDE;
+  virtual bool IsRunningInForcedAppMode() OVERRIDE;
 
   // Get the LazyInstance for ChromeBrowserClient.
   static ChromeExtensionsBrowserClient* GetInstance();
 
  private:
   friend struct base::DefaultLazyInstanceTraits<ChromeExtensionsBrowserClient>;
+
+  // Observer for Chrome-specific notifications.
+  ChromeNotificationObserver notification_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeExtensionsBrowserClient);
 };

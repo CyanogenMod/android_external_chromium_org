@@ -20,8 +20,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
-#include "chrome/browser/extensions/extensions_quota_service.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
@@ -35,6 +33,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/result_codes.h"
+#include "extensions/browser/process_map.h"
+#include "extensions/browser/quota_service.h"
 #include "extensions/common/extension_api.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
@@ -234,7 +234,7 @@ void ExtensionFunctionDispatcher::ResetFunctions() {
 
 // static
 void ExtensionFunctionDispatcher::DispatchOnIOThread(
-    ExtensionInfoMap* extension_info_map,
+    extensions::InfoMap* extension_info_map,
     void* profile,
     int render_process_id,
     base::WeakPtr<ChromeRenderMessageFilter> ipc_sender,
@@ -272,7 +272,7 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
   if (!CheckPermissions(function.get(), extension, params, callback))
     return;
 
-  ExtensionsQuotaService* quota = extension_info_map->GetQuotaService();
+  extensions::QuotaService* quota = extension_info_map->GetQuotaService();
   std::string violation_error = quota->Assess(extension->id(),
                                               function.get(),
                                               &params.arguments,
@@ -288,10 +288,11 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
   }
 }
 
-ExtensionFunctionDispatcher::ExtensionFunctionDispatcher(Profile* profile,
-                                                         Delegate* delegate)
-  : profile_(profile),
-    delegate_(delegate) {
+ExtensionFunctionDispatcher::ExtensionFunctionDispatcher(
+    content::BrowserContext* browser_context,
+    Delegate* delegate)
+    : profile_(Profile::FromBrowserContext(browser_context)),
+      delegate_(delegate) {
 }
 
 ExtensionFunctionDispatcher::~ExtensionFunctionDispatcher() {
@@ -322,7 +323,7 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
   // TODO(yzshen): There is some shared logic between this method and
   // DispatchOnIOThread(). It is nice to deduplicate.
   ExtensionService* service = profile()->GetExtensionService();
-  ExtensionProcessManager* process_manager =
+  extensions::ProcessManager* process_manager =
       extensions::ExtensionSystem::Get(profile())->process_manager();
   extensions::ProcessMap* process_map = service->process_map();
   if (!service || !process_map)
@@ -359,7 +360,7 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
   if (!CheckPermissions(function.get(), extension, params, callback))
     return;
 
-  ExtensionsQuotaService* quota = service->quota_service();
+  extensions::QuotaService* quota = service->quota_service();
   std::string violation_error = quota->Assess(extension->id(),
                                               function.get(),
                                               &params.arguments,

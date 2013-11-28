@@ -36,15 +36,14 @@ class AppShortcutLauncherItemController : public LauncherItemController {
   std::vector<content::WebContents*> GetRunningApplications();
 
   // LauncherItemController overrides:
-  virtual bool IsCurrentlyShownInWindow(aura::Window* window) const OVERRIDE;
   virtual bool IsOpen() const OVERRIDE;
   virtual bool IsVisible() const OVERRIDE;
   virtual void Launch(ash::LaunchSource source, int event_flags) OVERRIDE;
-  virtual void Activate(ash::LaunchSource source) OVERRIDE;
+  virtual bool Activate(ash::LaunchSource source) OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual ChromeLauncherAppMenuItems GetApplicationList(
       int event_flags) OVERRIDE;
-  virtual void ItemSelected(const ui::Event& event) OVERRIDE;
+  virtual bool ItemSelected(const ui::Event& event) OVERRIDE;
   virtual base::string16 GetTitle() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(
       aura::Window* root_window) OVERRIDE;
@@ -65,10 +64,13 @@ class AppShortcutLauncherItemController : public LauncherItemController {
 
   // Returns true if this app matches the given |web_contents|. To accelerate
   // the matching, the app managing |extension| as well as the parsed
-  // |refocus_pattern| get passed.
+  // |refocus_pattern| get passed. If |is_app| is true, the application gets
+  // first checked against its original URL since a windowed app might have
+  // navigated away from its app domain.
   bool WebContentMatchesApp(const extensions::Extension* extension,
                             const URLPattern& refocus_pattern,
-                            content::WebContents* web_contents);
+                            content::WebContents* web_contents,
+                            bool is_app);
 
   // Activate the browser with the given |content| and show the associated tab.
   void ActivateContent(content::WebContents* content);

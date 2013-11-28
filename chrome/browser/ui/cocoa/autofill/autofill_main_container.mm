@@ -19,14 +19,31 @@
 #import "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/range/range.h"
 
+namespace {
+
+// Padding between buttons and the last suggestion or details view. The mock
+// has a total of 30px - but 10px are already provided by details/suggestions.
+const CGFloat kButtonVerticalPadding = 20.0;
+
+// Padding around the text for the legal documents.
+const CGFloat kLegalDocumentsPadding = 20.0;
+
+// The font color for the legal documents text. Set to match the Views
+// implementation.
+const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
+
+}  // namespace
+
 @interface AutofillMainContainer (Private)
 - (void)buildWindowButtons;
 - (void)layoutButtons;
+- (void)updateButtons;
 - (NSSize)preferredLegalDocumentSizeForWidth:(CGFloat)width;
 @end
 
@@ -50,8 +67,6 @@
   [view setSubviews:@[buttonContainer_]];
   [self setView:view];
 
-  [self layoutButtons];
-
   // Set up Wallet icon.
   buttonStripImage_.reset([[NSImageView alloc] initWithFrame:NSZeroRect]);
   [self updateWalletIcon];
@@ -62,7 +77,6 @@
   [saveInChromeCheckbox_ setButtonType:NSSwitchButton];
   [saveInChromeCheckbox_ setTitle:
       base::SysUTF16ToNSString(delegate_->SaveLocallyText())];
-  [self updateSaveInChrome];
   [saveInChromeCheckbox_ sizeToFit];
   [[self view] addSubview:saveInChromeCheckbox_];
 
@@ -74,6 +88,7 @@
       base::SysUTF16ToNSString(delegate_->SaveLocallyTooltip())];
   [saveInChromeTooltip_ setFrameSize:[[saveInChromeTooltip_ image] size]];
   [[self view] addSubview:saveInChromeTooltip_];
+  [self updateSaveInChrome];
 
   detailsContainer_.reset(
       [[AutofillDetailsContainer alloc] initWithDelegate:delegate_]);
@@ -93,6 +108,8 @@
                                  blue:0.96
                                 alpha:1.0]];
   [legalDocumentsView_ setDrawsBackground:YES];
+  [legalDocumentsView_ setTextContainerInset:
+      NSMakeSize(kLegalDocumentsPadding, kLegalDocumentsPadding)];
   [legalDocumentsView_ setHidden:YES];
   [legalDocumentsView_ setDelegate:self];
   legalDocumentsSizeDirty_ = YES;
@@ -120,7 +137,9 @@
   NSSize buttonStripSize =
       NSMakeSize(buttonSize.width + chrome_style::kHorizontalPadding +
                      buttonStripImageSize.width,
-                 std::max(buttonSize.height, buttonStripImageSize.height));
+                 std::max(buttonSize.height + kButtonVerticalPadding,
+                          buttonStripImageSize.height) +
+                     chrome_style::kClientBottomPadding);
 
   NSSize detailsSize = [detailsContainer_ preferredSize];
 
@@ -151,9 +170,9 @@
   }
 
   NSRect buttonFrame = [buttonContainer_ frame];
-  buttonFrame.origin.y = currentY;
+  buttonFrame.origin.y = currentY + chrome_style::kClientBottomPadding;
   [buttonContainer_ setFrameOrigin:buttonFrame.origin];
-  currentY = NSMaxY(buttonFrame) + autofill::kDetailVerticalPadding;
+  currentY = NSMaxY(buttonFrame) + kButtonVerticalPadding;
 
   NSPoint walletIconOrigin =
       NSMakePoint(chrome_style::kHorizontalPadding, buttonFrame.origin.y);
@@ -201,7 +220,6 @@
 
   base::scoped_nsobject<NSButton> button(
       [[ConstrainedWindowButton alloc] initWithFrame:NSZeroRect]);
-  [button setTitle:l10n_util::GetNSStringWithFixup(IDS_CANCEL)];
   [button setKeyEquivalent:kKeyEquivalentEscape];
   [button setTarget:target_];
   [button setAction:@selector(cancel:)];
@@ -211,13 +229,11 @@
   CGFloat nextX = NSMaxX([button frame]) + autofill::kButtonGap;
   button.reset([[ConstrainedWindowButton alloc] initWithFrame:NSZeroRect]);
   [button setFrameOrigin:NSMakePoint(nextX, 0)];
-  [button  setTitle:l10n_util::GetNSStringWithFixup(
-       IDS_AUTOFILL_DIALOG_SUBMIT_BUTTON)];
   [button setKeyEquivalent:kKeyEquivalentReturn];
   [button setTarget:target_];
   [button setAction:@selector(accept:)];
-  [button sizeToFit];
   [buttonContainer_ addSubview:button];
+  [self updateButtons];
 
   NSRect frame = NSMakeRect(
       -NSMaxX([button frame]) - chrome_style::kHorizontalPadding, 0,
@@ -229,6 +245,16 @@
   base::scoped_nsobject<GTMUILocalizerAndLayoutTweaker> layoutTweaker(
       [[GTMUILocalizerAndLayoutTweaker alloc] init]);
   [layoutTweaker tweakUI:buttonContainer_];
+}
+
+- (void)updateButtons {
+  NSButton* button = base::mac::ObjCCastStrict<NSButton>(
+      [[buttonContainer_ subviews] objectAtIndex:0]);
+  [button setTitle:base::SysUTF16ToNSString(delegate_->CancelButtonText())];
+  button = base::mac::ObjCCastStrict<NSButton>(
+    [[buttonContainer_ subviews] objectAtIndex:1]);
+  [button setTitle:base::SysUTF16ToNSString(delegate_->ConfirmButtonText())];
+  [self layoutButtons];
 }
 
 // Compute the preferred size for the legal documents text, given a width.
@@ -252,6 +278,9 @@
   [legalDocumentsView_ setFrame:currentFrame];
   newFrame.size.width = width;
 
+  // Account for the padding around the text.
+  newFrame.size.height += 2 * kLegalDocumentsPadding;
+
   legalDocumentsSizeDirty_ = NO;
   legalDocumentsSize_ = newFrame.size;
   return legalDocumentsSize_;
@@ -264,6 +293,7 @@
 - (void)modelChanged {
   [self updateSaveInChrome];
   [self updateWalletIcon];
+  [self updateButtons];
   [detailsContainer_ modelChanged];
 }
 
@@ -275,10 +305,10 @@
   NSString* text = base::SysUTF16ToNSString(delegate_->LegalDocumentsText());
 
   if ([text length]) {
-    NSFont* font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
-    [legalDocumentsView_ setMessage:text
-                           withFont:font
-                       messageColor:[NSColor blackColor]];
+    NSFont* font =
+        [NSFont labelFontOfSize:[[legalDocumentsView_ font] pointSize]];
+    NSColor* color = gfx::SkColorToCalibratedNSColor(kLegalDocumentsTextColor);
+    [legalDocumentsView_ setMessage:text withFont:font messageColor:color];
 
     const std::vector<gfx::Range>& link_ranges =
         delegate_->LegalDocumentLinks();
@@ -318,6 +348,15 @@
   [saveInChromeTooltip_ setHidden:[saveInChromeCheckbox_ isHidden]];
   [saveInChromeCheckbox_ setState:
       (delegate_->ShouldSaveInChrome() ? NSOnState : NSOffState)];
+}
+
+- (void)makeFirstInvalidInputFirstResponder {
+  NSView* field = [detailsContainer_ firstInvalidField];
+  if (!field)
+    return;
+
+  [detailsContainer_ scrollToView:field];
+  [[[self view] window] makeFirstResponder:field];
 }
 
 - (void)updateWalletIcon {

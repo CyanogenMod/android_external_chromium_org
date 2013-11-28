@@ -14,8 +14,9 @@
 #include "chrome/browser/policy/cloud/mock_cloud_policy_store.h"
 #include "chrome/browser/policy/cloud/policy_builder.h"
 #include "chrome/browser/policy/configuration_policy_provider_test.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/schema_registry.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -35,8 +36,8 @@ class TestHarness : public PolicyProviderTestHarness {
   virtual void SetUp() OVERRIDE;
 
   virtual ConfigurationPolicyProvider* CreateProvider(
-      scoped_refptr<base::SequencedTaskRunner> task_runner,
-      const PolicyDefinitionList* policy_definition_list) OVERRIDE;
+      SchemaRegistry* registry,
+      scoped_refptr<base::SequencedTaskRunner> task_runner) OVERRIDE;
 
   virtual void InstallEmptyPolicy() OVERRIDE;
   virtual void InstallStringPolicy(const std::string& policy_name,
@@ -70,13 +71,15 @@ TestHarness::~TestHarness() {}
 void TestHarness::SetUp() {}
 
 ConfigurationPolicyProvider* TestHarness::CreateProvider(
-    scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const PolicyDefinitionList* policy_definition_list) {
+    SchemaRegistry* registry,
+    scoped_refptr<base::SequencedTaskRunner> task_runner) {
   // Create and initialize the store.
   store_.NotifyStoreLoaded();
   ConfigurationPolicyProvider* provider = new CloudPolicyManager(
       PolicyNamespaceKey(dm_protocol::kChromeUserPolicyType, std::string()),
       &store_,
+      task_runner,
+      task_runner,
       task_runner);
   Mock::VerifyAndClearExpectations(&store_);
   return provider;
@@ -141,6 +144,8 @@ class TestCloudPolicyManager : public CloudPolicyManager {
                                dm_protocol::kChromeUserPolicyType,
                                std::string()),
                            store,
+                           task_runner,
+                           task_runner,
                            task_runner) {}
   virtual ~TestCloudPolicyManager() {}
 
@@ -176,7 +181,7 @@ class CloudPolicyManagerTest : public testing::Test {
     EXPECT_CALL(store_, Load());
     manager_.reset(new TestCloudPolicyManager(&store_,
                                               loop_.message_loop_proxy()));
-    manager_->Init();
+    manager_->Init(&schema_registry_);
     Mock::VerifyAndClearExpectations(&store_);
     manager_->AddObserver(&observer_);
   }
@@ -196,6 +201,7 @@ class CloudPolicyManagerTest : public testing::Test {
   PolicyBundle expected_bundle_;
 
   // Policy infrastructure.
+  SchemaRegistry schema_registry_;
   MockConfigurationPolicyObserver observer_;
   MockCloudPolicyStore store_;
   scoped_ptr<TestCloudPolicyManager> manager_;

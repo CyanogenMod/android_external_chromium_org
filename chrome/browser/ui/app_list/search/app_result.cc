@@ -6,6 +6,7 @@
 
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -15,10 +16,10 @@
 #include "chrome/browser/ui/app_list/search/tokenized_string_match.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia_operations.h"
 
@@ -132,7 +133,7 @@ void AppResult::StopObservingInstall() {
 bool AppResult::RunExtensionEnableFlow() {
   const ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
-  if (service->IsExtensionEnabledForLauncher(app_id_))
+  if (extension_util::IsAppLaunchableWithoutEnabling(app_id_, service))
     return false;
 
   if (!extension_enable_flow_) {
@@ -151,8 +152,8 @@ void AppResult::UpdateIcon() {
 
   const ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const bool enabled = service->IsExtensionEnabledForLauncher(app_id_);
-  if (!enabled) {
+  const bool can_launch = extension_util::IsAppLaunchable(app_id_, service);
+  if (!can_launch) {
     const color_utils::HSL shift = {-1, 0, 0.6};
     icon = gfx::ImageSkiaOperations::CreateHSLShiftedImage(icon, shift);
   }
@@ -182,11 +183,8 @@ void AppResult::ExtensionEnableFlowAborted(bool user_initiated) {
   controller_->OnCloseExtensionPrompt();
 }
 
-void AppResult::OnBeginExtensionInstall(const std::string& extension_id,
-                                        const std::string& extension_name,
-                                        const gfx::ImageSkia& installing_icon,
-                                        bool is_app,
-                                        bool is_platform_app) {}
+void AppResult::OnBeginExtensionInstall(
+    const ExtensionInstallParams& params) {}
 
 void AppResult::OnDownloadProgress(const std::string& extension_id,
                                    int percent_downloaded) {}

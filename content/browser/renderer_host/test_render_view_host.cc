@@ -132,6 +132,10 @@ bool TestRenderWidgetHostView::CanCopyToVideoFrame() const {
 void TestRenderWidgetHostView::OnAcceleratedCompositingStateChange() {
 }
 
+void TestRenderWidgetHostView::AcceleratedSurfaceInitialized(int host_id,
+                                                             int route_id) {
+}
+
 void TestRenderWidgetHostView::AcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
     int gpu_host_id) {
@@ -223,6 +227,11 @@ void TestRenderWidgetHostView::UnlockMouse() {
 #if defined(OS_WIN) && defined(USE_AURA)
 void TestRenderWidgetHostView::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
+}
+
+gfx::NativeViewId TestRenderWidgetHostView::GetParentForWindowlessPlugin()
+    const {
+  return 0;
 }
 #endif
 
@@ -370,7 +379,7 @@ void TestRenderViewHost::SimulateWasShown() {
 
 void TestRenderViewHost::TestOnStartDragging(
     const DropData& drop_data) {
-  WebKit::WebDragOperationsMask drag_operation = WebKit::WebDragOperationEvery;
+  blink::WebDragOperationsMask drag_operation = blink::WebDragOperationEvery;
   DragEventSourceInfo event_info;
   OnStartDragging(drop_data, drag_operation, SkBitmap(), gfx::Vector2d(),
                   event_info);

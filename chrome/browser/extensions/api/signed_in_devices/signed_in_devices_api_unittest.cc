@@ -17,9 +17,9 @@
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "extensions/common/extension.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,7 +31,8 @@ namespace extensions {
 namespace utils = extension_function_test_utils;
 
 TEST(SignedInDevicesAPITest, GetSignedInDevices) {
-  ProfileSyncServiceMock pss_mock;
+  TestingProfile profile;
+  ProfileSyncServiceMock pss_mock(&profile);
   base::MessageLoop message_loop_;
   TestExtensionPrefs extension_prefs(
       message_loop_.message_loop_proxy().get());
@@ -107,14 +108,17 @@ TEST(SignedInDevicesAPITest, GetSignedInDevices) {
 class ProfileSyncServiceMockForExtensionTests:
     public ProfileSyncServiceMock {
  public:
-  ProfileSyncServiceMockForExtensionTests() {}
+  explicit ProfileSyncServiceMockForExtensionTests(Profile* p)
+      : ProfileSyncServiceMock(p) {}
   ~ProfileSyncServiceMockForExtensionTests() {}
+
   MOCK_METHOD0(Shutdown, void());
 };
 
 BrowserContextKeyedService* CreateProfileSyncServiceMock(
     content::BrowserContext* profile) {
-  return new ProfileSyncServiceMockForExtensionTests();
+  return new ProfileSyncServiceMockForExtensionTests(
+      Profile::FromBrowserContext(profile));
 }
 
 class ExtensionSignedInDevicesTest : public BrowserWithTestWindowTest {

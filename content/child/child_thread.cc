@@ -38,7 +38,6 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
@@ -202,8 +201,8 @@ void ChildThread::Init() {
   channel_->AddFilter(new tracing::ChildTraceMessageFilter(
       ChildProcess::current()->io_message_loop_proxy()));
   channel_->AddFilter(resource_message_filter_.get());
-  channel_->AddFilter(quota_message_filter_.get());
-  channel_->AddFilter(service_worker_message_filter_.get());
+  channel_->AddFilter(quota_message_filter_->GetFilter());
+  channel_->AddFilter(service_worker_message_filter_->GetFilter());
 
   // In single process mode we may already have a power monitor
   if (!base::PowerMonitor::Get()) {
@@ -265,8 +264,6 @@ ChildThread::~ChildThread() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
-  channel_->RemoveFilter(service_worker_message_filter_.get());
-  channel_->RemoveFilter(quota_message_filter_.get());
   channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
 
@@ -286,6 +283,7 @@ void ChildThread::Shutdown() {
   // Delete objects that hold references to blink so derived classes can
   // safely shutdown blink in their Shutdown implementation.
   file_system_dispatcher_.reset();
+  quota_dispatcher_.reset();
 }
 
 void ChildThread::OnChannelConnected(int32 peer_pid) {
@@ -492,7 +490,7 @@ void ChildThread::OnProcessFinalRelease() {
 }
 
 void ChildThread::EnsureConnected() {
-  LOG(INFO) << "ChildThread::EnsureConnected()";
+  VLOG(0) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
 }
 

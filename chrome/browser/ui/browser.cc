@@ -44,6 +44,7 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/custom_handlers/register_protocol_handler_infobar_delegate.h"
+#include "chrome/browser/defaults.h"
 #include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_item_model.h"
@@ -143,8 +144,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
@@ -173,6 +172,8 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/webplugininfo.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -217,7 +218,7 @@ using content::WebContents;
 using extensions::Extension;
 using ui::WebDialogDelegate;
 using web_modal::WebContentsModalDialogManager;
-using WebKit::WebWindowFeatures;
+using blink::WebWindowFeatures;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -333,7 +334,8 @@ Browser::Browser(const CreateParams& params)
       override_bounds_(params.initial_bounds),
       initial_show_state_(params.initial_show_state),
       is_session_restore_(params.is_session_restore),
-      host_desktop_type_(params.host_desktop_type),
+      host_desktop_type_(BrowserWindow::AdjustHostDesktopType(
+          params.host_desktop_type)),
       content_setting_bubble_model_delegate_(
           new BrowserContentSettingBubbleModelDelegate(this)),
       toolbar_model_delegate_(new BrowserToolbarModelDelegate(this)),
@@ -410,6 +412,11 @@ Browser::Browser(const CreateParams& params)
   // Create the extension window controller before sending notifications.
   extension_window_controller_.reset(
       new BrowserExtensionWindowController(this));
+
+  SessionService* session_service =
+      SessionServiceFactory::GetForProfileForSessionRestore(profile_);
+  if (session_service)
+    session_service->WindowOpened(this);
 
   // TODO(beng): Move BrowserList::AddBrowser() to the end of this function and
   //             replace uses of this with BL's notifications.
@@ -491,6 +498,13 @@ Browser::~Browser() {
   // away so they don't try and call back to us.
   if (select_file_dialog_.get())
     select_file_dialog_->ListenerDestroyed();
+
+  int num_downloads;
+  if (OkToCloseWithInProgressDownloads(&num_downloads) ==
+          DOWNLOAD_CLOSE_BROWSER_SHUTDOWN &&
+      !browser_defaults::kBrowserAliveWithNoWindows) {
+    DownloadService::CancelAllDownloads();
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -830,6 +844,13 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+// static
+bool Browser::ShouldRunUnloadEventsHelper(content::WebContents* contents) {
+  if (IsFastTabUnloadEnabled())
+    return chrome::FastUnloadController::ShouldRunUnloadEventsHelper(contents);
+  return chrome::UnloadController::ShouldRunUnloadEventsHelper(contents);
+}
 
 // static
 bool Browser::RunUnloadEventsHelper(WebContents* contents) {
@@ -1430,6 +1451,10 @@ gfx::Rect Browser::GetRootWindowResizerRect() const {
 void Browser::BeforeUnloadFired(WebContents* web_contents,
                                 bool proceed,
                                 bool* proceed_to_fire_unload) {
+  if (is_devtools() && DevToolsWindow::HandleBeforeUnload(web_contents,
+        proceed, proceed_to_fire_unload))
+    return;
+
   if (IsFastTabUnloadEnabled()) {
     *proceed_to_fire_unload =
         fast_unload_controller_->BeforeUnloadFired(web_contents, proceed);
@@ -1441,7 +1466,7 @@ void Browser::BeforeUnloadFired(WebContents* web_contents,
 
 bool Browser::ShouldFocusLocationBarByDefault(WebContents* source) {
   const content::NavigationEntry* entry =
-      source->GetController().GetActiveEntry();
+      source->GetController().GetVisibleEntry();
   if (entry) {
     GURL url = entry->GetURL();
     GURL virtual_url = entry->GetVirtualURL();

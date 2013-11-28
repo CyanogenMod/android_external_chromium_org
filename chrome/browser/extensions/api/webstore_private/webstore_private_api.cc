@@ -8,6 +8,7 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_vector.h"
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,7 +31,6 @@
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/pref_names.h"
@@ -39,6 +39,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -181,6 +182,10 @@ std::string GetWebstoreLogin(Profile* profile) {
 
 void SetWebstoreLogin(Profile* profile, const std::string& login) {
   profile->GetPrefs()->SetString(kWebstoreLogin, login);
+}
+
+void RecordWebstoreExtensionInstallResult(bool success) {
+  UMA_HISTOGRAM_BOOLEAN("Webstore.ExtensionInstallResult", success);
 }
 
 }  // namespace
@@ -577,6 +582,8 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallSuccess(
   g_pending_installs.Get().EraseInstall(GetProfile(), id);
   SendResponse(true);
 
+  RecordWebstoreExtensionInstallResult(true);
+
   // Matches the AddRef in RunImpl().
   Release();
 }
@@ -594,6 +601,8 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure(
   LOG(INFO) << "Install failed, sending response";
   g_pending_installs.Get().EraseInstall(GetProfile(), id);
   SendResponse(false);
+
+  RecordWebstoreExtensionInstallResult(false);
 
   // Matches the AddRef in RunImpl().
   Release();

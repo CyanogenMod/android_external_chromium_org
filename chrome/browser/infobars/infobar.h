@@ -16,21 +16,16 @@
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/size.h"
 
-// TODO(sail): These functions should be static methods in the InfoBar class
-// below once all platforms use that class.
-SkColor GetInfoBarTopColor(InfoBarDelegate::Type infobar_type);
-SkColor GetInfoBarBottomColor(InfoBarDelegate::Type infobar_type);
-
-// TODO(pkasting): Same with these notification-related typedefs.
-typedef InfoBarDelegate InfoBarAddedDetails;
-typedef std::pair<InfoBarDelegate*, bool> InfoBarRemovedDetails;
-typedef std::pair<InfoBarDelegate*, InfoBarDelegate*> InfoBarReplacedDetails;
-
 class InfoBarContainer;
 class InfoBarService;
 
 class InfoBar : public gfx::AnimationDelegate {
  public:
+  // These are the types passed as Details for infobar-related notifications.
+  typedef InfoBarDelegate AddedDetails;
+  typedef std::pair<InfoBarDelegate*, bool> RemovedDetails;
+  typedef std::pair<InfoBarDelegate*, InfoBarDelegate*> ReplacedDetails;
+
   InfoBar(InfoBarService* owner, InfoBarDelegate* delegate);
   virtual ~InfoBar();
 
@@ -43,6 +38,9 @@ class InfoBar : public gfx::AnimationDelegate {
   // default and maximum values proportionally to how the height scales to its.
   static const int kDefaultArrowTargetHalfWidth;
   static const int kMaximumArrowTargetHalfWidth;
+
+  static SkColor GetTopColor(InfoBarDelegate::Type infobar_type);
+  static SkColor GetBottomColor(InfoBarDelegate::Type infobar_type);
 
   InfoBarDelegate* delegate() { return delegate_; }
   void set_container(InfoBarContainer* container) { container_ = container; }

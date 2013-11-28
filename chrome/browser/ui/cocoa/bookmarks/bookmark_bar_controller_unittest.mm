@@ -1522,6 +1522,11 @@ TEST_F(BookmarkBarControllerTest, ShrinkOrHideView) {
 }
 
 TEST_F(BookmarkBarControllerTest, LastBookmarkResizeBehavior) {
+  // Hide the apps shortcut.
+  profile()->GetPrefs()->SetBoolean(prefs::kShowAppsShortcutInBookmarkBar,
+                                    false);
+  ASSERT_TRUE([bar_ appsPageShortcutButtonIsHidden]);
+
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b ");
@@ -1547,17 +1552,7 @@ TEST_F(BookmarkBarControllerTest, LastBookmarkResizeBehavior) {
   }
 }
 
-class BookmarkBarControllerWithInstantExtendedTest :
-    public BookmarkBarControllerTest {
- public:
-  virtual void AddCommandLineSwitches() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableInstantExtendedAPI);
-  }
-};
-
-TEST_F(BookmarkBarControllerWithInstantExtendedTest,
-    BookmarksWithAppsPageShortcut) {
+TEST_F(BookmarkBarControllerTest, BookmarksWithAppsPageShortcut) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b ");
@@ -1587,8 +1582,7 @@ TEST_F(BookmarkBarControllerWithInstantExtendedTest,
   }
 }
 
-TEST_F(BookmarkBarControllerWithInstantExtendedTest,
-    BookmarksWithoutAppsPageShortcut) {
+TEST_F(BookmarkBarControllerTest, BookmarksWithoutAppsPageShortcut) {
   // The no item containers should be to the right of the Apps button.
   ASSERT_FALSE([bar_ appsPageShortcutButtonIsHidden]);
   CGFloat apps_button_right = NSMaxX([[bar_ appsPageShortcutButton] frame]);
@@ -1978,6 +1972,11 @@ TEST_F(BookmarkBarControllerDragDropTest, DropPositionIndicator) {
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b 2f3b ] 3b 4b ");
   test::AddNodesFromModelString(model, root, model_string);
+
+  // Hide the apps shortcut.
+  profile()->GetPrefs()->SetBoolean(prefs::kShowAppsShortcutInBookmarkBar,
+                                    false);
+  ASSERT_TRUE([bar_ appsPageShortcutButtonIsHidden]);
 
   // Validate initial model.
   std::string actualModel = test::ModelStringFromNode(root);

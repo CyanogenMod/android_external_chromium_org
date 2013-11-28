@@ -8,13 +8,11 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 
 import org.chromium.base.CalledByNative;
-import org.chromium.chrome.browser.BookmarkUtils;
 
 import java.util.UUID;
 
@@ -95,6 +93,6 @@ public class ShortcutHelper {
         context.startActivity(homeIntent);
     }
 
-    private static native void nativeAddShortcut(int tabAndroidPtr, String userRequestedTitle,
+    private static native void nativeAddShortcut(long tabAndroidPtr, String userRequestedTitle,
             int launcherLargeIconSize);
 }

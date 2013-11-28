@@ -55,30 +55,29 @@
 #include "ui/gfx/size_f.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "v8/include/v8-testing.h"
-#include "webkit/glue/webkit_glue.h"
 
 using base::string16;
 using extensions::APIPermission;
-using WebKit::WebAXObject;
-using WebKit::WebCString;
-using WebKit::WebDataSource;
-using WebKit::WebDocument;
-using WebKit::WebElement;
-using WebKit::WebFrame;
-using WebKit::WebGestureEvent;
-using WebKit::WebIconURL;
-using WebKit::WebNode;
-using WebKit::WebNodeList;
-using WebKit::WebRect;
-using WebKit::WebSecurityOrigin;
-using WebKit::WebSize;
-using WebKit::WebString;
-using WebKit::WebTouchEvent;
-using WebKit::WebURL;
-using WebKit::WebURLRequest;
-using WebKit::WebView;
-using WebKit::WebVector;
-using WebKit::WebWindowFeatures;
+using blink::WebAXObject;
+using blink::WebCString;
+using blink::WebDataSource;
+using blink::WebDocument;
+using blink::WebElement;
+using blink::WebFrame;
+using blink::WebGestureEvent;
+using blink::WebIconURL;
+using blink::WebNode;
+using blink::WebNodeList;
+using blink::WebRect;
+using blink::WebSecurityOrigin;
+using blink::WebSize;
+using blink::WebString;
+using blink::WebTouchEvent;
+using blink::WebURL;
+using blink::WebURLRequest;
+using blink::WebView;
+using blink::WebVector;
+using blink::WebWindowFeatures;
 
 // Delay in milliseconds that we'll wait before capturing the page contents
 // and thumbnail.
@@ -180,7 +179,7 @@ GURL StripRef(const GURL& url) {
 // |thumbnail_min_area_pixels|, we return the image unmodified.  Otherwise, we
 // scale down the image so that the width and height do not exceed
 // |thumbnail_max_size_pixels|, preserving the original aspect ratio.
-SkBitmap Downscale(WebKit::WebImage image,
+SkBitmap Downscale(blink::WebImage image,
                    int thumbnail_min_area_pixels,
                    gfx::Size thumbnail_max_size_pixels) {
   if (image.isNull())
@@ -261,7 +260,7 @@ extensions::StackTrace GetStackTraceFromMessage(string16* message,
         extensions::StackFrame(line_number,
                                1u,  // column number
                                source,
-                               EmptyString16() /* no function name */ ));
+                               base::string16() /* no function name */ ));
   }
 
   return result;
@@ -312,8 +311,6 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_RequestThumbnailForContextNode,
                         OnRequestThumbnailForContextNode)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_GetFPS, OnGetFPS)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_AddStrictSecurityHost,
-                        OnAddStrictSecurityHost)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_NPAPINotSupported, OnNPAPINotSupported)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_UpdateTopControlsState,
@@ -376,11 +373,6 @@ void ChromeRenderViewObserver::OnSetAllowRunningInsecureContent(bool allow) {
   OnSetAllowDisplayingInsecureContent(allow);
 }
 
-void ChromeRenderViewObserver::OnAddStrictSecurityHost(
-    const std::string& host) {
-  strict_security_hosts_.insert(host);
-}
-
 void ChromeRenderViewObserver::OnNPAPINotSupported() {
 #if defined(USE_AURA) && defined(OS_WIN)
   content_settings_->BlockNPAPIPlugins();
@@ -440,8 +432,8 @@ void ChromeRenderViewObserver::OnRetrieveWebappInformation(
   bool is_only_apple_mobile_webapp_capable =
       is_apple_mobile_webapp_capable && !is_mobile_webapp_capable;
   if (main_frame && is_only_apple_mobile_webapp_capable) {
-    WebKit::WebConsoleMessage message(
-        WebKit::WebConsoleMessage::LevelWarning,
+    blink::WebConsoleMessage message(
+        blink::WebConsoleMessage::LevelWarning,
         "<meta name=\"apple-mobile-web-app-capable\" content=\"yes\"> is "
         "deprecated. Please include <meta name=\"mobile-web-app-capable\" "
         "content=\"yes\"> - "
@@ -501,7 +493,7 @@ void ChromeRenderViewObserver::OnRequestThumbnailForContextNode(
   SkBitmap thumbnail;
   gfx::Size original_size;
   if (!context_node.isNull() && context_node.isElementNode()) {
-    WebKit::WebImage image = context_node.to<WebElement>().imageContents();
+    blink::WebImage image = context_node.to<WebElement>().imageContents();
     original_size = image.size();
     thumbnail = Downscale(image,
                           thumbnail_min_area_pixels,
@@ -633,10 +625,10 @@ static void SendInsecureContentSignal(int signal) {
 }
 
 bool ChromeRenderViewObserver::allowDisplayingInsecureContent(
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     bool allowed_per_settings,
-    const WebKit::WebSecurityOrigin& origin,
-    const WebKit::WebURL& resource_url) {
+    const blink::WebSecurityOrigin& origin,
+    const blink::WebURL& resource_url) {
   SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY);
 
   std::string origin_host(origin.host().utf8());
@@ -689,10 +681,10 @@ bool ChromeRenderViewObserver::allowDisplayingInsecureContent(
 }
 
 bool ChromeRenderViewObserver::allowRunningInsecureContent(
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     bool allowed_per_settings,
-    const WebKit::WebSecurityOrigin& origin,
-    const WebKit::WebURL& resource_url) {
+    const blink::WebSecurityOrigin& origin,
+    const blink::WebURL& resource_url) {
   std::string origin_host(origin.host().utf8());
   GURL frame_gurl(frame->document().url());
   DCHECK_EQ(frame_gurl.host(), origin_host);
@@ -831,19 +823,6 @@ void ChromeRenderViewObserver::DidClearWindowObject(WebFrame* frame) {
   }
 }
 
-void ChromeRenderViewObserver::DidHandleGestureEvent(
-    const WebGestureEvent& event) {
-  if (event.type != WebKit::WebGestureEvent::GestureTap)
-    return;
-
-  WebKit::WebTextInputType text_input_type =
-      render_view()->GetWebView()->textInputInfo().type;
-
-  render_view()->Send(new ChromeViewHostMsg_FocusedNodeTouched(
-      routing_id(),
-      text_input_type != WebKit::WebTextInputTypeNone));
-}
-
 void ChromeRenderViewObserver::DetailedConsoleMessageAdded(
     const base::string16& message,
     const base::string16& source,
@@ -912,6 +891,8 @@ void ChromeRenderViewObserver::CapturePageInfo(int page_id,
   if (translate_helper_)
     translate_helper_->PageCaptured(page_id, contents);
 
+  // TODO(shess): Is indexing "Full text search" indexing?  In that
+  // case more of this can go.
   // Skip indexing if this is not a new load.  Note that the case where
   // page_id == last_indexed_page_id_ is more complicated, since we need to
   // reindex if the toplevel URL has changed (such as from a redirect), even
@@ -944,12 +925,6 @@ void ChromeRenderViewObserver::CapturePageInfo(int page_id,
     last_indexed_url_ = stripped_url;
 
   TRACE_EVENT0("renderer", "ChromeRenderViewObserver::CapturePageInfo");
-
-  if (contents.size()) {
-    // Send the text to the browser for indexing (the browser might decide not
-    // to index, if the URL is HTTPS for instance).
-    Send(new ChromeViewHostMsg_PageContents(routing_id(), url, contents));
-  }
 
 #if defined(FULL_SAFE_BROWSING)
   // Will swap out the string.
@@ -996,10 +971,6 @@ ExternalHostBindings* ChromeRenderViewObserver::GetExternalHostBindings() {
         render_view(), routing_id()));
   }
   return external_host_bindings_.get();
-}
-
-bool ChromeRenderViewObserver::IsStrictSecurityHost(const std::string& host) {
-  return (strict_security_hosts_.find(host) != strict_security_hosts_.end());
 }
 
 const extensions::Extension* ChromeRenderViewObserver::GetExtension(

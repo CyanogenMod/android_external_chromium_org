@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/file_util.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -25,10 +26,9 @@
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/constants.h"
-#include "net/base/mime_util.h"
+#include "extensions/common/extension.h"
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -171,11 +171,15 @@ APIUtil::APIUtil(Profile* profile,
       temp_dir_path_(temp_dir_path) {
   ProfileOAuth2TokenService* oauth_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  base::SequencedWorkerPool* blocking_pool =
+      content::BrowserThread::GetBlockingPool();
+  scoped_refptr<base::SequencedTaskRunner> task_runner(
+      blocking_pool->GetSequencedTaskRunner(blocking_pool->GetSequenceToken()));
   if (IsDriveAPIDisabled()) {
     drive_service_.reset(new drive::GDataWapiService(
         oauth_service,
         profile->GetRequestContext(),
-        content::BrowserThread::GetBlockingPool(),
+        task_runner.get(),
         GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
         GURL(google_apis::GDataWapiUrlGenerator::kBaseDownloadUrlForProduction),
         std::string() /* custom_user_agent */));
@@ -183,7 +187,7 @@ APIUtil::APIUtil(Profile* profile,
     drive_service_.reset(new drive::DriveAPIService(
         oauth_service,
         profile->GetRequestContext(),
-        content::BrowserThread::GetBlockingPool(),
+        task_runner.get(),
         GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
         GURL(google_apis::DriveApiUrlGenerator::kBaseDownloadUrlForProduction),
         GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),

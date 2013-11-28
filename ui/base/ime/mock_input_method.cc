@@ -34,11 +34,7 @@ TextInputClient* MockInputMethod::GetTextInputClient() const {
   return text_input_client_;
 }
 
-bool MockInputMethod::DispatchKeyEvent(const base::NativeEvent& native_event) {
-  return false;
-}
-
-bool MockInputMethod::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
+bool MockInputMethod::DispatchKeyEvent(const ui::KeyEvent& event) {
   return false;
 }
 
@@ -55,9 +51,6 @@ void MockInputMethod::OnBlur() {
 
 bool MockInputMethod::OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                                NativeEventResult* result) {
-  FOR_EACH_OBSERVER(InputMethodObserver,
-                    observer_list_,
-                    OnUntranslatedIMEMessage(event));
   if (result)
     *result = NativeEventResult();
   return false;
@@ -82,9 +75,6 @@ void MockInputMethod::CancelComposition(const TextInputClient* client) {
 }
 
 void MockInputMethod::OnInputLocaleChanged() {
-  FOR_EACH_OBSERVER(InputMethodObserver,
-                    observer_list_,
-                    OnInputLocaleChanged());
 }
 
 std::string MockInputMethod::GetInputLocale() {

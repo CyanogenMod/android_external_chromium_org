@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	cc/animation/animation_registrar.cc \
 	cc/animation/keyframed_animation_curve.cc \
 	cc/animation/layer_animation_controller.cc \
+	cc/animation/scroll_offset_animation_curve.cc \
 	cc/animation/scrollbar_animation_controller_linear_fade.cc \
 	cc/animation/scrollbar_animation_controller_thinning.cc \
 	cc/animation/timing_function.cc \
@@ -51,15 +52,20 @@ LOCAL_SRC_FILES := \
 	cc/debug/frame_rate_counter.cc \
 	cc/debug/layer_tree_debug_state.cc \
 	cc/debug/micro_benchmark.cc \
+	cc/debug/micro_benchmark_impl.cc \
 	cc/debug/micro_benchmark_controller.cc \
+	cc/debug/micro_benchmark_controller_impl.cc \
 	cc/debug/overdraw_metrics.cc \
 	cc/debug/paint_time_counter.cc \
 	cc/debug/picture_record_benchmark.cc \
+	cc/debug/rasterize_and_record_benchmark.cc \
+	cc/debug/rasterize_and_record_benchmark_impl.cc \
 	cc/debug/rendering_stats.cc \
 	cc/debug/rendering_stats_instrumentation.cc \
 	cc/debug/traced_picture.cc \
 	cc/debug/traced_value.cc \
 	cc/debug/unittest_only_benchmark.cc \
+	cc/debug/unittest_only_benchmark_impl.cc \
 	cc/input/page_scale_animation.cc \
 	cc/input/top_controls_manager.cc \
 	cc/layers/content_layer.cc \
@@ -145,6 +151,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/bitmap_skpicture_content_layer_updater.cc \
 	cc/resources/caching_bitmap_content_layer_updater.cc \
 	cc/resources/content_layer_updater.cc \
+	cc/resources/etc1_pixel_ref.cc \
 	cc/resources/image_layer_updater.cc \
 	cc/resources/image_raster_worker_pool.cc \
 	cc/resources/layer_quad.cc \
@@ -184,11 +191,11 @@ LOCAL_SRC_FILES := \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
 	cc/resources/ui_resource_bitmap.cc \
+	cc/resources/ui_resource_request.cc \
 	cc/resources/video_resource_updater.cc \
 	cc/resources/worker_pool.cc \
 	cc/scheduler/delay_based_time_source.cc \
 	cc/scheduler/frame_rate_controller.cc \
-	cc/scheduler/rate_limiter.cc \
 	cc/scheduler/rolling_time_delta_history.cc \
 	cc/scheduler/scheduler.cc \
 	cc/scheduler/scheduler_settings.cc \
@@ -260,6 +267,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -268,9 +276,11 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -292,6 +302,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -302,9 +313,9 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/v8/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -375,6 +386,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -383,9 +395,11 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -408,6 +422,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -418,9 +433,9 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/v8/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

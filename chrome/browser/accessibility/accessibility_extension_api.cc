@@ -9,7 +9,8 @@
 #include "base/values.h"
 #include "chrome/browser/accessibility/accessibility_extension_api_constants.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_host.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
@@ -18,7 +19,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/experimental_accessibility.h"
 #include "content/public/browser/browser_accessibility_state.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 
 namespace keys = extension_accessibility_api_constants;
 namespace experimental_accessibility =
@@ -71,6 +75,9 @@ void ExtensionAccessibilityEventRouter::ClearControlEventCallback() {
 void ExtensionAccessibilityEventRouter::HandleWindowEvent(
     ui::AccessibilityTypes::Event event,
     const AccessibilityWindowInfo* info) {
+  if (!control_event_callback_.is_null())
+    control_event_callback_.Run(event, info);
+
   if (event == ui::AccessibilityTypes::EVENT_ALERT)
     OnWindowOpened(info);
 }
@@ -86,6 +93,9 @@ void ExtensionAccessibilityEventRouter::HandleMenuEvent(
     case ui::AccessibilityTypes::EVENT_MENUEND:
     case ui::AccessibilityTypes::EVENT_MENUPOPUPEND:
       OnMenuClosed(info);
+      break;
+    case ui::AccessibilityTypes::EVENT_FOCUS:
+      OnControlFocused(info);
       break;
     default:
       NOTREACHED();
@@ -104,6 +114,7 @@ void ExtensionAccessibilityEventRouter::HandleControlEvent(
       OnTextChanged(info);
       break;
     case ui::AccessibilityTypes::EVENT_VALUE_CHANGED:
+    case ui::AccessibilityTypes::EVENT_ALERT:
       OnControlAction(info);
       break;
     case ui::AccessibilityTypes::EVENT_FOCUS:
@@ -164,6 +175,33 @@ void ExtensionAccessibilityEventRouter::OnMenuClosed(
                 args.Pass());
 }
 
+void ExtensionAccessibilityEventRouter::OnChromeVoxLoadStateChanged(
+    Profile* profile,
+    bool loading,
+    bool make_announcements) {
+  scoped_ptr<base::ListValue> event_args(new base::ListValue());
+  event_args->Append(base::Value::CreateBooleanValue(loading));
+  event_args->Append(base::Value::CreateBooleanValue(make_announcements));
+  ExtensionAccessibilityEventRouter::DispatchEventToChromeVox(profile,
+      experimental_accessibility::OnChromeVoxLoadStateChanged::kEventName,
+      event_args.Pass());
+}
+
+// Static.
+void ExtensionAccessibilityEventRouter::DispatchEventToChromeVox(
+    Profile* profile,
+    const char* event_name,
+    scoped_ptr<base::ListValue> event_args) {
+  extensions::ExtensionSystem* system =
+      extensions::ExtensionSystem::Get(profile);
+  if (!system)
+    return;
+  scoped_ptr<extensions::Event> event(new extensions::Event(event_name,
+                                                            event_args.Pass()));
+  system->event_router()->DispatchEventToExtension(
+      extension_misc::kChromeVoxExtensionId, event.Pass());
+}
+
 void ExtensionAccessibilityEventRouter::DispatchEvent(
     Profile* profile,
     const char* event_name,
@@ -221,13 +259,13 @@ bool AccessibilityGetAlertsForTabFunction::RunImpl() {
   TabStripModel* tab_strip = NULL;
   content::WebContents* contents = NULL;
   int tab_index = -1;
-  if (!ExtensionTabUtil::GetTabById(tab_id,
-                                    GetProfile(),
-                                    include_incognito(),
-                                    NULL,
-                                    &tab_strip,
-                                    &contents,
-                                    &tab_index)) {
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id,
+                                                GetProfile(),
+                                                include_incognito(),
+                                                NULL,
+                                                &tab_strip,
+                                                &contents,
+                                                &tab_index)) {
     error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id));

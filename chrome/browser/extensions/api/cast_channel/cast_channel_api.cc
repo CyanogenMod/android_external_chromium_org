@@ -9,11 +9,11 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/cast_channel/cast_socket.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
 
@@ -101,8 +101,8 @@ void CastChannelAPI::OnMessage(const CastSocket* socket,
   socket->FillChannelInfo(&channel_info);
   scoped_ptr<base::ListValue> results =
     OnMessage::Create(channel_info, message_info);
-  DVLOG(1) << "Sending message " << ParamToString(message_info)
-           << " to channel " << ParamToString(channel_info);
+  VLOG(1) << "Sending message " << ParamToString(message_info)
+          << " to channel " << ParamToString(channel_info);
   scoped_ptr<Event> event(new Event(OnMessage::kEventName, results.Pass()));
   extensions::ExtensionSystem::Get(profile_)->event_router()->
     DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
@@ -258,7 +258,7 @@ void CastChannelCloseFunction::AsyncWorkStart() {
 
 void CastChannelCloseFunction::OnClose(int result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DVLOG(1) << "CastChannelCloseFunction::OnClose result = " << result;
+  VLOG(1) << "CastChannelCloseFunction::OnClose result = " << result;
   if (result < 0) {
     SetResultFromError(cast_channel::CHANNEL_ERROR_SOCKET_ERROR);
   } else {

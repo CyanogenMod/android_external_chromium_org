@@ -27,6 +27,7 @@ extern const char kChromeUIAppsURL[];
 extern const char kChromeUIAppListStartPageURL[];
 extern const char kChromeUIBookmarksURL[];
 extern const char kChromeUICertificateViewerURL[];
+extern const char kChromeUIChromeSigninURL[];
 extern const char kChromeUIChromeURLsURL[];
 extern const char kChromeUICloudPrintResourcesURL[];
 extern const char kChromeUIComponentsURL[];
@@ -50,7 +51,6 @@ extern const char kChromeUIHelpFrameURL[];
 extern const char kChromeUIHistoryURL[];
 extern const char kChromeUIHistoryFrameURL[];
 extern const char kChromeUIIdentityInternalsURL[];
-extern const char kChromeUIInlineLoginURL[];
 extern const char kChromeUIInspectURL[];
 extern const char kChromeUIInstantURL[];
 extern const char kChromeUIIPCURL[];
@@ -86,6 +86,7 @@ extern const char kChromeUIUserActionsURL[];
 extern const char kChromeUIVersionURL[];
 
 #if defined(OS_ANDROID)
+extern const char kChromeUINativeNewTabURL[];
 extern const char kChromeUIWelcomeURL[];
 #endif
 
@@ -137,6 +138,7 @@ extern const char kChromeUIAppListStartPageHost[];
 extern const char kChromeUIBookmarksHost[];
 extern const char kChromeUICacheHost[];
 extern const char kChromeUICertificateViewerHost[];
+extern const char kChromeUIChromeSigninHost[];
 extern const char kChromeUIChromeURLsHost[];
 extern const char kChromeUICloudPrintResourcesHost[];
 extern const char kChromeUICloudPrintSetupHost[];
@@ -169,7 +171,6 @@ extern const char kChromeUIHangHost[];
 extern const char kChromeUIHistoryHost[];
 extern const char kChromeUIHistoryFrameHost[];
 extern const char kChromeUIIdentityInternalsHost[];
-extern const char kChromeUIInlineLoginHost[];
 extern const char kChromeUIInspectHost[];
 extern const char kChromeUIInstantHost[];
 extern const char kChromeUIIPCHost[];
@@ -419,9 +420,6 @@ extern const char kSyncEncryptionHelpURL[];
 
 // The URL for the "Learn more" link when there is a sync error.
 extern const char kSyncErrorsHelpURL[];
-
-// The URL for the help article explaining sideload wipeout in more details.
-extern const char kSideloadWipeoutHelpURL[];
 
 #if defined(OS_CHROMEOS)
 // The URL for the "Learn more" link for natural scrolling on ChromeOS.

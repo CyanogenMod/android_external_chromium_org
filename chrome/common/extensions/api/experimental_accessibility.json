@@ -112,7 +112,7 @@
           "type": {
             "type": "string",
             "description": "The type of this object, which determines the contents of 'details'.",
-            "enum": ["button", "checkbox", "combobox", "link", "menu", "menuitem", "radiobutton", "slider", "tab", "textbox", "window"]
+            "enum": ["alert", "button", "checkbox", "combobox", "link", "menu", "menuitem", "radiobutton", "slider", "tab", "textbox", "window"]
           },
           "name": {
             "type": "string",
@@ -291,6 +291,23 @@
             "$ref": "AccessibilityObject",
             "name": "menu",
             "description": "Information about the menu that was closed."
+          }
+        ]
+      },
+      {
+        "name": "onChromeVoxLoadStateChanged",
+        "type": "function",
+        "description": "Fired ChromeVox load state changes.",
+        "parameters": [
+          {
+            "type": "boolean",
+            "name": "loading",
+            "description": "True if ChromeVox is loading; false if ChromeVox is unloading."
+          },
+          {
+            "type": "boolean",
+            "name": "makeAnnouncements",
+            "description": "Whether to make introductory announcements."
           }
         ]
       }

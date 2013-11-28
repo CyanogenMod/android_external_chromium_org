@@ -15,11 +15,11 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-#include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "net/base/net_errors.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
@@ -151,6 +151,9 @@ class WebstoreInstaller :public content::NotificationObserver,
     // Required minimum version.
     scoped_ptr<Version> minimum_version;
 
+    // Ephemeral apps (experimental) are not permanently installed in Chrome.
+    bool is_ephemeral;
+
    private:
     Approval();
   };
@@ -226,6 +229,9 @@ class WebstoreInstaller :public content::NotificationObserver,
   // this managed its installation. This also removes the associated
   // PendingInstall.
   void ReportSuccess();
+
+  // Records stats regarding an interrupted webstore download item.
+  void RecordInterrupt(const content::DownloadItem* download) const;
 
   content::NotificationRegistrar registrar_;
   Profile* profile_;

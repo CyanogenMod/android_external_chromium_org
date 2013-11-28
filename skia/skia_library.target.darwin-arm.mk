@@ -101,6 +101,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkDevice.cpp \
 	third_party/skia/src/core/SkDeviceLooper.cpp \
 	third_party/skia/src/core/SkDeviceProfile.cpp \
+	third_party/skia/src/lazy/SkDiscardablePixelRef.cpp \
 	third_party/skia/src/core/SkDither.cpp \
 	third_party/skia/src/core/SkDraw.cpp \
 	third_party/skia/src/core/SkDrawLooper.cpp \
@@ -207,6 +208,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/lazy/SkLruImageCache.cpp \
 	third_party/skia/src/lazy/SkPurgeableMemoryBlock_common.cpp \
 	third_party/skia/src/lazy/SkPurgeableImageCache.cpp \
+	third_party/skia/src/lazy/SkCachingPixelRef.cpp \
+	third_party/skia/src/lazy/SkLazyCachingPixelRef.cpp \
 	third_party/skia/src/pathops/SkAddIntersections.cpp \
 	third_party/skia/src/pathops/SkDCubicIntersection.cpp \
 	third_party/skia/src/pathops/SkDCubicLineIntersection.cpp \
@@ -430,19 +433,21 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
 	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
-	'-DSKIA_IGNORE_GPU_MIPMAPS' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
@@ -450,6 +455,7 @@ MY_DEFS_Debug := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
@@ -555,19 +561,21 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
 	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
-	'-DSKIA_IGNORE_GPU_MIPMAPS' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
@@ -575,6 +583,7 @@ MY_DEFS_Release := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \

@@ -29,7 +29,7 @@ conformance_harness_script = r"""
     testHarness._originalLog.apply(window.console, [msg]);
   }
 
-  testHarness.reportResults = function(success, msg) {
+  testHarness.reportResults = function(url, success, msg) {
     testHarness._allTestSucceeded = testHarness._allTestSucceeded && !!success;
     if(!success) {
       testHarness._failures++;
@@ -38,7 +38,7 @@ conformance_harness_script = r"""
       }
     }
   };
-  testHarness.notifyFinished = function() {
+  testHarness.notifyFinished = function(url) {
     testHarness._finished = true;
   };
   testHarness.navigateToPage = function(src) {
@@ -66,8 +66,11 @@ class WebglConformanceValidator(page_test.PageTest):
       raise page_test.Failure(_WebGLTestMessages(tab))
 
   def CustomizeBrowserOptions(self, options):
-    options.AppendExtraBrowserArgs(
-        '--disable-gesture-requirement-for-media-playback')
+    options.AppendExtraBrowserArgs([
+        '--disable-gesture-requirement-for-media-playback',
+        '--disable-domain-blocking-for-3d-apis',
+        '--disable-gpu-process-crash-limit'
+    ])
 
 
 class WebglConformance(test_module.Test):

@@ -17,6 +17,7 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "ui/aura/root_window_observer.h"
+#include "ui/aura/window.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/point.h"
 
@@ -83,6 +84,11 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
     return mirror_window_controller_.get();
   }
 
+  internal::VirtualKeyboardWindowController*
+      virtual_keyboard_window_controller() {
+    return virtual_keyboard_window_controller_.get();
+  }
+
   // Initializes primary display.
   void InitPrimaryDisplay();
 
@@ -118,7 +124,7 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
 
   // Returns all root windows. In non extended desktop mode, this
   // returns the primary root window only.
-  std::vector<aura::RootWindow*> GetAllRootWindows();
+  aura::Window::Windows GetAllRootWindows();
 
   // Returns all oot window controllers. In non extended desktop
   // mode, this return a RootWindowController for the primary root window only.
@@ -162,7 +168,7 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   virtual void CreateOrUpdateNonDesktopDisplay(
       const internal::DisplayInfo& info) OVERRIDE;
   virtual void CloseNonDesktopDisplay() OVERRIDE;
-  virtual void PreDisplayConfigurationChange(bool dispay_removed) OVERRIDE;
+  virtual void PreDisplayConfigurationChange(bool clear_focus) OVERRIDE;
   virtual void PostDisplayConfigurationChange() OVERRIDE;
 
  private:
@@ -200,13 +206,13 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   scoped_ptr<DisplayChangeLimiter> limiter_;
 
   // The mapping from display ID to its root window.
-  std::map<int64, aura::RootWindow*> root_windows_;
+  std::map<int64, aura::Window*> root_windows_;
 
   ObserverList<Observer> observers_;
 
   // Store the primary root window temporarily while replacing
   // display.
-  aura::RootWindow* primary_root_window_for_replace_;
+  aura::Window* primary_root_window_for_replace_;
 
   scoped_ptr<internal::FocusActivationStore> focus_activation_store_;
 

@@ -33,6 +33,11 @@ const char kAshDebugShortcuts[] = "ash-debug-shortcuts";
 const char kAshDebugShowPreferredNetworks[] =
     "ash-debug-show-preferred-networks";
 
+// Indicates that the wallpaper images specified by
+// kAshDefaultWallpaper{Large,Small} are OEM-specific (i.e. they are not
+// downloadable from Google).
+const char kAshDefaultWallpaperIsOem[] = "ash-default-wallpaper-is-oem";
+
 // Default wallpaper to use (as paths to trusted, non-user-writable JPEG files).
 const char kAshDefaultWallpaperLarge[] = "ash-default-wallpaper-large";
 const char kAshDefaultWallpaperSmall[] = "ash-default-wallpaper-small";
@@ -88,11 +93,15 @@ const char kAshEnableAlternateFrameCaptionButtonStyle[] =
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 
-// Enable the dock area on a desktop.
-const char kAshEnableDockedWindows[] = "ash-enable-docked-windows";
+// Disable ability to dock windows at the desktop edge.
+const char kAshDisableDockedWindows[] = "ash-disable-docked-windows";
 
 // Disable dragging items off the shelf to unpin them.
 const char kAshDisableDragOffShelf[] = "ash-disable-drag-off-shelf";
+
+// Enables putting all windows into immersive fullscreen via <F4>.
+const char kAshEnableImmersiveFullscreenForAllWindows[] =
+    "ash-enable-immersive-all-windows";
 
 #if defined(OS_CHROMEOS)
 // Enables the "full multi profile mode" - as it was in M-31.
@@ -104,6 +113,12 @@ const char kAshEnableFullMultiProfileMode[] =
 // Enable memory monitoring.
 const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 #endif
+
+#if defined(OS_CHROMEOS)
+// Enables the multi user icons in the system tray.
+const char kAshEnableMultiUserTray[] = "ash-enable-multi-user-tray";
+#endif
+
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
 
@@ -138,10 +153,6 @@ const char kAshHideNotificationsForFactory[] =
 // "1024x768*2" sets the scale factor to 2 for a high DPI display.
 const char kAshHostWindowBounds[] = "ash-host-window-bounds";
 
-// OEM-supplied wallpaper (as paths to trusted, non-user-writable JPEG files).
-const char kAshOemWallpaperLarge[] = "ash-oem-wallpaper-large";
-const char kAshOemWallpaperSmall[] = "ash-oem-wallpaper-small";
-
 // Specifies the delay in milliseconds before beginning overview mode after
 // getting an alt tab keypress.
 const char kAshOverviewDelayOnAltTab[] = "ash-overview-delay-on-alt-tab";
@@ -151,6 +162,11 @@ const char kAshOverviewDelayOnAltTab[] = "ash-overview-delay-on-alt-tab";
 // b=BOTTOM and L=LEFT. For example, 'r,-100' means the secondary display
 // is positioned on the right with -100 offset. (above than primary)
 const char kAshSecondaryDisplayLayout[] = "ash-secondary-display-layout";
+
+// Use the old behavior where the user can pick the width of a side maximized
+// window. The user selects the width of the side maximized window based on how
+// far off the edge of the work area they drag the window.
+const char kAshMultipleSnapWindowWidths[] = "ash-multiple-snap-window-widths";
 
 // Enables the heads-up display for tracking touch points.
 const char kAshTouchHud[] = "ash-touch-hud";
@@ -219,8 +235,22 @@ bool UseFullMultiProfileMode() {
 #endif
 }
 
+bool UseMultiUserTray() {
+#if defined(OS_CHROMEOS)
+  // TODO(skuhne): If this gets removed for good, remove also
+  // |SystemTray::user_items_| and the use of it.
+  return CommandLine::ForCurrentProcess()->HasSwitch(kAshEnableMultiUserTray);
+#else
+  return false;
+#endif
+}
+
 bool UseOverviewMode() {
   return !CommandLine::ForCurrentProcess()->HasSwitch(kAshDisableOverviewMode);
+}
+
+bool UseDockedWindows() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(kAshDisableDockedWindows);
 }
 
 #if defined(OS_CHROMEOS)

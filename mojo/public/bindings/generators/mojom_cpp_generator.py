@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,8 +6,10 @@
 
 import datetime
 import mojom
+import mojom_generator
 import mojom_pack
 import os
+import re
 import sys
 
 from string import Template
@@ -16,33 +18,11 @@ from string import Template
 # cpp = mojom_cpp_generator.CPPGenerator(module)
 # cpp.GenerateFiles("/tmp/g")
 
-class DependentKinds(set):
-  """Set subclass to find the unique set of non POD types."""
-  def AddKind(self, kind):
-    if isinstance(kind, mojom.Struct):
-      self.add(kind)
-    if isinstance(kind, mojom.Array):
-      self.AddKind(kind.kind)
-
-
-class Forwards(object):
-  """Helper class to maintain unique set of forward declarations."""
-  def __init__(self):
-    self.kinds = DependentKinds()
-
-  def Add(self, kind):
-    self.kinds.AddKind(kind)
-
-  def __repr__(self):
-    return '\n'.join(
-      sorted(map(
-          lambda kind: "class %s;" % kind.name.capitalize(), self.kinds)))
-
-
 class Lines(object):
   """Helper class to maintain list of template expanded lines."""
-  def __init__(self, template):
+  def __init__(self, template, indent = None):
     self.template = template
+    self.indent = indent
     self.lines = []
 
   def Add(self, map = {}, **substitutions):
@@ -53,22 +33,14 @@ class Lines(object):
     self.lines.append(self.template.substitute(map))
 
   def __repr__(self):
+    if self.indent is not None:
+      prefix = "".ljust(self.indent, ' ')
+      repr = '\n'.join(self.lines)
+      self.lines = map(lambda l: prefix + l, repr.splitlines())
     return '\n'.join(self.lines)
 
 
-def GetStructFromMethod(interface, method):
-  """Converts a method's parameters into the fields of a struct."""
-  params_class = \
-      "%s_%s_Params" % (interface.name.capitalize(), method.name.capitalize())
-  struct = mojom.Struct(params_class)
-  for param in method.parameters:
-    struct.AddField(param.name, param.kind, param.ordinal)
-  return struct
-
-def IsPointerKind(kind):
-  return isinstance(kind, (mojom.Struct, mojom.Array)) or kind.spec == 's'
-
-class CPPGenerator(object):
+class CPPGenerator(mojom_generator.Generator):
 
   struct_serialization_compute_template = \
     Template(" +\n      mojo::internal::ComputeSizeOf($NAME->$FIELD())")
@@ -86,9 +58,12 @@ class CPPGenerator(object):
       "    return false;")
   param_set_template = Template("  params->set_$NAME($NAME);")
   param_struct_set_template = Template(
-      "  params->set_$NAME(mojo::internal::Clone($NAME, builder.buffer()));")
+      "  params->set_$NAME(\n"
+      "      mojo::internal::Clone(mojo::internal::Unwrap($NAME),\n"
+      "                            builder.buffer()));")
   param_struct_compute_template = Template(
-      "  payload_size += mojo::internal::ComputeSizeOf($NAME);")
+      "  payload_size += mojo::internal::ComputeSizeOf(\n"
+      "      mojo::internal::Unwrap($NAME));")
   field_template = Template("  $TYPE ${FIELD}_;")
   bool_field_template = Template("  uint8_t ${FIELD}_ : 1;")
   setter_template = \
@@ -98,10 +73,19 @@ class CPPGenerator(object):
   getter_template = \
       Template("  $TYPE $FIELD() const { return ${FIELD}_; }")
   ptr_getter_template = \
-      Template("  $TYPE $FIELD() const { return ${FIELD}_.ptr; }")
+      Template("  const $TYPE $FIELD() const { return ${FIELD}_.ptr; }")
+  wrapper_setter_template = \
+      Template("    void set_$FIELD($TYPE $FIELD) { " \
+               "data_->set_$FIELD($FIELD); }")
+  wrapper_obj_setter_template = \
+      Template("    void set_$FIELD($TYPE $FIELD) { " \
+               "data_->set_$FIELD(mojo::internal::Unwrap($FIELD)); }")
+  wrapper_getter_template = \
+      Template("  $TYPE $FIELD() const { return data_->$FIELD(); }")
+  wrapper_obj_getter_template = \
+      Template("  const $TYPE $FIELD() const { " \
+               "return mojo::internal::Wrap(data_->$FIELD()); }")
   pad_template = Template("  uint8_t _pad${COUNT}_[$PAD];")
-  name_template = \
-      Template("const uint32_t k${INTERFACE}_${METHOD}_Name = $NAME;")
   templates  = {}
   HEADER_SIZE = 8
 
@@ -135,27 +119,28 @@ class CPPGenerator(object):
   @classmethod
   def GetType(cls, kind):
     if isinstance(kind, mojom.Struct):
-      return "%s*" % kind.name.capitalize()
+      return "%s_Data*" % kind.name
     if isinstance(kind, mojom.Array):
-      return "mojo::Array<%s>*" % cls.GetType(kind.kind)
+      return "mojo::internal::Array_Data<%s>*" % cls.GetType(kind.kind)
     if kind.spec == 's':
-      return "mojo::String*"
+      return "mojo::internal::String_Data*"
     return cls.kind_to_type[kind]
 
   @classmethod
   def GetConstType(cls, kind):
     if isinstance(kind, mojom.Struct):
-      return "const %s*" % kind.name.capitalize()
+      return "const %s_Data*" % kind.name
     if isinstance(kind, mojom.Array):
-      return "const mojo::Array<%s>*" % cls.GetConstType(kind.kind)
+      return "const mojo::internal::Array_Data<%s>*" % \
+          cls.GetConstType(kind.kind)
     if kind.spec == 's':
-      return "const mojo::String*"
+      return "const mojo::internal::String_Data*"
     return cls.kind_to_type[kind]
 
   @classmethod
   def GetGetterLine(cls, field):
     subs = {'FIELD': field.name, 'TYPE': cls.GetType(field.kind)}
-    if IsPointerKind(field.kind):
+    if mojom_generator.IsObjectKind(field.kind):
       return cls.ptr_getter_template.substitute(subs)
     else:
       return cls.getter_template.substitute(subs)
@@ -163,10 +148,46 @@ class CPPGenerator(object):
   @classmethod
   def GetSetterLine(cls, field):
     subs = {'FIELD': field.name, 'TYPE': cls.GetType(field.kind)}
-    if IsPointerKind(field.kind):
+    if mojom_generator.IsObjectKind(field.kind):
       return cls.ptr_setter_template.substitute(subs)
     else:
       return cls.setter_template.substitute(subs)
+
+  @classmethod
+  def GetWrapperType(cls, kind):
+    if isinstance(kind, mojom.Struct):
+      return "%s" % kind.name
+    if isinstance(kind, mojom.Array):
+      return "mojo::Array<%s >" % cls.GetWrapperType(kind.kind)
+    if kind.spec == 's':
+      return "mojo::String"
+    return cls.kind_to_type[kind]
+
+  @classmethod
+  def GetConstWrapperType(cls, kind):
+    if isinstance(kind, mojom.Struct):
+      return "const %s&" % kind.name
+    if isinstance(kind, mojom.Array):
+      return "const mojo::Array<%s >&" % cls.GetWrapperType(kind.kind)
+    if kind.spec == 's':
+      return "const mojo::String&"
+    return cls.kind_to_type[kind]
+
+  @classmethod
+  def GetWrapperGetterLine(cls, field):
+    subs = {'FIELD': field.name, 'TYPE': cls.GetWrapperType(field.kind)}
+    if mojom_generator.IsObjectKind(field.kind):
+      return cls.wrapper_obj_getter_template.substitute(subs)
+    else:
+      return cls.wrapper_getter_template.substitute(subs)
+
+  @classmethod
+  def GetWrapperSetterLine(cls, field):
+    subs = {'FIELD': field.name, 'TYPE': cls.GetConstWrapperType(field.kind)}
+    if mojom_generator.IsObjectKind(field.kind):
+      return cls.wrapper_obj_setter_template.substitute(subs)
+    else:
+      return cls.wrapper_setter_template.substitute(subs)
 
   @classmethod
   def GetFieldLine(cls, field):
@@ -175,7 +196,7 @@ class CPPGenerator(object):
       return cls.bool_field_template.substitute(FIELD=field.name)
     itype = None
     if isinstance(kind, mojom.Struct):
-      itype = "mojo::internal::StructPointer<%s>" % kind.name.capitalize()
+      itype = "mojo::internal::StructPointer<%s_Data>" % kind.name
     elif isinstance(kind, mojom.Array):
       itype = "mojo::internal::ArrayPointer<%s>" % cls.GetType(kind.kind)
     elif kind.spec == 's':
@@ -185,8 +206,21 @@ class CPPGenerator(object):
     return cls.field_template.substitute(FIELD=field.name, TYPE=itype)
 
   @classmethod
+  def GetParamLine(cls, name, kind):
+    line = None
+    if mojom_generator.IsObjectKind(kind):
+      line = "mojo::internal::Wrap(params->%s())" % (name)
+    else:
+      line = "params->%s()" % name
+    return line
+
+  @classmethod
   def GetCaseLine(cls, interface, method):
-    params = map(lambda param: "params->%s()" % param.name, method.parameters)
+    params = map(
+        lambda param: cls.GetParamLine(
+            param.name,
+            param.kind),
+        method.parameters)
     method_call = "%s(%s);" % (method.name, ", ".join(params))
 
     return cls.GetTemplate("interface_stub_case").substitute(
@@ -198,7 +232,7 @@ class CPPGenerator(object):
   def GetSerializedFields(cls, ps):
     fields = []
     for pf in ps.packed_fields:
-      if IsPointerKind(pf.field.kind):
+      if mojom_generator.IsObjectKind(pf.field.kind):
         fields.append(pf.field)
     return fields
 
@@ -215,23 +249,13 @@ class CPPGenerator(object):
         (self.module.name.upper(), name.upper())
 
   def GetHeaderFile(self, *components):
+    components = map(mojom_generator.CamelToUnderscores, components)
     component_string = '_'.join(components)
-    return os.path.join(
-      self.header_dir,
-      "%s_%s.h" % (self.module.name.lower(), component_string.lower()))
+    return os.path.join(self.header_dir, "%s.h" % component_string)
 
-  # Pass |output_dir| to emit files to disk. Omit |output_dir| to echo all files
-  # to stdout.
-  def __init__(self, module, header_dir, output_dir=None):
-    self.module = module
-    self.header_dir = header_dir
-    self.output_dir = output_dir
-
-  def WriteTemplateToFile(self, template_name, name, **substitutions):
+  def WriteTemplateToFile(self, template_name, **substitutions):
     template = self.GetTemplate(template_name)
-    filename = "%s_%s" % (self.module.name.lower(), template_name)
-    filename = filename.replace("interface", name.lower())
-    filename = filename.replace("struct", name.lower())
+    filename = template_name.replace("module", self.module.name)
     substitutions['YEAR'] = datetime.date.today().year
     substitutions['NAMESPACE'] = self.module.namespace
     if self.output_dir is None:
@@ -244,8 +268,7 @@ class CPPGenerator(object):
       if self.output_dir is not None:
         file.close()
 
-  def GetStructDeclaration(self, name, ps):
-    params_template = self.GetTemplate("struct_declaration")
+  def GetStructDeclaration(self, name, ps, template, subs = {}):
     fields = []
     setters = []
     getters = []
@@ -271,257 +294,270 @@ class CPPGenerator(object):
       if pad > 0:
         fields.append(self.pad_template.substitute(COUNT=pad_count, PAD=pad))
         pad_count += 1
-      size = offset + pad
-    else:
-      size = 0
-    return params_template.substitute(
-        CLASS = name,
+
+    subs.update(
+        CLASS = name + '_Data',
+        WRAPPER = name,
         SETTERS = '\n'.join(setters),
         GETTERS = '\n'.join(getters),
         FIELDS = '\n'.join(fields),
-        SIZE = size + self.HEADER_SIZE)
+        SIZE = ps.GetTotalSize() + self.HEADER_SIZE)
+    return template.substitute(subs)
 
-  def GetStructImplementation(self, name, ps):
-    return self.GetTemplate("struct_implementation").substitute(
-        CLASS = name,
-        NUM_FIELDS = len(ps.packed_fields))
-
-  def GetStructSerialization(self, class_name, param_name, ps):
+  def GetStructSerialization(
+      self, class_name, param_name, ps, template, indent = None):
     struct = ps.struct
-    encodes = Lines(self.struct_serialization_encode_template)
-    encode_handles = Lines(self.struct_serialization_encode_handle_template)
-    decodes = Lines(self.struct_serialization_decode_template)
-    decode_handles = Lines(self.struct_serialization_decode_handle_template)
+    encodes = Lines(self.struct_serialization_encode_template, indent)
+    encode_handles = \
+        Lines(self.struct_serialization_encode_handle_template, indent)
+    decodes = Lines(self.struct_serialization_decode_template, indent)
+    decode_handles = \
+        Lines(self.struct_serialization_decode_handle_template, indent)
     fields = self.GetSerializedFields(ps)
     handle_fields = self.GetHandleFields(ps)
     for field in fields:
-      substitutions = {'NAME': param_name, 'FIELD': field.name.lower()}
+      substitutions = {'NAME': param_name, 'FIELD': field.name}
       encodes.Add(substitutions)
       decodes.Add(substitutions)
     for field in handle_fields:
-      substitutions = {'NAME': param_name, 'FIELD': field.name.lower()}
+      substitutions = {'NAME': param_name, 'FIELD': field.name}
       encode_handles.Add(substitutions)
       decode_handles.Add(substitutions)
-    return self.GetTemplate("struct_serialization").substitute(
-        CLASS = "%s::%s" % (self.module.namespace.lower(), class_name),
+    return template.substitute(
+        CLASS = \
+            "%s::internal::%s" % (self.module.namespace, class_name + '_Data'),
         NAME = param_name,
         ENCODES = encodes,
         DECODES = decodes,
         ENCODE_HANDLES = encode_handles,
         DECODE_HANDLES = decode_handles)
 
-  def GenerateStructHeader(self, ps):
-    struct = ps.struct
-    forwards = Forwards()
-    for field in struct.fields:
-      forwards.Add(field.kind)
+  def GetStructClassDeclarations(self):
+    struct_decls = map(
+        lambda s: self.GetStructDeclaration(
+            s.name,
+            mojom_pack.PackedStruct(s),
+            self.GetTemplate("struct_declaration"),
+            {}),
+        self.module.structs)
+    return '\n'.join(struct_decls)
 
-    self.WriteTemplateToFile("struct.h", struct.name,
-        HEADER_GUARD = self.GetHeaderGuard(struct.name),
-        CLASS = struct.name.capitalize(),
-        FORWARDS = forwards,
-        DECLARATION = self.GetStructDeclaration(struct.name.capitalize(), ps))
+  def GetWrapperDeclaration(self, name, ps, template, subs = {}):
+    setters = []
+    getters = []
+    num_fields = len(ps.packed_fields)
+    for i in xrange(num_fields):
+      field = ps.packed_fields[i].field
+      setters.append(self.GetWrapperSetterLine(field))
+      getters.append(self.GetWrapperGetterLine(field))
+    subs.update(
+        CLASS = name,
+        SETTERS = '\n'.join(setters),
+        GETTERS = '\n'.join(getters))
+    return template.substitute(subs)
 
-  def GenerateStructSource(self, ps):
-    struct = ps.struct
-    header = self.GetHeaderFile(struct.name)
-    implementation = self.GetStructImplementation(struct.name.capitalize(), ps)
-    self.WriteTemplateToFile("struct.cc", struct.name,
-        CLASS = struct.name.capitalize(),
-        NUM_FIELDS = len(struct.fields),
-        HEADER = header,
-        IMPLEMENTATION = implementation)
+  def GetWrapperClassDeclarations(self):
+    wrapper_decls = map(
+        lambda s: self.GetWrapperDeclaration(
+            s.name,
+            mojom_pack.PackedStruct(s),
+            self.GetTemplate("wrapper_class_declaration"),
+            {}),
+        self.module.structs)
+    return '\n'.join(wrapper_decls)
 
-  def GenerateStructSerializationHeader(self, ps):
-    struct = ps.struct
-    self.WriteTemplateToFile("struct_serialization.h", struct.name,
-        HEADER_GUARD = self.GetHeaderGuard(struct.name + "_SERIALIZATION"),
-        CLASS = struct.name.capitalize(),
-        FULL_CLASS = "%s::%s" % \
-            (self.module.namespace, struct.name.capitalize()))
+  def GetWrapperForwardDeclarations(self):
+    wrapper_fwds = map(lambda s: "class " + s.name + ";", self.module.structs)
+    return '\n'.join(wrapper_fwds)
 
-  def GenerateStructSerializationSource(self, ps):
-    struct = ps.struct
-    serialization_header = self.GetHeaderFile(struct.name, "serialization")
-
-    kinds = DependentKinds()
-    for field in struct.fields:
-      kinds.AddKind(field.kind)
-    headers = \
-        map(lambda kind: self.GetHeaderFile(kind.name, "serialization"), kinds)
-    headers.append(self.GetHeaderFile(struct.name))
-    includes = map(lambda header: "#include \"%s\"" % header, sorted(headers))
-
-    class_header = self.GetHeaderFile(struct.name)
-    clones = Lines(self.struct_serialization_clone_template)
-    sizes = "  return sizeof(*%s)" % struct.name.lower()
-    fields = self.GetSerializedFields(ps)
-    for field in fields:
-      substitutions = {'NAME': struct.name.lower(), 'FIELD': field.name.lower()}
-      sizes += \
-          self.struct_serialization_compute_template.substitute(substitutions)
-      clones.Add(substitutions)
-    sizes += ";"
-    serialization = \
-        self.GetStructSerialization(struct.name.capitalize(), struct.name, ps)
-    self.WriteTemplateToFile("struct_serialization.cc", struct.name,
-        NAME = struct.name.lower(),
-        CLASS = "%s::%s" % \
-            (self.module.namespace.lower(), struct.name.capitalize()),
-        SERIALIZATION_HEADER = serialization_header,
-        INCLUDES = '\n'.join(includes),
-        SIZES = sizes,
-        CLONES = clones,
-        SERIALIZATION = serialization)
-
-  def GenerateInterfaceHeader(self, interface):
+  def GetInterfaceClassDeclaration(self, interface, template, method_postfix):
     methods = []
-    forwards = Forwards()
     for method in interface.methods:
       params = []
       for param in method.parameters:
-        forwards.Add(param.kind)
-        params.append("%s %s" % (self.GetConstType(param.kind), param.name))
+        params.append("%s %s" %
+                          (self.GetConstWrapperType(param.kind), param.name))
       methods.append(
-          "  virtual void %s(%s) = 0;" % (method.name, ", ".join(params)))
+          "  virtual void %s(%s) %s;" %
+              (method.name, ", ".join(params), method_postfix))
+    return template.substitute(
+        CLASS=interface.name,
+        PEER=interface.peer,
+        METHODS='\n'.join(methods))
 
-    self.WriteTemplateToFile("interface.h", interface.name,
-        HEADER_GUARD = self.GetHeaderGuard(interface.name),
-        CLASS = interface.name.capitalize(),
-        FORWARDS = forwards,
-        METHODS = '\n'.join(methods))
+  def GetInterfaceClassDeclarations(self):
+    template = self.GetTemplate("interface_declaration")
+    interface_decls = \
+        map(lambda i:
+                self.GetInterfaceClassDeclaration(i, template, " = 0"),
+            self.module.interfaces)
+    return '\n'.join(interface_decls)
 
-  def GenerateInterfaceStubHeader(self, interface):
-    header = self.GetHeaderFile(interface.name)
-    self.WriteTemplateToFile("interface_stub.h", interface.name,
-        HEADER_GUARD = self.GetHeaderGuard(interface.name + "_STUB"),
-        CLASS = interface.name.capitalize(),
-        HEADER = header)
+  def GetInterfaceProxyDeclarations(self):
+    template = self.GetTemplate("interface_proxy_declaration")
+    interface_decls = \
+        map(lambda i:
+                self.GetInterfaceClassDeclaration(i, template, "MOJO_OVERRIDE"),
+            self.module.interfaces)
+    return '\n'.join(interface_decls)
 
-  def GenerateInterfaceStubSource(self, interface):
-    stub_header = self.GetHeaderFile(interface.name, "stub")
-    serialization_header = self.GetHeaderFile(interface.name, "serialization")
+  def GetInterfaceStubDeclarations(self):
+    template = self.GetTemplate("interface_stub_declaration")
+    interface_decls = \
+        map(lambda i: template.substitute(CLASS=i.name), self.module.interfaces)
+    return '\n'.join(interface_decls)
+
+  def GenerateModuleHeader(self):
+    self.WriteTemplateToFile("module.h",
+        HEADER_GUARD = self.GetHeaderGuard(self.module.name),
+        INTERNAL_HEADER = self.GetHeaderFile(self.module.name, "internal"),
+        WRAPPER_CLASS_DECLARATIONS = self.GetWrapperClassDeclarations(),
+        INTERFACE_CLASS_DECLARATIONS = self.GetInterfaceClassDeclarations(),
+        INTERFACE_PROXY_DECLARATIONS = self.GetInterfaceProxyDeclarations(),
+        INTERFACE_STUB_DECLARATIONS = self.GetInterfaceStubDeclarations())
+
+  def GetParamsDefinition(self, interface, method):
+    struct = mojom_generator.GetStructFromMethod(interface, method)
+    method_name = "k%s_%s_Name" % (interface.name, method.name)
+    assert method.ordinal is not None
+    params_def = self.GetStructDeclaration(
+        struct.name,
+        mojom_pack.PackedStruct(struct),
+        self.GetTemplate("params_definition"),
+        {'METHOD_NAME': method_name, 'METHOD_ID': method.ordinal})
+    return params_def
+
+  def GetStructDefinitions(self):
+    template = self.GetTemplate("struct_definition")
+    return '\n'.join(map(
+        lambda s: template.substitute(
+            CLASS = s.name + '_Data',
+            NUM_FIELDS = len(s.fields)),
+            self.module.structs));
+
+  def GetStructBuilderDefinitions(self):
+    template = self.GetTemplate("struct_builder_definition")
+    return '\n'.join(map(
+        lambda s: template.substitute(CLASS = s.name), self.module.structs));
+
+  def GetInterfaceDefinition(self, interface):
     cases = []
+    implementations = Lines(self.GetTemplate("proxy_implementation"))
+
     for method in interface.methods:
       cases.append(self.GetCaseLine(interface, method))
-    self.WriteTemplateToFile("interface_stub.cc", interface.name,
-        CLASS = interface.name.capitalize(),
-        CASES = '\n'.join(cases),
-        STUB_HEADER = stub_header,
-        SERIALIZATION_HEADER = serialization_header)
-
-  def GenerateInterfaceSerializationHeader(self, interface):
-    kinds = DependentKinds()
-    for method in interface.methods:
-      for param in method.parameters:
-        kinds.AddKind(param.kind)
-    headers = \
-        map(lambda kind: self.GetHeaderFile(kind.name, "serialization"), kinds)
-    headers.append(self.GetHeaderFile(interface.name))
-    headers.append("mojo/public/bindings/lib/bindings_serialization.h")
-    includes = map(lambda header: "#include \"%s\"" % header, sorted(headers))
-
-    names = []
-    name = 1
-    param_classes = []
-    param_templates = []
-    template_declaration = self.GetTemplate("template_declaration")
-    for method in interface.methods:
-      names.append(self.name_template.substitute(
-        INTERFACE = interface.name.capitalize(),
-        METHOD = method.name.capitalize(),
-        NAME = name))
-      name += 1
-
-      struct = GetStructFromMethod(interface, method)
-      ps = mojom_pack.PackedStruct(struct)
-      param_classes.append(self.GetStructDeclaration(struct.name, ps))
-      param_templates.append(template_declaration.substitute(CLASS=struct.name))
-
-    self.WriteTemplateToFile("interface_serialization.h", interface.name,
-        HEADER_GUARD = self.GetHeaderGuard(interface.name + "_SERIALIZATION"),
-        INCLUDES = '\n'.join(includes),
-        NAMES = '\n'.join(names),
-        PARAM_CLASSES = '\n'.join(param_classes),
-        PARAM_TEMPLATES = '\n'.join(param_templates))
-
-  def GenerateInterfaceSerializationSource(self, interface):
-    implementations = []
-    serializations = []
-    for method in interface.methods:
-      struct = GetStructFromMethod(interface, method)
-      ps = mojom_pack.PackedStruct(struct)
-      implementations.append(self.GetStructImplementation(struct.name, ps))
-      serializations.append(
-          self.GetStructSerialization("internal::" + struct.name, "params", ps))
-    self.WriteTemplateToFile("interface_serialization.cc", interface.name,
-        HEADER = self.GetHeaderFile(interface.name.lower(), "serialization"),
-        IMPLEMENTATIONS = '\n'.join(implementations),
-        SERIALIZATIONS = '\n'.join(serializations))
-
-  def GenerateInterfaceProxyHeader(self, interface):
-    methods = []
-    for method in interface.methods:
-      params = map(
-          lambda param: "%s %s" % (self.GetConstType(param.kind), param.name),
-          method.parameters)
-      methods.append(
-          "  virtual void %s(%s) MOJO_OVERRIDE;" \
-              % (method.name, ", ".join(params)))
-
-    self.WriteTemplateToFile("interface_proxy.h", interface.name,
-        HEADER_GUARD = self.GetHeaderGuard(interface.name + "_PROXY"),
-        HEADER = self.GetHeaderFile(interface.name),
-        CLASS = interface.name.capitalize(),
-        METHODS = '\n'.join(methods))
-
-  def GenerateInterfaceProxySource(self, interface):
-    implementations = Lines(self.GetTemplate("proxy_implementation"))
-    for method in interface.methods:
       sets = []
       computes = Lines(self.param_struct_compute_template)
       for param in method.parameters:
-        if IsPointerKind(param.kind):
+        if mojom_generator.IsObjectKind(param.kind):
           sets.append(
               self.param_struct_set_template.substitute(NAME=param.name))
           computes.Add(NAME=param.name)
         else:
           sets.append(self.param_set_template.substitute(NAME=param.name))
       params_list = map(
-          lambda param: "%s %s" % (self.GetConstType(param.kind), param.name),
+          lambda param: "%s %s" %
+                            (self.GetConstWrapperType(param.kind), param.name),
           method.parameters)
-      name = \
-          "internal::k%s_%s_Name" % (interface.name.capitalize(), method.name)
+      name = "internal::k%s_%s_Name" % (interface.name, method.name)
       params_name = \
-          "internal::%s_%s_Params" % (interface.name.capitalize(), method.name)
+          "internal::%s_%s_Params_Data" % (interface.name, method.name)
 
       implementations.Add(
-          CLASS = interface.name.capitalize(),
+          CLASS = interface.name,
           METHOD = method.name,
           NAME = name,
           PARAMS = params_name,
           PARAMS_LIST = ', '.join(params_list),
           COMPUTES = computes,
           SETS = '\n'.join(sets))
-    self.WriteTemplateToFile("interface_proxy.cc", interface.name,
-        HEADER = self.GetHeaderFile(interface.name, "proxy"),
-        SERIALIZATION_HEADER = \
-          self.GetHeaderFile(interface.name, "serialization"),
-        CLASS = interface.name.capitalize(),
-        IMPLEMENTATIONS = implementations)
+    stub_definition = self.GetTemplate("interface_stub_definition").substitute(
+        CLASS = interface.name,
+        CASES = '\n'.join(cases))
+    return self.GetTemplate("interface_definition").substitute(
+        CLASS = interface.name + "Proxy",
+        PROXY_DEFINITIONS = implementations,
+        STUB_DEFINITION = stub_definition)
+
+  def GetInterfaceDefinitions(self):
+    return '\n'.join(
+        map(lambda i: self.GetInterfaceDefinition(i), self.module.interfaces))
+
+  def GetStructSerializationDefinition(self, struct):
+    ps = mojom_pack.PackedStruct(struct)
+    param_name = mojom_generator.CamelToUnderscores(struct.name)
+
+    clones = Lines(self.struct_serialization_clone_template)
+    sizes = "  return sizeof(*%s)" % param_name
+    fields = self.GetSerializedFields(ps)
+    for field in fields:
+      substitutions = {'NAME': param_name, 'FIELD': field.name}
+      sizes += \
+          self.struct_serialization_compute_template.substitute(substitutions)
+      clones.Add(substitutions)
+    sizes += ";"
+    serialization = self.GetStructSerialization(
+      struct.name, param_name, ps, self.GetTemplate("struct_serialization"))
+    return self.GetTemplate("struct_serialization_definition").substitute(
+        NAME = param_name,
+        CLASS = "%s::internal::%s_Data" % (self.module.namespace, struct.name),
+        SIZES = sizes,
+        CLONES = clones,
+        SERIALIZATION = serialization)
+
+  def GetStructSerializationDefinitions(self):
+    return '\n'.join(
+        map(lambda i: self.GetStructSerializationDefinition(i),
+            self.module.structs))
+
+  def GetInterfaceSerializationDefinitions(self):
+    serializations = []
+    for interface in self.module.interfaces:
+      for method in interface.methods:
+        struct = mojom_generator.GetStructFromMethod(interface, method)
+        ps = mojom_pack.PackedStruct(struct)
+        serializations.append(self.GetStructSerialization(
+            struct.name,
+            "params",
+            ps,
+            self.GetTemplate("params_serialization"),
+            2))
+    return '\n'.join(serializations)
+
+  def GetParamsDefinitions(self):
+    params_defs = []
+    for interface in self.module.interfaces:
+      for method in interface.methods:
+        params_def = self.GetParamsDefinition(interface, method)
+        params_defs.append(params_def)
+    return '\n'.join(params_defs)
+
+  def GenerateModuleSource(self):
+    self.WriteTemplateToFile("module.cc",
+        HEADER = self.GetHeaderFile(self.module.name),
+        PARAM_DEFINITIONS = self.GetParamsDefinitions(),
+        STRUCT_DEFINITIONS = self.GetStructDefinitions(),
+        STRUCT_BUILDER_DEFINITIONS = self.GetStructBuilderDefinitions(),
+        INTERFACE_DEFINITIONS = self.GetInterfaceDefinitions(),
+        STRUCT_SERIALIZATION_DEFINITIONS =
+            self.GetStructSerializationDefinitions(),
+        INTERFACE_SERIALIZATION_DEFINITIONS =
+            self.GetInterfaceSerializationDefinitions())
+
+  def GenerateModuleInternalHeader(self):
+    traits = map(
+      lambda s: self.GetTemplate("struct_serialization_traits").substitute(
+          NAME = mojom_generator.CamelToUnderscores(s.name),
+          FULL_CLASS = \
+              "%s::internal::%s" % (self.module.namespace, s.name + '_Data')),
+      self.module.structs);
+    self.WriteTemplateToFile("module_internal.h",
+        HEADER_GUARD = self.GetHeaderGuard(self.module.name + "_INTERNAL"),
+        WRAPPER_FORWARD_DECLARATIONS = self.GetWrapperForwardDeclarations(),
+        STRUCT_CLASS_DECLARATIONS = self.GetStructClassDeclarations(),
+        TRAITS = '\n'.join(traits))
 
   def GenerateFiles(self):
-    for struct in self.module.structs:
-      ps = mojom_pack.PackedStruct(struct)
-      self.GenerateStructHeader(ps)
-      self.GenerateStructSource(ps)
-      self.GenerateStructSerializationHeader(ps)
-      self.GenerateStructSerializationSource(ps)
-    for interface in self.module.interfaces:
-      self.GenerateInterfaceHeader(interface)
-      self.GenerateInterfaceStubHeader(interface)
-      self.GenerateInterfaceStubSource(interface)
-      self.GenerateInterfaceSerializationHeader(interface)
-      self.GenerateInterfaceSerializationSource(interface)
-      self.GenerateInterfaceProxyHeader(interface)
-      self.GenerateInterfaceProxySource(interface)
+    self.GenerateModuleHeader()
+    self.GenerateModuleInternalHeader()
+    self.GenerateModuleSource()

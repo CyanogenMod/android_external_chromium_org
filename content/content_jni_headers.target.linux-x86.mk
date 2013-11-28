@@ -12,17 +12,18 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp \
+	$(call intermediates-dir-for,GYP,content_java_view_jni_headers_gyp)/java_view_jni_headers.stamp
 
 
 ### Generated for rule "content_content_gyp_content_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java', 'public/android/java/src/org/chromium/content/browser/GenericTouchGesture.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java', 'public/android/java/src/org/chromium/content/browser/VibrationMessageFilter.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/CommandLine.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'int'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java', 'public/android/java/src/org/chromium/content/browser/VibrationProvider.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/app/ChildProcessService.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/app/ChildProcessService.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/app/ChildProcessService.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h
@@ -32,7 +33,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h: gyp_intermediate_d
 $(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/app/ContentMain.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/app/ContentMain.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/app/ContentMain.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h
@@ -42,7 +43,7 @@ $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h: gyp_intermediate
 $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/app/LibraryLoader.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/app/LibraryLoader.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/app/LibraryLoader.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h
@@ -52,7 +53,7 @@ $(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: gy
 $(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h
@@ -62,7 +63,7 @@ $(gyp_shared_intermediate_dir)/content/jni/BrowserStartupController_jni.h: gyp_i
 $(gyp_shared_intermediate_dir)/content/jni/BrowserStartupController_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/BrowserStartupController_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/BrowserStartupController_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/BrowserStartupController.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/BrowserStartupController.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/BrowserStartupController.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/BrowserStartupController_jni.h
@@ -72,7 +73,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h: gyp_inter
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h
@@ -82,7 +83,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h: gyp_intermedia
 $(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/ContentSettings.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentSettings.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentSettings.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h
@@ -92,7 +93,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ContentVideoView_jni.h: gyp_intermedi
 $(gyp_shared_intermediate_dir)/content/jni/ContentVideoView_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ContentVideoView_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ContentVideoView_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/ContentVideoView.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentVideoView.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentVideoView.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ContentVideoView_jni.h
@@ -102,7 +103,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ContentViewCore_jni.h: gyp_intermedia
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewCore_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewCore_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewCore_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/ContentViewCore.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentViewCore.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentViewCore.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ContentViewCore_jni.h
@@ -112,7 +113,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ContentViewRenderView_jni.h: gyp_inte
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewRenderView_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewRenderView_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewRenderView_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ContentViewRenderView_jni.h
@@ -122,7 +123,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ContentViewStatics_jni.h: gyp_interme
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewStatics_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewStatics_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ContentViewStatics_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/ContentViewStatics.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentViewStatics.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/ContentViewStatics.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ContentViewStatics_jni.h
@@ -132,7 +133,7 @@ $(gyp_shared_intermediate_dir)/content/jni/DeviceMotionAndOrientation_jni.h: gyp
 $(gyp_shared_intermediate_dir)/content/jni/DeviceMotionAndOrientation_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/DeviceMotionAndOrientation_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/DeviceMotionAndOrientation_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/DeviceMotionAndOrientation_jni.h
@@ -142,7 +143,7 @@ $(gyp_shared_intermediate_dir)/content/jni/DownloadController_jni.h: gyp_interme
 $(gyp_shared_intermediate_dir)/content/jni/DownloadController_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/DownloadController_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/DownloadController_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/DownloadController.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/DownloadController.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/DownloadController.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/DownloadController_jni.h
@@ -152,7 +153,7 @@ $(gyp_shared_intermediate_dir)/content/jni/ImeAdapter_jni.h: gyp_intermediate_di
 $(gyp_shared_intermediate_dir)/content/jni/ImeAdapter_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ImeAdapter_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/ImeAdapter_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/ImeAdapter_jni.h
@@ -162,7 +163,7 @@ $(gyp_shared_intermediate_dir)/content/jni/DateTimeChooserAndroid_jni.h: gyp_int
 $(gyp_shared_intermediate_dir)/content/jni/DateTimeChooserAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/DateTimeChooserAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/DateTimeChooserAndroid_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/DateTimeChooserAndroid_jni.h
@@ -172,7 +173,7 @@ $(gyp_shared_intermediate_dir)/content/jni/InterstitialPageDelegateAndroid_jni.h
 $(gyp_shared_intermediate_dir)/content/jni/InterstitialPageDelegateAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/InterstitialPageDelegateAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/InterstitialPageDelegateAndroid_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/InterstitialPageDelegateAndroid_jni.h
@@ -182,7 +183,7 @@ $(gyp_shared_intermediate_dir)/content/jni/LoadUrlParams_jni.h: gyp_intermediate
 $(gyp_shared_intermediate_dir)/content/jni/LoadUrlParams_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/LoadUrlParams_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/LoadUrlParams_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/LoadUrlParams.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/LoadUrlParams.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/LoadUrlParams.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/LoadUrlParams_jni.h
@@ -192,7 +193,7 @@ $(gyp_shared_intermediate_dir)/content/jni/LocationProvider_jni.h: gyp_intermedi
 $(gyp_shared_intermediate_dir)/content/jni/LocationProvider_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/LocationProvider_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/LocationProvider_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/LocationProvider.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/LocationProvider.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/LocationProvider.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/LocationProvider_jni.h
@@ -202,7 +203,7 @@ $(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h: gyp_
 $(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h
@@ -212,7 +213,7 @@ $(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h: gyp_interm
 $(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h
@@ -222,37 +223,37 @@ $(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h: gyp_intermedi
 $(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h
-
-$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/GenericTouchGesture.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/GenericTouchGesture.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
-
-.PHONY: content_content_jni_headers_gyp_rule_trigger
-content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h
 
 $(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/SpeechRecognition.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/SpeechRecognition.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/SpeechRecognition.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h
+
+$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+
+.PHONY: content_content_jni_headers_gyp_rule_trigger
+content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h
 
 $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/TouchPoint.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TouchPoint.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TouchPoint.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h
@@ -262,47 +263,37 @@ $(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: gyp_i
 $(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h
 
-$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/VibrationMessageFilter.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/VibrationMessageFilter.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/VibrationProvider.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/VibrationProvider.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
-content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h
+content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h
 
 $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h
-
-$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/CommandLine.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/common/CommandLine.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
-
-.PHONY: content_content_jni_headers_gyp_rule_trigger
-content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h
 
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h
@@ -312,7 +303,7 @@ $(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h: gyp_intermediate_di
 $(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/TraceEvent.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/common/TraceEvent.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/common/TraceEvent.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h
@@ -341,13 +332,12 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h
 
@@ -376,13 +366,12 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/content/jni/MediaDrmCredentialManager_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/MediaResourceGetter_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/PowerSaveBlocker_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/TouchEventSynthesizer_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h \
 	content_content_jni_headers_gyp_rule_trigger
@@ -442,6 +431,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -524,6 +514,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

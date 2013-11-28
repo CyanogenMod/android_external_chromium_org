@@ -47,6 +47,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/icon_helper.cc \
 	android_webview/browser/in_process_view_renderer.cc \
+	android_webview/browser/intercepted_request_data.cc \
 	android_webview/browser/gl_view_renderer_manager.cc \
 	android_webview/browser/net/android_stream_reader_url_request_job.cc \
 	android_webview/browser/net/aw_network_delegate.cc \
@@ -66,6 +67,7 @@ LOCAL_SRC_FILES := \
 	android_webview/lib/aw_browser_dependency_factory_impl.cc \
 	android_webview/lib/main/aw_main_delegate.cc \
 	android_webview/renderer/aw_content_renderer_client.cc \
+	android_webview/renderer/aw_key_systems.cc \
 	android_webview/renderer/aw_render_process_observer.cc \
 	android_webview/renderer/aw_render_view_ext.cc
 
@@ -118,12 +120,14 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -228,12 +232,14 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

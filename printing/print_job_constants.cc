@@ -105,6 +105,10 @@ const char kSettingPageRangeFrom[] = "from";
 // The last page of a page range. (1-based)
 const char kSettingPageRangeTo[] = "to";
 
+// Page size of document to print.
+const char kSettingPageWidth[] = "pageWidth";
+const char kSettingPageHeight[] = "pageHeight";
+
 const char kSettingPreviewModifiable[] = "previewModifiable";
 
 // Keys that specifies the printable area details.
@@ -118,6 +122,13 @@ const char kSettingPrinterName[] = "printerName";
 
 // Print to PDF option: true if selected, false if not.
 const char kSettingPrintToPDF[] = "printToPDF";
+
+// Print using Privet option: true if destination is a Privet printer, false if
+// not.
+const char kSettingPrintWithPrivet[] = "printWithPrivet";
+
+// Ticket option. Contains the ticket in CJT format.
+const char kSettingTicket[] = "ticket";
 
 // Whether to print CSS backgrounds.
 const char kSettingShouldPrintBackgrounds[] = "shouldPrintBackgrounds";

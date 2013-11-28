@@ -148,8 +148,8 @@ OmniboxEventProto::PageClassification AsOmniboxEventPageClassification(
   switch (page_classification) {
     case AutocompleteInput::INVALID_SPEC:
       return OmniboxEventProto::INVALID_SPEC;
-    case AutocompleteInput::NEW_TAB_PAGE:
-      return OmniboxEventProto::NEW_TAB_PAGE;
+    case AutocompleteInput::NTP:
+      return OmniboxEventProto::NTP;
     case AutocompleteInput::BLANK:
       return OmniboxEventProto::BLANK;
     case AutocompleteInput::HOME_PAGE:
@@ -159,12 +159,10 @@ OmniboxEventProto::PageClassification AsOmniboxEventPageClassification(
     case AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT:
       return OmniboxEventProto::
           SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
-    case AutocompleteInput::INSTANT_NEW_TAB_PAGE_WITH_OMNIBOX_AS_STARTING_FOCUS:
-      return OmniboxEventProto::
-          INSTANT_NEW_TAB_PAGE_WITH_OMNIBOX_AS_STARTING_FOCUS;
-    case AutocompleteInput::INSTANT_NEW_TAB_PAGE_WITH_FAKEBOX_AS_STARTING_FOCUS:
-      return OmniboxEventProto::
-          INSTANT_NEW_TAB_PAGE_WITH_FAKEBOX_AS_STARTING_FOCUS;
+    case AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS:
+      return OmniboxEventProto::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS;
+    case AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS:
+      return OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS;
     case AutocompleteInput::SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT:
       return OmniboxEventProto::
           SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT;
@@ -205,6 +203,7 @@ ProfilerEventProto::TrackedObject::ProcessType AsProtobufProcessType(
   }
 }
 
+#if defined(ENABLE_PLUGINS)
 // Returns the plugin preferences corresponding for this user, if available.
 // If multiple user profiles are loaded, returns the preferences corresponding
 // to an arbitrary one of the profiles.
@@ -234,6 +233,7 @@ void SetPluginInfo(const content::WebPluginInfo& plugin_info,
   if (plugin_prefs)
     plugin->set_is_disabled(!plugin_prefs->IsPluginEnabled(plugin_info));
 }
+#endif  // defined(ENABLE_PLUGINS)
 
 void WriteFieldTrials(const std::vector<ActiveGroupId>& field_trial_ids,
                       SystemProfileProto* system_profile) {
@@ -383,7 +383,8 @@ static base::LazyInstance<std::string>::Leaky
   g_version_extension = LAZY_INSTANCE_INITIALIZER;
 
 MetricsLog::MetricsLog(const std::string& client_id, int session_id)
-    : MetricsLogBase(client_id, session_id, MetricsLog::GetVersionString()) {
+    : MetricsLogBase(client_id, session_id, MetricsLog::GetVersionString()),
+      creation_time_(base::TimeTicks::Now()) {
 #if defined(OS_CHROMEOS)
   UpdateMultiProfileUserCount();
 #endif
@@ -422,54 +423,33 @@ const std::string& MetricsLog::version_extension() {
   return g_version_extension.Get();
 }
 
-void MetricsLog::RecordIncrementalStabilityElements(
-    const std::vector<content::WebPluginInfo>& plugin_list,
-    base::TimeDelta incremental_uptime) {
+void MetricsLog::RecordStabilityMetrics(
+    base::TimeDelta incremental_uptime,
+    LogType log_type) {
+  DCHECK_NE(NO_LOG, log_type);
   DCHECK(!locked());
+  // Check UMA enabled date presence to ensure system profile has been filled.
+  DCHECK(uma_proto()->system_profile().has_uma_enabled_date());
 
   PrefService* pref = GetPrefService();
   DCHECK(pref);
-
-  WriteRequiredStabilityAttributes(pref);
-  WriteRealtimeStabilityAttributes(pref, incremental_uptime);
-  WritePluginStabilityElements(plugin_list, pref);
-}
-
-PrefService* MetricsLog::GetPrefService() {
-  return g_browser_process->local_state();
-}
-
-gfx::Size MetricsLog::GetScreenSize() const {
-  return gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().GetSizeInPixel();
-}
-
-float MetricsLog::GetScreenDeviceScaleFactor() const {
-  return gfx::Screen::GetNativeScreen()->
-      GetPrimaryDisplay().device_scale_factor();
-}
-
-int MetricsLog::GetScreenCount() const {
-  // TODO(scottmg): NativeScreen maybe wrong. http://crbug.com/133312
-  return gfx::Screen::GetNativeScreen()->GetNumDisplays();
-}
-
-void MetricsLog::GetFieldTrialIds(
-    std::vector<ActiveGroupId>* field_trial_ids) const {
-  chrome_variations::GetFieldTrialActiveGroupIds(field_trial_ids);
-}
-
-void MetricsLog::WriteStabilityElement(
-    const std::vector<content::WebPluginInfo>& plugin_list,
-    base::TimeDelta incremental_uptime,
-    PrefService* pref) {
-  DCHECK(!locked());
 
   // Get stability attributes out of Local State, zeroing out stored values.
   // NOTE: This could lead to some data loss if this report isn't successfully
   //       sent, but that's true for all the metrics.
 
   WriteRequiredStabilityAttributes(pref);
+  WritePluginStabilityElements(pref);
+
+  // Record recent delta for critical stability metrics.  We can't wait for a
+  // restart to gather these, as that delay biases our observation away from
+  // users that run happily for a looooong time.  We send increments with each
+  // uma log upload, just as we send histogram data.
   WriteRealtimeStabilityAttributes(pref, incremental_uptime);
+
+  // Omit some stats unless this is the initial stability log.
+  if (log_type != INITIAL_LOG)
+    return;
 
   int incomplete_shutdown_count =
       pref->GetInteger(prefs::kStabilityIncompleteSessionEndCount);
@@ -498,13 +478,32 @@ void MetricsLog::WriteStabilityElement(
       breakpad_registration_failure_count);
   stability->set_debugger_present_count(debugger_present_count);
   stability->set_debugger_not_present_count(debugger_not_present_count);
-
-  WritePluginStabilityElements(plugin_list, pref);
 }
 
-void MetricsLog::WritePluginStabilityElements(
-    const std::vector<content::WebPluginInfo>& plugin_list,
-    PrefService* pref) {
+PrefService* MetricsLog::GetPrefService() {
+  return g_browser_process->local_state();
+}
+
+gfx::Size MetricsLog::GetScreenSize() const {
+  return gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().GetSizeInPixel();
+}
+
+float MetricsLog::GetScreenDeviceScaleFactor() const {
+  return gfx::Screen::GetNativeScreen()->
+      GetPrimaryDisplay().device_scale_factor();
+}
+
+int MetricsLog::GetScreenCount() const {
+  // TODO(scottmg): NativeScreen maybe wrong. http://crbug.com/133312
+  return gfx::Screen::GetNativeScreen()->GetNumDisplays();
+}
+
+void MetricsLog::GetFieldTrialIds(
+    std::vector<ActiveGroupId>* field_trial_ids) const {
+  chrome_variations::GetFieldTrialActiveGroupIds(field_trial_ids);
+}
+
+void MetricsLog::WritePluginStabilityElements(PrefService* pref) {
   // Now log plugin stability info.
   const ListValue* plugin_stats_list = pref->GetList(
       prefs::kStabilityPluginStats);
@@ -514,7 +513,6 @@ void MetricsLog::WritePluginStabilityElements(
 #if defined(ENABLE_PLUGINS)
   SystemProfileProto::Stability* stability =
       uma_proto()->mutable_system_profile()->mutable_stability();
-  PluginPrefs* plugin_prefs = GetPluginPrefs();
   for (ListValue::const_iterator iter = plugin_stats_list->begin();
        iter != plugin_stats_list->end(); ++iter) {
     if (!(*iter)->IsType(Value::TYPE_DICTIONARY)) {
@@ -523,34 +521,30 @@ void MetricsLog::WritePluginStabilityElements(
     }
     DictionaryValue* plugin_dict = static_cast<DictionaryValue*>(*iter);
 
-    // Write the protobuf version.
     // Note that this search is potentially a quadratic operation, but given the
     // low number of plugins installed on a "reasonable" setup, this should be
     // fine.
     // TODO(isherman): Verify that this does not show up as a hotspot in
     // profiler runs.
-    const content::WebPluginInfo* plugin_info = NULL;
+    const SystemProfileProto::Plugin* system_profile_plugin = NULL;
     std::string plugin_name;
     plugin_dict->GetString(prefs::kStabilityPluginName, &plugin_name);
-    const string16 plugin_name_utf16 = UTF8ToUTF16(plugin_name);
-    for (std::vector<content::WebPluginInfo>::const_iterator iter =
-             plugin_list.begin();
-         iter != plugin_list.end(); ++iter) {
-      if (iter->name == plugin_name_utf16) {
-        plugin_info = &(*iter);
+    const SystemProfileProto& system_profile = uma_proto()->system_profile();
+    for (int i = 0; i < system_profile.plugin_size(); ++i) {
+      if (system_profile.plugin(i).name() == plugin_name) {
+        system_profile_plugin = &system_profile.plugin(i);
         break;
       }
     }
 
-    if (!plugin_info) {
+    if (!system_profile_plugin) {
       NOTREACHED();
       continue;
     }
 
     SystemProfileProto::Stability::PluginStability* plugin_stability =
         stability->add_plugin_stability();
-    SetPluginInfo(*plugin_info, plugin_prefs,
-                  plugin_stability->mutable_plugin());
+    *plugin_stability->mutable_plugin() = *system_profile_plugin;
 
     int launches = 0;
     plugin_dict->GetInteger(prefs::kStabilityPluginLaunches, &launches);
@@ -599,7 +593,7 @@ void MetricsLog::WriteRealtimeStabilityAttributes(
     base::TimeDelta incremental_uptime) {
   // Update the stats which are critical for real-time stability monitoring.
   // Since these are "optional," only list ones that are non-zero, as the counts
-  // are aggergated (summed) server side.
+  // are aggregated (summed) server side.
 
   SystemProfileProto::Stability* stability =
       uma_proto()->mutable_system_profile()->mutable_stability();
@@ -677,18 +671,7 @@ void MetricsLog::WritePluginList(
 void MetricsLog::RecordEnvironment(
     const std::vector<content::WebPluginInfo>& plugin_list,
     const GoogleUpdateMetrics& google_update_metrics,
-    base::TimeDelta incremental_uptime) {
-  DCHECK(!locked());
-
-  PrefService* pref = GetPrefService();
-  WriteStabilityElement(plugin_list, incremental_uptime, pref);
-
-  RecordEnvironmentProto(plugin_list, google_update_metrics);
-}
-
-void MetricsLog::RecordEnvironmentProto(
-    const std::vector<content::WebPluginInfo>& plugin_list,
-    const GoogleUpdateMetrics& google_update_metrics) {
+    const std::vector<chrome_variations::ActiveGroupId>& synthetic_trials) {
   SystemProfileProto* system_profile = uma_proto()->mutable_system_profile();
 
   std::string brand_code;
@@ -783,6 +766,7 @@ void MetricsLog::RecordEnvironmentProto(
   std::vector<ActiveGroupId> field_trial_ids;
   GetFieldTrialIds(&field_trial_ids);
   WriteFieldTrials(field_trial_ids, system_profile);
+  WriteFieldTrials(synthetic_trials, system_profile);
 
 #if defined(OS_CHROMEOS)
   PerfDataProto perf_data_proto;

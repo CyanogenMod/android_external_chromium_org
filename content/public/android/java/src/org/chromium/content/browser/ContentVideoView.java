@@ -9,9 +9,6 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Color;
-import android.os.Handler;
-import android.os.Message;
-import android.os.RemoteException;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -27,13 +24,9 @@ import android.widget.MediaController;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import java.lang.ref.WeakReference;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
-import org.chromium.content.common.IChildProcessService;
-import org.chromium.content.R;
 
 @JNINamespace("content")
 public class ContentVideoView
@@ -80,7 +73,7 @@ public class ContentVideoView
     private boolean mCanSeekForward;
 
     // Native pointer to C++ ContentVideoView object.
-    private int mNativeContentVideoView;
+    private long mNativeContentVideoView;
 
     // webkit should have prepared the media
     private int mCurrentState = STATE_IDLE;
@@ -100,7 +93,7 @@ public class ContentVideoView
 
     private Surface mSurface;
 
-    private ContentVideoViewClient mClient;
+    private final ContentVideoViewClient mClient;
 
     private class VideoSurfaceView extends SurfaceView {
 
@@ -113,9 +106,9 @@ public class ContentVideoView
             int width = getDefaultSize(mVideoWidth, widthMeasureSpec);
             int height = getDefaultSize(mVideoHeight, heightMeasureSpec);
             if (mVideoWidth > 0 && mVideoHeight > 0) {
-                if ( mVideoWidth * height  > width * mVideoHeight ) {
+                if (mVideoWidth * height  > width * mVideoHeight) {
                     height = width * mVideoHeight / mVideoWidth;
-                } else if ( mVideoWidth * height  < width * mVideoHeight ) {
+                } else if (mVideoWidth * height  < width * mVideoHeight) {
                     width = height * mVideoWidth / mVideoHeight;
                 }
             }
@@ -125,8 +118,8 @@ public class ContentVideoView
 
     private static class ProgressView extends LinearLayout {
 
-        private ProgressBar mProgressBar;
-        private TextView mTextView;
+        private final ProgressBar mProgressBar;
+        private final TextView mTextView;
 
         public ProgressView(Context context, String videoLoadingText) {
             super(context);
@@ -161,8 +154,8 @@ public class ContentVideoView
         }
 
         @Override
-        public void show(int timeout_ms) {
-            mMediaController.show(timeout_ms);
+        public void show(int timeoutMs) {
+            mMediaController.show(timeoutMs);
         }
 
         @Override
@@ -194,14 +187,14 @@ public class ContentVideoView
         }
     }
 
-    private Runnable mExitFullscreenRunnable = new Runnable() {
+    private final Runnable mExitFullscreenRunnable = new Runnable() {
         @Override
         public void run() {
             exitFullscreen(true);
         }
     };
 
-    private ContentVideoView(Context context, int nativeContentVideoView,
+    private ContentVideoView(Context context, long nativeContentVideoView,
             ContentVideoViewClient client) {
         super(context);
         mNativeContentVideoView = nativeContentVideoView;
@@ -288,19 +281,24 @@ public class ContentVideoView
                 message = mUnknownErrorText;
             }
 
-            new AlertDialog.Builder(getContext())
-                .setTitle(mErrorTitle)
-                .setMessage(message)
-                .setPositiveButton(mErrorButton,
-                        new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface dialog, int whichButton) {
-                        /* Inform that the video is over.
-                         */
-                        onCompletion();
-                    }
-                })
-                .setCancelable(false)
-                .show();
+            try {
+                new AlertDialog.Builder(getContext())
+                    .setTitle(mErrorTitle)
+                    .setMessage(message)
+                    .setPositiveButton(mErrorButton,
+                            new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int whichButton) {
+                            /* Inform that the video is over.
+                             */
+                            onCompletion();
+                        }
+                    })
+                    .setCancelable(false)
+                    .show();
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Cannot show the alert dialog, error message: " + message, e);
+            }
         }
     }
 
@@ -568,13 +566,14 @@ public class ContentVideoView
         return mCanSeekForward;
     }
 
+    @Override
     public int getAudioSessionId() {
         return 0;
     }
 
     @CalledByNative
     private static ContentVideoView createContentVideoView(
-            Context context, int nativeContentVideoView, ContentVideoViewClient client) {
+            Context context, long nativeContentVideoView, ContentVideoViewClient client) {
         ThreadUtils.assertOnUiThread();
         // The context needs be Activity to create the ContentVideoView correctly.
         if (!(context instanceof Activity)) {
@@ -645,15 +644,16 @@ public class ContentVideoView
     }
 
     private static native ContentVideoView nativeGetSingletonJavaContentVideoView();
-    private native void nativeExitFullscreen(int nativeContentVideoView, boolean relaseMediaPlayer);
-    private native int nativeGetCurrentPosition(int nativeContentVideoView);
-    private native int nativeGetDurationInMilliSeconds(int nativeContentVideoView);
-    private native void nativeUpdateMediaMetadata(int nativeContentVideoView);
-    private native int nativeGetVideoWidth(int nativeContentVideoView);
-    private native int nativeGetVideoHeight(int nativeContentVideoView);
-    private native boolean nativeIsPlaying(int nativeContentVideoView);
-    private native void nativePause(int nativeContentVideoView);
-    private native void nativePlay(int nativeContentVideoView);
-    private native void nativeSeekTo(int nativeContentVideoView, int msec);
-    private native void nativeSetSurface(int nativeContentVideoView, Surface surface);
+    private native void nativeExitFullscreen(long nativeContentVideoView,
+            boolean relaseMediaPlayer);
+    private native int nativeGetCurrentPosition(long nativeContentVideoView);
+    private native int nativeGetDurationInMilliSeconds(long nativeContentVideoView);
+    private native void nativeUpdateMediaMetadata(long nativeContentVideoView);
+    private native int nativeGetVideoWidth(long nativeContentVideoView);
+    private native int nativeGetVideoHeight(long nativeContentVideoView);
+    private native boolean nativeIsPlaying(long nativeContentVideoView);
+    private native void nativePause(long nativeContentVideoView);
+    private native void nativePlay(long nativeContentVideoView);
+    private native void nativeSeekTo(long nativeContentVideoView, int msec);
+    private native void nativeSetSurface(long nativeContentVideoView, Surface surface);
 }

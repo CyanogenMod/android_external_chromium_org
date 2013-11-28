@@ -79,8 +79,12 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void AboutToNavigateRenderView(
       RenderViewHost* render_view_host) {}
 
-  // This method is invoked right after the navigation was initiated.
-  virtual void NavigateToPendingEntry(
+  // This method is invoked after the browser process starts a navigation to a
+  // pending NavigationEntry. It is not called for renderer-initiated
+  // navigations unless they are sent to the browser process via OpenURL. It may
+  // be called multiple times for a given navigation, such as a typed URL
+  // followed by a cross-process client or server redirect.
+  virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       NavigationController::ReloadType reload_type) {}
 
@@ -217,6 +221,10 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   virtual void FrameDetached(RenderViewHost* render_view_host,
                              int64 frame_id) {}
+
+  // This method is invoked when the renderer has completed its first paint
+  // after a non-empty layout.
+  virtual void DidFirstVisuallyNonEmptyPaint(int32 page_id) {}
 
   // These two methods correspond to the points in time when the spinner of the
   // tab starts and stops spinning.

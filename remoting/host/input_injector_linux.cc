@@ -4,9 +4,9 @@
 
 #include "remoting/host/input_injector.h"
 
-#include <X11/Xlib.h>
-#include <X11/extensions/XTest.h>
 #include <X11/extensions/XInput.h>
+#include <X11/extensions/XTest.h>
+#include <X11/Xlib.h>
 
 #include <set>
 
@@ -14,12 +14,12 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/location.h"
-#include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "remoting/base/logging.h"
 #include "remoting/host/clipboard.h"
 #include "remoting/proto/internal.pb.h"
 #include "third_party/skia/include/core/SkPoint.h"
-#include "ui/base/keycodes/keycode_converter.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 
 namespace remoting {
 
@@ -433,7 +433,7 @@ void InputInjectorLinux::Core::InitMouseButtonMap() {
   XFreeDeviceList(devices);
 
   if (!device_found) {
-    LOG(INFO) << "Cannot find XTest device.";
+    HOST_LOG << "Cannot find XTest device.";
     return;
   }
 

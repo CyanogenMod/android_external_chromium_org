@@ -18,23 +18,50 @@ bool FirstRunHandler::IsInitialized() {
   return is_initialized_;
 }
 
-void FirstRunHandler::AddBackgroundHole(int x, int y, int width, int height) {
-  web_ui()->CallJavascriptFunction("cr.FirstRun.addHole",
+void FirstRunHandler::SetBackgroundVisible(bool visible) {
+  web_ui()->CallJavascriptFunction("cr.FirstRun.setBackgroundVisible",
+                                   base::FundamentalValue(visible));
+}
+
+void FirstRunHandler::AddRectangularHole(int x, int y, int width, int height) {
+  web_ui()->CallJavascriptFunction("cr.FirstRun.addRectangularHole",
                                    base::FundamentalValue(x),
                                    base::FundamentalValue(y),
                                    base::FundamentalValue(width),
                                    base::FundamentalValue(height));
 }
 
+void FirstRunHandler::AddRoundHole(int x, int y, float radius) {
+  web_ui()->CallJavascriptFunction("cr.FirstRun.addRoundHole",
+                                   base::FundamentalValue(x),
+                                   base::FundamentalValue(y),
+                                   base::FundamentalValue(radius));
+}
+
 void FirstRunHandler::RemoveBackgroundHoles() {
   web_ui()->CallJavascriptFunction("cr.FirstRun.removeHoles");
 }
 
-void FirstRunHandler::ShowStep(const std::string& name,
-                               const StepPosition& position) {
+void FirstRunHandler::ShowStepPositioned(const std::string& name,
+                                         const StepPosition& position) {
   web_ui()->CallJavascriptFunction("cr.FirstRun.showStep",
                                    base::StringValue(name),
                                    *position.AsValue());
+}
+
+void FirstRunHandler::ShowStepPointingTo(const std::string& name,
+                                         int x,
+                                         int y,
+                                         int offset) {
+  scoped_ptr<base::Value> null(base::Value::CreateNullValue());
+  base::ListValue point_with_offset;
+  point_with_offset.AppendInteger(x);
+  point_with_offset.AppendInteger(y);
+  point_with_offset.AppendInteger(offset);
+  web_ui()->CallJavascriptFunction("cr.FirstRun.showStep",
+                                   base::StringValue(name),
+                                   *null,
+                                   point_with_offset);
 }
 
 void FirstRunHandler::RegisterMessages() {
@@ -42,6 +69,12 @@ void FirstRunHandler::RegisterMessages() {
       base::Bind(&FirstRunHandler::HandleInitialized, base::Unretained(this)));
   web_ui()->RegisterMessageCallback("nextButtonClicked",
       base::Bind(&FirstRunHandler::HandleNextButtonClicked,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("helpButtonClicked",
+      base::Bind(&FirstRunHandler::HandleHelpButtonClicked,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("closeButtonClicked",
+      base::Bind(&FirstRunHandler::HandleCloseButtonClicked,
                  base::Unretained(this)));
 }
 
@@ -56,6 +89,16 @@ void FirstRunHandler::HandleNextButtonClicked(const base::ListValue* args) {
   CHECK(args->GetString(0, &step_name));
   if (delegate())
     delegate()->OnNextButtonClicked(step_name);
+}
+
+void FirstRunHandler::HandleHelpButtonClicked(const base::ListValue* args) {
+  if (delegate())
+    delegate()->OnHelpButtonClicked();
+}
+
+void FirstRunHandler::HandleCloseButtonClicked(const base::ListValue* args) {
+  if (delegate())
+    delegate()->OnCloseButtonClicked();
 }
 
 }  // namespace chromeos

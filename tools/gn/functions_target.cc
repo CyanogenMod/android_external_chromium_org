@@ -41,7 +41,7 @@ Value ExecuteGenericTarget(const char* target_type,
   if (err->has_error())
     return Value();
 
-  TargetGenerator::GenerateTarget(&block_scope, function->function(), args,
+  TargetGenerator::GenerateTarget(&block_scope, function, args,
                                   target_type, err);
   if (err->has_error())
     return Value();
@@ -109,7 +109,7 @@ Value RunComponent(Scope* scope,
   if (err->has_error())
     return Value();
 
-  TargetGenerator::GenerateTarget(&block_scope, function->function(), args,
+  TargetGenerator::GenerateTarget(&block_scope, function, args,
                                   component_mode, err);
   return Value();
 }
@@ -163,8 +163,7 @@ Value RunCopy(const FunctionCallNode* function,
   if (!EnsureNotProcessingImport(function, scope, err) ||
       !EnsureNotProcessingBuildConfig(function, scope, err))
     return Value();
-  TargetGenerator::GenerateTarget(scope, function->function(), args,
-                                  functions::kCopy, err);
+  TargetGenerator::GenerateTarget(scope, function, args, functions::kCopy, err);
   return Value();
 }
 
@@ -178,7 +177,7 @@ const char kCustom_Help[] =
     "  files and generate a set of output files.\n"
     "\n"
     "  The script will be executed with the given arguments with the current\n"
-    "  directory being that of the root build directory. If you pass\n"
+    "  directory being that of the root build directory. If you pass files\n"
     "  to your script, see \"gn help to_build_path\" for how to convert\n"
     "  file names to be relative to the build directory (file names in the\n"
     "  sources, outputs, and source_prereqs will be all treated as relative\n"

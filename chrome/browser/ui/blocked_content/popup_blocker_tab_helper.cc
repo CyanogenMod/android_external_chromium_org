@@ -25,7 +25,7 @@
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #endif
 
-using WebKit::WebWindowFeatures;
+using blink::WebWindowFeatures;
 
 const size_t kMaximumNumberOfPopups = 25;
 
@@ -135,8 +135,9 @@ size_t PopupBlockerTabHelper::GetBlockedPopupsCount() const {
   return blocked_popups_.size();
 }
 
-std::map<int32, GURL> PopupBlockerTabHelper::GetBlockedPopupRequests() {
-  std::map<int32, GURL> result;
+PopupBlockerTabHelper::PopupIdMap
+    PopupBlockerTabHelper::GetBlockedPopupRequests() {
+  PopupIdMap result;
   for (IDMap<BlockedRequest, IDMapOwnPointer>::const_iterator iter(
            &blocked_popups_);
        !iter.IsAtEnd();

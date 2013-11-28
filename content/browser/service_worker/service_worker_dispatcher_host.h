@@ -5,20 +5,25 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_HOST_H_
 
+#include "base/memory/weak_ptr.h"
 #include "content/public/browser/browser_message_filter.h"
 
 class GURL;
 
 namespace content {
 
-class ServiceWorkerContext;
+class ServiceWorkerContextCore;
+class ServiceWorkerContextWrapper;
+class ServiceWorkerProviderHost;
 
-class ServiceWorkerDispatcherHost : public BrowserMessageFilter {
+class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
  public:
-  ServiceWorkerDispatcherHost(int render_process_id,
-                              ServiceWorkerContext* context);
+  explicit ServiceWorkerDispatcherHost(int render_process_id);
+
+  void Init(ServiceWorkerContextWrapper* context_wrapper);
 
   // BrowserIOMessageFilter implementation
+  virtual void OnDestruct() const OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
 
@@ -26,6 +31,10 @@ class ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   virtual ~ServiceWorkerDispatcherHost();
 
  private:
+  friend class BrowserThread;
+  friend class base::DeleteHelper<ServiceWorkerDispatcherHost>;
+  friend class TestingServiceWorkerDispatcherHost;
+
   // IPC Message handlers
   void OnRegisterServiceWorker(int32 thread_id,
                                int32 request_id,
@@ -34,7 +43,11 @@ class ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnUnregisterServiceWorker(int32 thread_id,
                                  int32 request_id,
                                  const GURL& scope);
-  scoped_refptr<ServiceWorkerContext> context_;
+  void OnProviderCreated(int provider_id);
+  void OnProviderDestroyed(int provider_id);
+
+  int render_process_id_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
 };
 
 }  // namespace content

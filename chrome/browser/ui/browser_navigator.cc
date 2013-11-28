@@ -31,7 +31,6 @@
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_url_handler.h"
@@ -39,6 +38,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/common/extension.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
@@ -245,6 +245,7 @@ void LoadURLInContents(WebContents* target_contents,
                        chrome::NavigateParams* params) {
   NavigationController::LoadURLParams load_url_params(url);
   load_url_params.referrer = params->referrer;
+  load_url_params.frame_tree_node_id = params->frame_tree_node_id;
   load_url_params.redirect_chain = params->redirect_chain;
   load_url_params.transition_type = params->transition;
   load_url_params.extra_headers = params->extra_headers;
@@ -388,6 +389,7 @@ NavigateParams::NavigateParams(Browser* a_browser,
                                const GURL& a_url,
                                content::PageTransition a_transition)
     : url(a_url),
+      frame_tree_node_id(-1),
       uses_post(false),
       target_contents(NULL),
       source_contents(NULL),
@@ -409,7 +411,8 @@ NavigateParams::NavigateParams(Browser* a_browser,
 
 NavigateParams::NavigateParams(Browser* a_browser,
                                WebContents* a_target_contents)
-    : uses_post(false),
+    : frame_tree_node_id(-1),
+      uses_post(false),
       target_contents(a_target_contents),
       source_contents(NULL),
       disposition(CURRENT_TAB),
@@ -432,6 +435,7 @@ NavigateParams::NavigateParams(Profile* a_profile,
                                const GURL& a_url,
                                content::PageTransition a_transition)
     : url(a_url),
+      frame_tree_node_id(-1),
       uses_post(false),
       target_contents(NULL),
       source_contents(NULL),
@@ -456,6 +460,7 @@ NavigateParams::~NavigateParams() {}
 void FillNavigateParamsFromOpenURLParams(chrome::NavigateParams* nav_params,
                                          const content::OpenURLParams& params) {
   nav_params->referrer = params.referrer;
+  nav_params->frame_tree_node_id = params.frame_tree_node_id;
   nav_params->redirect_chain = params.redirect_chain;
   nav_params->extra_headers = params.extra_headers;
   nav_params->disposition = params.disposition;
@@ -578,6 +583,14 @@ void Navigate(NavigateParams* params) {
       // Prerender expects |params->target_contents| to be attached to a browser
       // window, so only call for CURRENT_TAB navigations. (Others are currently
       // unsupported because of session storage namespaces anyway.)
+      // Notice that this includes middle-clicking, since middle clicking
+      // translates into a chrome::Navigate call with no URL followed by a
+      // CURRENT_TAB navigation.
+      // TODO(tburkard): We can actually swap in in non-CURRENT_TAB cases, as
+      // long as the WebContents we swap into is part of a TabStrip model.
+      // Therefore, we should swap in regardless of CURRENT_TAB, and instead,
+      // check in the swapin function whether the WebContents is not in a
+      // TabStrip model, in which case we must not swap in.
       if (!swapped_in)
         swapped_in = SwapInPrerender(url, params);
     }

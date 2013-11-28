@@ -35,7 +35,7 @@ class CommandLine;
 class GURL;
 struct WebPreferences;
 
-namespace WebKit {
+namespace blink {
 struct WebWindowFeatures;
 }
 
@@ -94,6 +94,7 @@ class RenderViewHostDelegateView;
 class ResourceContext;
 class SiteInstance;
 class SpeechRecognitionManagerDelegate;
+class VibrationProvider;
 class WebContents;
 class WebContentsViewDelegate;
 class WebContentsViewPort;
@@ -239,11 +240,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void SiteInstanceDeleting(SiteInstance* site_instance) {}
 
   // Returns true if for the navigation from |current_url| to |new_url|
-  // in |site_instance|, the process should be swapped (even if we are in a
-  // process model that doesn't usually swap).
-  virtual bool ShouldSwapProcessesForNavigation(SiteInstance* site_instance,
-                                                const GURL& current_url,
-                                                const GURL& new_url);
+  // in |site_instance|, a new SiteInstance and BrowsingInstance should be
+  // created (even if we are in a process model that doesn't usually swap.)
+  // This forces a process swap and severs script connections with existing
+  // tabs.
+  virtual bool ShouldSwapBrowsingInstancesForNavigation(
+      SiteInstance* site_instance,
+      const GURL& current_url,
+      const GURL& new_url);
 
   // Returns true if the given navigation redirect should cause a renderer
   // process swap.
@@ -430,7 +434,7 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Checks if the given page has permission to show desktop notifications.
   // This is called on the IO thread.
-  virtual WebKit::WebNotificationPresenter::Permission
+  virtual blink::WebNotificationPresenter::Permission
       CheckDesktopNotificationPermission(
           const GURL& source_url,
           ResourceContext* context,
@@ -461,7 +465,7 @@ class CONTENT_EXPORT ContentBrowserClient {
                                const GURL& target_url,
                                const content::Referrer& referrer,
                                WindowOpenDisposition disposition,
-                               const WebKit::WebWindowFeatures& features,
+                               const blink::WebWindowFeatures& features,
                                bool user_gesture,
                                bool opener_suppressed,
                                content::ResourceContext* context,
@@ -569,7 +573,17 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Allows an embedder to return its own LocationProvider implementation.
   // Return NULL to use the default one for the platform to be created.
+  // FYI: Used by an external project; please don't remove.
+  // Contact Viatcheslav Ostapenko at sl.ostapenko@samsung.com for more
+  // information.
   virtual LocationProvider* OverrideSystemLocationProvider();
+
+  // Allows an embedder to return its own VibrationProvider implementation.
+  // Return NULL to use the default one for the platform to be created.
+  // FYI: Used by an external project; please don't remove.
+  // Contact Viatcheslav Ostapenko at sl.ostapenko@samsung.com for more
+  // information.
+  virtual VibrationProvider* OverrideVibrationProvider();
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching

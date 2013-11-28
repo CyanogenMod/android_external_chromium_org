@@ -7,7 +7,7 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_builder.h"
+#include "extensions/common/extension_builder.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -50,9 +50,7 @@ class ActivityLogApiTest : public ExtensionApiTest {
 // TODO(karenlees): fix flakiness on win debug - crbug.com/299393
 #define MAYBE_TriggerEvent DISABLED_TriggerEvent
 #else
-// Disabled while waiting for Blink roll to avoid
-// https://codereview.chromium.org/52203002
-#define MAYBE_TriggerEvent DISABLED_TriggerEvent
+#define MAYBE_TriggerEvent TriggerEvent
 #endif
 
 // The test extension sends a message to its 'friend'. The test completes

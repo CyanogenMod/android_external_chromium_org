@@ -40,7 +40,7 @@ bool RegisterJni(JNIEnv* env) {
 
 static void LoadNative(JNIEnv* env, jclass clazz, jobject context) {
   base::android::ScopedJavaLocalRef<jobject> context_activity(env, context);
-  base::android::InitApplicationContext(context_activity);
+  base::android::InitApplicationContext(env, context_activity);
 
   // The google_apis functions check the command-line arguments to make sure no
   // runtime API keys have been specified by the environment. Unfortunately, we
@@ -117,6 +117,15 @@ static void MouseAction(JNIEnv* env,
       buttonDown);
 }
 
+static void MouseWheelDeltaAction(JNIEnv* env,
+                                  jclass clazz,
+                                  jint delta_x,
+                                  jint delta_y) {
+  remoting::ChromotingJniRuntime::GetInstance()
+      ->session()
+      ->PerformMouseWheelDeltaAction(delta_x, delta_y);
+}
+
 static void KeyboardAction(JNIEnv* env,
                            jclass clazz,
                            jint keyCode,
@@ -138,11 +147,9 @@ ChromotingJniRuntime::ChromotingJniRuntime() {
 
   // On Android, the UI thread is managed by Java, so we need to attach and
   // start a special type of message loop to allow Chromium code to run tasks.
-  LOG(INFO) << "Starting main message loop";
   ui_loop_.reset(new base::MessageLoopForUI());
   ui_loop_->Start();
 
-  LOG(INFO) << "Spawning additional threads";
   // TODO(solb) Stop pretending to control the managed UI thread's lifetime.
   ui_task_runner_ = new AutoThreadTaskRunner(ui_loop_->message_loop_proxy(),
                                              base::MessageLoop::QuitClosure());

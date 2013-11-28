@@ -334,7 +334,7 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
         The Chromium Authors
       </message>
       <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-        Copyright 2013 The Chromium Authors. All rights reserved.
+        Copyright <ph name="YEAR">$1</ph> The Chromium Authors. All rights reserved.
       </message>
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
         Chromium is made possible by the <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Chromium<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open source project and other <ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2"&gt;</ph>open source software<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.
@@ -707,9 +707,6 @@ Chromium is unable to recover your settings.
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to restart Chromium OS. Shown next to a button that says 'Restart Now'.">
           Your changes will take effect the next time you restart your device.
         </message>
-        <message name="IDS_FLAGS_CHROME_CAPTIVE_PORTAL_DETECTOR" desc="Description for the option of Captive Portal detector.">
-          Chromium Captive Portal detector
-        </message>
       </if>
 
       <!-- Obsolete System info bar -->
@@ -806,6 +803,10 @@ For Chromium, processes used to display diagnostics information (such as this "a
       </message>
       <message name="IDS_EXTENSIONS_UNINSTALL" desc="The link for uninstalling extensions.">
         Remove from Chromium
+      </message>
+
+      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY" desc="Body of the dialog shown when suspicious extensions have been disabled">
+        To make Chromium safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
       </message>
 
       <!-- Main Chrome menu -->
@@ -1055,9 +1056,6 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       <!-- ProcessSingleton -->
       <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
         The profile appears to be in use by another Chromium process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>). Chromium has locked the profile so that it doesn't get corrupted. If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chromium.
-      </message>
-      <message name="IDS_PROFILE_IN_USE_LINUX_RELAUNCH" desc="Text of button in dialog to delete the profile lock file.">
-        Unlock Profile and Relaunch
       </message>
 
     </messages>

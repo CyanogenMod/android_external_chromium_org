@@ -10,10 +10,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebTouchEvent;
-using WebKit::WebTouchPoint;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebTouchEvent;
+using blink::WebTouchPoint;
 
 namespace content {
 
@@ -41,6 +41,8 @@ class TouchEventQueueTest : public testing::Test,
       const TouchEventWithLatencyInfo& event) OVERRIDE {
     ++sent_event_count_;
     last_sent_event_ = event.event;
+    if (sync_ack_result_)
+      SendTouchEventACK(*sync_ack_result_.Pass());
   }
 
   virtual void OnTouchEventAck(
@@ -93,6 +95,10 @@ class TouchEventQueueTest : public testing::Test,
     followup_gesture_event_.reset(new WebGestureEvent(event));
   }
 
+  void SetSyncAckResult(InputEventAckState sync_ack_result) {
+    sync_ack_result_.reset(new InputEventAckState(sync_ack_result));
+  }
+
   int PressTouchPoint(int x, int y) {
     return touch_event_.PressPoint(x, y);
   }
@@ -103,6 +109,10 @@ class TouchEventQueueTest : public testing::Test,
 
   void ReleaseTouchPoint(int index) {
     touch_event_.ReleasePoint(index);
+  }
+
+  void CancelTouchPoint(int index) {
+    touch_event_.CancelPoint(index);
   }
 
   size_t GetAndResetAckedEventCount() {
@@ -159,6 +169,7 @@ class TouchEventQueueTest : public testing::Test,
   SyntheticWebTouchEvent touch_event_;
   scoped_ptr<WebTouchEvent> followup_touch_event_;
   scoped_ptr<WebGestureEvent> followup_gesture_event_;
+  scoped_ptr<InputEventAckState> sync_ack_result_;
 };
 
 
@@ -620,6 +631,51 @@ TEST_F(TouchEventQueueTest, AckWithFollowupEvents) {
   EXPECT_EQ(1U, GetAndResetAckedEventCount());
 }
 
+// Tests that touch-events can be synchronously ack'ed.
+TEST_F(TouchEventQueueTest, SynchronousAcks) {
+  // TouchStart
+  SetSyncAckResult(INPUT_EVENT_ACK_STATE_CONSUMED);
+  PressTouchPoint(1, 1);
+  SendTouchEvent();
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+
+  // TouchMove
+  SetSyncAckResult(INPUT_EVENT_ACK_STATE_CONSUMED);
+  PressTouchPoint(1, 1);
+  MoveTouchPoint(0, 2, 2);
+  SendTouchEvent();
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+
+  // TouchEnd
+  SetSyncAckResult(INPUT_EVENT_ACK_STATE_CONSUMED);
+  PressTouchPoint(1, 1);
+  ReleaseTouchPoint(0);
+  SendTouchEvent();
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+
+  // TouchCancel (first inserting a TouchStart so the TouchCancel will be sent)
+  PressTouchPoint(1, 1);
+  SendTouchEvent();
+  SendTouchEventACK(INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+
+  SetSyncAckResult(INPUT_EVENT_ACK_STATE_CONSUMED);
+  PressTouchPoint(1, 1);
+  CancelTouchPoint(0);
+  SendTouchEvent();
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+}
+
 // Tests that followup events triggered by an immediate ack from
 // TouchEventQueue::QueueEvent() are properly handled.
 TEST_F(TouchEventQueueTest, ImmediateAckWithFollowupEvents) {
@@ -757,7 +813,7 @@ TEST_F(TouchEventQueueTest, NoTouchOnScroll) {
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS, acked_event_state());
 
   // GestureScrollEnd will resume the sending of TouchEvents to renderer.
-  SendGestureEvent(WebKit::WebInputEvent::GestureScrollEnd);
+  SendGestureEvent(blink::WebInputEvent::GestureScrollEnd);
   EXPECT_FALSE(no_touch_to_renderer());
 
   // Now TouchEvents should be forwarded normally.

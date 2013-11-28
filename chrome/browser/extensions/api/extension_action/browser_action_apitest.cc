@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -118,10 +119,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, Basic) {
   ui_test_utils::NavigateToURL(browser(),
       test_server()->GetURL("files/extensions/test_file.txt"));
 
-  ExtensionService* service = extensions::ExtensionSystem::Get(
-      browser()->profile())->extension_service();
-  service->toolbar_model()->ExecuteBrowserAction(
-      extension, browser(), NULL, true);
+  ExtensionToolbarModel* toolbar_model = ExtensionToolbarModel::Get(
+      browser()->profile());
+  toolbar_model->ExecuteBrowserAction(extension, browser(), NULL, true);
 
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
@@ -551,7 +551,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
   // regular and incognito mode.
 
   // ABC -> CAB
-  service->toolbar_model()->MoveBrowserAction(extension_c, 0);
+  ExtensionToolbarModel* toolbar_model = ExtensionToolbarModel::Get(
+      browser()->profile());
+  toolbar_model->MoveBrowserAction(extension_c, 0);
 
   EXPECT_EQ(kTooltipC, GetBrowserActionsBar().GetTooltip(0));
   EXPECT_EQ(kTooltipA, GetBrowserActionsBar().GetTooltip(1));
@@ -561,7 +563,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
   EXPECT_EQ(kTooltipA, incognito_bar.GetTooltip(1));
 
   // CAB -> CBA
-  service->toolbar_model()->MoveBrowserAction(extension_b, 1);
+  toolbar_model->MoveBrowserAction(extension_b, 1);
 
   EXPECT_EQ(kTooltipC, GetBrowserActionsBar().GetTooltip(0));
   EXPECT_EQ(kTooltipB, GetBrowserActionsBar().GetTooltip(1));
@@ -569,6 +571,37 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
 
   EXPECT_EQ(kTooltipC, incognito_bar.GetTooltip(0));
   EXPECT_EQ(kTooltipA, incognito_bar.GetTooltip(1));
+}
+
+// Tests that events are dispatched to the correct profile for split mode
+// extensions.
+IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoSplit) {
+  ResultCatcher catcher;
+  const Extension* extension = LoadExtensionWithFlags(
+      test_data_dir_.AppendASCII("browser_action/split_mode"),
+      kFlagEnableIncognito);
+  ASSERT_TRUE(extension) << message_;
+
+  // Open an incognito window.
+  Profile* incognito_profile = browser()->profile()->GetOffTheRecordProfile();
+  Browser* incognito_browser =
+      new Browser(Browser::CreateParams(incognito_profile,
+                                        browser()->host_desktop_type()));
+  // Navigate just to have a tab in this window, otherwise wonky things happen.
+  ui_test_utils::OpenURLOffTheRecord(browser()->profile(), GURL("about:blank"));
+  ASSERT_EQ(1,
+            BrowserActionTestUtil(incognito_browser).NumberOfBrowserActions());
+
+  // A click in the regular profile should open a tab in the regular profile.
+  ExtensionToolbarModel* toolbar_model = ExtensionToolbarModel::Get(
+      browser()->profile());
+  toolbar_model->ExecuteBrowserAction(extension, browser(), NULL, true);
+  ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
+
+  // A click in the incognito profile should open a tab in the
+  // incognito profile.
+  toolbar_model->ExecuteBrowserAction(extension, incognito_browser, NULL, true);
+  ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
 // Disabled because of failures (crashes) on ASAN bot.
@@ -579,7 +612,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DISABLED_CloseBackgroundPage) {
   const Extension* extension = GetSingleLoadedExtension();
 
   // There is a background page and a browser action with no badge text.
-  ExtensionProcessManager* manager =
+  extensions::ProcessManager* manager =
       extensions::ExtensionSystem::Get(browser()->profile())->process_manager();
   ASSERT_TRUE(manager->GetBackgroundHostForExtension(extension->id()));
   ExtensionAction* action = GetBrowserAction(*extension);
@@ -590,8 +623,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DISABLED_CloseBackgroundPage) {
       content::NotificationService::AllSources());
 
   // Click the browser action.
-  extensions::ExtensionSystem::Get(browser()->profile())->extension_service()->
-      toolbar_model()->ExecuteBrowserAction(extension, browser(), NULL, true);
+  ExtensionToolbarModel* toolbar_model = ExtensionToolbarModel::Get(
+      browser()->profile());
+  toolbar_model->ExecuteBrowserAction(extension, browser(), NULL, true);
 
   // It can take a moment for the background page to actually get destroyed
   // so we wait for the notification before checking that it's really gone

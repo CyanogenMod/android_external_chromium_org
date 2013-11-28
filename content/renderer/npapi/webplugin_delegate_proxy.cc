@@ -53,7 +53,6 @@
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "webkit/common/cursors/webcursor.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
@@ -67,12 +66,12 @@
 #include "content/public/common/sandbox_init.h"
 #endif
 
-using WebKit::WebBindings;
-using WebKit::WebCursorInfo;
-using WebKit::WebDragData;
-using WebKit::WebInputEvent;
-using WebKit::WebString;
-using WebKit::WebView;
+using blink::WebBindings;
+using blink::WebCursorInfo;
+using blink::WebDragData;
+using blink::WebInputEvent;
+using blink::WebString;
+using blink::WebView;
 
 namespace content {
 
@@ -666,14 +665,6 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
   return !!canvas->get();
 }
 
-#if defined(OS_MACOSX)
-// Flips |rect| vertically within an enclosing rect with height |height|.
-// Intended for converting rects between flipped and non-flipped contexts.
-static void FlipRectVerticallyWithHeight(gfx::Rect* rect, int height) {
-  rect->set_y(height - rect->bottom());
-}
-#endif
-
 void WebPluginDelegateProxy::Paint(SkCanvas* canvas,
                                    const gfx::Rect& damaged_rect) {
   // Limit the damaged rectangle to whatever is contained inside the plugin
@@ -848,7 +839,7 @@ void WebPluginDelegateProxy::SetContainerVisibility(bool is_visible) {
   if (is_visible) {
     gfx::Rect window_frame = render_view_->rootWindowRect();
     gfx::Rect view_frame = render_view_->windowRect();
-    WebKit::WebView* webview = render_view_->webview();
+    blink::WebView* webview = render_view_->webview();
     msg = new PluginMsg_ContainerShown(instance_id_, window_frame, view_frame,
                                        webview && webview->isActive());
   } else {
@@ -935,7 +926,7 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;
   bounds_params.anchor_dir = bounds_params.focus_dir =
-      WebKit::WebTextDirectionLeftToRight;
+      blink::WebTextDirectionLeftToRight;
   bounds_params.is_anchor_first = true;
   render_view_->Send(new ViewHostMsg_SelectionBoundsChanged(
       render_view_->routing_id(),

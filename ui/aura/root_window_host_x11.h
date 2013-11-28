@@ -16,7 +16,7 @@
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/env_observer.h"
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
@@ -32,9 +32,9 @@ namespace internal {
 class TouchEventCalibrate;
 }
 
-class RootWindowHostX11 : public RootWindowHost,
-                          public base::MessageLoop::Dispatcher,
-                          public EnvObserver {
+class AURA_EXPORT RootWindowHostX11 : public RootWindowHost,
+                                      public base::MessageLoop::Dispatcher,
+                                      public EnvObserver {
  public:
   explicit RootWindowHostX11(const gfx::Rect& bounds);
   virtual ~RootWindowHostX11();
@@ -43,7 +43,6 @@ class RootWindowHostX11 : public RootWindowHost,
   virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE;
 
   // RootWindowHost Overrides.
-  virtual void SetDelegate(RootWindowHostDelegate* delegate) OVERRIDE;
   virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -62,7 +61,6 @@ class RootWindowHostX11 : public RootWindowHost,
   virtual void UnConfineCursor() OVERRIDE;
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
-  virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
@@ -100,8 +98,6 @@ class RootWindowHostX11 : public RootWindowHost,
   // turn off the Tap-to-click feature when the mouse pointer is invisible.
   void SetCrOSTapPaused(bool state);
 
-  RootWindowHostDelegate* delegate_;
-
   // The display and the native X window hosting the root window.
   XDisplay* xdisplay_;
   ::Window xwindow_;
@@ -121,14 +117,8 @@ class RootWindowHostX11 : public RootWindowHost,
   // The insets that specifies the effective area within the |window_|.
   gfx::Insets insets_;
 
-  // The bounds of |x_root_window_|.
-  gfx::Rect x_root_bounds_;
-
   // True if the root host resides on the internal display
   bool is_internal_display_;
-
-  // True if the window should be focused when the window is shown.
-  bool focus_when_shown_;
 
   scoped_ptr<XID[]> pointer_barriers_;
 

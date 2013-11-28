@@ -102,7 +102,6 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
   {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, "ppapi-broker"},
   {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, "multiple-automatic-downloads"},
   {CONTENT_SETTINGS_TYPE_MIDI_SYSEX, "midi-sysex"},
-  {CONTENT_SETTINGS_TYPE_SAVE_PASSWORD, "save-password"},
 #if defined(OS_CHROMEOS)
   {CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER, "protectedContent"},
 #endif
@@ -711,9 +710,6 @@ void ContentSettingsHandler::UpdateExceptionsViewFromModel(
     case CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS:
       // The RPH settings are retrieved separately.
       break;
-    case CONTENT_SETTINGS_TYPE_SAVE_PASSWORD:
-      // There is no user facing UI for this content type and we skip it here.
-      break;
     case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
       UpdateMIDISysExExceptionsView();
       break;
@@ -1265,8 +1261,8 @@ void ContentSettingsHandler::SetContentFilter(const ListValue* args) {
           UserMetricsAction("Options_DefaultMediaStreamMicSettingChanged"));
       break;
     case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
-      content::RecordAction(UserMetricsAction(
-          "Options_DefaultMultipleAutomaticDownloadsSettingChanged"));
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultMultipleAutomaticDLSettingChange"));
       break;
     case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
       content::RecordAction(

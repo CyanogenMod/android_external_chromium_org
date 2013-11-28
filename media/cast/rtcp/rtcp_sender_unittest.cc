@@ -3,18 +3,23 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
+#include "base/test/simple_test_tick_clock.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/cast_environment.h"
 #include "media/cast/pacing/paced_sender.h"
 #include "media/cast/rtcp/rtcp_sender.h"
 #include "media/cast/rtcp/test_rtcp_packet_builder.h"
+#include "media/cast/test/fake_task_runner.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace media {
 namespace cast {
 
+namespace {
 static const uint32 kSendingSsrc = 0x12345678;
 static const uint32 kMediaSsrc = 0x87654321;
 static const std::string kCName("test@10.1.1.1");
+}  // namespace
 
 class TestRtcpTransport : public PacedPacketSender {
  public:
@@ -43,7 +48,7 @@ class TestRtcpTransport : public PacedPacketSender {
     memcpy(expected_packet_, rtcp_buffer, length);
   }
 
-  int packet_count() { return packet_count_; }
+  int packet_count() const { return packet_count_; }
 
  private:
   uint8 expected_packet_[kIpPacketSize];
@@ -54,12 +59,20 @@ class TestRtcpTransport : public PacedPacketSender {
 class RtcpSenderTest : public ::testing::Test {
  protected:
   RtcpSenderTest()
-      : rtcp_sender_(new RtcpSender(&test_transport_,
+      : task_runner_(new test::FakeTaskRunner(&testing_clock_)),
+        cast_environment_(new CastEnvironment(&testing_clock_, task_runner_,
+            task_runner_, task_runner_, task_runner_, task_runner_,
+            GetDefaultCastLoggingConfig())),
+        rtcp_sender_(new RtcpSender(cast_environment_,
+                                    &test_transport_,
                                     kSendingSsrc,
                                     kCName)) {
   }
 
+  base::SimpleTestTickClock testing_clock_;
   TestRtcpTransport test_transport_;
+  scoped_refptr<test::FakeTaskRunner> task_runner_;
+  scoped_refptr<CastEnvironment> cast_environment_;
   scoped_ptr<RtcpSender> rtcp_sender_;
 };
 
@@ -77,13 +90,10 @@ TEST_F(RtcpSenderTest, RtcpSenderReport) {
   p.AddSdesCname(kSendingSsrc, kCName);
   test_transport_.SetExpectedRtcpPacket(p.Packet(), p.Length());
 
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpSr,
-                         &sender_info,
-                         NULL,
-                         0,
-                         NULL,
-                         NULL,
-                         NULL);
+  rtcp_sender_->SendRtcpFromRtpSender(RtcpSender::kRtcpSr,
+                                      &sender_info,
+                                      NULL,
+                                      NULL);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -95,13 +105,8 @@ TEST_F(RtcpSenderTest, RtcpReceiverReport) {
   p1.AddSdesCname(kSendingSsrc, kCName);
   test_transport_.SetExpectedRtcpPacket(p1.Packet(), p1.Length());
 
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpRr,
-                         NULL,
-                         NULL,
-                         0,
-                         NULL,
-                         NULL,
-                         NULL);
+  rtcp_sender_->SendRtcpFromRtpReceiver(RtcpSender::kRtcpRr,
+      NULL, NULL, NULL, NULL);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 
@@ -118,19 +123,13 @@ TEST_F(RtcpSenderTest, RtcpReceiverReport) {
   report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
   report_block.fraction_lost = kLoss >> 24;
   report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number =
-      kExtendedMax;
-  report_block.jitter = kJitter;
+  report_block.extended_high_sequence_number = kExtendedMax;
+  report_block.jitter = kTestJitter;
   report_block.last_sr = kLastSr;
   report_block.delay_since_last_sr = kDelayLastSr;
 
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpRr,
-                         NULL,
-                         &report_block,
-                         0,
-                         NULL,
-                         NULL,
-                         NULL);
+  rtcp_sender_->SendRtcpFromRtpReceiver(RtcpSender::kRtcpRr, &report_block,
+                                        NULL, NULL, NULL);
 
   EXPECT_EQ(2, test_transport_.packet_count());
 }
@@ -155,13 +154,11 @@ TEST_F(RtcpSenderTest, RtcpSenderReportWithDlrr) {
   dlrr_rb.last_rr = kLastRr;
   dlrr_rb.delay_since_last_rr = kDelayLastRr;
 
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpSr | RtcpSender::kRtcpDlrr,
-                         &sender_info,
-                         NULL,
-                         0,
-                         &dlrr_rb,
-                         NULL,
-                         NULL);
+  rtcp_sender_->SendRtcpFromRtpSender(
+      RtcpSender::kRtcpSr | RtcpSender::kRtcpDlrr,
+      &sender_info,
+      &dlrr_rb,
+      NULL);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -184,7 +181,7 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtr) {
   report_block.cumulative_lost = kLoss;  // 24 bits valid.
   report_block.extended_high_sequence_number =
       kExtendedMax;
-  report_block.jitter = kJitter;
+  report_block.jitter = kTestJitter;
   report_block.last_sr = kLastSr;
   report_block.delay_since_last_sr = kDelayLastSr;
 
@@ -192,13 +189,12 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtr) {
   rrtr.ntp_seconds = kNtpHigh;
   rrtr.ntp_fraction = kNtpLow;
 
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpRr | RtcpSender::kRtcpRrtr,
-                         NULL,
-                         &report_block,
-                         0,
-                         NULL,
-                         &rrtr,
-                         NULL);
+  rtcp_sender_->SendRtcpFromRtpReceiver(
+      RtcpSender::kRtcpRr | RtcpSender::kRtcpRrtr,
+      &report_block,
+      &rrtr,
+      NULL,
+      NULL);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -219,7 +215,7 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithCast) {
   report_block.fraction_lost = kLoss >> 24;
   report_block.cumulative_lost = kLoss;  // 24 bits valid.
   report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kJitter;
+  report_block.jitter = kTestJitter;
   report_block.last_sr = kLastSr;
   report_block.delay_since_last_sr = kDelayLastSr;
 
@@ -235,45 +231,12 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithCast) {
   cast_message.missing_frames_and_packets_[kFrameIdWithLostPackets] =
       missing_packets;
 
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpRr | RtcpSender::kRtcpCast,
-                         NULL,
-                         &report_block,
-                         0,
-                         NULL,
-                         NULL,
-                         &cast_message);
-
-  EXPECT_EQ(1, test_transport_.packet_count());
-}
-
-TEST_F(RtcpSenderTest, RtcpReceiverReportWithIntraFrameRequest) {
-  // Receiver report with report block + c_name.
-  TestRtcpPacketBuilder p;
-  p.AddRr(kSendingSsrc, 1);
-  p.AddRb(kMediaSsrc);
-  p.AddSdesCname(kSendingSsrc, kCName);
-  p.AddPli(kSendingSsrc, kMediaSsrc);
-  test_transport_.SetExpectedRtcpPacket(p.Packet(), p.Length());
-
-  RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number =
-      kExtendedMax;
-  report_block.jitter = kJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
-
-  rtcp_sender_->SendRtcp(RtcpSender::kRtcpRr | RtcpSender::kRtcpPli,
-                         NULL,
-                         &report_block,
-                         kMediaSsrc,
-                         NULL,
-                         NULL,
-                         NULL);
+  rtcp_sender_->SendRtcpFromRtpReceiver(
+      RtcpSender::kRtcpRr | RtcpSender::kRtcpCast,
+      &report_block,
+      NULL,
+      &cast_message,
+      NULL);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }

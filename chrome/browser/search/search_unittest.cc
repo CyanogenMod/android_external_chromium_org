@@ -39,7 +39,6 @@ class EmbeddedSearchFieldTrialTest : public testing::Test {
     field_trial_list_.reset(new base::FieldTrialList(
         new metrics::SHA1EntropyProvider("42")));
     base::StatisticsRecorder::Initialize();
-    ResetInstantExtendedOptInStateGateForTest();
   }
 
  private:
@@ -48,101 +47,84 @@ class EmbeddedSearchFieldTrialTest : public testing::Test {
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoEmptyAndValid) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(0ul, group_number);
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(0ul, flags.size());
 
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group77"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(77ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group77"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(0ul, flags.size());
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoInvalidNumber) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group77.2"));
-  EXPECT_FALSE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(0ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group77.2"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(0ul, flags.size());
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoInvalidName) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Invalid77"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(0ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Invalid77"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(0ul, flags.size());
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoValidGroup) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group77"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(77ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group77"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(0ul, flags.size());
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoValidFlag) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
   EXPECT_EQ(9999ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group77 foo:6"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(77ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group77 foo:6"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(1ul, flags.size());
   EXPECT_EQ(6ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoNewName) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
   EXPECT_EQ(9999ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group77 foo:6"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(77ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group77 foo:6"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(1ul, flags.size());
   EXPECT_EQ(6ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoNewNameOverridesOld) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
   EXPECT_EQ(9999ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group77 foo:6"));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group78 foo:5"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(77ul, group_number);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group77 foo:6"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                                     "Group78 foo:5"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(1ul, flags.size());
   EXPECT_EQ(6ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoLotsOfFlags) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group77 bar:1 baz:7 cat:dogs"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(77ul, group_number);
+      "EmbeddedSearch", "Group77 bar:1 baz:7 cat:dogs"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(3ul, flags.size());
   EXPECT_EQ(true, GetBoolValueForFlagWithDefault("bar", false, flags));
   EXPECT_EQ(7ul, GetUInt64ValueForFlagWithDefault("baz", 0, flags));
@@ -154,171 +136,20 @@ TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoLotsOfFlags) {
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoDisabled) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group77 bar:1 baz:7 cat:dogs DISABLED"));
-  EXPECT_FALSE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(0ul, group_number);
+      "EmbeddedSearch", "Group77 bar:1 baz:7 cat:dogs DISABLED"));
+  EXPECT_FALSE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(0ul, flags.size());
 }
 
 TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoControlFlags) {
   FieldTrialFlags flags;
-  uint64 group_number = 0;
 
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Control77 bar:1 baz:7 cat:dogs"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags, &group_number));
-  EXPECT_EQ(0ul, group_number);
+      "EmbeddedSearch", "Control77 bar:1 baz:7 cat:dogs"));
+  EXPECT_TRUE(GetFieldTrialInfo(&flags));
   EXPECT_EQ(3ul, flags.size());
-}
-
-class InstantExtendedAPIEnabledTest : public testing::Test {
- public:
-  InstantExtendedAPIEnabledTest() : histogram_(NULL) {
-  }
- protected:
-  virtual void SetUp() {
-    field_trial_list_.reset(new base::FieldTrialList(
-        new metrics::SHA1EntropyProvider("42")));
-    base::StatisticsRecorder::Initialize();
-    ResetInstantExtendedOptInStateGateForTest();
-    previous_metrics_count_.resize(INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT, 0);
-    base::HistogramBase* histogram = GetHistogram();
-    if (histogram) {
-      scoped_ptr<base::HistogramSamples> samples(histogram->SnapshotSamples());
-      if (samples.get()) {
-        for (int state = INSTANT_EXTENDED_NOT_SET;
-             state < INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT; ++state) {
-          previous_metrics_count_[state] = samples->GetCount(state);
-        }
-      }
-    }
-  }
-
-  virtual CommandLine* GetCommandLine() const {
-    return CommandLine::ForCurrentProcess();
-  }
-
-  void ValidateMetrics(base::HistogramBase::Sample value) {
-    base::HistogramBase* histogram = GetHistogram();
-    if (histogram) {
-      scoped_ptr<base::HistogramSamples> samples(histogram->SnapshotSamples());
-      if (samples.get()) {
-        for (int state = INSTANT_EXTENDED_NOT_SET;
-             state < INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT; ++state) {
-          if (state == value) {
-            EXPECT_EQ(previous_metrics_count_[state] + 1,
-                      samples->GetCount(state));
-          } else {
-            EXPECT_EQ(previous_metrics_count_[state], samples->GetCount(state));
-          }
-        }
-      }
-    }
-  }
-
- private:
-  base::HistogramBase* GetHistogram() {
-    if (!histogram_) {
-      histogram_ = base::StatisticsRecorder::FindHistogram(
-          "InstantExtended.OptInState");
-    }
-    return histogram_;
-  }
-  base::HistogramBase* histogram_;
-  scoped_ptr<base::FieldTrialList> field_trial_list_;
-  std::vector<int> previous_metrics_count_;
-};
-
-TEST_F(InstantExtendedAPIEnabledTest, EnabledViaCommandLineFlag) {
-  GetCommandLine()->AppendSwitch(switches::kEnableInstantExtendedAPI);
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-#if defined(OS_IOS) || defined(OS_ANDROID)
-  EXPECT_EQ(1ul, EmbeddedSearchPageVersion());
-#else
-  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
-#endif
-  ValidateMetrics(INSTANT_EXTENDED_OPT_IN);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, EnabledViaFinchFlag) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-                                                     "Group1 espv:42"));
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_EQ(42ul, EmbeddedSearchPageVersion());
-  ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, DisabledViaCommandLineFlag) {
-  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-                                                     "Group1 espv:2"));
-  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
-  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
-}
-
-typedef InstantExtendedAPIEnabledTest ShouldHideTopVerbatimTest;
-
-TEST_F(ShouldHideTopVerbatimTest, DoNotHideByDefault) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Control"));
-  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, DoNotHideInInstantExtended) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1"));
-  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, EnableByFlagInInstantExtended) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1 hide_verbatim:1"));
-  EXPECT_TRUE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, EnableByFlagOutsideInstantExtended) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Controll1 hide_verbatim:1"));
-  EXPECT_TRUE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, DisableByFlag) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1 hide_verbatim:0"));
-  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
-}
-
-typedef InstantExtendedAPIEnabledTest ShouldSuppressInstantExtendedOnSRPTest;
-
-TEST_F(ShouldSuppressInstantExtendedOnSRPTest, NotSet) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1 espv:2"));
-  EXPECT_FALSE(ShouldSuppressInstantExtendedOnSRP());
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsQueryExtractionEnabled());
-  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
-}
-
-TEST_F(ShouldSuppressInstantExtendedOnSRPTest, NotSuppressOnSRP) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1 espv:2 suppress_on_srp:0"));
-  EXPECT_FALSE(ShouldSuppressInstantExtendedOnSRP());
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsQueryExtractionEnabled());
-  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
-}
-
-TEST_F(ShouldSuppressInstantExtendedOnSRPTest, SuppressOnSRP) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1 espv:2 suppress_on_srp:1"));
-  EXPECT_TRUE(ShouldSuppressInstantExtendedOnSRP());
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsQueryExtractionEnabled());
-  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
 }
 
 class SearchTest : public BrowserWithTestWindowTest {
@@ -396,40 +227,8 @@ struct SearchTestCase {
   const char* comment;
 };
 
-TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedDisabled) {
-  DisableInstantExtendedAPIForTesting();
-
-  const SearchTestCase kTestCases[] = {
-    {"chrome-search://foo/bar",                 false,  ""},
-    {"http://foo.com/instant",                  false,  ""},
-    {"http://foo.com/instant?foo=bar",          false,  ""},
-    {"https://foo.com/instant",                 false,  ""},
-    {"https://foo.com/instant#foo=bar",         false,  ""},
-    {"HtTpS://fOo.CoM/instant",                 false,  ""},
-    {"http://foo.com:80/instant",               false,  ""},
-    {"invalid URL",                             false, "Invalid URL"},
-    {"unknown://scheme/path",                   false, "Unknown scheme"},
-    {"ftp://foo.com/instant",                   false, "Non-HTTP scheme"},
-    {"http://sub.foo.com/instant",              false, "Non-exact host"},
-    {"http://foo.com:26/instant",               false, "Non-default port"},
-    {"http://foo.com/instant/bar",              false, "Non-exact path"},
-    {"http://foo.com/Instant",                  false, "Case sensitive path"},
-    {"http://foo.com/",                         false, "Non-exact path"},
-    {"https://foo.com/",                        false, "Non-exact path"},
-    {"https://foo.com/url?strk",                false, "Non-extended mode"},
-    {"https://foo.com/alt?strk",                false, "Non-extended mode"},
-  };
-
-  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
-    const SearchTestCase& test = kTestCases[i];
-    EXPECT_EQ(test.expected_result,
-              ShouldAssignURLToInstantRenderer(GURL(test.url), profile()))
-        << test.url << " " << test.comment;
-  }
-}
-
 TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedEnabled) {
-  EnableInstantExtendedAPIForTesting();
+  EnableQueryExtractionForTesting();
 
   const SearchTestCase kTestCases[] = {
     {chrome::kChromeSearchLocalNtpUrl, true,  ""},
@@ -455,7 +254,7 @@ TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedEnabled) {
 
 TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedEnabledNotOnSRP) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "InstantExtended", "Group1 espv:2 suppress_on_srp:1"));
+      "EmbeddedSearch", "Group1 espv:2 suppress_on_srp:1"));
 
   const SearchTestCase kTestCases[] = {
     {chrome::kChromeSearchLocalNtpUrl, true,  ""},
@@ -480,7 +279,7 @@ TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedEnabledNotOnSRP) {
 }
 
 TEST_F(SearchTest, ShouldUseProcessPerSiteForInstantURL) {
-  EnableInstantExtendedAPIForTesting();
+  EnableQueryExtractionForTesting();
 
   const SearchTestCase kTestCases[] = {
     {"chrome-search://local-ntp",      true,  "Local NTP"},
@@ -544,7 +343,7 @@ const struct ProcessIsolationTestCase {
 };
 
 TEST_F(SearchTest, ProcessIsolation) {
-  EnableInstantExtendedAPIForTesting();
+  EnableQueryExtractionForTesting();
 
   for (size_t i = 0; i < arraysize(kProcessIsolationTestCases); ++i) {
     const ProcessIsolationTestCase& test = kProcessIsolationTestCases[i];
@@ -583,7 +382,7 @@ TEST_F(SearchTest, ProcessIsolation) {
 }
 
 TEST_F(SearchTest, ProcessIsolation_RendererInitiated) {
-  EnableInstantExtendedAPIForTesting();
+  EnableQueryExtractionForTesting();
 
   for (size_t i = 0; i < arraysize(kProcessIsolationTestCases); ++i) {
     const ProcessIsolationTestCase& test = kProcessIsolationTestCases[i];
@@ -648,7 +447,10 @@ const SearchTestCase kInstantNTPTestCases[] = {
 };
 
 TEST_F(SearchTest, InstantNTPExtendedEnabled) {
-  EnableInstantExtendedAPIForTesting();
+  EnableQueryExtractionForTesting();
+  // TODO(samarth): update test cases to use cacheable NTP URLs and remove this.
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "InstantExtended", "Group1 use_cacheable_ntp:0"));
   AddTab(browser(), GURL("chrome://blank"));
   for (size_t i = 0; i < arraysize(kInstantNTPTestCases); ++i) {
     const SearchTestCase& test = kInstantNTPTestCases[i];
@@ -660,19 +462,11 @@ TEST_F(SearchTest, InstantNTPExtendedEnabled) {
   }
 }
 
-TEST_F(SearchTest, InstantNTPExtendedDisabled) {
-  AddTab(browser(), GURL("chrome://blank"));
-  for (size_t i = 0; i < arraysize(kInstantNTPTestCases); ++i) {
-    const SearchTestCase& test = kInstantNTPTestCases[i];
-    NavigateAndCommitActiveTab(GURL(test.url));
-    const content::WebContents* contents =
-        browser()->tab_strip_model()->GetWebContentsAt(0);
-    EXPECT_FALSE(IsInstantNTP(contents)) << test.url << " " << test.comment;
-  }
-}
-
 TEST_F(SearchTest, InstantNTPCustomNavigationEntry) {
-  EnableInstantExtendedAPIForTesting();
+  EnableQueryExtractionForTesting();
+  // TODO(samarth): update test cases to use cacheable NTP URLs and remove this.
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "InstantExtended", "Group1 use_cacheable_ntp:0"));
   AddTab(browser(), GURL("chrome://blank"));
   for (size_t i = 0; i < arraysize(kInstantNTPTestCases); ++i) {
     const SearchTestCase& test = kInstantNTPTestCases[i];
@@ -697,9 +491,8 @@ TEST_F(SearchTest, InstantNTPCustomNavigationEntry) {
 }
 
 TEST_F(SearchTest, InstantCacheableNTPNavigationEntry) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
 
   AddTab(browser(), GURL("chrome://blank"));
   content::WebContents* contents =
@@ -721,17 +514,15 @@ TEST_F(SearchTest, InstantCacheableNTPNavigationEntry) {
 }
 
 TEST_F(SearchTest, UseLocalNTPInIncognito) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
   EXPECT_EQ(GURL(), chrome::GetNewTabPageURL(
       profile()->GetOffTheRecordProfile()));
 }
 
 TEST_F(SearchTest, UseLocalNTPIfNTPURLIsInsecure) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
   // Set an insecure new tab page URL and verify that it's ignored.
   SetSearchProvider(true, true);
   EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl),
@@ -739,9 +530,8 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsInsecure) {
 }
 
 TEST_F(SearchTest, UseLocalNTPIfNTPURLIsNotSet) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
   // Set an insecure new tab page URL and verify that it's ignored.
   SetSearchProvider(false, true);
   EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl),
@@ -749,9 +539,8 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsNotSet) {
 }
 
 TEST_F(SearchTest, UseLocalNTPIfNTPURLIsBlockedForSupervisedUser) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
 
   // Block access to foo.com in the URL filter.
   ManagedUserService* managed_user_service =
@@ -767,12 +556,8 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsBlockedForSupervisedUser) {
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
 }
 
-TEST_F(SearchTest, GetInstantURLExtendedEnabled) {
-  // Instant is disabled, so no Instant URL.
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
-
-  // Enable Instant. Still no Instant URL because "strk" is missing.
-  EnableInstantExtendedAPIForTesting();
+TEST_F(SearchTest, GetInstantURL) {
+  // No Instant URL because "strk" is missing.
   SetDefaultInstantTemplateUrl(false);
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
 
@@ -794,11 +579,7 @@ TEST_F(SearchTest, GetInstantURLExtendedEnabled) {
 }
 
 TEST_F(SearchTest, StartMarginCGI) {
-  // Instant is disabled, so no Instant URL.
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
-
-  // Enable Instant. No margin.
-  EnableInstantExtendedAPIForTesting();
+  // No margin.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
 
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
@@ -810,8 +591,6 @@ TEST_F(SearchTest, StartMarginCGI) {
 }
 
 TEST_F(SearchTest, InstantSearchEnabledCGI) {
-  EnableInstantExtendedAPIForTesting();
-
   // Disable Instant Search.
   // Make sure {google:forceInstantResults} is not set in the Instant URL.
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
@@ -824,8 +603,6 @@ TEST_F(SearchTest, InstantSearchEnabledCGI) {
 }
 
 TEST_F(SearchTest, CommandLineOverrides) {
-  EnableInstantExtendedAPIForTesting();
-
   GURL local_instant_url(GetLocalInstantURL(profile()));
   EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl), local_instant_url);
 
@@ -872,43 +649,61 @@ TEST_F(SearchTest, CommandLineOverrides) {
 }
 
 TEST_F(SearchTest, ShouldShowInstantNTP_Default) {
-  EnableInstantExtendedAPIForTesting();
-  EXPECT_TRUE(ShouldShowInstantNTP());
+  EXPECT_FALSE(ShouldShowInstantNTP());
 }
 
 TEST_F(SearchTest, ShouldShowInstantNTP_DisabledViaFinch) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 show_ntp:0"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 show_ntp:0"));
   EXPECT_FALSE(ShouldShowInstantNTP());
 }
 
 TEST_F(SearchTest, ShouldShowInstantNTP_DisabledByUseCacheableNTPFinchFlag) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
   EXPECT_FALSE(ShouldShowInstantNTP());
 }
 
 TEST_F(SearchTest, ShouldUseCacheableNTP_Default) {
-  EnableInstantExtendedAPIForTesting();
-  EXPECT_FALSE(ShouldUseCacheableNTP());
+  EXPECT_TRUE(ShouldUseCacheableNTP());
 }
 
 TEST_F(SearchTest, ShouldUseCacheableNTP_EnabledViaFinch) {
-  EnableInstantExtendedAPIForTesting();
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:1"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 use_cacheable_ntp:1"));
   EXPECT_TRUE(ShouldUseCacheableNTP());
 }
 
-TEST_F(SearchTest, ShouldUseCacheableNTP_EnabledViaCommandLine) {
-  EnableInstantExtendedAPIForTesting();
-  CommandLine::ForCurrentProcess()->
-      AppendSwitch(switches::kUseCacheableNewTabPage);
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-      "Group1 use_cacheable_ntp:0"));
-  EXPECT_TRUE(ShouldUseCacheableNTP());
+TEST_F(SearchTest, ShouldPrefetchSearchResults_Default) {
+  EXPECT_FALSE(ShouldPrefetchSearchResults());
+}
+
+TEST_F(SearchTest, ShouldPrefetchSearchResults_InstantExtendedAPIEnabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:2 use_cacheable_ntp:1 prefetch_results:1"));
+  EXPECT_TRUE(ShouldPrefetchSearchResults());
+#if defined(OS_IOS) || defined(OS_ANDROID)
+  EXPECT_EQ(1ul, EmbeddedSearchPageVersion());
+#else
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+#endif
+}
+
+TEST_F(SearchTest, ShouldPrefetchSearchResults_DisabledViaFinch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 use_cacheable_ntp:1 espv:89 prefetch_results:0"));
+  EXPECT_FALSE(ShouldPrefetchSearchResults());
+  EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaFinch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 use_cacheable_ntp:1 prefetch_results:1"));
+  EXPECT_TRUE(ShouldPrefetchSearchResults());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
 }
 
 TEST_F(SearchTest, IsNTPURL) {
@@ -917,13 +712,8 @@ TEST_F(SearchTest, IsNTPURL) {
   GURL local_ntp_url(GetLocalInstantURL(profile()));
 
   EXPECT_FALSE(chrome::IsNTPURL(invalid_url, profile()));
-  EXPECT_FALSE(chrome::IsNTPURL(local_ntp_url, profile()));
-
-  EXPECT_TRUE(chrome::IsNTPURL(ntp_url, NULL));
-  EXPECT_FALSE(chrome::IsNTPURL(local_ntp_url, NULL));
-
-  // Enable Instant. No margin.
-  EnableInstantExtendedAPIForTesting();
+  // No margin.
+  EnableQueryExtractionForTesting();
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
   GURL remote_ntp_url(GetInstantURL(profile(), kDisableStartMargin, false));
   GURL search_url_with_search_terms("https://foo.com/url?strk&bar=abc");
@@ -947,6 +737,146 @@ TEST_F(SearchTest, GetSearchURLs) {
   EXPECT_EQ(2U, search_urls.size());
   EXPECT_EQ("http://foo.com/alt#quux=", search_urls[0].spec());
   EXPECT_EQ("http://foo.com/url?bar=", search_urls[1].spec());
+}
+
+TEST_F(SearchTest, GetSearchResultPrefetchBaseURL) {
+  // "prefetch_results" flag is disabled.
+  EXPECT_EQ(GURL(), GetSearchResultPrefetchBaseURL(profile()));
+
+  // "prefetch_results" flag is enabled via field trials.
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 use_cacheable_ntp:1 prefetch_results:1"));
+  EXPECT_TRUE(ShouldPrefetchSearchResults());
+
+  EXPECT_EQ(GURL("https://foo.com/instant?ion=1&foo=foo#foo=foo&strk"),
+            GetSearchResultPrefetchBaseURL(profile()));
+}
+
+typedef SearchTest IsQueryExtractionEnabledTest;
+
+TEST_F(IsQueryExtractionEnabledTest, NotSet) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsQueryExtractionEnabled());
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(IsQueryExtractionEnabledTest, EnabledViaFinch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 query_extraction:1"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsQueryExtractionEnabled());
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(IsQueryExtractionEnabledTest, DisabledViaFinch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 query_extraction:0"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_FALSE(IsQueryExtractionEnabled());
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(IsQueryExtractionEnabledTest, EnabledViaCommandLine) {
+  EnableQueryExtractionForTesting();
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 query_extraction:0"));
+  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
+  EXPECT_TRUE(IsQueryExtractionEnabled());
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
+}
+
+typedef SearchTest ShouldHideTopVerbatimTest;
+
+TEST_F(ShouldHideTopVerbatimTest, DoNotHideByDefault) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Control"));
+  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
+}
+
+TEST_F(ShouldHideTopVerbatimTest, DoNotHideInInstantExtended) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group1"));
+  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
+}
+
+TEST_F(ShouldHideTopVerbatimTest, EnableByFlagInInstantExtended) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group1 hide_verbatim:1"));
+  EXPECT_TRUE(ShouldHideTopVerbatimMatch());
+}
+
+TEST_F(ShouldHideTopVerbatimTest, EnableByFlagOutsideInstantExtended) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Controll1 hide_verbatim:1"));
+  EXPECT_TRUE(ShouldHideTopVerbatimMatch());
+}
+
+TEST_F(ShouldHideTopVerbatimTest, DisableByFlag) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                     "Group1 hide_verbatim:0"));
+  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
+}
+
+typedef SearchTest DisplaySearchButtonTest;
+
+TEST_F(DisplaySearchButtonTest, NotSet) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2"));
+  EXPECT_EQ(DISPLAY_SEARCH_BUTTON_NEVER, GetDisplaySearchButtonConditions());
+}
+
+TEST_F(DisplaySearchButtonTest, Never) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 display_search_button:0"));
+  EXPECT_EQ(DISPLAY_SEARCH_BUTTON_NEVER, GetDisplaySearchButtonConditions());
+}
+
+TEST_F(DisplaySearchButtonTest, ForSearchTermReplacement) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 display_search_button:1"));
+  EXPECT_EQ(DISPLAY_SEARCH_BUTTON_FOR_STR, GetDisplaySearchButtonConditions());
+}
+
+TEST_F(DisplaySearchButtonTest, ForSearchTermReplacementOrInputInProgress) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 display_search_button:2"));
+  EXPECT_EQ(DISPLAY_SEARCH_BUTTON_FOR_STR_OR_IIP,
+            GetDisplaySearchButtonConditions());
+}
+
+TEST_F(DisplaySearchButtonTest, Always) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 display_search_button:3"));
+  EXPECT_EQ(DISPLAY_SEARCH_BUTTON_ALWAYS, GetDisplaySearchButtonConditions());
+}
+
+TEST_F(DisplaySearchButtonTest, InvalidValue) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 display_search_button:4"));
+  EXPECT_EQ(DISPLAY_SEARCH_BUTTON_NEVER, GetDisplaySearchButtonConditions());
+}
+
+typedef SearchTest OriginChipTest;
+
+TEST_F(OriginChipTest, NotSet) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2"));
+  EXPECT_FALSE(ShouldDisplayOriginChip());
+}
+
+TEST_F(OriginChipTest, NoOriginChip) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 origin_chip:0"));
+  EXPECT_FALSE(ShouldDisplayOriginChip());
+}
+
+TEST_F(OriginChipTest, OriginChip) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:2 origin_chip:1"));
+  EXPECT_TRUE(ShouldDisplayOriginChip());
 }
 
 }  // namespace chrome

@@ -9,10 +9,10 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/sync_helper.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
 
 using extensions::Extension;
 using extensions::ExtensionPrefs;
@@ -122,6 +122,19 @@ void SetAllowFileAccess(const Extension* extension,
   bool extension_is_enabled = service->extensions()->Contains(extension->id());
   if (extension_is_enabled)
     service->ReloadExtension(extension->id());
+}
+
+bool IsAppLaunchable(const std::string& extension_id,
+                     const ExtensionService* service) {
+  return !(service->extension_prefs()->GetDisableReasons(extension_id) &
+           Extension::DISABLE_UNSUPPORTED_REQUIREMENT);
+}
+
+bool IsAppLaunchableWithoutEnabling(const std::string& extension_id,
+                                    const ExtensionService* service) {
+  const Extension* launchable_extension = service->GetExtensionById(
+      extension_id, ExtensionService::INCLUDE_ENABLED);
+  return launchable_extension != NULL;
 }
 
 }  // namespace extension_util

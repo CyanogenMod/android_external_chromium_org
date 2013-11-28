@@ -5,65 +5,73 @@
 #include "ui/base/clipboard/clipboard.h"
 
 #include <iterator>
+#include <limits>
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
 
 namespace {
 
-// A compromised renderer could send us bad data, so validate it.
-// This function only checks that the size parameter makes sense, the caller
-// is responsible for further validating the bitmap buffer against
-// |bitmap_bytes|.
+// Extracts the bitmap size from the passed in params. Since the renderer could
+// send us bad data, explicitly copy the parameters to make sure we go through
+// gfx::Size's sanity checks.
+bool GetBitmapSizeFromParams(const Clipboard::ObjectMapParams& params,
+                             gfx::Size* size) {
+  DCHECK(params.size() == 2);
+  if (params[1].size() != sizeof(gfx::Size))
+    return false;
+  const gfx::Size* size_from_renderer =
+      reinterpret_cast<const gfx::Size*>(&(params[1].front()));
+  size->set_width(size_from_renderer->width());
+  size->set_height(size_from_renderer->height());
+  return true;
+}
+
+// A compromised renderer could send us bad size data, so validate it to verify
+// that calculating the number of bytes in the bitmap won't overflow a uint32.
 //
-// |params| - Clipboard bitmap contents to validate.
+// |size| - Clipboard bitmap size to validate.
 // |bitmap_bytes| - On return contains the number of bytes needed to store
 // the bitmap data or -1 if the data is invalid.
 // returns: true if the bitmap size is valid, false otherwise.
-bool IsBitmapSafe(const Clipboard::ObjectMapParams& params,
-                  uint32* bitmap_bytes) {
+bool IsBitmapSizeSane(const gfx::Size& size, uint32* bitmap_bytes) {
+  DCHECK_GE(size.width(), 0);
+  DCHECK_GE(size.height(), 0);
+
   *bitmap_bytes = -1;
-  if (params[1].size() != sizeof(gfx::Size))
+  uint32 total_size = size.width();
+  // Limit size to max int so SkBitmap::getSize() calculation won't overflow.
+  // TODO(dcheng): Instead of all this custom validation, we should just use a
+  // combination of SkBitmap's setConfig() and getSize64() to detect this, e.g.:
+  //   SkBitmap bitmap;
+  //   if (!bitmap.setConfig(...))
+  //      return false;
+  //   if (bitmap.getSize64().is64())
+  //      return false;
+  if (std::numeric_limits<int>::max() / size.width() <= size.height())
     return false;
-  const gfx::Size* size =
-      reinterpret_cast<const gfx::Size*>(&(params[1].front()));
-  uint32 total_size = size->width();
-  // Using INT_MAX not SIZE_T_MAX to put a reasonable bound on things.
-  if (INT_MAX / size->width() <= size->height())
-    return false;
-  total_size *= size->height();
-  if (INT_MAX / total_size <= 4)
+  total_size *= size.height();
+  if (std::numeric_limits<int>::max() / total_size <= 4)
     return false;
   total_size *= 4;
   *bitmap_bytes = total_size;
   return true;
 }
 
-// Validates a plain bitmap on the clipboard.
-// Returns true if the clipboard data makes sense and it's safe to access the
-// bitmap.
-bool ValidatePlainBitmap(const Clipboard::ObjectMapParams& params) {
-  uint32 bitmap_bytes = -1;
-  if (!IsBitmapSafe(params, &bitmap_bytes))
-    return false;
-  if (bitmap_bytes != params[0].size())
-    return false;
-  return true;
-}
-
 // Valides a shared bitmap on the clipboard.
 // Returns true if the clipboard data makes sense and it's safe to access the
 // bitmap.
-bool ValidateAndMapSharedBitmap(const Clipboard::ObjectMapParams& params,
+bool ValidateAndMapSharedBitmap(const gfx::Size& size,
                                 base::SharedMemory* bitmap_data) {
   using base::SharedMemory;
   uint32 bitmap_bytes = -1;
-  if (!IsBitmapSafe(params, &bitmap_bytes))
+  if (!IsBitmapSizeSane(size, &bitmap_bytes))
     return false;
 
   if (!bitmap_data || !SharedMemory::IsHandleValid(bitmap_data->handle()))
@@ -74,6 +82,19 @@ bool ValidateAndMapSharedBitmap(const Clipboard::ObjectMapParams& params,
     return false;
   }
   return true;
+}
+
+// Adopts a blob of bytes (assumed to be ARGB pixels) into a SkBitmap. Since the
+// pixel data is not copied, the caller must ensure that |data| is valid as long
+// as the SkBitmap is in use. Note that on little endian machines, each pixel is
+// actually BGRA in memory.
+SkBitmap AdoptBytesIntoSkBitmap(const void* data, const gfx::Size& size) {
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
+  // Guaranteed not to overflow since it's been validated by IsBitmapSizeSane().
+  DCHECK_EQ(4U * size.width(), bitmap.rowBytes());
+  bitmap.setPixels(const_cast<void*>(data));
+  return bitmap;
 }
 
 // A list of allowed threads. By default, this is empty and no thread checking
@@ -151,8 +172,7 @@ void Clipboard::DispatchObject(ObjectType type, const ObjectMapParams& params) {
   if (type != CBF_WEBKIT && (params.empty() || params[0].empty()))
     return;
   // Some other types need a non-empty 2nd param.
-  if ((type == CBF_BOOKMARK || type == CBF_BITMAP ||
-       type == CBF_SMBITMAP || type == CBF_DATA) &&
+  if ((type == CBF_BOOKMARK || type == CBF_SMBITMAP || type == CBF_DATA) &&
       (params.size() != 2 || params[1].empty()))
     return;
   switch (type) {
@@ -184,13 +204,6 @@ void Clipboard::DispatchObject(ObjectType type, const ObjectMapParams& params) {
       WriteWebSmartPaste();
       break;
 
-    case CBF_BITMAP:
-      if (!ValidatePlainBitmap(params))
-        return;
-
-      WriteBitmap(&(params[0].front()), &(params[1].front()));
-      break;
-
     case CBF_SMBITMAP: {
       using base::SharedMemory;
       using base::SharedMemoryHandle;
@@ -206,10 +219,16 @@ void Clipboard::DispatchObject(ObjectType type, const ObjectMapParams& params) {
       scoped_ptr<SharedMemory> bitmap_data(
           *reinterpret_cast<SharedMemory**>(raw_bitmap_data));
 
-      if (!ValidateAndMapSharedBitmap(params, bitmap_data.get()))
+      gfx::Size size;
+      if (!GetBitmapSizeFromParams(params, &size))
         return;
-      WriteBitmap(static_cast<const char*>(bitmap_data->memory()),
-                  &(params[1].front()));
+
+      if (!ValidateAndMapSharedBitmap(size, bitmap_data.get()))
+        return;
+
+      const SkBitmap& bitmap = AdoptBytesIntoSkBitmap(
+          bitmap_data->memory(), size);
+      WriteBitmap(bitmap);
       break;
     }
 
@@ -227,7 +246,7 @@ void Clipboard::DispatchObject(ObjectType type, const ObjectMapParams& params) {
 }
 
 // static
-void Clipboard::ReplaceSharedMemHandle(ObjectMap* objects,
+bool Clipboard::ReplaceSharedMemHandle(ObjectMap* objects,
                                        base::SharedMemoryHandle bitmap_handle,
                                        base::ProcessHandle process) {
   using base::SharedMemory;
@@ -237,15 +256,19 @@ void Clipboard::ReplaceSharedMemHandle(ObjectMap* objects,
        ++iter) {
     if (iter->first == CBF_SMBITMAP) {
       // The code currently only accepts sending a single bitmap over this way.
-      // Fail hard if we ever encounter more than one shared bitmap structure to
-      // fill.
-      CHECK(!has_shared_bitmap);
+      // Fail if we ever encounter more than one shmem bitmap structure to fill.
+      if (has_shared_bitmap)
+        return false;
 
 #if defined(OS_WIN)
       SharedMemory* bitmap = new SharedMemory(bitmap_handle, true, process);
 #else
       SharedMemory* bitmap = new SharedMemory(bitmap_handle, true);
 #endif
+
+      // There must always be two parameters associated with each shmem bitmap.
+      if (iter->second.size() != 2)
+        return false;
 
       // We store the shared memory object pointer so it can be retrieved by the
       // UI thread (see DispatchObject()).
@@ -255,6 +278,7 @@ void Clipboard::ReplaceSharedMemHandle(ObjectMap* objects,
       has_shared_bitmap = true;
     }
   }
+  return true;
 }
 
 }  // namespace ui

@@ -11,9 +11,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/feedback_private/feedback_service.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/feedback/tracing_manager.h"
+#include "extensions/browser/event_router.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
@@ -107,7 +107,8 @@ bool FeedbackPrivateGetStringsFunction::RunImpl() {
   SET_STRING("page-url", IDS_FEEDBACK_REPORT_URL_LABEL);
   SET_STRING("screenshot", IDS_FEEDBACK_SCREENSHOT_LABEL);
   SET_STRING("user-email", IDS_FEEDBACK_USER_EMAIL_LABEL);
-  SET_STRING("sysinfo", IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX);
+  SET_STRING("sys-info",
+             IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_AND_METRICS_CHKBOX);
   SET_STRING("attach-file-label", IDS_FEEDBACK_ATTACH_FILE_LABEL);
   SET_STRING("attach-file-note", IDS_FEEDBACK_ATTACH_FILE_NOTE);
   SET_STRING("attach-file-to-big", IDS_FEEDBACK_ATTACH_FILE_TO_BIG);
@@ -215,10 +216,19 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
                                  ->GetForProfile(GetProfile())
                                  ->GetService();
   DCHECK(service);
+
+  if (feedback_info.send_histograms) {
+    scoped_ptr<std::string> histograms(new std::string);
+    service->GetHistograms(histograms.get());
+    if (!histograms->empty())
+      feedback_data->SetAndCompressHistograms(histograms.Pass());
+  }
+
   service->SendFeedback(
       GetProfile(),
       feedback_data,
       base::Bind(&FeedbackPrivateSendFeedbackFunction::OnCompleted, this));
+
   return true;
 }
 

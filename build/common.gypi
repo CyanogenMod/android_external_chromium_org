@@ -32,6 +32,9 @@
 
             # Use a raw surface abstraction.
             'use_ozone%': 0,
+
+            # Configure the build for small devices. See crbug.com/318413
+            'embedded%': 0,
           },
           # Copy conditionally-set variables out one scope.
           'chromeos%': '<(chromeos)',
@@ -39,7 +42,7 @@
           'use_ash%': '<(use_ash)',
           'use_cras%': '<(use_cras)',
           'use_ozone%': '<(use_ozone)',
-          'use_ozone_evdev%': '<(use_ozone)',
+          'embedded%': '<(embedded)',
 
           # Whether we are using Views Toolkit
           'toolkit_views%': 0,
@@ -76,6 +79,11 @@
               'use_aura%': 1,
             }],
 
+            # Ozone uses Aura.
+            ['use_ozone==1', {
+              'use_aura%': 1,
+            }],
+
             # Whether we're a traditional desktop unix.
             ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and chromeos==0', {
               'desktop_linux%': 1,
@@ -94,6 +102,11 @@
               'host_arch%':
                 '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/arm/;s/i86pc/ia32/")',
             }],
+
+            # Embedded implies ozone.
+            ['embedded==1', {
+              'use_ozone%': 1,
+            }],
           ],
         },
         # Copy conditionally-set variables out one scope.
@@ -103,7 +116,7 @@
         'use_ash%': '<(use_ash)',
         'use_cras%': '<(use_cras)',
         'use_ozone%': '<(use_ozone)',
-        'use_ozone_evdev%': '<(use_ozone_evdev)',
+        'embedded%': '<(embedded)',
         'use_openssl%': '<(use_openssl)',
         'enable_viewport%': '<(enable_viewport)',
         'enable_hidpi%': '<(enable_hidpi)',
@@ -141,6 +154,13 @@
             'toolkit_views%': 0,
           }],
 
+          # Embedded builds use aura without ash or views.
+          ['embedded==1', {
+            'use_aura%': 1,
+            'use_ash%': 0,
+            'toolkit_views%': 0,
+          }],
+
           # Set toolkit_uses_gtk for the Chromium browser on Linux.
           ['desktop_linux==1 and use_aura==0 and use_ozone==0', {
             'toolkit_uses_gtk%': 1,
@@ -171,6 +191,12 @@
           }, {
             'use_default_render_theme%': 0,
           }],
+
+          ['use_ozone==1', {
+            'use_ozone_evdev%': 1,
+          }, {
+            'use_ozone_evdev%': 0,
+          }]
         ],
       },
 
@@ -186,6 +212,7 @@
       'use_cras%': '<(use_cras)',
       'use_ozone%': '<(use_ozone)',
       'use_ozone_evdev%': '<(use_ozone_evdev)',
+      'embedded%': '<(embedded)',
       'use_openssl%': '<(use_openssl)',
       'enable_viewport%': '<(enable_viewport)',
       'enable_hidpi%': '<(enable_hidpi)',
@@ -308,6 +335,10 @@
       # MemorySanitizer only works with clang, but msan=1 implies clang=1
       # See http://clang.llvm.org/docs/MemorySanitizer.html
       'msan%': 0,
+
+      # Use the dynamic libraries instrumented by one of the sanitizers
+      # instead of the standard system libraries.
+      'use_instrumented_libraries%': 0,
 
       # Use a modified version of Clang to intercept allocated types and sizes
       # for allocated objects. clang_type_profiler=1 implies clang=1.
@@ -475,6 +506,13 @@
           'use_nss%': 0,
         }],
 
+        # libudev usage.  This currently only affects the content layer.
+        ['OS=="linux" and embedded==0', {
+          'use_udev%': 1,
+        }, {
+          'use_udev%': 0,
+        }],
+
         # Flags to use X11 on non-Mac POSIX platforms.
         ['OS=="win" or OS=="mac" or OS=="ios" or OS=="android" or use_ozone==1', {
           'use_x11%': 0,
@@ -482,13 +520,27 @@
           'use_x11%': 1,
         }],
 
-        # Flags to use pango and glib on non-Mac POSIX platforms.
-        ['OS=="win" or OS=="mac" or OS=="ios" or OS=="android"', {
+        # Flags to use glib.
+        ['OS=="win" or OS=="mac" or OS=="ios" or OS=="android" or embedded==1', {
           'use_glib%': 0,
-          'use_pango%': 0,
         }, {
           'use_glib%': 1,
+        }],
+
+        # Flags to use pango and cairo.
+        ['OS=="win" or OS=="mac" or OS=="ios" or OS=="android" or embedded==1', {
+          'use_pango%': 0,
+          'use_cairo%': 0,
+        }, {
           'use_pango%': 1,
+          'use_cairo%': 1,
+        }],
+
+        # DBus usage.
+        ['OS=="linux" and embedded==0', {
+          'use_dbus%': 1,
+        }, {
+          'use_dbus%': 0,
         }],
 
         # We always use skia text rendering in Aura on Windows, since GDI
@@ -502,7 +554,7 @@
         # on gnome-keyring. If that dependency is disabled, no gnome-keyring
         # support will be available. This option is useful
         # for Linux distributions and for Aura.
-        ['chromeos==1 or use_aura==1', {
+        ['OS!="linux" or chromeos==1 or use_aura==1', {
           'use_gnome_keyring%': 0,
         }, {
           'use_gnome_keyring%': 1,
@@ -615,7 +667,7 @@
           'enable_plugin_installation%': 1,
         }],
 
-        ['(OS=="android" and google_tv!=1) or OS=="ios"', {
+        ['(OS=="android" and google_tv!=1) or OS=="ios" or embedded==1', {
           'enable_plugins%': 0,
         }, {
           'enable_plugins%': 1,
@@ -735,6 +787,12 @@
         }, {
           'v8_optimized_debug%': 2,
         }],
+
+        # Disable various features by default on embedded.
+        ['embedded==1', {
+          'remoting%': 0,
+          'enable_printing%': 0,
+        }],
       ],
 
       # Set this to 1 to enable use of concatenated impulse responses
@@ -799,10 +857,13 @@
     'use_cras%': '<(use_cras)',
     'use_openssl%': '<(use_openssl)',
     'use_nss%': '<(use_nss)',
+    'use_udev%': '<(use_udev)',
     'os_bsd%': '<(os_bsd)',
     'os_posix%': '<(os_posix)',
+    'use_dbus%': '<(use_dbus)',
     'use_glib%': '<(use_glib)',
     'use_pango%': '<(use_pango)',
+    'use_cairo%': '<(use_cairo)',
     'use_ozone%': '<(use_ozone)',
     'use_ozone_evdev%': '<(use_ozone_evdev)',
     'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
@@ -846,6 +907,7 @@
     'msan%': '<(msan)',
     'tsan%': '<(tsan)',
     'tsan_blacklist%': '<(tsan_blacklist)',
+    'use_instrumented_libraries%': '<(use_instrumented_libraries)',
     'clang_type_profiler%': '<(clang_type_profiler)',
     'order_profiling%': '<(order_profiling)',
     'order_text_section%': '<(order_text_section)',
@@ -930,13 +992,7 @@
 
     # The default value for mac_strip in target_defaults. This cannot be
     # set there, per the comment about variable% in a target_defaults.
-    'mac_strip_release%': 1,
-
-    # Set to 1 to enable code coverage.  In addition to build changes
-    # (e.g. extra CFLAGS), also creates a new target in the src/chrome
-    # project file called "coverage".
-    # Currently ignored on Windows.
-    'coverage%': 0,
+    'mac_strip_release%': 0,
 
     # Set to 1 to enable java code coverage. Instruments classes during build
     # to produce .ec files during runtime.
@@ -1072,6 +1128,9 @@
 
     # Set to 1 to compile with the OpenGL ES 2.0 conformance tests.
     'internal_gles2_conform_tests%': 0,
+
+    # Set to 1 to compile the filter fuzzer.
+    'internal_filter_fuzzer%': 0,
 
     # NOTE: When these end up in the Mac bundle, we need to replace '-' for '_'
     # so Cocoa is happy (http://crbug.com/20441).
@@ -1328,10 +1387,6 @@
         # Location of the "readelf" binary.
         'android_readelf%' : '<!(/bin/echo -n <(android_toolchain)/*-readelf)',
 
-        # Provides an absolute path to PRODUCT_DIR (e.g. out/Release). Used
-        # to specify the output directory for Ant in the Android build.
-        'ant_build_out': '`cd <(PRODUCT_DIR) && pwd -P`',
-
         # Determines whether we should optimize JNI generation at the cost of
         # breaking assumptions in the build system that when inputs have changed
         # the outputs should always change as well.  This is meant purely for
@@ -1378,8 +1433,6 @@
         'use_system_icu%': '<(android_webview_build)',
         'use_system_stlport%': '<(android_webview_build)',
 
-        'enable_managed_users%': 0,
-
         # Copy it out one scope.
         'android_webview_build%': '<(android_webview_build)',
       }],  # OS=="android"
@@ -1391,6 +1444,13 @@
       ['OS=="mac"', {
         # Enable clang on mac by default!
         'clang%': 1,
+        'conditions': [
+          # All Chrome builds have breakpad symbols, but only process the
+          # symbols from official builds.
+          ['(branding=="Chrome" and buildtype=="Official")', {
+            'mac_strip_release%': 1,
+          }],
+        ], 
       }],  # OS=="mac"
       ['OS=="mac" or OS=="ios"', {
         'variables': {
@@ -1477,8 +1537,10 @@
             # .obj files.
             'incremental_chrome_dll%': 1,
           }],
-          # Don't do incremental linking for large modules on 32-bit.
-          ['MSVS_OS_BITS==32', {
+          # Don't do incremental linking for large modules on 32-bit or when
+          # component=static_library as the toolchain fails due to the size of
+          # the .ilk files.
+          ['MSVS_OS_BITS==32 or component=="static_library"', {
             'msvs_large_module_debug_link_mode%': '1',  # No
           },{
             'msvs_large_module_debug_link_mode%': '2',  # Yes
@@ -1536,7 +1598,7 @@
 
       # Options controlling the use of GConf (the classic GNOME configuration
       # system) and GIO, which contains GSettings (the new GNOME config system).
-      ['chromeos==1', {
+      ['chromeos==1 or embedded==1', {
         'use_gconf%': 0,
         'use_gio%': 0,
       }, {
@@ -1802,6 +1864,9 @@
         # Enable built-in ozone platforms if ozone is enabled.
         'ozone_platform_dri%': 1,
         'ozone_platform_test%': 1,
+      }, {  # use_ozone==0
+        'ozone_platform_dri%': 0,
+        'ozone_platform_test%': 0,
       }],
     ],
 
@@ -1998,8 +2063,14 @@
       ['use_ash==1', {
         'defines': ['USE_ASH=1'],
       }],
+      ['use_cairo==1', {
+        'defines': ['USE_CAIRO=1'],
+      }],
       ['use_cras==1', {
         'defines': ['USE_CRAS=1'],
+      }],
+      ['use_glib==1', {
+        'defines': ['USE_GLIB=1'],
       }],
       ['use_ozone==1', {
         'defines': ['USE_OZONE=1'],
@@ -2078,6 +2149,9 @@
       }],
       ['native_memory_pressure_signals==1', {
         'defines': ['SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE'],
+      }],
+      ['use_udev==1', {
+        'defines': ['USE_UDEV'],
       }],
       ['fastbuild!=0', {
         'xcode_settings': {
@@ -2193,55 +2267,6 @@
             'MEMORY_TOOL_REPLACES_ALLOCATOR',
         ],
       }],  # asan==1 and OS=="win"
-      ['coverage!=0', {
-        'conditions': [
-          ['OS=="mac" or OS=="ios"', {
-            'xcode_settings': {
-              'GCC_INSTRUMENT_PROGRAM_FLOW_ARCS': 'YES',  # -fprofile-arcs
-              'GCC_GENERATE_TEST_COVERAGE_FILES': 'YES',  # -ftest-coverage
-            },
-          }],
-          ['OS=="mac"', {
-            # Add -lgcov for types executable, shared_library, and
-            # loadable_module; not for static_library.
-            # This is a delayed conditional.
-            'target_conditions': [
-              ['_type!="static_library"', {
-                'xcode_settings': { 'OTHER_LDFLAGS': [ '-lgcov' ] },
-              }],
-            ],
-          }],
-          ['OS=="linux" or OS=="android"', {
-            'cflags': [ '-ftest-coverage',
-                        '-fprofile-arcs' ],
-            'link_settings': { 'libraries': [ '-lgcov' ] },
-          }],
-          ['OS=="win"', {
-            'variables': {
-              # Disable incremental linking for all modules.
-              # 0: inherit, 1: disabled, 2: enabled.
-              'msvs_debug_link_incremental': '1',
-              'msvs_large_module_debug_link_mode': '1',
-              # Disable RTC. Syzygy explicitly doesn't support RTC instrumented
-              # binaries for now.
-              'win_debug_RuntimeChecks': '0',
-            },
-            'defines': [
-              # Disable iterator debugging (huge speed boost without any
-              # change in coverage results).
-              '_HAS_ITERATOR_DEBUGGING=0',
-            ],
-            'msvs_settings': {
-              'VCLinkerTool': {
-                # Enable profile information (necessary for coverage
-                # instrumentation). This is incompatible with incremental
-                # linking.
-                'Profile': 'true',
-              },
-            }
-         }],  # OS==win
-        ],  # conditions for coverage
-      }],  # coverage!=0
       ['OS=="win"', {
         'defines': [
           '__STD_C',
@@ -2250,6 +2275,8 @@
           # This define is required to pull in the new Win8 interfaces from
           # system headers like ShObjIdl.h.
           'NTDDI_VERSION=0x06020000',
+          # This is required for ATL to use XP-safe versions of its functions.
+          '_USING_V110_SDK71_',
         ],
         'include_dirs': [
           '<(DEPTH)/third_party/wtl/include',
@@ -2472,6 +2499,9 @@
               # flagged in an iOS build.
               'GCC_TREAT_WARNINGS_AS_ERRORS': 'NO',
               'RUN_CLANG_STATIC_ANALYZER': 'NO',
+              # Several internal ios directories generate numerous warnings for
+              # -Wobjc-missing-property-synthesis.
+              'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'NO',
             },
           }],
         ],
@@ -2547,6 +2577,9 @@
           'VCLinkerTool': {
             'TargetMachine': '1',
           },
+          'VCLibrarianTool': {
+            'TargetMachine': '1',
+          },
         },
         'msvs_configuration_platform': 'Win32',
       },
@@ -2568,6 +2601,7 @@
               ['<(windows_sdk_path)/Lib/win8/um/x86'],
             'AdditionalLibraryDirectories':
               ['<(windows_sdk_path)/Lib/win8/um/x64'],
+            'TargetMachine': '17', # x64
           },
         },
       },
@@ -3210,8 +3244,10 @@
               # Don't die on dtoa code that uses a char as an array index.
               '-Wno-char-subscripts',
 
-              # Clang spots more unused functions.
-              '-Wno-unused-function',
+              # TODO(thakis): This used to be implied by -Wno-unused-function,
+              # which we no longer use. Check if it makes sense to remove
+              # this as well. http://crbug.com/316352
+              '-Wno-unneeded-internal-declaration',
 
               # Warns on switches on enums that cover all enum values but
               # also contain a default: branch. Chrome is full of that.
@@ -3396,6 +3432,24 @@
               }],
             ],
           }],
+          ['use_instrumented_libraries==1', {
+            'dependencies': [
+              '<(DEPTH)/third_party/instrumented_libraries/instrumented_libraries.gyp:instrumented_libraries',
+            ],
+            'conditions': [
+              ['asan==1', {
+                'target_conditions': [
+                  ['_toolset=="target"', {
+                    'ldflags': [
+                      # Add RPATH to result binary to make it linking instrumented libraries ($ORIGIN means relative RPATH)
+                      '-Wl,-R,\$$ORIGIN/instrumented_libraries/asan/lib/:\$$ORIGIN/instrumented_libraries/asan/usr/lib/x86_64-linux-gnu/',
+                      '-Wl,-z,origin',
+                    ],
+                  }],
+                ],
+              }],
+            ],
+          }],
           ['order_profiling!=0 and (chromeos==1 or OS=="linux" or OS=="android")', {
             'target_conditions' : [
               ['_toolset=="target"', {
@@ -3494,7 +3548,7 @@
               # unspecified what the cwd is when running the compiler,
               # so the normal gyp path-munging fails us.  This hack
               # gets the right path.
-              '-B<(PRODUCT_DIR)/../../third_party/gold',
+              '-B<!(cd <(DEPTH) && pwd -P)/third_party/gold',
             ],
           }],
         ],
@@ -3925,8 +3979,10 @@
                 # This is required solely for base/third_party/dmg_fp/dtoa.cc.
                 '-Wno-char-subscripts',
 
-                # Clang spots more unused functions.
-                '-Wno-unused-function',
+                # TODO(thakis): This used to be implied by -Wno-unused-function,
+                # which we no longer use. Check if it makes sense to remove
+                # this as well. http://crbug.com/316352
+                '-Wno-unneeded-internal-declaration',
 
                 # Warns on switches on enums that cover all enum values but
                 # also contain a default: branch. Chrome is full of that.
@@ -4214,10 +4270,8 @@
             # Don't die on dtoa code that uses a char as an array index.
             # This is required solely for base/third_party/dmg_fp/dtoa.cc.
             '-Wno-char-subscripts',
-            # Clang spots more unused functions.
-            '-Wno-unused-function',
-            # See comments on this flag higher up in this file.
-            '-Wno-unnamed-type-template-args',
+            # See comment in the mac clang section above for this flag.
+            '-Wno-unneeded-internal-declaration',
             # Match OS X clang C++11 warning settings.
             '-Wno-c++11-narrowing',
           ],
@@ -4417,6 +4471,7 @@
           '$(VSInstallDir)/VC/atlmfc/include',
         ],
         'msvs_cygwin_dirs': ['<(DEPTH)/third_party/cygwin'],
+        'msvs_cygwin_shell': 0,
         'msvs_disabled_warnings': [4351, 4355, 4396, 4503, 4819,
           # TODO(maruel): These warnings are level 4. They will be slowly
           # removed as code is fixed.
@@ -4664,16 +4719,19 @@
         # Target both iPhone and iPad.
         'TARGETED_DEVICE_FAMILY': '1,2',
         'VALID_ARCHS': 'armv7 i386',
-      }],
-      ['target_arch=="x64"', {
-        'ARCHS': [
-          'x86_64'
-         ],
-      }],
-      ['target_arch=="ia32"', {
-        'ARCHS': [
-          'i386'
-         ],
+      }, {  # OS!="ios"
+        'conditions': [
+          ['target_arch=="x64"', {
+            'ARCHS': [
+              'x86_64'
+            ],
+          }],
+          ['target_arch=="ia32"', {
+            'ARCHS': [
+              'i386'
+            ],
+          }],
+        ],
       }],
     ],
 

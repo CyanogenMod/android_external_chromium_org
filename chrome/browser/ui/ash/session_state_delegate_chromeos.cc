@@ -15,7 +15,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/ash/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -42,7 +42,10 @@ bool SessionStateDelegateChromeos::IsActiveUserSessionStarted() const {
 }
 
 bool SessionStateDelegateChromeos::CanLockScreen() const {
-  return chromeos::UserManager::Get()->CanCurrentUserLock();
+  const chromeos::UserList unlock_users =
+      chromeos::UserManager::Get()->GetUnlockUsers();
+  DCHECK_LE(unlock_users.size(), 1u);
+  return !unlock_users.empty() && unlock_users[0]->can_lock();
 }
 
 bool SessionStateDelegateChromeos::IsScreenLocked() const {
@@ -51,7 +54,13 @@ bool SessionStateDelegateChromeos::IsScreenLocked() const {
 }
 
 bool SessionStateDelegateChromeos::ShouldLockScreenBeforeSuspending() const {
-  Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
+  const chromeos::UserList unlock_users =
+      chromeos::UserManager::Get()->GetUnlockUsers();
+  DCHECK_LE(unlock_users.size(), 1u);
+  Profile* profile =
+      !unlock_users.empty()
+          ? chromeos::UserManager::Get()->GetProfileByUser(unlock_users[0])
+          : NULL;
   return profile && profile->GetPrefs()->GetBoolean(prefs::kEnableScreenLock);
 }
 
@@ -171,9 +180,12 @@ void SessionStateDelegateChromeos::RemoveSessionStateObserver(
 bool SessionStateDelegateChromeos::TransferWindowToDesktopOfUser(
     aura::Window* window,
     ash::MultiProfileIndex index) {
+  if (chrome::MultiUserWindowManager::GetMultiProfileMode() !=
+          chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_SEPARATED)
+    return false;
   chrome::MultiUserWindowManager* window_manager =
       chrome::MultiUserWindowManager::GetInstance();
-  if (!window_manager || window_manager->GetWindowOwner(window).empty())
+  if (window_manager->GetWindowOwner(window).empty())
     return false;
 
   ash::MultiProfileUMA::RecordTeleportAction(

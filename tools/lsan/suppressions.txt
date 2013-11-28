@@ -6,6 +6,10 @@ leak:base::ToolsSanityTest_MemoryLeak_Test::TestBody
 # False positives in libfontconfig. http://crbug.com/39050
 leak:libfontconfig
 
+# False positive in Blink due to bit twiddling on pointers. http://crbug.com/242672
+# TODO(earthdok): Annotate.
+leak:WTF::BitVector::resizeOutOfLine
+
 # V8 leak, expect 1024 bytes leaked per process. http://crbug.com/99304
 leak:v8::internal::V8::Initialize
 
@@ -17,6 +21,10 @@ leak:net::ProxyResolverScriptData::FromUTF8
 
 # A small string is leaked here (57 bytes per process). http://crbug.com/46571#c9
 leak:WebCore::V8GCController::collectGarbage
+
+# Intentional leak in Blink. http://crbug.com/121729
+# TODO(earthdok): annotate it.
+leak:WebCore::parseUASheet
 
 # http://crbug.com/270180
 leak:net::ProxyResolverV8::Context::ResolveProxy
@@ -44,6 +52,12 @@ leak:FontConfigTypeface::LegacyCreateTypeface
 # Skia leaks GrGpuGL::ProgramCache::Entry. http://crbug.com/262934
 leak:GrGpuGL::flushGraphicsState
 
+# xrandr leak. http://crbug.com/119677
+leak:XRRFindDisplay
+
+# Test tears down V8 incorrectly and should be fixed. http://crbug.com/323149
+leak:V8UnitTest::SetUp
+
 #### Actual bugs in Chromium code ####
 # PLEASE DO NOT ADD NEW SUPPRESSIONS TO THIS SECTION. Instead, commits that
 # introduce memory leaks should be reverted.
@@ -58,9 +72,11 @@ leak:base::WeakPtrTest_MoveOwnershipAfterInvalidate_Test::TestBody
 leak:gpu::gles2::GLES2DecoderImpl::DoBindRenderbuffer
 leak:gpu::gles2::GLES2DecoderImpl::DoRenderbufferStorage
 
-# Leak in unit_tests. http://crbug.com/282646
-leak:DeclarativeContentActionTest_ShowPageAction_Test::TestBody
-leak:DeclarativeContentRulesRegistryTest_ActiveRulesDoesntGrow_Test::TestBody
+# Leak in cc_unittests. http://crbug.com/317965
+leak:cc::ThreadProxy::ReadyToFinalizeTextureUpdates
+
+# Leak in unit_tests. http://crbug.com/309468
+leak:TranslateBubbleViewTest::SetUp
 
 # GTK leaks. GTK is deprecated, so we won't be fixing these.
 # Most of them should apply to the full browser process only.
@@ -72,11 +88,18 @@ leak:GtkNativeViewManager
 leak:_gdk_x11_window_get_toplevel
 leak:gtk_util::*AppModal
 
-# Infobar-related leaks in browser tests. Retriage them once
-# http://crbug.com/62154 is fixed.
+# Infobar-related leaks in browser tests.
+# TODO(earthdok): Retriage them once http://crbug.com/62154 is fixed.
 leak:chrome::ShowBadFlagsPrompt
 leak:TranslateInfoBarDelegate::Create
 leak:TranslateLanguageList::TranslateLanguageList
 leak:SimpleAlertInfoBarDelegate::Create
+
+# Small shutdown-only leak in browser tests (24 bytes). http://crbug.com/317116
+# TODO(earthdok): Either annotate or narrow down the suppression.
+leak:content::RenderViewTest::TearDown
+
+# http://crbug.com/318221
+leak:base::EnsureProcessTerminated
 
 # PLEASE DO NOT ADD NEW SUPPRESSIONS HERE. See the comment above.

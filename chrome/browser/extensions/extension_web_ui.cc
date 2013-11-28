@@ -20,10 +20,8 @@
 #include "chrome/browser/favicon/favicon_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -32,7 +30,9 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
 #include "net/base/file_stream.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -78,7 +78,7 @@ void UnregisterAndReplaceOverrideForWebContents(
   // Don't use Reload() since |url| isn't the same as the internal URL that
   // NavigationController has.
   web_contents->GetController().LoadURL(
-      url, content::Referrer(url, WebKit::WebReferrerPolicyDefault),
+      url, content::Referrer(url, blink::WebReferrerPolicyDefault),
       content::PAGE_TRANSITION_RELOAD, std::string());
 }
 
@@ -332,7 +332,7 @@ void ExtensionWebUI::UnregisterAndReplaceOverride(const std::string& page,
     // tabs for this override and get them to reload the original URL.
     base::Callback<void(WebContents*)> callback =
         base::Bind(&UnregisterAndReplaceOverrideForWebContents, page, profile);
-    ExtensionTabUtil::ForEachTab(callback);
+    extensions::ExtensionTabUtil::ForEachTab(callback);
   }
 }
 

@@ -42,23 +42,8 @@
     {
       "name": "google",
       "static_spki_hashes": [
-        "VeriSignClass3",
-        "VeriSignClass3_G3",
-        "Google1024",
-        "Google2048",
-        "GoogleBackup1024",
         "GoogleBackup2048",
-        "GoogleG2",
-        "EquifaxSecureCA",
-        "GeoTrustGlobal"
-      ],
-      "bad_static_spki_hashes": [
-        "Aetna",
-        "Intel",
-        "TCTrustCenter",
-        "Vodafone",
-        "ThawteSGCCA",
-        "VeriSignClass3SSPIntermediateCA"
+        "GoogleG2"
       ]
     },
     {
@@ -140,7 +125,8 @@
         "UTNUSERFirstClientAuthenticationandEmail",
         "UTNUSERFirstHardware",
         "UTNUSERFirstObject",
-        "GTECyberTrustGlobalRoot"
+        "GTECyberTrustGlobalRoot",
+        "BaltimoreCyberTrustRoot"
       ]
     },
     {
@@ -192,6 +178,7 @@
     { "name": "script.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "history.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "security.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "goto.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
 
     // Other Google-related domains that must use HTTPS.
     { "name": "market.android.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
@@ -213,8 +200,6 @@
     // and there are lots of links out there that still use the name. The correct
     // hostname for this is chart.googleapis.com.
     { "name": "chart.apis.google.com", "include_subdomains": true, "pins": "google" },
-    { "name": "oraprodsso.corp.google.com", "include_subdomains": true, "mode": "force-https" },
-    { "name": "oraprodmv.corp.google.com", "include_subdomains": true, "mode": "force-https" },
 
     // Other Google-related domains that must use an acceptable certificate
     // iff using SSL.
@@ -571,8 +556,12 @@
     { "name": "www.lookout.com", "mode": "force-https" },
     { "name": "mylookout.com", "mode": "force-https" },
     { "name": "www.mylookout.com", "mode": "force-https" },
-    { "name": "dm.lookout.com", "mode": "force-https" },
-    { "name": "dm.mylookout.com", "mode": "force-https" },
+    { "name": "dm.lookout.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "business.lookout.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "blog.lookout.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "faq.lookout.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "platform.lookout.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "email.lookout.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "itriskltd.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "stocktrade.de", "include_subdomains": true, "mode": "force-https" },
     { "name": "openshift.redhat.com", "include_subdomains": true, "mode": "force-https" },
@@ -661,6 +650,17 @@
     { "name": "davidlyness.com", "include_subdomains": true,  "mode": "force-https" },
     { "name": "medium.com", "include_subdomains": true,  "mode": "force-https" },
     { "name": "liberty.lavabit.com", "include_subdomains": true, "mode": "force-https", "pins": "lavabit" },
+    { "name": "getlantern.org", "include_subdomains": true, "mode": "force-https" },
+    { "name": "kinsights.com", "mode": "force-https" },
+    { "name": "simbolo.co.uk", "mode": "force-https" },
+    { "name": "www.simbolo.co.uk", "mode": "force-https" },
+    { "name": "zenpayroll.com", "mode": "force-https" },
+    { "name": "www.zenpayroll.com", "mode": "force-https" },
+    { "name": "get.zenpayroll.com", "mode": "force-https" },
+    { "name": "errors.zenpayroll.com", "mode": "force-https" },
+    { "name": "manage.zenpayroll.com", "mode": "force-https" },
+    { "name": "gernert-server.de", "include_subdomains": true, "mode": "force-https" },
+    { "name": "skydrive.live.com", "include_subdomains": true, "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

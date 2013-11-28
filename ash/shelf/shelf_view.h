@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include "ash/launcher/launcher_button_host.h"
-#include "ash/launcher/launcher_model_observer.h"
+#include "ash/shelf/shelf_button_host.h"
+#include "ash/shelf/shelf_model_observer.h"
 #include "ash/wm/gestures/shelf_gesture_handler.h"
 #include "base/observer_list.h"
 #include "ui/app_list/views/app_list_drag_and_drop_host.h"
@@ -35,28 +35,33 @@ class ShelfViewTestAPI;
 class LauncherDelegate;
 struct LauncherItem;
 class LauncherItemDelegateManager;
-class LauncherModel;
 class ShelfIconObserver;
+class ShelfModel;
 
 namespace internal {
 
 class DragImageView;
-class LauncherButton;
 class OverflowBubble;
 class OverflowButton;
+class ShelfButton;
 class ShelfLayoutManager;
 class ShelfTooltipManager;
 
+extern const int SHELF_ALIGNMENT_UMA_ENUM_VALUE_BOTTOM;
+extern const int SHELF_ALIGNMENT_UMA_ENUM_VALUE_LEFT;
+extern const int SHELF_ALIGNMENT_UMA_ENUM_VALUE_RIGHT;
+extern const int SHELF_ALIGNMENT_UMA_ENUM_VALUE_COUNT;
+
 class ASH_EXPORT ShelfView : public views::View,
-                             public LauncherModelObserver,
+                             public ShelfModelObserver,
                              public views::ButtonListener,
-                             public LauncherButtonHost,
+                             public ShelfButtonHost,
                              public views::ContextMenuController,
                              public views::FocusTraversable,
                              public views::BoundsAnimatorObserver,
                              public app_list::ApplicationDragAndDropHost {
  public:
-  ShelfView(LauncherModel* model,
+  ShelfView(ShelfModel* model,
             LauncherDelegate* delegate,
             ShelfLayoutManager* shelf_layout_manager);
   virtual ~ShelfView();
@@ -65,7 +70,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   ShelfLayoutManager* shelf_layout_manager() { return layout_manager_; }
 
-  LauncherModel* model() { return model_; }
+  ShelfModel* model() { return model_; }
 
   void Init();
 
@@ -148,9 +153,13 @@ class ASH_EXPORT ShelfView : public views::View,
     NOT_REMOVABLE, // Item is fixed and can never be removed.
   };
 
-  bool is_overflow_mode() const {
-    return first_visible_index_ > 0;
-  }
+  // Returns true when this ShelfView is used for Overflow Bubble.
+  // In this mode, it does not show app list, panel and overflow button.
+  // Note:
+  //   * When Shelf can contain only one item (overflow button) due to very
+  //     small resolution screen, overflow bubble can show app list and panel
+  //     button.
+  bool is_overflow_mode() const { return overflow_mode_; }
 
   bool dragging() const {
     return drag_pointer_ != NONE;
@@ -208,6 +217,15 @@ class ASH_EXPORT ShelfView : public views::View,
   // is valid, the new position of the corresponding item is returned.
   int CancelDrag(int modified_index);
 
+  // Returns rectangle bounds used for drag insertion.
+  // Note:
+  //  * When overflow button is visible, returns bounds from first item
+  //    to overflow button.
+  //  * When overflow button is visible and one or more panel items exists,
+  //    returns bounds from first item to last panel item.
+  //  * In the overflow mode, returns only bubble's bounds.
+  gfx::Rect GetBoundsForDragInsertInScreen();
+
   // Common setup done for all children.
   void ConfigureChildView(views::View* view);
 
@@ -228,6 +246,12 @@ class ASH_EXPORT ShelfView : public views::View,
   // Updates the visible range of overflow items in |overflow_view|.
   void UpdateOverflowRange(ShelfView* overflow_view);
 
+  // Returns the launcher button size.
+  int GetButtonSize() const;
+
+  // Returns the button spacing.
+  int GetButtonSpacing() const;
+
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
@@ -237,23 +261,21 @@ class ASH_EXPORT ShelfView : public views::View,
   // Overridden from ui::EventHandler:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
-  // Overridden from LauncherModelObserver:
-  virtual void LauncherItemAdded(int model_index) OVERRIDE;
-  virtual void LauncherItemRemoved(int model_index, LauncherID id) OVERRIDE;
-  virtual void LauncherItemChanged(int model_index,
-                                   const ash::LauncherItem& old_item) OVERRIDE;
-  virtual void LauncherItemMoved(int start_index, int target_index) OVERRIDE;
-  virtual void LauncherStatusChanged() OVERRIDE;
+  // Overridden from ShelfModelObserver:
+  virtual void ShelfItemAdded(int model_index) OVERRIDE;
+  virtual void ShelfItemRemoved(int model_index, LauncherID id) OVERRIDE;
+  virtual void ShelfItemChanged(int model_index,
+                                const LauncherItem& old_item) OVERRIDE;
+  virtual void ShelfItemMoved(int start_index, int target_index) OVERRIDE;
+  virtual void ShelfStatusChanged() OVERRIDE;
 
-  // Overridden from LauncherButtonHost:
-  virtual void PointerPressedOnButton(
-      views::View* view,
-      Pointer pointer,
-      const ui::LocatedEvent& event) OVERRIDE;
-  virtual void PointerDraggedOnButton(
-      views::View* view,
-      Pointer pointer,
-      const ui::LocatedEvent& event) OVERRIDE;
+  // Overridden from ShelfButtonHost:
+  virtual void PointerPressedOnButton(views::View* view,
+                                      Pointer pointer,
+                                      const ui::LocatedEvent& event) OVERRIDE;
+  virtual void PointerDraggedOnButton(views::View* view,
+                                      Pointer pointer,
+                                      const ui::LocatedEvent& event) OVERRIDE;
   virtual void PointerReleasedOnButton(views::View* view,
                                        Pointer pointer,
                                        bool canceled) OVERRIDE;
@@ -310,7 +332,7 @@ class ASH_EXPORT ShelfView : public views::View,
   int CalculateShelfDistance(const gfx::Point& coordinate) const;
 
   // The model; owned by Launcher.
-  LauncherModel* model_;
+  ShelfModel* model_;
 
   // Delegate; owned by Launcher.
   LauncherDelegate* delegate_;
@@ -319,9 +341,7 @@ class ASH_EXPORT ShelfView : public views::View,
   // item in |model_|.
   scoped_ptr<views::ViewModel> view_model_;
 
-  // Index of first visible launcher item. When it it greater than 0,
-  // ShelfView is hosted in an overflow bubble. In this mode, it does not
-  // show app list, panel, and overflow button.
+  // Index of first visible launcher item.
   int first_visible_index_;
 
   // Last index of a launcher button that is visible
@@ -416,6 +436,9 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Holds ShelfLayoutManager.
   ShelfLayoutManager* layout_manager_;
+
+  // True when this ShelfView is used for Overflow Bubble.
+  bool overflow_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(ShelfView);
 };

@@ -16,7 +16,9 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
-#include "chrome/browser/ui/app_list/extension_app_model_builder.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
+#include "chrome/browser/ui/app_list/app_list_syncable_service.h"
+#include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/search/search_controller.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -59,14 +61,15 @@ void CreateShortcutInWebAppDir(
 
 void PopulateUsers(const ProfileInfoCache& profile_info,
                    const base::FilePath& active_profile_path,
-                   app_list::AppListModel::Users* users) {
+                   app_list::AppListViewDelegate::Users* users) {
+  users->clear();
   const size_t count = profile_info.GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
     // Don't display managed users.
     if (profile_info.ProfileIsManagedAtIndex(i))
       continue;
 
-    app_list::AppListModel::User user;
+    app_list::AppListViewDelegate::User user;
     user.name = profile_info.GetNameOfProfileAtIndex(i);
     user.email = profile_info.GetUserNameOfProfileAtIndex(i);
     user.profile_path = profile_info.GetPathOfProfileAtIndex(i);
@@ -77,18 +80,26 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
 
 }  // namespace
 
-AppListViewDelegate::AppListViewDelegate(
-    scoped_ptr<AppListControllerDelegate> controller,
-    Profile* profile)
-    : controller_(controller.Pass()),
+AppListViewDelegate::AppListViewDelegate(Profile* profile,
+                                         AppListControllerDelegate* controller)
+    : controller_(controller),
       profile_(profile),
       model_(NULL) {
   CHECK(controller_);
   RegisterForNotifications();
   g_browser_process->profile_manager()->GetProfileInfoCache().AddObserver(this);
+  OnProfileChanged();  // sets model_
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  if (service)
+    service->AddObserver(this);
 }
 
 AppListViewDelegate::~AppListViewDelegate() {
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  if (service)
+    service->RemoveObserver(this);
   g_browser_process->
       profile_manager()->GetProfileInfoCache().RemoveObserver(this);
 }
@@ -106,9 +117,11 @@ void AppListViewDelegate::RegisterForNotifications() {
 }
 
 void AppListViewDelegate::OnProfileChanged() {
-  CHECK(controller_);
+  model_ = app_list::AppListSyncableServiceFactory::GetForProfile(
+      profile_)->model();
+
   search_controller_.reset(new app_list::SearchController(
-      profile_, model_->search_box(), model_->results(), controller_.get()));
+      profile_, model_->search_box(), model_->results(), controller_));
 
   signin_delegate_.SetProfile(profile_);
 
@@ -125,10 +138,12 @@ void AppListViewDelegate::OnProfileChanged() {
     return;
 
   // Populate the app list users.
-  app_list::AppListModel::Users users;
   PopulateUsers(g_browser_process->profile_manager()->GetProfileInfoCache(),
-                profile_->GetPath(), &users);
-  model_->SetUsers(users);
+                profile_->GetPath(), &users_);
+}
+
+bool AppListViewDelegate::ForceNativeDesktop() const {
+  return controller_->ForceNativeDesktop();
 }
 
 void AppListViewDelegate::SetProfileByPath(const base::FilePath& profile_path) {
@@ -141,26 +156,14 @@ void AppListViewDelegate::SetProfileByPath(const base::FilePath& profile_path) {
 
   RegisterForNotifications();
 
-  apps_builder_->SwitchProfile(profile_);
-
   OnProfileChanged();
 
   // Clear search query.
   model_->search_box()->SetText(base::string16());
 }
 
-void AppListViewDelegate::InitModel(app_list::AppListModel* model) {
-  DCHECK(!model_);
-  DCHECK(model);
-  model_ = model;
-
-  // Initialize apps model.
-  apps_builder_.reset(new ExtensionAppModelBuilder(profile_,
-                                                   model,
-                                                   controller_.get()));
-
-  // Initialize the profile information in the app list menu.
-  OnProfileChanged();
+app_list::AppListModel* AppListViewDelegate::GetModel() {
+  return model_;
 }
 
 app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
@@ -261,9 +264,24 @@ void AppListViewDelegate::OpenFeedback() {
                            chrome::kAppLauncherCategoryTag);
 }
 
+void AppListViewDelegate::ToggleSpeechRecognition() {
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  if (service)
+    service->ToggleSpeechRecognition();
+}
+
 void AppListViewDelegate::ShowForProfileByPath(
     const base::FilePath& profile_path) {
   controller_->ShowForProfileByPath(profile_path);
+}
+
+void AppListViewDelegate::OnSearch(const base::string16& query) {
+  model_->search_box()->SetText(query);
+}
+
+void AppListViewDelegate::OnSpeechRecognitionStateChanged(bool recognizing) {
+  model_->search_box()->SetSpeechRecognitionButtonState(recognizing);
 }
 
 void AppListViewDelegate::Observe(
@@ -295,4 +313,9 @@ content::WebContents* AppListViewDelegate::GetStartPageContents() {
     return NULL;
 
   return service->contents();
+}
+
+const app_list::AppListViewDelegate::Users&
+AppListViewDelegate::GetUsers() const {
+  return users_;
 }

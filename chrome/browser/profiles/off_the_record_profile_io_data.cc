@@ -21,12 +21,12 @@
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_context.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
@@ -177,8 +177,6 @@ void OffTheRecordProfileIOData::InitializeInternal(
 
   main_context->set_host_resolver(
       io_thread_globals->host_resolver.get());
-  main_context->set_cert_verifier(
-      io_thread_globals->cert_verifier.get());
   main_context->set_http_auth_handler_factory(
       io_thread_globals->http_auth_handler_factory.get());
   main_context->set_fraudulent_certificate_reporter(

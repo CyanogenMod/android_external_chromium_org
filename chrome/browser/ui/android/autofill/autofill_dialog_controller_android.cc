@@ -192,9 +192,9 @@ void AutofillDialogControllerAndroid::Show() {
   JNIEnv* env = base::android::AttachCurrentThread();
   dialog_shown_timestamp_ = base::Time::Now();
 
-  content::NavigationEntry* entry = contents_->GetController().GetActiveEntry();
-  const GURL& active_url = entry ? entry->GetURL() : contents_->GetURL();
-  invoked_from_same_origin_ = active_url.GetOrigin() == source_url_.GetOrigin();
+  const GURL& current_url = contents_->GetLastCommittedURL();
+  invoked_from_same_origin_ =
+      current_url.GetOrigin() == source_url_.GetOrigin();
 
   // Determine what field types should be included in the dialog.
   bool has_types = false;
@@ -307,7 +307,7 @@ void AutofillDialogControllerAndroid::Show() {
           env, source_url_.GetOrigin().spec());
   java_object_.Reset(Java_AutofillDialogControllerAndroid_create(
       env,
-      reinterpret_cast<jint>(this),
+      reinterpret_cast<intptr_t>(this),
       WindowAndroidHelper::FromWebContents(contents_)->
           GetWindowAndroid()->GetJavaObject().obj(),
       request_full_billing_address, request_shipping_address,

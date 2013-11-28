@@ -13,7 +13,7 @@
 #include "media/base/android/media_codec_bridge.h"
 #endif
 
-using WebKit::WebRuntimeFeatures;
+using blink::WebRuntimeFeatures;
 
 namespace content {
 
@@ -29,11 +29,8 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
 #endif  // !defined(GOOGLE_TV)
   bool enable_webaudio = false;
 #if defined(ARCH_CPU_ARMEL)
-  // WebAudio needs Android MediaCodec API, and also currently needs NEON
-  // support for the FFT.
-  enable_webaudio =
-      (media::MediaCodecBridge::IsAvailable()) &&
-      ((android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0);
+  // WebAudio needs Android MediaCodec API
+  enable_webaudio = media::MediaCodecBridge::IsAvailable();
 #endif  // defined(ARCH_CPU_ARMEL)
   WebRuntimeFeatures::enableWebAudio(enable_webaudio);
   // Android does not support the Gamepad API.
@@ -110,11 +107,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
 
+  // FIXME: Remove the enable switch once Web Animations CSS is enabled by
+  // default in Blink.
   if (command_line.HasSwitch(switches::kEnableWebAnimationsCSS))
-    WebRuntimeFeatures::enableWebAnimationsCSS();
+    WebRuntimeFeatures::enableWebAnimationsCSS(true);
+  else if (command_line.HasSwitch(switches::kDisableWebAnimationsCSS))
+    WebRuntimeFeatures::enableWebAnimationsCSS(false);
 
   if (command_line.HasSwitch(switches::kEnableWebAnimationsSVG))
-    WebRuntimeFeatures::enableWebAnimationsSVG();
+    WebRuntimeFeatures::enableWebAnimationsSVG(true);
 
   if (command_line.HasSwitch(switches::kEnableWebMIDI))
     WebRuntimeFeatures::enableWebMIDI(true);

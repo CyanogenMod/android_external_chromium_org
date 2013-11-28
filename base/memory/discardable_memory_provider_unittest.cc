@@ -232,6 +232,22 @@ TEST_P(DiscardableMemoryProviderPermutationTest, LRUDiscardedExceedLimit) {
   EXPECT_NE(static_cast<void*>(NULL), Memory(discardable(0)));
 }
 
+// Verify that no more memory than necessary was discarded after changing
+// memory limit.
+TEST_P(DiscardableMemoryProviderPermutationTest, LRUDiscardedAmount) {
+  SetBytesToReclaimUnderModeratePressure(2048);
+  SetDiscardableMemoryLimit(4096);
+
+  CreateAndUseDiscardableMemory();
+
+  SetDiscardableMemoryLimit(2048);
+
+  EXPECT_EQ(DISCARDABLE_MEMORY_SUCCESS, discardable(2)->Lock());
+  EXPECT_EQ(DISCARDABLE_MEMORY_PURGED, discardable(1)->Lock());
+  // 0 should still be locked.
+  EXPECT_NE(static_cast<void*>(NULL), Memory(discardable(0)));
+}
+
 TEST_P(DiscardableMemoryProviderPermutationTest,
        CriticalPressureFreesAllUnlocked) {
   CreateAndUseDiscardableMemory();
@@ -282,7 +298,7 @@ TEST_F(DiscardableMemoryProviderTest, DestructionWhileLocked) {
   EXPECT_EQ(0u, BytesAllocated());
 }
 
-#if !defined(NDEBUG) && !defined(OS_ANDROID)
+#if !defined(NDEBUG) && !defined(OS_ANDROID) && !defined(OS_IOS)
 // Death tests are not supported with Android APKs.
 TEST_F(DiscardableMemoryProviderTest, UnlockedMemoryAccessCrashesInDebugMode) {
   size_t size = 1024;

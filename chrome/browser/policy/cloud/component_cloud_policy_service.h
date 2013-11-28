@@ -5,10 +5,6 @@
 #ifndef CHROME_BROWSER_POLICY_CLOUD_COMPONENT_CLOUD_POLICY_SERVICE_H_
 #define CHROME_BROWSER_POLICY_CLOUD_COMPONENT_CLOUD_POLICY_SERVICE_H_
 
-#include <map>
-#include <set>
-#include <string>
-
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
@@ -16,9 +12,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/policy/cloud/cloud_policy_client.h"
+#include "chrome/browser/policy/cloud/cloud_policy_core.h"
 #include "chrome/browser/policy/cloud/cloud_policy_store.h"
-#include "chrome/browser/policy/policy_bundle.h"
+#include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/schema_registry.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -31,27 +29,22 @@ class URLRequestContextGetter;
 namespace policy {
 
 class ExternalPolicyDataFetcherBackend;
-class PolicyDomainDescriptor;
 class ResourceCache;
+class SchemaMap;
 
 // Manages cloud policy for components.
 //
 // This class takes care of fetching, validating, storing and updating policy
-// for components. The components to manage have to be explicitly registered.
+// for components. The components to manage come from a SchemaRegistry.
 class ComponentCloudPolicyService : public CloudPolicyClient::Observer,
+                                    public CloudPolicyCore::Observer,
                                     public CloudPolicyStore::Observer,
+                                    public SchemaRegistry::Observer,
                                     public base::NonThreadSafe {
  public:
-  // Key for the ResourceCache where the list of known components is cached.
-  static const char kComponentNamespaceCache[];
-
   class Delegate {
    public:
     virtual ~Delegate();
-
-    // Invoked whenever the service has appended new namespaces to fetch to
-    // the CloudPolicyClient, signaling that a policy fetch should be done soon.
-    virtual void OnComponentCloudPolicyRefreshNeeded() = 0;
 
     // Invoked whenever the policy served by policy() changes. This is also
     // invoked for the first time once the backend is initialized, and
@@ -59,15 +52,32 @@ class ComponentCloudPolicyService : public CloudPolicyClient::Observer,
     virtual void OnComponentCloudPolicyUpdated() = 0;
   };
 
-  // |store| is used to get the current DMToken and the username.
+  // The |delegate| is notified of updates to the downloaded policies and must
+  // outlive this object.
+  //
+  // |schema_registry| is used to get the list of components to fetch cloud
+  // policy for. It must outlive this object.
+  //
+  // |core| is used to obtain the CloudPolicyStore and CloudPolicyClient used
+  // by this service. The store will be the source of the registration status
+  // and registration credentials; the client will be used to fetch cloud
+  // policy. It must outlive this object.
+  //
   // |cache| is used to load and store local copies of the downloaded policies.
+  //
   // Download scheduling, validation and caching of policies are done via the
   // |backend_task_runner|, which must support file I/O. Network I/O is done via
   // the |io_task_runner|.
+  //
+  // |request_context| is used by the background URLFetchers.
   ComponentCloudPolicyService(
       Delegate* delegate,
-      CloudPolicyStore* store,
+      SchemaRegistry* schema_registry,
+      CloudPolicyCore* core,
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
       scoped_ptr<ResourceCache> cache,
+#endif
+      scoped_refptr<net::URLRequestContextGetter> request_context,
       scoped_refptr<base::SequencedTaskRunner> backend_task_runner,
       scoped_refptr<base::SequencedTaskRunner> io_task_runner);
   virtual ~ComponentCloudPolicyService();
@@ -77,58 +87,42 @@ class ComponentCloudPolicyService : public CloudPolicyClient::Observer,
 
   // Returns true if the backend is initialized, and the initial policies and
   // components are being served.
-  bool is_initialized() const { return is_initialized_; }
+  bool is_initialized() const { return loaded_initial_policy_; }
 
   // Returns the current policies for components.
   const PolicyBundle& policy() const { return policy_; }
 
-  // Connects to the cloud policy service using |client|. |client| must outlive
-  // this object. Only cached policies will be served until a |client| is
-  // connected.
-  // |request_context| is used with the URLFetchers triggered by the updater.
-  void Connect(CloudPolicyClient* client,
-               scoped_refptr<net::URLRequestContextGetter> request_context);
+  // SchemaRegistry::Observer implementation:
+  virtual void OnSchemaRegistryReady() OVERRIDE;
+  virtual void OnSchemaRegistryUpdated(bool has_new_schemas) OVERRIDE;
 
-  // Disconnects from the cloud policy service and stops trying to download
-  // remote policy data.
-  void Disconnect();
+  // CloudPolicyCore::Observer implementation:
+  virtual void OnCoreConnected(CloudPolicyCore* core) OVERRIDE;
+  virtual void OnCoreDisconnecting(CloudPolicyCore* core) OVERRIDE;
+  virtual void OnRefreshSchedulerStarted(CloudPolicyCore* core) OVERRIDE;
 
-  // |descriptor| lists the complete set of components to track for its domain.
-  // This purges unused components from the cache, and starts updating the
-  // components listed in the descriptor. It's only valid to call this for
-  // domains that are supported, i.e. SupportsDomain(domain) is true.
-  void RegisterPolicyDomain(
-      scoped_refptr<const PolicyDomainDescriptor> descriptor);
+  // CloudPolicyStore::Observer implementation:
+  virtual void OnStoreLoaded(CloudPolicyStore* store) OVERRIDE;
+  virtual void OnStoreError(CloudPolicyStore* store) OVERRIDE;
 
   // CloudPolicyClient::Observer implementation:
   virtual void OnPolicyFetched(CloudPolicyClient* client) OVERRIDE;
   virtual void OnRegistrationStateChanged(CloudPolicyClient* client) OVERRIDE;
   virtual void OnClientError(CloudPolicyClient* client) OVERRIDE;
 
-  // CloudPolicyStore::Observer implementation:
-  virtual void OnStoreLoaded(CloudPolicyStore* store) OVERRIDE;
-  virtual void OnStoreError(CloudPolicyStore* store) OVERRIDE;
-
  private:
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
   class Backend;
-  typedef std::set<std::string> StringSet;
-  typedef std::map<PolicyDomain, StringSet> ComponentMap;
 
-  void InitializeBackend();
-  void OnBackendInitialized(scoped_ptr<ComponentMap> components,
-                            scoped_ptr<PolicyBundle> initial_policy);
-  void InitializeClient();
+  void InitializeIfReady();
+  void OnBackendInitialized(scoped_ptr<PolicyBundle> initial_policy);
+  void SetCurrentSchema();
   void OnPolicyUpdated(scoped_ptr<PolicyBundle> policy);
 
-  void SetCredentialsAndReloadClient();
-  bool UpdateClientNamespaces(PolicyDomain domain,
-                              const StringSet& old_set,
-                              const StringSet& new_set);
-  void AddNamespacesToFetch(PolicyDomain domain, const StringSet& set);
-  void RemoveNamespacesToFetch(PolicyDomain domain, const StringSet& set);
-
   Delegate* delegate_;
-
+  SchemaRegistry* schema_registry_;
+  CloudPolicyCore* core_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
   scoped_refptr<base::SequencedTaskRunner> backend_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> io_task_runner_;
 
@@ -146,19 +140,30 @@ class ComponentCloudPolicyService : public CloudPolicyClient::Observer,
   // |backend_task_runner_|.
   scoped_ptr<Backend> backend_;
 
-  CloudPolicyClient* client_;
-  CloudPolicyStore* store_;
-
-  // The currently registered components for each policy domain. If a policy
-  // domain doesn't have an entry in this map then it hasn't registered its
-  // component yet. A domain in this map with an empty set of components means
-  // that the domain is registered, but has no components.
-  ComponentMap registered_components_;
+  // The currently registered components for each policy domain. Used to
+  // determine which components changed when a new SchemaMap becomes
+  // available.
+  scoped_refptr<SchemaMap> current_schema_map_;
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
   // Contains all the current policies for components.
   PolicyBundle policy_;
 
-  bool is_initialized_;
+  // Whether the backend has started initializing asynchronously. Used to
+  // prevent double initialization, since both OnSchemaRegistryUpdated() and
+  // OnStoreLoaded() can happen while the backend is initializing.
+  bool started_loading_initial_policy_;
+
+  // Whether the backend has been initialized with the initial credentials and
+  // schemas, and this provider is serving the initial policies loaded from the
+  // cache.
+  bool loaded_initial_policy_;
+
+  // True if the backend currently has valid cloud policy credentials. This
+  // can go back to false if the user signs out, and back again to true if the
+  // user signs in again.
+  bool is_registered_for_cloud_policy_;
+
   base::WeakPtrFactory<ComponentCloudPolicyService> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ComponentCloudPolicyService);

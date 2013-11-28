@@ -14,8 +14,9 @@
 #include "base/logging.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/browser/autofill_popup_delegate.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
@@ -68,6 +69,12 @@ PrefService* AwAutofillManagerDelegate::GetPrefs() {
 autofill::PersonalDataManager*
 AwAutofillManagerDelegate::GetPersonalDataManager() {
   return NULL;
+}
+
+scoped_refptr<autofill::AutofillWebDataService>
+AwAutofillManagerDelegate::GetDatabase() {
+  return autofill::AutofillWebDataService::FromBrowserContext(
+      web_contents_->GetBrowserContext());
 }
 
 void AwAutofillManagerDelegate::ShowAutofillPopup(
@@ -173,7 +180,6 @@ void AwAutofillManagerDelegate::ShowAutofillSettings() {
 
 void AwAutofillManagerDelegate::ConfirmSaveCreditCard(
     const autofill::AutofillMetrics& metric_logger,
-    const autofill::CreditCard& credit_card,
     const base::Closure& save_card_callback) {
   NOTIMPLEMENTED();
 }

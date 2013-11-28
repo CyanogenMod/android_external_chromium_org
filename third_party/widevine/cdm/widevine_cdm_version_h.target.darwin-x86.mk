@@ -17,7 +17,7 @@ GYP_TARGET_DEPENDENCIES :=
 $(gyp_shared_intermediate_dir)/widevine_cdm_version.h: $(LOCAL_PATH)/third_party/widevine/cdm/android/widevine_cdm_version.h $(GYP_TARGET_DEPENDENCIES) | $(ACP)
 	@echo Copying: $@
 	$(hide) mkdir -p $(dir $@)
-	$(hide) $(ACP) -r $< $@
+	$(hide) $(ACP) -rpf $< $@
 
 third_party_widevine_cdm_widevine_cdm_gyp_widevine_cdm_version_h_target_copies = $(gyp_shared_intermediate_dir)/widevine_cdm_version.h
 

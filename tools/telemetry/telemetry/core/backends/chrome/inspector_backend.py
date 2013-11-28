@@ -5,6 +5,7 @@ import json
 import logging
 import socket
 import sys
+import time
 
 from telemetry.core import exceptions
 from telemetry.core import util
@@ -42,11 +43,12 @@ class InspectorBackend(object):
   def __del__(self):
     self.Disconnect()
 
-  def _Connect(self):
+  def _Connect(self, timeout=10):
     if self._socket:
       return
     try:
-      self._socket = websocket.create_connection(self._debugger_url)
+      self._socket = websocket.create_connection(self._debugger_url,
+          timeout=timeout)
     except (websocket.WebSocketException):
       if self._browser_backend.IsBrowserRunning():
         raise exceptions.TabCrashException(sys.exc_info()[1])
@@ -199,21 +201,31 @@ class InspectorBackend(object):
   # Methods used internally by other backends.
 
   def DispatchNotifications(self, timeout=10):
-    self._Connect()
+    self._Connect(timeout)
     self._SetTimeout(timeout)
+    res = self._ReceiveJsonData(timeout)
+    if 'method' in res:
+      self._HandleNotification(res)
 
+  def _ReceiveJsonData(self, timeout):
     try:
+      start_time = time.time()
       data = self._socket.recv()
     except (socket.error, websocket.WebSocketException):
       if self._browser_backend.tab_list_backend.DoesDebuggerUrlExist(
           self._debugger_url):
-        return
-      raise exceptions.TabCrashException(sys.exc_info()[1])
-
+        elapsed_time = time.time() - start_time
+        raise util.TimeoutException(
+            'Received a socket error in the browser connection and the tab '
+            'still exists, assuming it timed out. '
+            'Timeout=%ds Elapsed=%ds Error=%s' % (
+                timeout, elapsed_time, sys.exc_info()[1]))
+      raise exceptions.TabCrashException(
+          'Received a socket error in the browser connection and the tab no '
+          'longer exists, assuming it crashed. Error=%s' % sys.exc_info()[1])
     res = json.loads(data)
     logging.debug('got [%s]', data)
-    if 'method' in res:
-      self._HandleNotification(res)
+    return res
 
   def _HandleNotification(self, res):
     if (res['method'] == 'Inspector.detached' and
@@ -256,34 +268,21 @@ class InspectorBackend(object):
     def IsBack():
       return self._browser_backend.tab_list_backend.DoesDebuggerUrlExist(
         self._debugger_url)
-    util.WaitFor(IsBack, 512, 0.5)
+    util.WaitFor(IsBack, 512)
     sys.stderr.write('\n')
     sys.stderr.write('Inspector\'s UI closed. Telemetry will now resume.\n')
     self._Connect()
 
   def SyncRequest(self, req, timeout=10):
-    self._Connect()
-    # TODO(nduca): Listen to the timeout argument
-    # pylint: disable=W0613
+    self._Connect(timeout)
     self._SetTimeout(timeout)
     self.SendAndIgnoreResponse(req)
 
     while True:
-      try:
-        data = self._socket.recv()
-      except (socket.error, websocket.WebSocketException):
-        if self._browser_backend.tab_list_backend.DoesDebuggerUrlExist(
-            self._debugger_url):
-          raise util.TimeoutException(
-            'Timed out waiting for reply. This is unusual.')
-        raise exceptions.TabCrashException(sys.exc_info()[1])
-
-      res = json.loads(data)
-      logging.debug('got [%s]', data)
+      res = self._ReceiveJsonData(timeout)
       if 'method' in res:
         self._HandleNotification(res)
         continue
-
       if 'id' not in res or res['id'] != req['id']:
         logging.debug('Dropped reply: %s', json.dumps(res))
         continue

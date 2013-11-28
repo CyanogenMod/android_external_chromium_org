@@ -22,10 +22,10 @@
 #include "chrome/common/extensions/api/experimental_identity.h"
 #include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
@@ -158,6 +158,7 @@ void ExperimentalIdentityGetAuthTokenFunction::OnMintTokenFailure(
     const GoogleServiceAuthError& error) {
   switch (error.state()) {
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::ACCOUNT_DELETED:
     case GoogleServiceAuthError::ACCOUNT_DISABLED:
       extensions::IdentityAPI::GetFactoryInstance()

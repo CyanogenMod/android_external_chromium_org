@@ -9,13 +9,13 @@
 #include "ash/default_accessibility_delegate.h"
 #include "ash/default_user_wallpaper_delegate.h"
 #include "ash/host/root_window_host_factory.h"
-#include "ash/keyboard_controller_proxy_stub.h"
 #include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/session_state_delegate.h"
 #include "ash/session_state_delegate_stub.h"
 #include "ash/shell/context_menu.h"
 #include "ash/shell/example_factory.h"
+#include "ash/shell/keyboard_controller_proxy_stub.h"
 #include "ash/shell/launcher_delegate_impl.h"
 #include "ash/shell/toplevel_window.h"
 #include "ash/shell_window_ids.h"
@@ -69,7 +69,8 @@ class MediaDelegateImpl : public MediaDelegate {
 
 ShellDelegateImpl::ShellDelegateImpl()
     : watcher_(NULL),
-      launcher_delegate_(NULL) {
+      launcher_delegate_(NULL),
+      browser_context_(NULL) {
 }
 
 ShellDelegateImpl::~ShellDelegateImpl() {
@@ -113,15 +114,14 @@ keyboard::KeyboardControllerProxy*
 }
 
 content::BrowserContext* ShellDelegateImpl::GetCurrentBrowserContext() {
-  return Shell::GetInstance()->browser_context();
+  return browser_context_;
 }
 
 app_list::AppListViewDelegate* ShellDelegateImpl::CreateAppListViewDelegate() {
   return ash::shell::CreateAppListViewDelegate();
 }
 
-ash::LauncherDelegate* ShellDelegateImpl::CreateLauncherDelegate(
-    ash::LauncherModel* model) {
+LauncherDelegate* ShellDelegateImpl::CreateLauncherDelegate(ShelfModel* model) {
   launcher_delegate_ = new LauncherDelegateImpl(watcher_);
   return launcher_delegate_;
 }

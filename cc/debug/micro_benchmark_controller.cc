@@ -7,10 +7,13 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/values.h"
 #include "cc/debug/picture_record_benchmark.h"
+#include "cc/debug/rasterize_and_record_benchmark.h"
 #include "cc/debug/unittest_only_benchmark.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree_host_impl.h"
 
 namespace cc {
 
@@ -23,6 +26,9 @@ scoped_ptr<MicroBenchmark> CreateBenchmark(
   if (name == "picture_record_benchmark") {
     return scoped_ptr<MicroBenchmark>(
         new PictureRecordBenchmark(value.Pass(), callback));
+  } else if (name == "rasterize_and_record_benchmark") {
+    return scoped_ptr<MicroBenchmark>(
+        new RasterizeAndRecordBenchmark(value.Pass(), callback));
   } else if (name == "unittest_only_benchmark") {
     return scoped_ptr<MicroBenchmark>(
         new UnittestOnlyBenchmark(value.Pass(), callback));
@@ -43,7 +49,8 @@ class IsDonePredicate {
 }  // namespace
 
 MicroBenchmarkController::MicroBenchmarkController(LayerTreeHost* host)
-    : host_(host) {
+    : host_(host),
+      main_controller_message_loop_(base::MessageLoopProxy::current().get()) {
   DCHECK(host_);
 }
 
@@ -63,12 +70,28 @@ bool MicroBenchmarkController::ScheduleRun(
   return false;
 }
 
+void MicroBenchmarkController::ScheduleImplBenchmarks(
+    LayerTreeHostImpl* host_impl) {
+  for (ScopedPtrVector<MicroBenchmark>::iterator it = benchmarks_.begin();
+       it != benchmarks_.end();
+       ++it) {
+    scoped_ptr<MicroBenchmarkImpl> benchmark_impl;
+    if (!(*it)->ProcessedForBenchmarkImpl()) {
+      benchmark_impl =
+          (*it)->GetBenchmarkImpl(main_controller_message_loop_);
+    }
+
+    if (benchmark_impl.get())
+      host_impl->ScheduleMicroBenchmark(benchmark_impl.Pass());
+  }
+}
+
 void MicroBenchmarkController::DidUpdateLayers() {
   for (ScopedPtrVector<MicroBenchmark>::iterator it = benchmarks_.begin();
        it != benchmarks_.end();
        ++it) {
-    DCHECK(!(*it)->IsDone());
-    (*it)->DidUpdateLayers(host_);
+    if (!(*it)->IsDone())
+      (*it)->DidUpdateLayers(host_);
   }
 
   CleanUpFinishedBenchmarks();

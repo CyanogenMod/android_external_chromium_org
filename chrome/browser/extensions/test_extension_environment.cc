@@ -11,11 +11,12 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_utils.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(USE_AURA)
@@ -51,6 +52,7 @@ TestExtensionEnvironment::~TestExtensionEnvironment() {
   // Delete the profile, and then cycle the message loop to clear
   // out delayed deletions.
   base::RunLoop().RunUntilIdle();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
 }
 
 TestingProfile* TestExtensionEnvironment::profile() const {

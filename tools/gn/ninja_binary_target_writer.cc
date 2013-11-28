@@ -188,23 +188,9 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
     out_ << std::endl;
   }
 
-  WriteLinkerFlags();
-
-  // Append manifest flag on Windows to reference our file.
-  // HACK ERASEME BRETTW FIXME
-  if (settings_->IsWin()) {
-    out_ << " /MANIFEST /ManifestFile:";
-    path_output_.WriteFile(out_, windows_manifest);
-  }
-  out_ << std::endl;
-
-  // Libraries to link.
-  out_ << "libs =";
-  if (settings_->IsMac()) {
-    // TODO(brettw) fix this.
-    out_ << " -framework AppKit -framework ApplicationServices -framework Carbon -framework CoreFoundation -framework Foundation -framework IOKit -framework Security";
-  }
-  out_ << std::endl;
+  const Toolchain::Tool& tool = toolchain_->GetTool(tool_type_);
+  WriteLinkerFlags(tool, windows_manifest);
+  WriteLibs(tool);
 
   // The external output file is the one that other libs depend on.
   OutputFile external_output_file = helper_.GetTargetOutputFile(target_);
@@ -257,15 +243,15 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
   out_ << std::endl;
 }
 
-void NinjaBinaryTargetWriter::WriteLinkerFlags() {
+void NinjaBinaryTargetWriter::WriteLinkerFlags(
+    const Toolchain::Tool& tool,
+    const OutputFile& windows_manifest) {
   out_ << "ldflags =";
 
   // First the ldflags from the target and its config.
   EscapeOptions flag_options = GetFlagOptions();
   RecursiveTargetConfigStringsToStream(target_, &ConfigValues::ldflags,
                                        flag_options, out_);
-
-  const Toolchain::Tool& tool = toolchain_->GetTool(tool_type_);
 
   // Followed by library search paths that have been recursively pushed
   // through the dependency tree.
@@ -282,16 +268,37 @@ void NinjaBinaryTargetWriter::WriteLinkerFlags() {
     }
   }
 
-  // Followed by libraries that have been recursively pushed through the
-  // dependency tree.
+  // Append manifest flag on Windows to reference our file.
+  // HACK ERASEME BRETTW FIXME
+  if (settings_->IsWin()) {
+    out_ << " /MANIFEST /ManifestFile:";
+    path_output_.WriteFile(out_, windows_manifest);
+  }
+  out_ << std::endl;
+}
+
+void NinjaBinaryTargetWriter::WriteLibs(const Toolchain::Tool& tool) {
+  out_ << "libs =";
+
+  // Libraries that have been recursively pushed through the dependency tree.
   EscapeOptions lib_escape_opts;
   lib_escape_opts.mode = ESCAPE_NINJA_SHELL;
   const OrderedSet<std::string> all_libs = target_->all_libs();
+  const std::string framework_ending(".framework");
   for (size_t i = 0; i < all_libs.size(); i++) {
-    out_ << " " << tool.lib_prefix;
-    EscapeStringToStream(out_, all_libs[i], lib_escape_opts);
-    out_ << "";
+    if (settings_->IsMac() && EndsWith(all_libs[i], framework_ending, false)) {
+      // Special-case libraries ending in ".framework" on Mac. Add the
+      // -framework switch and don't add the extension to the output.
+      out_ << " -framework ";
+      EscapeStringToStream(out_,
+          all_libs[i].substr(0, all_libs[i].size() - framework_ending.size()),
+          lib_escape_opts);
+    } else {
+      out_ << " " << tool.lib_prefix;
+      EscapeStringToStream(out_, all_libs[i], lib_escape_opts);
+    }
   }
+  out_ << std::endl;
 }
 
 void NinjaBinaryTargetWriter::WriteLinkCommand(

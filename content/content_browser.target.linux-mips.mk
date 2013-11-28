@@ -12,11 +12,11 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp)/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
+	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp)/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp)/devtools_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp)/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp)/webkit_strings.stamp \
@@ -103,7 +103,6 @@ LOCAL_SRC_FILES := \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
 	content/browser/android/touch_point.cc \
 	content/browser/android/tracing_controller_android.cc \
-	content/browser/android/vibration_message_filter.cc \
 	content/browser/android/web_contents_observer_android.cc \
 	content/browser/appcache/appcache_dispatcher_host.cc \
 	content/browser/appcache/appcache_frontend_proxy.cc \
@@ -196,10 +195,12 @@ LOCAL_SRC_FILES := \
 	content/browser/frame_host/interstitial_page_impl.cc \
 	content/browser/frame_host/navigation_controller_impl.cc \
 	content/browser/frame_host/navigation_entry_impl.cc \
+	content/browser/frame_host/navigation_entry_screenshot_manager.cc \
+	content/browser/frame_host/navigator.cc \
+	content/browser/frame_host/render_frame_host_factory.cc \
 	content/browser/frame_host/render_frame_host_impl.cc \
+	content/browser/frame_host/render_frame_host_manager.cc \
 	content/browser/frame_host/render_frame_message_filter.cc \
-	content/browser/frame_host/render_view_host_manager.cc \
-	content/browser/frame_host/web_contents_screenshot_manager.cc \
 	content/browser/gamepad/gamepad_provider.cc \
 	content/browser/gamepad/gamepad_service.cc \
 	content/browser/geolocation/empty_wifi_data_provider.cc \
@@ -248,6 +249,7 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/buffered_resource_handler.cc \
 	content/browser/loader/certificate_resource_handler.cc \
 	content/browser/loader/cross_site_resource_handler.cc \
+	content/browser/loader/detachable_resource_handler.cc \
 	content/browser/loader/layered_resource_handler.cc \
 	content/browser/loader/offline_policy.cc \
 	content/browser/loader/power_save_block_resource_throttle.cc \
@@ -282,8 +284,6 @@ LOCAL_SRC_FILES := \
 	content/browser/message_port_message_filter.cc \
 	content/browser/message_port_service.cc \
 	content/browser/mime_registry_message_filter.cc \
-	content/browser/service_worker/service_worker_dispatcher_host.cc \
-	content/browser/service_worker/service_worker_context.cc \
 	content/browser/net/browser_online_state_observer.cc \
 	content/browser/net/sqlite_persistent_cookie_store.cc \
 	content/browser/net/view_blob_internals_job_factory.cc \
@@ -297,7 +297,6 @@ LOCAL_SRC_FILES := \
 	content/browser/quota_dispatcher_host.cc \
 	content/browser/renderer_host/backing_store.cc \
 	content/browser/renderer_host/backing_store_manager.cc \
-	content/browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.cc \
 	content/browser/renderer_host/clipboard_message_filter.cc \
 	content/browser/renderer_host/compositor_impl_android.cc \
 	content/browser/renderer_host/database_message_filter.cc \
@@ -310,13 +309,17 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/gesture_event_filter.cc \
 	content/browser/renderer_host/input/immediate_input_router.cc \
-	content/browser/renderer_host/input/synthetic_gesture_controller_new.cc \
-	content/browser/renderer_host/input/synthetic_gesture_new.cc \
-	content/browser/renderer_host/input/synthetic_smooth_scroll_gesture_new.cc \
+	content/browser/renderer_host/input/synthetic_gesture.cc \
+	content/browser/renderer_host/input/synthetic_gesture_controller.cc \
+	content/browser/renderer_host/input/synthetic_gesture_target_android.cc \
+	content/browser/renderer_host/input/synthetic_gesture_target_base.cc \
+	content/browser/renderer_host/input/synthetic_pinch_gesture.cc \
+	content/browser/renderer_host/input/synthetic_smooth_scroll_gesture.cc \
 	content/browser/renderer_host/input/synthetic_web_input_event_builders.cc \
+	content/browser/renderer_host/input/tap_suppression_controller.cc \
 	content/browser/renderer_host/input/touch_event_queue.cc \
 	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
-	content/browser/renderer_host/input/touchscreen_tap_suppression_controller_stub.cc \
+	content/browser/renderer_host/input/touchscreen_tap_suppression_controller.cc \
 	content/browser/renderer_host/input/web_input_event_builders_android.cc \
 	content/browser/renderer_host/input/web_input_event_util.cc \
 	content/browser/renderer_host/input/web_input_event_util_posix.cc \
@@ -342,6 +345,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/video_capture_buffer_pool.cc \
 	content/browser/renderer_host/media/video_capture_controller.cc \
 	content/browser/renderer_host/media/video_capture_controller_event_handler.cc \
+	content/browser/renderer_host/media/video_capture_device_impl.cc \
 	content/browser/renderer_host/media/video_capture_host.cc \
 	content/browser/renderer_host/media/video_capture_manager.cc \
 	content/browser/renderer_host/media/video_capture_oracle.cc \
@@ -366,15 +370,19 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/render_widget_host_view_guest.cc \
 	content/browser/renderer_host/renderer_frame_manager.cc \
 	content/browser/renderer_host/software_frame_manager.cc \
-	content/browser/renderer_host/synthetic_gesture_calculator.cc \
-	content/browser/renderer_host/synthetic_gesture_controller.cc \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
 	content/browser/renderer_host/socket_stream_host.cc \
-	content/browser/renderer_host/generic_touch_gesture_android.cc \
 	content/browser/renderer_host/websocket_dispatcher_host.cc \
 	content/browser/renderer_host/websocket_host.cc \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
+	content/browser/service_worker/service_worker_context_core.cc \
+	content/browser/service_worker/service_worker_context_wrapper.cc \
+	content/browser/service_worker/service_worker_dispatcher_host.cc \
+	content/browser/service_worker/service_worker_provider_host.cc \
+	content/browser/service_worker/service_worker_registration.cc \
+	content/browser/service_worker/service_worker_version.cc \
+	content/browser/signed_certificate_timestamp_store_impl.cc \
 	content/browser/site_instance_impl.cc \
 	content/browser/speech/speech_recognition_dispatcher_host.cc \
 	content/browser/speech/speech_recognition_manager_impl.cc \
@@ -402,6 +410,8 @@ LOCAL_SRC_FILES := \
 	content/browser/tracing/tracing_controller_impl.cc \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
+	content/browser/vibration/vibration_message_filter.cc \
+	content/browser/vibration/vibration_provider_android.cc \
 	content/browser/web_contents/web_contents_impl.cc \
 	content/browser/web_contents/web_contents_view_android.cc \
 	content/browser/web_contents/web_contents_view_guest.cc \
@@ -470,10 +480,8 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
-	'-DPROTOBUF_USE_DLLS' \
-	'-DGOOGLE_PROTOBUF_NO_RTTI' \
-	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -481,10 +489,14 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DPROTOBUF_USE_DLLS' \
+	'-DGOOGLE_PROTOBUF_NO_RTTI' \
+	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -506,12 +518,10 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_intermediate_dir) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
-	$(gyp_shared_intermediate_dir)/protoc_out \
-	$(LOCAL_PATH)/third_party/protobuf \
-	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -522,13 +532,15 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
+	$(gyp_shared_intermediate_dir)/protoc_out \
+	$(LOCAL_PATH)/third_party/protobuf \
+	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
@@ -601,10 +613,8 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
-	'-DPROTOBUF_USE_DLLS' \
-	'-DGOOGLE_PROTOBUF_NO_RTTI' \
-	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -612,10 +622,14 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DPROTOBUF_USE_DLLS' \
+	'-DGOOGLE_PROTOBUF_NO_RTTI' \
+	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -638,12 +652,10 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_intermediate_dir) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
-	$(gyp_shared_intermediate_dir)/protoc_out \
-	$(LOCAL_PATH)/third_party/protobuf \
-	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -654,13 +666,15 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
+	$(gyp_shared_intermediate_dir)/protoc_out \
+	$(LOCAL_PATH)/third_party/protobuf \
+	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
@@ -728,9 +742,9 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	content_browser_speech_proto_speech_proto_gyp \
 	skia_skia_library_gyp \
-	ui_ui_gyp
+	ui_ui_gyp \
+	content_browser_speech_proto_speech_proto_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

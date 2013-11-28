@@ -100,7 +100,7 @@ class Callspec(object):
     return_type = None
     if self.node.GetProperty('TYPEREF') not in ('void', None):
       return_type = Typeref(self.node.GetProperty('TYPEREF'),
-                            self.node,
+                            self.node.parent,
                             {'name': self.node.GetName()}).process(callbacks)
       # The IDL parser doesn't allow specifying return types as optional.
       # Instead we infer any object return values to be optional.
@@ -324,11 +324,13 @@ class Namespace(object):
                description,
                nodoc=False,
                internal=False,
-               platforms=None):
+               platforms=None,
+               compiler_options=None):
     self.namespace = namespace_node
     self.nodoc = nodoc
     self.internal = internal
     self.platforms = platforms
+    self.compiler_options = compiler_options
     self.events = []
     self.functions = []
     self.types = []
@@ -350,6 +352,10 @@ class Namespace(object):
         self.types.append(Enum(node).process(self.callbacks))
       else:
         sys.exit('Did not process %s %s' % (node.cls, node))
+    if self.compiler_options is not None:
+      compiler_options = self.compiler_options
+    else:
+      compiler_options = {}
     return {'namespace': self.namespace.GetName(),
             'description': self.description,
             'nodoc': self.nodoc,
@@ -357,7 +363,8 @@ class Namespace(object):
             'functions': self.functions,
             'internal': self.internal,
             'events': self.events,
-            'platforms': self.platforms}
+            'platforms': self.platforms,
+            'compiler_options': compiler_options}
 
   def process_interface(self, node):
     members = []
@@ -383,6 +390,7 @@ class IDLSchema(object):
     internal = False
     description = None
     platforms = None
+    compiler_options = None
     for node in self.idl:
       if node.cls == 'Namespace':
         if not description:
@@ -390,11 +398,14 @@ class IDLSchema(object):
           print('%s must have a namespace-level comment. This will '
                            'appear on the API summary page.' % node.GetName())
           description = ''
-        namespace = Namespace(node, description, nodoc, internal, platforms)
+        namespace = Namespace(node, description, nodoc, internal,
+                              platforms=platforms,
+                              compiler_options=compiler_options)
         namespaces.append(namespace.process())
         nodoc = False
         internal = False
         platforms = None
+        compiler_options = None
       elif node.cls == 'Copyright':
         continue
       elif node.cls == 'Comment':
@@ -406,6 +417,8 @@ class IDLSchema(object):
           internal = bool(node.value)
         elif node.name == 'platforms':
           platforms = list(node.value)
+        elif node.name == 'implemented_in':
+          compiler_options = {'implemented_in': node.value}
         else:
           continue
       else:

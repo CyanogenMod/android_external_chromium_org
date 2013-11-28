@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "mojo/services/native_viewport/native_viewport.h"
+
 #include "ui/events/event.h"
 #include "ui/gfx/win/window_impl.h"
 
@@ -14,9 +15,6 @@ class NativeViewportWin : public gfx::WindowImpl,
  public:
   explicit NativeViewportWin(NativeViewportDelegate* delegate)
       : delegate_(delegate) {
-    Init(NULL, gfx::Rect(10, 10, 500, 500));
-    ShowWindow(hwnd(), SW_SHOWNORMAL);
-    SetWindowText(hwnd(), L"native_viewport::NativeViewportWin!");
   }
   virtual ~NativeViewportWin() {
     if (IsWindow(hwnd()))
@@ -25,6 +23,18 @@ class NativeViewportWin : public gfx::WindowImpl,
 
  private:
   // Overridden from NativeViewport:
+  virtual gfx::Size GetSize() OVERRIDE {
+    RECT cr;
+    GetClientRect(hwnd(), &cr);
+    return gfx::Size(cr.right - cr.left, cr.bottom - cr.top);
+  }
+
+  virtual void Init() OVERRIDE {
+    gfx::WindowImpl::Init(NULL, gfx::Rect(10, 10, 500, 500));
+    ShowWindow(hwnd(), SW_SHOWNORMAL);
+    SetWindowText(hwnd(), L"native_viewport::NativeViewportWin!");
+  }
+
   virtual void Close() OVERRIDE {
     DestroyWindow(hwnd());
   }
@@ -32,6 +42,7 @@ class NativeViewportWin : public gfx::WindowImpl,
   BEGIN_MSG_MAP_EX(NativeViewportWin)
     MESSAGE_RANGE_HANDLER_EX(WM_MOUSEFIRST, WM_MOUSELAST, OnMouseRange)
 
+    MSG_WM_CREATE(OnCreate)
     MSG_WM_PAINT(OnPaint)
     MSG_WM_SIZE(OnSize)
     MSG_WM_DESTROY(OnDestroy)
@@ -43,6 +54,10 @@ class NativeViewportWin : public gfx::WindowImpl,
     ui::MouseEvent event(msg);
     bool handled = delegate_->OnEvent(&event);
     SetMsgHandled(handled);
+    return 0;
+  }
+  LRESULT OnCreate(CREATESTRUCT* create_struct) {
+    delegate_->OnAcceleratedWidgetAvailable(hwnd());
     return 0;
   }
   void OnPaint(HDC) {

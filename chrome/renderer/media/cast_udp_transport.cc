@@ -14,10 +14,6 @@ CastUdpTransport::CastUdpTransport()
 CastUdpTransport::~CastUdpTransport() {
 }
 
-void CastUdpTransport::Start(const net::IPEndPoint& remote_address) {
-  NOTIMPLEMENTED();
-}
-
-void CastUdpTransport::Stop() {
+void CastUdpTransport::Start(const net::HostPortPair& remote_address) {
   NOTIMPLEMENTED();
 }

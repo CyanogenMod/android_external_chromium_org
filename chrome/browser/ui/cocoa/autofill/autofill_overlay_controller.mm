@@ -15,10 +15,10 @@
 namespace {
 
 // Spacing around the message in the overlay view.
-const CGFloat kOverlayLabelMargin = 10;
+const CGFloat kOverlayLabelPadding = 34;
 
 // Spacing below image and above text messages in overlay view.
-const CGFloat kOverlayImageBottomMargin = 50;
+const CGFloat kOverlayImageVerticalPadding = 90;
 
 // TODO(groby): Unify colors with Views.
 // Slight shading for mouse hover and legal document background.
@@ -88,7 +88,7 @@ SkColor kSubtleBorderColor = 0xffdfdfdf;
 
 - (CGFloat)heightForWidth:(CGFloat)width {
   return NSHeight([label_ frame]) + autofill::kArrowHeight +
-      2 * kOverlayLabelMargin;
+      2 * kOverlayLabelPadding;
 }
 
 - (void)setMessage:(const autofill::DialogOverlayString&)message {
@@ -111,7 +111,7 @@ SkColor kSubtleBorderColor = 0xffdfdfdf;
     return;
 
   CGFloat labelHeight = NSHeight([label_ frame]);
-  [label_ setFrame:NSMakeRect(0, kOverlayLabelMargin,
+  [label_ setFrame:NSMakeRect(0, kOverlayLabelPadding,
                               NSWidth([self bounds]), labelHeight)];
   // TODO(groby): useful DCHECK() goes here.
 }
@@ -136,14 +136,14 @@ SkColor kSubtleBorderColor = 0xffdfdfdf;
     [view setContentViewMargins:NSZeroSize];
     [view setTitlePosition:NSNoTitle];
 
-    childView_.reset([[NSView alloc] initWithFrame:NSZeroRect]);
     messageView_.reset([[AutofillMessageView alloc] initWithFrame:NSZeroRect]);
     imageView_.reset([[NSImageView alloc] initWithFrame:NSZeroRect]);
     [imageView_ setImageAlignment:NSImageAlignCenter];
 
-    [childView_ setSubviews:@[messageView_, imageView_]];
-    [view addSubview:childView_];
+    [view setSubviews:@[messageView_, imageView_]];
     [self setView:view];
+
+    [view setFillColor:[[view window] backgroundColor]];
   }
   return self;
 }
@@ -156,27 +156,17 @@ SkColor kSubtleBorderColor = 0xffdfdfdf;
     return;
   }
 
-  NSBox* view = base::mac::ObjCCastStrict<NSBox>([self view]);
-  [view setFillColor:[[view window] backgroundColor]];
-  [view setAlphaValue:1];
-  [childView_ setAlphaValue:1];
+  [[self view] setHidden:NO];
   [imageView_ setImage:state.image.ToNSImage()];
   [messageView_ setMessage:state.string];
-  [childView_ setHidden:NO];
-  [view setHidden:NO];
 
   NSWindowController* delegate = [[[self view] window] windowController];
   if ([delegate respondsToSelector:@selector(requestRelayout)])
     [delegate performSelector:@selector(requestRelayout)];
 }
 
-- (CGFloat)heightForWidth:(int) width {
-  // 0 means "no preference". Image-only overlays fit the container.
-  if ([messageView_ isHidden])
-    return 0;
-
-  // Overlays with text messages express a size preference.
-  return kOverlayImageBottomMargin +
+- (CGFloat)heightForWidth:(int)width {
+  return 2 * kOverlayImageVerticalPadding +
       [messageView_ heightForWidth:width] +
       [[imageView_ image] size].height;
 }
@@ -188,11 +178,6 @@ SkColor kSubtleBorderColor = 0xffdfdfdf;
 
 - (void)performLayout {
   NSRect bounds = [[self view] bounds];
-  [childView_ setFrame:bounds];
-  if ([messageView_ isHidden]) {
-    [imageView_ setFrame:bounds];
-    return;
-  }
 
   int messageHeight = [messageView_ heightForWidth:NSWidth(bounds)];
   [messageView_ setFrame:NSMakeRect(0, 0, NSWidth(bounds), messageHeight)];
@@ -200,7 +185,7 @@ SkColor kSubtleBorderColor = 0xffdfdfdf;
 
   NSSize imageSize = [[imageView_ image] size];
   [imageView_ setFrame:NSMakeRect(
-       0, NSMaxY([messageView_ frame]) + kOverlayImageBottomMargin,
+       0, NSMaxY([messageView_ frame]) + kOverlayImageVerticalPadding,
        NSWidth(bounds), imageSize.height)];
 }
 

@@ -35,7 +35,7 @@
 #define IPC_MESSAGE_START BrowserPluginMsgStart
 
 
-IPC_ENUM_TRAITS(WebKit::WebDragStatus)
+IPC_ENUM_TRAITS(blink::WebDragStatus)
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_AutoSize_Params)
   IPC_STRUCT_MEMBER(bool, enable)
@@ -68,6 +68,7 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
   IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(bool, focused)
   IPC_STRUCT_MEMBER(bool, visible)
+  IPC_STRUCT_MEMBER(bool, opaque)
   IPC_STRUCT_MEMBER(std::string, name)
   IPC_STRUCT_MEMBER(std::string, src)
   IPC_STRUCT_MEMBER(GURL, embedder_frame_url)
@@ -219,6 +220,15 @@ IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_CompositorFrameACK,
                     int /* renderer_host_id */,
                     cc::CompositorFrameAck /* ack */)
 
+// Notify the guest renderer that some resources given to the embededer
+// are not used any more.
+IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_ReclaimCompositorResources,
+                    int /* instance_id */,
+                    int /* route_id */,
+                    uint32 /* output_surface_id */,
+                    int /* renderer_host_id */,
+                    cc::CompositorFrameAck /* ack */)
+
 // When a BrowserPlugin has been removed from the embedder's DOM, it informs
 // the browser process to cleanup the guest.
 IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_PluginDestroyed,
@@ -229,12 +239,17 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetVisibility,
                     int /* instance_id */,
                     bool /* visible */)
 
+// Tells the guest to change its background opacity.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetContentsOpaque,
+                    int /* instance_id */,
+                    bool /* opaque */)
+
 // Tells the guest that a drag event happened on the plugin.
 IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_DragStatusUpdate,
                     int /* instance_id */,
-                    WebKit::WebDragStatus /* drag_status */,
+                    blink::WebDragStatus /* drag_status */,
                     content::DropData /* drop_data */,
-                    WebKit::WebDragOperationsMask /* operation_mask */,
+                    blink::WebDragOperationsMask /* operation_mask */,
                     gfx::Point /* plugin_location */)
 
 // Response to BrowserPluginMsg_PluginAtPositionRequest, returns the browser

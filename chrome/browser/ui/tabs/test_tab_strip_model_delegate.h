@@ -16,7 +16,7 @@ class TestTabStripModelDelegate : public TabStripModelDelegate {
   virtual ~TestTabStripModelDelegate();
 
   // Overridden from TabStripModelDelegate:
-  virtual void AddBlankTabAt(int index, bool foreground) OVERRIDE;
+  virtual void AddTabAt(const GURL& url, int index, bool foregroud) OVERRIDE;
   virtual Browser* CreateNewStripWithContents(
       const std::vector<NewStripContents>& contentses,
       const gfx::Rect& window_bounds,
@@ -28,6 +28,8 @@ class TestTabStripModelDelegate : public TabStripModelDelegate {
   virtual void DuplicateContentsAt(int index) OVERRIDE;
   virtual void CloseFrameAfterDragSession() OVERRIDE;
   virtual void CreateHistoricalTab(content::WebContents* contents) OVERRIDE;
+  virtual bool ShouldRunUnloadListenerBeforeClosing(
+      content::WebContents* contents) OVERRIDE;
   virtual bool RunUnloadListenerBeforeClosing(
       content::WebContents* contents) OVERRIDE;
   virtual RestoreTabType GetRestoreTabType() OVERRIDE;

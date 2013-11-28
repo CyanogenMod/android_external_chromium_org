@@ -13,13 +13,14 @@
 #include "ash/system/user/login_status.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/base/ui_base_types.h"
 
 class SkBitmap;
 
 namespace aura {
 class EventFilter;
-class RootWindow;
 class Window;
 }
 
@@ -42,8 +43,9 @@ class KeyboardController;
 }
 
 namespace ash {
-class StackingController;
 class ShelfWidget;
+class SoloWindowTracker;
+class StackingController;
 class SystemTray;
 class ToplevelWindowEventHandler;
 
@@ -102,7 +104,8 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   virtual ~RootWindowController();
 
-  aura::RootWindow* root_window() { return root_window_.get(); }
+  aura::Window* root_window() { return dispatcher()->window(); }
+  aura::WindowEventDispatcher* dispatcher() { return root_window_.get(); }
 
   RootWindowLayoutManager* root_window_layout() { return root_window_layout_; }
 
@@ -147,6 +150,10 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
     return animating_wallpaper_controller_.get();
   }
   void SetAnimatingWallpaperController(AnimatingDesktopController* controller);
+
+  SoloWindowTracker* solo_window_tracker() {
+    return solo_window_tracker_.get();
+  }
 
   // Access the shelf layout manager associated with this root
   // window controller, NULL if no such shelf exists.
@@ -217,6 +224,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Returns the window, if any, which is in fullscreen mode. If multiple
   // windows are in fullscreen state, the topmost one is preferred.
   const aura::Window* GetTopmostFullscreenWindow() const;
+  aura::Window* GetTopmostFullscreenWindow();
 
   // Activate virtual keyboard on current root window controller.
   void ActivateKeyboard(keyboard::KeyboardController* keyboard_controller);
@@ -245,7 +253,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   // Creates each of the special window containers that holds windows of various
   // types in the shell UI.
-  void CreateContainersInRootWindow(aura::RootWindow* root_window);
+  void CreateContainersInRootWindow(aura::Window* root_window);
 
   // Enables projection touch HUD.
   void EnableTouchHudProjection();
@@ -303,6 +311,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   scoped_ptr<DesktopBackgroundWidgetController> wallpaper_controller_;
   scoped_ptr<AnimatingDesktopController> animating_wallpaper_controller_;
   scoped_ptr<views::corewm::ScopedCaptureClient> capture_client_;
+  scoped_ptr<SoloWindowTracker> solo_window_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowController);
 };

@@ -21,24 +21,22 @@
 #include "chrome/browser/policy/cloud/mock_cloud_external_data_manager.h"
 #include "chrome/browser/policy/cloud/mock_cloud_policy_store.h"
 #include "chrome/browser/policy/cloud/mock_device_management_service.h"
-#include "chrome/browser/policy/cloud/resource_cache.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/schema_registry.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -60,6 +58,7 @@ namespace policy {
 namespace {
 
 const char kOAuthTokenCookie[] = "oauth_token=1234";
+const char kTestAccountId[] = "user@gmail.com";
 
 const char kOAuth2TokenPairData[] =
     "{"
@@ -91,9 +90,13 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
     ASSERT_TRUE(profile_manager_->SetUp());
+    TestingProfile::TestingFactories factories;
+    factories.push_back(
+        std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                       FakeProfileOAuth2TokenService::Build));
     profile_ = profile_manager_->CreateTestingProfile(
         chrome::kInitialProfile, scoped_ptr<PrefServiceSyncable>(),
-        UTF8ToUTF16("testing_profile"), 0, std::string());
+        UTF8ToUTF16("testing_profile"), 0, std::string(), factories);
     signin_profile_ = profile_manager_->CreateTestingProfile(kSigninProfile);
     signin_profile_->ForceIncognito(true);
     // Usually the signin Profile and the main Profile are separate, but since
@@ -155,11 +158,13 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     manager_.reset(new UserCloudPolicyManagerChromeOS(
         scoped_ptr<CloudPolicyStore>(store_),
         scoped_ptr<CloudExternalDataManager>(external_data_manager_),
-        task_runner_,
-        scoped_ptr<ResourceCache>(),
+        base::FilePath(),
         wait_for_fetch,
-        base::TimeDelta::FromSeconds(fetch_timeout)));
-    manager_->Init();
+        base::TimeDelta::FromSeconds(fetch_timeout),
+        task_runner_,
+        task_runner_,
+        task_runner_));
+    manager_->Init(&schema_registry_);
     manager_->AddObserver(&observer_);
     manager_->Connect(&prefs_, &device_management_service_, NULL,
                       USER_AFFILIATION_NONE);
@@ -202,10 +207,17 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
   MockDeviceManagementJob* IssueOAuthToken(bool has_request_token) {
     EXPECT_FALSE(manager_->core()->client()->is_registered());
 
-    GaiaUrls* gaia_urls = GaiaUrls::GetInstance();
-    net::TestURLFetcher* fetcher = NULL;
+    // Issuing this token triggers the callback of the OAuth2PolicyFetcher,
+    // which triggers the registration request.
+    MockDeviceManagementJob* register_request = NULL;
+    EXPECT_CALL(device_management_service_,
+                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
+        .WillOnce(device_management_service_.CreateAsyncJob(&register_request));
 
     if (!has_request_token) {
+      GaiaUrls* gaia_urls = GaiaUrls::GetInstance();
+      net::TestURLFetcher* fetcher = NULL;
+
       // Issue the oauth_token cookie first.
       fetcher = PrepareOAuthFetcher(gaia_urls->client_login_to_oauth2_url());
       if (!fetcher)
@@ -221,21 +233,28 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
         return NULL;
       fetcher->SetResponseString(kOAuth2TokenPairData);
       fetcher->delegate()->OnURLFetchComplete(fetcher);
+
+      // Issue the access token.
+      fetcher = PrepareOAuthFetcher(gaia_urls->oauth2_token_url());
+      if (!fetcher)
+        return NULL;
+      fetcher->SetResponseString(kOAuth2AccessTokenData);
+      fetcher->delegate()->OnURLFetchComplete(fetcher);
+    } else {
+      // Since the refresh token is available, OAuth2TokenService was used
+      // to request the access token and not UserCloudPolicyTokenForwarder.
+      // Issue the access token with the former.
+      FakeProfileOAuth2TokenService* token_service =
+        static_cast<FakeProfileOAuth2TokenService*>(
+            ProfileOAuth2TokenServiceFactory::GetForProfile(profile_));
+      EXPECT_TRUE(token_service);
+      OAuth2TokenService::ScopeSet scopes;
+      scopes.insert(GaiaConstants::kDeviceManagementServiceOAuth);
+      token_service->IssueTokenForScope(
+          scopes, "5678",
+          base::Time::Now() + base::TimeDelta::FromSeconds(3600));
     }
 
-    // Issue the access token.
-    fetcher = PrepareOAuthFetcher(gaia_urls->oauth2_token_url());
-    if (!fetcher)
-      return NULL;
-    fetcher->SetResponseString(kOAuth2AccessTokenData);
-
-    // Issuing this token triggers the callback of the OAuth2PolicyFetcher,
-    // which triggers the registration request.
-    MockDeviceManagementJob* register_request = NULL;
-    EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
-        .WillOnce(device_management_service_.CreateAsyncJob(&register_request));
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
     EXPECT_TRUE(register_request);
     EXPECT_FALSE(manager_->core()->client()->is_registered());
 
@@ -297,6 +316,7 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
   MockCloudPolicyStore* store_;  // Not owned.
   MockCloudExternalDataManager* external_data_manager_;  // Not owned.
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
+  SchemaRegistry schema_registry_;
   scoped_ptr<UserCloudPolicyManagerChromeOS> manager_;
   scoped_ptr<UserCloudPolicyTokenForwarder> token_forwarder_;
 
@@ -508,20 +528,14 @@ TEST_F(UserCloudPolicyManagerChromeOSTest, NonBlockingFirstFetch) {
   // fetchers.
   EXPECT_FALSE(test_url_fetcher_factory_.GetFetcherByID(0));
 
-  // Set a fake user in signin manager.  This can be removed once TokenService
-  // is removed.
-  SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetForProfile(profile_);
-  ASSERT_TRUE(signin_manager);
-  signin_manager->SetAuthenticatedUsername("user@gmail.com");
-
-  // Set a fake refresh token at the TokenService.
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
+  // Set a fake refresh token at the OAuth2TokenService.
+  FakeProfileOAuth2TokenService* token_service =
+    static_cast<FakeProfileOAuth2TokenService*>(
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_));
   ASSERT_TRUE(token_service);
-  GaiaAuthConsumer::ClientOAuthResult tokens("refresh", "access", 3600);
-  EXPECT_FALSE(token_service->HasOAuthLoginToken());
-  token_service->UpdateCredentialsWithOAuth2(tokens);
-  EXPECT_TRUE(token_service->HasOAuthLoginToken());
+  EXPECT_FALSE(token_service->RefreshTokenIsAvailable(kTestAccountId));
+  token_service->IssueRefreshToken(kTestAccountId);
+  EXPECT_TRUE(token_service->RefreshTokenIsAvailable(kTestAccountId));
 
   // That should have notified the manager, which now issues the request for the
   // policy oauth token.

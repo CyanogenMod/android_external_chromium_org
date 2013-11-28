@@ -16,7 +16,7 @@ namespace content {
 
 // static
 ContextMenuParams ContextMenuParamsBuilder::Build(
-    const WebKit::WebContextMenuData& data) {
+    const blink::WebContextMenuData& data) {
   ContextMenuParams params;
   params.media_type = data.mediaType;
   params.x = data.mousePosition.x;
@@ -35,11 +35,11 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   params.speech_input_enabled = data.isSpeechInputEnabled;
   params.spellcheck_enabled = data.isSpellCheckingEnabled;
   params.is_editable = data.isEditable;
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
   params.writing_direction_default = data.writingDirectionDefault;
   params.writing_direction_left_to_right = data.writingDirectionLeftToRight;
   params.writing_direction_right_to_left = data.writingDirectionRightToLeft;
-#endif  // OS_MACOSX
+#endif  // OS_MACOSX || defined(TOOLKIT_GTK)
   params.edit_flags = data.editFlags;
   params.frame_charset = data.frameEncoding.utf8();
   params.referrer_policy = data.referrerPolicy;
@@ -55,7 +55,7 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
     params.frame_page_state = HistoryItemToPageState(data.frameHistoryItem);
 
   if (!params.link_url.is_empty()) {
-    WebKit::WebNode selectedNode = data.node;
+    blink::WebNode selectedNode = data.node;
 
     // If there are other embedded tags (like <a ..>Some <b>text</b></a>)
     // we need to extract the parent <a/> node.
@@ -63,7 +63,7 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
       selectedNode = selectedNode.parentNode();
     }
 
-    WebKit::WebElement selectedElement = selectedNode.to<WebKit::WebElement>();
+    blink::WebElement selectedElement = selectedNode.to<blink::WebElement>();
     if (selectedNode.isLink() && !selectedElement.isNull()) {
       params.link_text = selectedElement.innerText();
     } else {

@@ -14,7 +14,7 @@
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "extensions/browser/event_router.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
 class Profile;
@@ -113,6 +113,11 @@ class BookmarksFunction : public ChromeAsyncExtensionFunction,
   // Sets error_ to an error string if the given id string can't be parsed
   // as an int64. In case of error, doesn't change id and returns false.
   bool GetBookmarkIdAsInt64(const std::string& id_string, int64* id);
+
+  // Helper to get the bookmark node from a given string id.
+  // If the given id can't be parsed or doesn't refer to a valid node, sets
+  // error_ and returns NULL.
+  const BookmarkNode* GetBookmarkNodeFromId(const std::string& id_string);
 
   // Helper that checks if bookmark editing is enabled. If it's not, this sets
   // error_ to the appropriate error string.

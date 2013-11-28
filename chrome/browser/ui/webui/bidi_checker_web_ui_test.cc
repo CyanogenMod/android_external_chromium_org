@@ -22,8 +22,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -166,7 +166,6 @@ static void SetupHistoryPageTest(Browser* browser,
   history_service->SetPageTitle(history_url, UTF8ToUTF16(page_title));
 }
 
-// TODO(estade): fix this test: http://crbug.com/119595
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
                        TestHistoryPage) {
   // Test an Israeli news site with a Hebrew title.
@@ -176,7 +175,6 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
   RunBidiCheckerOnPage(chrome::kChromeUIHistoryFrameURL);
 }
 
-// TODO(estade): fix this test: http://crbug.com/119595
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
                        TestHistoryPage) {
   SetupHistoryPageTest(browser(), "http://www.google.com", "Google");

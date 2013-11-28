@@ -26,6 +26,7 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/rlz/rlz.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_delegate.h"
@@ -47,6 +48,7 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -254,11 +256,10 @@ int GetContentRestrictions(const Browser* browser) {
     CoreTabHelper* core_tab_helper =
         CoreTabHelper::FromWebContents(current_tab);
     content_restrictions = core_tab_helper->content_restrictions();
-    NavigationEntry* active_entry =
-        current_tab->GetController().GetActiveEntry();
+    NavigationEntry* entry =
+        current_tab->GetController().GetLastCommittedEntry();
     // See comment in UpdateCommandsForTabState about why we call url().
-    if (!content::IsSavableURL(
-            active_entry ? active_entry->GetURL() : GURL()) ||
+    if (!content::IsSavableURL(entry ? entry->GetURL() : GURL()) ||
         current_tab->ShowingInterstitialPage())
       content_restrictions |= CONTENT_RESTRICTION_SAVE;
     if (current_tab->ShowingInterstitialPage())
@@ -301,7 +302,7 @@ void NewEmptyWindow(Profile* profile, HostDesktopType desktop_type) {
 Browser* OpenEmptyWindow(Profile* profile, HostDesktopType desktop_type) {
   Browser* browser = new Browser(
       Browser::CreateParams(Browser::TYPE_TABBED, profile, desktop_type));
-  AddBlankTabAt(browser, -1, true);
+  AddTabAt(browser, GURL(), -1, true);
   browser->window()->Show();
   return browser;
 }
@@ -482,14 +483,14 @@ void NewTab(Browser* browser) {
                             TabStripModel::NEW_TAB_ENUM_COUNT);
 
   if (browser->is_type_tabbed()) {
-    AddBlankTabAt(browser, -1, true);
+    AddTabAt(browser, GURL(), -1, true);
     browser->tab_strip_model()->GetActiveWebContents()->GetView()->
         RestoreFocus();
   } else {
     ScopedTabbedBrowserDisplayer displayer(browser->profile(),
                                            browser->host_desktop_type());
     Browser* b = displayer.browser();
-    AddBlankTabAt(b, -1, true);
+    AddTabAt(b, GURL(), -1, true);
     b->window()->Show();
     // The call to AddBlankTabAt above did not set the focus to the tab as its
     // window was not active, so we have to do it explicitly.
@@ -971,16 +972,21 @@ void OpenUpdateChromeDialog(Browser* browser) {
 }
 
 void ToggleSpeechInput(Browser* browser) {
-  browser->tab_strip_model()->GetActiveWebContents()->
-      GetRenderViewHost()->ToggleSpeechInput();
-  if (browser->instant_controller())
-    browser->instant_controller()->ToggleVoiceSearch();
+  WebContents* web_contents =
+      browser->tab_strip_model()->GetActiveWebContents();
+  web_contents->GetRenderViewHost()->ToggleSpeechInput();
+
+  SearchTabHelper* search_tab_helper =
+      SearchTabHelper::FromWebContents(web_contents);
+  // |search_tab_helper| can be null in unit tests.
+  if (search_tab_helper)
+    search_tab_helper->ToggleVoiceSearch();
 }
 
 bool CanRequestTabletSite(WebContents* current_tab) {
   if (!current_tab)
     return false;
-  return current_tab->GetController().GetActiveEntry() != NULL;
+  return current_tab->GetController().GetLastCommittedEntry() != NULL;
 }
 
 bool IsRequestingTabletSite(Browser* browser) {
@@ -988,7 +994,7 @@ bool IsRequestingTabletSite(Browser* browser) {
   if (!current_tab)
     return false;
   content::NavigationEntry* entry =
-      current_tab->GetController().GetActiveEntry();
+      current_tab->GetController().GetLastCommittedEntry();
   if (!entry)
     return false;
   return entry->GetIsOverridingUserAgent();
@@ -999,7 +1005,7 @@ void ToggleRequestTabletSite(Browser* browser) {
   if (!current_tab)
     return;
   NavigationController& controller = current_tab->GetController();
-  NavigationEntry* entry = controller.GetActiveEntry();
+  NavigationEntry* entry = controller.GetLastCommittedEntry();
   if (!entry)
     return;
   if (entry->GetIsOverridingUserAgent()) {
@@ -1054,25 +1060,25 @@ void ViewSource(Browser* browser,
   content::RecordAction(UserMetricsAction("ViewSource"));
   DCHECK(contents);
 
-  // Note that Clone does not copy the pending or transient entries, so the
-  // active entry in view_source_contents will be the last committed entry.
+  // Note that Clone does not copy the pending or transient entries, so we can
+  // take the last committed entry in view_source_contents.
   WebContents* view_source_contents = contents->Clone();
-  DCHECK(view_source_contents->GetController().CanPruneAllButVisible());
-  view_source_contents->GetController().PruneAllButVisible();
-  NavigationEntry* active_entry =
-      view_source_contents->GetController().GetActiveEntry();
-  if (!active_entry)
+  DCHECK(view_source_contents->GetController().CanPruneAllButLastCommitted());
+  view_source_contents->GetController().PruneAllButLastCommitted();
+  NavigationEntry* entry =
+      view_source_contents->GetController().GetLastCommittedEntry();
+  if (!entry)
     return;
 
   GURL view_source_url =
       GURL(content::kViewSourceScheme + std::string(":") + url.spec());
-  active_entry->SetVirtualURL(view_source_url);
+  entry->SetVirtualURL(view_source_url);
 
   // Do not restore scroller position.
-  active_entry->SetPageState(page_state.RemoveScrollOffset());
+  entry->SetPageState(page_state.RemoveScrollOffset());
 
   // Do not restore title, derive it from the url.
-  active_entry->SetTitle(string16());
+  entry->SetTitle(string16());
 
   // Now show view-source entry.
   if (browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP)) {
@@ -1128,6 +1134,13 @@ void CreateApplicationShortcuts(Browser* browser) {
           CreateApplicationShortcuts();
 }
 
+void CreateHostedAppFromCurrentWebContents(Browser* browser) {
+  content::RecordAction(UserMetricsAction("CreateHostedApp"));
+  extensions::TabHelper::FromWebContents(
+      browser->tab_strip_model()->GetActiveWebContents())->
+          CreateHostedAppFromWebContents();
+}
+
 bool CanCreateApplicationShortcuts(const Browser* browser) {
   return extensions::TabHelper::FromWebContents(
       browser->tab_strip_model()->GetActiveWebContents())->
@@ -1136,7 +1149,7 @@ bool CanCreateApplicationShortcuts(const Browser* browser) {
 
 void ConvertTabToAppWindow(Browser* browser,
                            content::WebContents* contents) {
-  const GURL& url = contents->GetController().GetActiveEntry()->GetURL();
+  const GURL& url = contents->GetController().GetLastCommittedEntry()->GetURL();
   std::string app_name = web_app::GenerateApplicationNameFromURL(url);
 
   int index = browser->tab_strip_model()->GetIndexOfWebContents(contents);

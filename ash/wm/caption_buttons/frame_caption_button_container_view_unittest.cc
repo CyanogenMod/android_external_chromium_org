@@ -71,7 +71,6 @@ class FrameCaptionButtonContainerViewTest : public ash::test::AshTestBase {
                            const views::CustomButton& leftmost,
                            const views::CustomButton& rightmost) {
     gfx::Rect expected(container->GetPreferredSize());
-    expected.Inset(container->GetLeftInset(), 0, container->GetRightInset(), 0);
 
     gfx::Rect container_size(container->GetPreferredSize());
     if (leftmost.y() == rightmost.y() &&
@@ -89,26 +88,11 @@ class FrameCaptionButtonContainerViewTest : public ash::test::AshTestBase {
     return false;
   }
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(FrameCaptionButtonContainerViewTest);
-};
-
-class FrameCaptionButtonContainerViewTestOldStyle
-    : public FrameCaptionButtonContainerViewTest {
- public:
-  FrameCaptionButtonContainerViewTestOldStyle() {
-  }
-
-  virtual ~FrameCaptionButtonContainerViewTestOldStyle() {
-  }
-
   // Returns true if the images for |button|'s states match the passed in ids.
-  bool ImagesMatch(views::CustomButton* custom_button,
+  bool ImagesMatch(views::ImageButton* button,
                    int normal_image_id,
                    int hovered_image_id,
                    int pressed_image_id) {
-    views::ImageButton* button =
-        static_cast<views::ImageButton*>(custom_button);
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     gfx::ImageSkia* normal = rb.GetImageSkiaNamed(normal_image_id);
     gfx::ImageSkia* hovered = rb.GetImageSkiaNamed(hovered_image_id);
@@ -120,6 +104,19 @@ class FrameCaptionButtonContainerViewTestOldStyle
     return actual_normal.BackedBySameObjectAs(*normal) &&
         actual_hovered.BackedBySameObjectAs(*hovered) &&
         actual_pressed.BackedBySameObjectAs(*pressed);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FrameCaptionButtonContainerViewTest);
+};
+
+class FrameCaptionButtonContainerViewTestOldStyle
+    : public FrameCaptionButtonContainerViewTest {
+ public:
+  FrameCaptionButtonContainerViewTestOldStyle() {
+  }
+
+  virtual ~FrameCaptionButtonContainerViewTestOldStyle() {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -173,29 +170,6 @@ TEST_F(FrameCaptionButtonContainerViewTestOldStyle, ButtonVisibility) {
   EXPECT_TRUE(t3.close_button()->visible());
   EXPECT_TRUE(CheckButtonsAtEdges(
       &container3, *t3.close_button(), *t3.close_button()));
-}
-
-// Test the layout when a border is set on the container.
-TEST_F(FrameCaptionButtonContainerViewTestOldStyle, LayoutBorder) {
-  const int kTopInset = 1;
-  const int kLeftInset = 2;
-  const int kBottomInset = 3;
-  const int kRightInset = 4;
-
-  scoped_ptr<views::Widget> widget(CreateTestWidget(MAXIMIZE_ALLOWED));
-  FrameCaptionButtonContainerView container(widget.get(),
-      FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
-  container.set_border(views::Border::CreateEmptyBorder(
-      kTopInset, kLeftInset, kBottomInset, kRightInset));
-  container.Layout();
-  FrameCaptionButtonContainerView::TestApi t(&container);
-
-  EXPECT_EQ(kLeftInset, t.size_button()->x());
-  EXPECT_EQ(kTopInset, t.close_button()->y());
-  EXPECT_EQ(container.GetPreferredSize().height(),
-            t.close_button()->bounds().bottom() + kBottomInset);
-  EXPECT_EQ(container.GetPreferredSize().width(),
-            t.close_button()->bounds().right() + kRightInset);
 }
 
 // Test how the header style affects which images are used for the buttons.
@@ -255,19 +229,6 @@ TEST_F(FrameCaptionButtonContainerViewTestOldStyle, HeaderStyle) {
                           IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
                           IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
                           IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P));
-
-  // AppNonClientFrameViewAsh has a dedicated set of images.
-  container.set_header_style(
-      FrameCaptionButtonContainerView::HEADER_STYLE_MAXIMIZED_HOSTED_APP);
-  container.Layout();
-  EXPECT_TRUE(ImagesMatch(t.size_button(),
-                          IDR_AURA_WINDOW_FULLSCREEN_RESTORE,
-                          IDR_AURA_WINDOW_FULLSCREEN_RESTORE_H,
-                          IDR_AURA_WINDOW_FULLSCREEN_RESTORE_P));
-  EXPECT_TRUE(ImagesMatch(t.close_button(),
-                          IDR_AURA_WINDOW_FULLSCREEN_CLOSE,
-                          IDR_AURA_WINDOW_FULLSCREEN_CLOSE_H,
-                          IDR_AURA_WINDOW_FULLSCREEN_CLOSE_P));
 }
 
 class FrameCaptionButtonContainerViewTestAlternateStyle

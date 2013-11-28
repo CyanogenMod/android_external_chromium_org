@@ -8,9 +8,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/android/bookmarks/managed_bookmarks_shim.h"
+#include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/browser/ui/webui/ntp/android/partner_bookmarks_shim.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
@@ -68,9 +68,6 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   // specified in |args|.
   void HandleCreateHomeScreenBookmarkShortcut(const base::ListValue* args);
 
-  // Notify the UI that a change occurred to the bookmark model.
-  virtual void NotifyModelChanged(const DictionaryValue& status);
-
   // Override the methods of BookmarkModelObserver
   virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelChanged() OVERRIDE;
@@ -112,6 +109,12 @@ class BookmarksHandler : public content::WebUIMessageHandler,
 
   // Used for loading bookmark node.
   CancelableTaskTracker cancelable_task_tracker_;
+
+  // Returns true iff bookmark model and partner bookmarks shim are loaded.
+  bool AreModelsLoaded() const;
+
+  // Notify the UI that a change occurred to the bookmark model.
+  void NotifyModelChanged(const DictionaryValue& status);
 
   // Generates the string encoded ID to be used by the NTP.
   std::string GetBookmarkIdForNtp(const BookmarkNode* node);

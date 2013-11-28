@@ -103,9 +103,14 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_proc_android.cc \
 	net/cert/cert_verify_result.cc \
 	net/cert/crl_set.cc \
+	net/cert/ct_log_verifier.cc \
+	net/cert/ct_log_verifier_openssl.cc \
+	net/cert/ct_objects_extractor_openssl.cc \
 	net/cert/ct_serialization.cc \
+	net/cert/ct_verify_result.cc \
 	net/cert/ev_root_ca_metadata.cc \
 	net/cert/jwk_serializer_openssl.cc \
+	net/cert/multi_log_ct_verifier.cc \
 	net/cert/multi_threaded_cert_verifier.cc \
 	net/cert/pem_tokenizer.cc \
 	net/cert/signed_certificate_timestamp.cc \
@@ -252,6 +257,7 @@ LOCAL_SRC_FILES := \
 	net/http/partial_data.cc \
 	net/http/proxy_client_socket.cc \
 	net/http/proxy_connect_redirect_http_stream.cc \
+	net/http/transport_security_persister.cc \
 	net/http/transport_security_state.cc \
 	net/http/url_security_manager.cc \
 	net/http/url_security_manager_posix.cc \
@@ -287,6 +293,7 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/inter_arrival_state_machine.cc \
 	net/quic/congestion_control/leaky_bucket.cc \
 	net/quic/congestion_control/paced_sender.cc \
+	net/quic/congestion_control/pacing_sender.cc \
 	net/quic/congestion_control/quic_congestion_manager.cc \
 	net/quic/congestion_control/receive_algorithm_interface.cc \
 	net/quic/congestion_control/send_algorithm_interface.cc \
@@ -304,6 +311,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/crypto_server_config_protobuf.cc \
 	net/quic/crypto/crypto_utils.cc \
 	net/quic/crypto/curve25519_key_exchange.cc \
+	net/quic/crypto/local_strike_register_client.cc \
 	net/quic/crypto/null_decrypter.cc \
 	net/quic/crypto/null_encrypter.cc \
 	net/quic/crypto/p256_key_exchange_openssl.cc \
@@ -454,6 +462,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_request_throttler_header_adapter.cc \
 	net/url_request/url_request_throttler_manager.cc \
 	net/url_request/view_cache_helper.cc \
+	net/websockets/websocket_basic_handshake_stream.cc \
 	net/websockets/websocket_basic_stream.cc \
 	net/websockets/websocket_channel.cc \
 	net/websockets/websocket_deflate_predictor_impl.cc \
@@ -520,6 +529,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \
@@ -613,6 +623,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \

@@ -19,8 +19,8 @@
 #include "ui/gfx/render_text_win.h"
 #endif
 
-#if defined(OS_LINUX)
-#include "ui/gfx/render_text_linux.h"
+#if defined(OS_LINUX) && !defined(USE_OZONE)
+#include "ui/gfx/render_text_pango.h"
 #endif
 
 #if defined(TOOLKIT_GTK)
@@ -65,6 +65,7 @@ void SetRTL(bool rtl) {
   EXPECT_EQ(rtl, base::i18n::IsRTL());
 }
 
+#if !defined(OS_MACOSX)
 // Ensure cursor movement in the specified |direction| yields |expected| values.
 void RunMoveCursorLeftRightTest(RenderText* render_text,
                                 const std::vector<SelectionModel>& expected,
@@ -81,6 +82,7 @@ void RunMoveCursorLeftRightTest(RenderText* render_text,
   render_text->MoveCursor(LINE_BREAK, direction, false);
   EXPECT_EQ(expected.back(), render_text->selection_model());
 }
+#endif  // !defined(OS_MACOSX)
 
 }  // namespace
 
@@ -184,7 +186,7 @@ TEST_F(RenderTextTest, ApplyColorAndStyle) {
   EXPECT_TRUE(render_text->styles()[ITALIC].EqualsForTesting(expected_italic));
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(USE_OZONE)
 TEST_F(RenderTextTest, PangoAttributes) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetText(ASCIIToUTF16("012345678"));
@@ -207,7 +209,7 @@ TEST_F(RenderTextTest, PangoAttributes) {
   };
 
   int start = 0, end = 0;
-  RenderTextLinux* rt_linux = static_cast<RenderTextLinux*>(render_text.get());
+  RenderTextPango* rt_linux = static_cast<RenderTextPango*>(render_text.get());
   rt_linux->EnsureLayout();
   PangoAttrList* attributes = pango_layout_get_attributes(rt_linux->layout_);
   PangoAttrIterator* iter = pango_attr_list_get_iterator(attributes);
@@ -1154,7 +1156,8 @@ TEST_F(RenderTextTest, StringSizeEmptyString) {
 }
 #endif  // !defined(OS_MACOSX)
 
-TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
+// Disabled. http://crbug.com/316955
+TEST_F(RenderTextTest, DISABLED_StringSizeRespectsFontListMetrics) {
   // Check that Arial and Symbol have different font metrics.
   Font arial_font("Arial", 16);
   Font symbol_font("Symbol", 16);
@@ -1210,7 +1213,8 @@ TEST_F(RenderTextTest, SetFont) {
   EXPECT_EQ(12, render_text->GetPrimaryFont().GetFontSize());
 }
 
-TEST_F(RenderTextTest, SetFontList) {
+// Disabled. http://crbug.com/316955
+TEST_F(RenderTextTest, DISABLED_SetFontList) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(FontList("Arial,Symbol, 13px"));
   const std::vector<Font>& fonts = render_text->font_list().GetFonts();

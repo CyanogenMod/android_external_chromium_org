@@ -4,16 +4,32 @@
 
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/policy/cloud/cloud_external_data_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_store.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "content/public/browser/browser_context.h"
 
 namespace policy {
+
+namespace {
+
+// Directory inside the profile directory where policy-related resources are
+// stored.
+const base::FilePath::CharType kPolicy[] = FILE_PATH_LITERAL("Policy");
+
+// Directory under kPolicy, in the user's profile dir, where policy for
+// components is cached.
+const base::FilePath::CharType kComponentsDir[] =
+    FILE_PATH_LITERAL("Components");
+
+}  // namespace
 
 // static
 UserCloudPolicyManagerFactory* UserCloudPolicyManagerFactory::GetInstance() {
@@ -21,85 +37,136 @@ UserCloudPolicyManagerFactory* UserCloudPolicyManagerFactory::GetInstance() {
 }
 
 // static
-UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetForProfile(
-    Profile* profile) {
-  return GetInstance()->GetManagerForProfile(profile);
+UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
+  return GetInstance()->GetManagerForBrowserContext(context);
 }
 
 // static
 scoped_ptr<UserCloudPolicyManager>
-UserCloudPolicyManagerFactory::CreateForProfile(
-    Profile* profile,
+UserCloudPolicyManagerFactory::CreateForOriginalBrowserContext(
+    content::BrowserContext* context,
     bool force_immediate_load,
-    scoped_refptr<base::SequencedTaskRunner> background_task_runner) {
-  return GetInstance()->CreateManagerForProfile(
-      profile, force_immediate_load, background_task_runner);
+    const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
+  return GetInstance()->CreateManagerForOriginalBrowserContext(
+      context,
+      force_immediate_load,
+      background_task_runner,
+      file_task_runner,
+      io_task_runner);
 }
+
+// static
+UserCloudPolicyManager*
+UserCloudPolicyManagerFactory::RegisterForOffTheRecordBrowserContext(
+    content::BrowserContext* original_context,
+    content::BrowserContext* off_the_record_context) {
+  return GetInstance()->RegisterManagerForOffTheRecordBrowserContext(
+      original_context, off_the_record_context);
+}
+
 
 UserCloudPolicyManagerFactory::UserCloudPolicyManagerFactory()
     : BrowserContextKeyedBaseFactory(
         "UserCloudPolicyManager",
-        BrowserContextDependencyManager::GetInstance()) {}
+        BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(SchemaRegistryServiceFactory::GetInstance());
+}
 
 UserCloudPolicyManagerFactory::~UserCloudPolicyManagerFactory() {}
 
-UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetManagerForProfile(
-    Profile* profile) {
-  // Get the manager for the original profile, since the PolicyService is
-  // also shared between the incognito Profile and the original Profile.
-  ManagerMap::const_iterator it = managers_.find(profile->GetOriginalProfile());
+UserCloudPolicyManager*
+UserCloudPolicyManagerFactory::GetManagerForBrowserContext(
+    content::BrowserContext* context) {
+  // In case |context| is an incognito Profile/Context, |manager_| will have a
+  // matching entry pointing to the PolicyService of the original context.
+  ManagerMap::const_iterator it = managers_.find(context);
   return it != managers_.end() ? it->second : NULL;
 }
 
 scoped_ptr<UserCloudPolicyManager>
-    UserCloudPolicyManagerFactory::CreateManagerForProfile(
-        Profile* profile,
-        bool force_immediate_load,
-        scoped_refptr<base::SequencedTaskRunner> background_task_runner) {
+UserCloudPolicyManagerFactory::CreateManagerForOriginalBrowserContext(
+    content::BrowserContext* context,
+    bool force_immediate_load,
+    const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
+  DCHECK(!context->IsOffTheRecord());
+
   scoped_ptr<UserCloudPolicyStore> store(
-      UserCloudPolicyStore::Create(profile, background_task_runner));
+      UserCloudPolicyStore::Create(context->GetPath(), background_task_runner));
   if (force_immediate_load)
     store->LoadImmediately();
+
+  const base::FilePath component_policy_cache_dir =
+      context->GetPath().Append(kPolicy).Append(kComponentsDir);
+
   scoped_ptr<UserCloudPolicyManager> manager(
-      new UserCloudPolicyManager(profile,
+      new UserCloudPolicyManager(context,
                                  store.Pass(),
+                                 component_policy_cache_dir,
                                  scoped_ptr<CloudExternalDataManager>(),
-                                 base::MessageLoopProxy::current()));
-  manager->Init();
+                                 base::MessageLoopProxy::current(),
+                                 file_task_runner,
+                                 io_task_runner));
+  manager->Init(SchemaRegistryServiceFactory::GetForContext(context));
   return manager.Pass();
+}
+
+UserCloudPolicyManager*
+UserCloudPolicyManagerFactory::RegisterManagerForOffTheRecordBrowserContext(
+    content::BrowserContext* original_context,
+    content::BrowserContext* off_the_record_context) {
+  // Register the PolicyService of the original context for the respective
+  // incognito context. See also GetManagerForBrowserContext.
+  UserCloudPolicyManager* manager =
+      GetManagerForBrowserContext(original_context);
+  Register(off_the_record_context, manager);
+  return manager;
 }
 
 void UserCloudPolicyManagerFactory::BrowserContextShutdown(
     content::BrowserContext* context) {
-  Profile* profile = static_cast<Profile*>(context);
-  if (profile->IsOffTheRecord())
+  UserCloudPolicyManager* manager = GetManagerForBrowserContext(context);
+  // E.g. for a TestingProfile there might not be a manager created.
+  if (!manager)
     return;
-  UserCloudPolicyManager* manager = GetManagerForProfile(profile);
-  if (manager)
+
+  // Remove |context| from the |managers_| map. In case of |context| is
+  // off the record, don't delete the manager instance. In case of the original
+  // context, also Shutdown the manager instance (which calls Unregister as
+  // well). We never delete managers here, because they're not owned by this
+  // factory.
+  if (context->IsOffTheRecord())
+    Unregister(context, NULL /* don't check the manager instance */);
+  else
     manager->Shutdown();
 }
 
 void UserCloudPolicyManagerFactory::SetEmptyTestingFactory(
-    content::BrowserContext* profile) {
+    content::BrowserContext* context) {
 }
 
 void UserCloudPolicyManagerFactory::CreateServiceNow(
-    content::BrowserContext* profile) {
+    content::BrowserContext* context) {
 }
 
-void UserCloudPolicyManagerFactory::Register(Profile* profile,
+void UserCloudPolicyManagerFactory::Register(content::BrowserContext* context,
                                              UserCloudPolicyManager* instance) {
-  UserCloudPolicyManager*& entry = managers_[profile];
+  UserCloudPolicyManager*& entry = managers_[context];
   DCHECK(!entry);
   entry = instance;
 }
 
 void UserCloudPolicyManagerFactory::Unregister(
-    Profile* profile,
+    content::BrowserContext* context,
     UserCloudPolicyManager* instance) {
-  ManagerMap::iterator entry = managers_.find(profile);
+  ManagerMap::iterator entry = managers_.find(context);
   if (entry != managers_.end()) {
-    DCHECK_EQ(instance, entry->second);
+    if (instance)
+      DCHECK_EQ(instance, entry->second);
     managers_.erase(entry);
   } else {
     NOTREACHED();

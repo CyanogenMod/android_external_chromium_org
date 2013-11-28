@@ -17,6 +17,14 @@
 #include "media/cast/rtcp/rtcp.h"
 #include "media/cast/rtp_sender/rtp_sender.h"
 
+namespace crypto {
+  class Encryptor;
+}
+
+namespace media {
+class AudioBus;
+}
+
 namespace media {
 namespace cast {
 
@@ -36,13 +44,13 @@ class AudioSender : public base::NonThreadSafe,
 
   virtual ~AudioSender();
 
-  // The audio_frame must be valid until the closure callback is called.
-  // The closure callback is called from the main cast thread as soon as
-  // the encoder is done with the frame; it does not mean that the encoded frame
-  // has been sent out.
-  void InsertRawAudioFrame(const PcmAudioFrame* audio_frame,
-                           const base::TimeTicks& recorded_time,
-                           const base::Closure callback);
+  // The |audio_bus| must be valid until the |done_callback| is called.
+  // The callback is called from the main cast thread as soon as the encoder is
+  // done with |audio_bus|; it does not mean that the encoded data has been
+  // sent out.
+  void InsertAudio(const AudioBus* audio_bus,
+                   const base::TimeTicks& recorded_time,
+                   const base::Closure& done_callback);
 
   // The audio_frame must be valid until the closure callback is called.
   // The closure callback is called from the main cast thread as soon as
@@ -66,18 +74,27 @@ class AudioSender : public base::NonThreadSafe,
   void ResendPackets(
       const MissingFramesAndPacketsMap& missing_frames_and_packets);
 
+  // Caller must allocate the destination |encrypted_frame|. The data member
+  // will be resized to hold the encrypted size.
+  bool EncryptAudioFrame(const EncodedAudioFrame& audio_frame,
+                         EncodedAudioFrame* encrypted_frame);
+
   void ScheduleNextRtcpReport();
   void SendRtcpReport();
 
+  void InitializeTimers();
+
   base::WeakPtrFactory<AudioSender> weak_factory_;
 
-  const uint32 incoming_feedback_ssrc_;
   scoped_refptr<CastEnvironment> cast_environment_;
   scoped_refptr<AudioEncoder> audio_encoder_;
   RtpSender rtp_sender_;
   scoped_ptr<LocalRtpSenderStatistics> rtp_audio_sender_statistics_;
   scoped_ptr<LocalRtcpAudioSenderFeedback> rtcp_feedback_;
   Rtcp rtcp_;
+  bool initialized_;
+  scoped_ptr<crypto::Encryptor> encryptor_;
+  std::string iv_mask_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioSender);
 };
@@ -86,4 +103,3 @@ class AudioSender : public base::NonThreadSafe,
 }  // namespace media
 
 #endif  // MEDIA_CAST_AUDIO_SENDER_H_
-

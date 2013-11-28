@@ -61,7 +61,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_restriction.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -83,6 +82,7 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
@@ -107,11 +107,11 @@
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING)
 
-using WebKit::WebContextMenuData;
-using WebKit::WebMediaPlayerAction;
-using WebKit::WebPluginAction;
-using WebKit::WebString;
-using WebKit::WebURL;
+using blink::WebContextMenuData;
+using blink::WebMediaPlayerAction;
+using blink::WebPluginAction;
+using blink::WebString;
+using blink::WebURL;
 using content::BrowserContext;
 using content::ChildProcessSecurityPolicy;
 using content::DownloadManager;
@@ -513,7 +513,10 @@ void RenderViewContextMenu::AppendAllExtensionItems() {
       extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (!service)
     return;  // In unit-tests, we may not have an ExtensionService.
-  MenuManager* menu_manager = service->menu_manager();
+
+  MenuManager* menu_manager = MenuManager::Get(profile_);
+  if (!menu_manager)
+    return;
 
   string16 printable_selection_text = PrintableSelectionText();
   EscapeAmpersands(&printable_selection_text);

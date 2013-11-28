@@ -26,13 +26,13 @@
     'ext/benchmarking_canvas.cc',
     'ext/benchmarking_canvas.h',
     'ext/bitmap_platform_device.h',
-    'ext/bitmap_platform_device_android.cc',
-    'ext/bitmap_platform_device_android.h',
+    'ext/bitmap_platform_device_cairo.cc',
+    'ext/bitmap_platform_device_cairo.h',
     'ext/bitmap_platform_device_data.h',
-    'ext/bitmap_platform_device_linux.cc',
-    'ext/bitmap_platform_device_linux.h',
     'ext/bitmap_platform_device_mac.cc',
     'ext/bitmap_platform_device_mac.h',
+    'ext/bitmap_platform_device_skia.cc',
+    'ext/bitmap_platform_device_skia.h',
     'ext/bitmap_platform_device_win.cc',
     'ext/bitmap_platform_device_win.h',
     'ext/convolver.cc',
@@ -81,6 +81,10 @@
     [ 'OS == "android" and enable_printing == 0', {
       'sources!': [
         'ext/skia_utils_base.cc',
+      ],
+    }],
+    [ 'enable_printing == 0', {
+      'sources!': [
         'ext/vector_platform_device_skia.cc',
       ],
     }],
@@ -102,6 +106,11 @@
       },
       'cflags!': [
         '-Wstring-conversion',
+      ],
+    }],
+    [ 'OS != "android" and (OS != "linux" or use_cairo==1)', {
+      'sources!': [
+        'ext/bitmap_platform_device_skia.cc',
       ],
     }],
   ],

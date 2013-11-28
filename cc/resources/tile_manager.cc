@@ -149,12 +149,6 @@ inline ManagedTileBin BinFromTilePriority(const TilePriority& prio) {
   return EVENTUALLY_BIN;
 }
 
-// Limit to the number of raster tasks that can be scheduled.
-// This is high enough to not cause unnecessary scheduling but
-// gives us an insurance that we're not spending a huge amount
-// of time scheduling one enormous set of tasks.
-const size_t kMaxRasterTasks = 256u;
-
 }  // namespace
 
 RasterTaskCompletionStats::RasterTaskCompletionStats()
@@ -177,18 +171,23 @@ scoped_ptr<TileManager> TileManager::Create(
     size_t num_raster_threads,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
     bool use_map_image,
-    size_t max_transfer_buffer_usage_bytes) {
+    size_t max_transfer_buffer_usage_bytes,
+    size_t max_raster_usage_bytes,
+    GLenum map_image_texture_target) {
   return make_scoped_ptr(
       new TileManager(client,
                       resource_provider,
                       use_map_image ?
                       ImageRasterWorkerPool::Create(
-                          resource_provider, num_raster_threads) :
+                          resource_provider,
+                          num_raster_threads,
+                          map_image_texture_target) :
                       PixelBufferRasterWorkerPool::Create(
                           resource_provider,
                           num_raster_threads,
                           max_transfer_buffer_usage_bytes),
                       num_raster_threads,
+                      max_raster_usage_bytes,
                       rendering_stats_instrumentation));
 }
 
@@ -197,9 +196,13 @@ TileManager::TileManager(
     ResourceProvider* resource_provider,
     scoped_ptr<RasterWorkerPool> raster_worker_pool,
     size_t num_raster_threads,
+    size_t max_raster_usage_bytes,
     RenderingStatsInstrumentation* rendering_stats_instrumentation)
     : client_(client),
-      resource_pool_(ResourcePool::Create(resource_provider)),
+      resource_pool_(ResourcePool::Create(
+                         resource_provider,
+                         raster_worker_pool->GetResourceTarget(),
+                         raster_worker_pool->GetResourceFormat())),
       raster_worker_pool_(raster_worker_pool.Pass()),
       prioritized_tiles_dirty_(false),
       all_tiles_that_need_to_be_rasterized_have_memory_(true),
@@ -208,6 +211,7 @@ TileManager::TileManager(
       memory_nice_to_have_bytes_(0),
       bytes_releasable_(0),
       resources_releasable_(0),
+      max_raster_usage_bytes_(max_raster_usage_bytes),
       ever_exceeded_memory_budget_(false),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       did_initialize_visible_tile_(false),
@@ -374,24 +378,36 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
     TilePriority pending_priority = tile->priority(PENDING_TREE);
     ManagedTileBin pending_bin = BinFromTilePriority(pending_priority);
 
+    bool pending_is_low_res =
+        pending_priority.resolution == LOW_RESOLUTION;
+    bool pending_is_non_ideal =
+        pending_priority.resolution == NON_IDEAL_RESOLUTION;
+    bool active_is_non_ideal =
+        active_priority.resolution == NON_IDEAL_RESOLUTION;
+
     // Adjust pending bin state for low res tiles. This prevents
     // pending tree low-res tiles from being initialized before
     // high-res tiles.
-    if (pending_priority.resolution == LOW_RESOLUTION)
+    if (pending_is_low_res)
       pending_bin = std::max(pending_bin, EVENTUALLY_BIN);
-
-    // Compute combined bin.
-    ManagedTileBin combined_bin = std::min(active_bin, pending_bin);
 
     // Adjust bin state based on if ready to draw.
     active_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][active_bin];
     pending_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][pending_bin];
-    combined_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][combined_bin];
 
     // Adjust bin state based on if active.
     active_bin = kBinIsActiveMap[tile_is_active][active_bin];
     pending_bin = kBinIsActiveMap[tile_is_active][pending_bin];
-    combined_bin = kBinIsActiveMap[tile_is_active][combined_bin];
+
+    // We never want to paint new non-ideal tiles, as we always have
+    // a high-res tile covering that content (paint that instead).
+    if (!tile_is_ready_to_draw && active_is_non_ideal)
+      active_bin = NEVER_BIN;
+    if (!tile_is_ready_to_draw && pending_is_non_ideal)
+      pending_bin = NEVER_BIN;
+
+    // Compute combined bin.
+    ManagedTileBin combined_bin = std::min(active_bin, pending_bin);
 
     ManagedTileBin tree_bin[NUM_TREES];
     tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
@@ -595,6 +611,13 @@ void TileManager::AssignGpuMemoryToTiles(
     TileVector* tiles_that_need_to_be_rasterized) {
   TRACE_EVENT0("cc", "TileManager::AssignGpuMemoryToTiles");
 
+  // Maintain the list of released resources that can potentially be re-used
+  // or deleted.
+  // If this operation becomes expensive too, only do this after some
+  // resource(s) was returned. Note that in that case, one also need to
+  // invalidate when releasing some resource from the pool.
+  resource_pool_->CheckBusyResources();
+
   // Now give memory out to the tiles until we're out, and build
   // the needs-to-be-rasterized queue.
   all_tiles_that_need_to_be_rasterized_have_memory_ = true;
@@ -618,6 +641,14 @@ void TileManager::AssignGpuMemoryToTiles(
   size_t bytes_left = bytes_allocatable;
   size_t resources_left = resources_allocatable;
   bool oomed = false;
+
+  // Memory we assign to raster tasks now will be deducted from our memory
+  // in future iterations if priorities change. By assigning at most half
+  // the raster limit, we will always have another 50% left even if priorities
+  // change completely (assuming we check for completed/cancelled rasters
+  // between each call to this function).
+  size_t max_raster_bytes = max_raster_usage_bytes_ / 2;
+  size_t raster_bytes = 0;
 
   unsigned schedule_priority = 1u;
   for (PrioritizedTileSet::Iterator it(tiles, true);
@@ -643,13 +674,16 @@ void TileManager::AssignGpuMemoryToTiles(
       continue;
     }
 
+    size_t bytes_if_allocated = BytesConsumedIfAllocated(tile);
+    size_t raster_bytes_if_rastered = raster_bytes + bytes_if_allocated;
+
     size_t tile_bytes = 0;
     size_t tile_resources = 0;
 
     // It costs to maintain a resource.
     for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
       if (mts.tile_versions[mode].resource_) {
-        tile_bytes += BytesConsumedIfAllocated(tile);
+        tile_bytes += bytes_if_allocated;
         tile_resources++;
       }
     }
@@ -657,11 +691,11 @@ void TileManager::AssignGpuMemoryToTiles(
     // Allow lower priority tiles with initialized resources to keep
     // their memory by only assigning memory to new raster tasks if
     // they can be scheduled.
-    if (tiles_that_need_to_be_rasterized->size() < kMaxRasterTasks) {
+    if (raster_bytes_if_rastered <= max_raster_bytes) {
       // If we don't have the required version, and it's not in flight
       // then we'll have to pay to create a new task.
       if (!tile_version.resource_ && tile_version.raster_task_.is_null()) {
-        tile_bytes += BytesConsumedIfAllocated(tile);
+        tile_bytes += bytes_if_allocated;
         tile_resources++;
       }
     }
@@ -696,7 +730,7 @@ void TileManager::AssignGpuMemoryToTiles(
     // 1. Tile size should not impact raster priority.
     // 2. Tiles with existing raster task could otherwise incorrectly
     //    be added as they are not affected by |bytes_allocatable|.
-    if (oomed || tiles_that_need_to_be_rasterized->size() >= kMaxRasterTasks) {
+    if (oomed || raster_bytes_if_rastered > max_raster_bytes) {
       all_tiles_that_need_to_be_rasterized_have_memory_ = false;
       if (tile->required_for_activation())
         all_tiles_required_for_activation_have_memory_ = false;
@@ -704,6 +738,7 @@ void TileManager::AssignGpuMemoryToTiles(
       continue;
     }
 
+    raster_bytes = raster_bytes_if_rastered;
     tiles_that_need_to_be_rasterized->push_back(tile);
   }
 
@@ -815,9 +850,7 @@ RasterWorkerPool::RasterTask TileManager::CreateRasterTask(Tile* tile) {
   ManagedTileState& mts = tile->managed_state();
 
   scoped_ptr<ResourcePool::Resource> resource =
-      resource_pool_->AcquireResource(
-          tile->tile_size_.size(),
-          raster_worker_pool_->GetResourceFormat());
+      resource_pool_->AcquireResource(tile->tile_size_.size());
   const Resource* const_resource = resource.get();
 
   // Create and queue all image decode tasks that this tile depends on.

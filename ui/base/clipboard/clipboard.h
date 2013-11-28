@@ -150,9 +150,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     CBF_HTML,
     CBF_RTF,
     CBF_BOOKMARK,
-    CBF_FILES,
     CBF_WEBKIT,
-    CBF_BITMAP,
     CBF_SMBITMAP,  // Bitmap from shared memory.
     CBF_DATA,  // Arbitrary block of bytes.
   };
@@ -170,18 +168,10 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // CBF_RTF       data         byte array
   // CBF_BOOKMARK  html         char array
   //               url          char array
-  // CBF_LINK      html         char array
-  //               url          char array
-  // CBF_FILES     files        char array representing multiple files.
-  //                            Filenames are separated by null characters and
-  //                            the final filename is double null terminated.
-  //                            The filenames are encoded in platform-specific
-  //                            encoding.
   // CBF_WEBKIT    none         empty vector
-  // CBF_BITMAP    pixels       byte array
-  //               size         gfx::Size struct
   // CBF_SMBITMAP  shared_mem   A pointer to an unmapped base::SharedMemory
-  //                            object containing the bitmap data.
+  //                            object containing the bitmap data. The bitmap
+  //                            data should be premultiplied.
   //               size         gfx::Size struct
   // CBF_DATA      format       char array
   //               data         byte array
@@ -305,9 +295,10 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // |objects|.  The pointer is deleted by DispatchObjects().
   //
   // On non-Windows platforms, |process| is ignored.
-  static void ReplaceSharedMemHandle(ObjectMap* objects,
+  static bool ReplaceSharedMemHandle(ObjectMap* objects,
                                      base::SharedMemoryHandle bitmap_handle,
-                                     base::ProcessHandle process);
+                                     base::ProcessHandle process)
+      WARN_UNUSED_RESULT;
 #if defined(OS_WIN)
   // Firefox text/html
   static const FormatType& GetTextHtmlFormatType();
@@ -343,7 +334,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
 
   void WriteWebSmartPaste();
 
-  void WriteBitmap(const char* pixel_data, const char* size_data);
+  void WriteBitmap(const SkBitmap& bitmap);
 
   void WriteData(const FormatType& format,
                  const char* data_data,

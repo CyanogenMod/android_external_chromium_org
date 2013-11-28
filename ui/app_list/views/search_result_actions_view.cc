@@ -39,7 +39,7 @@ void SearchResultActionsView::SetActions(const SearchResult::Actions& actions) {
 void SearchResultActionsView::CreateImageButton(
     const SearchResult::Action& action) {
   views::ImageButton* button = new views::ImageButton(this);
-  button->set_border(views::Border::CreateEmptyBorder(0, 4, 0, 4));
+  button->set_border(views::Border::CreateEmptyBorder(0, 9, 0, 9));
   button->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
                             views::ImageButton::ALIGN_MIDDLE);
   button->SetImage(views::CustomButton::STATE_NORMAL, &action.base_image);
@@ -55,6 +55,7 @@ void SearchResultActionsView::CreateBlueButton(
   button->SetTooltipText(action.tooltip_text);
   button->SetFont(ui::ResourceBundle::GetSharedInstance().GetFont(
       ui::ResourceBundle::SmallBoldFont));
+  button->set_focusable(false);
   AddChildView(button);
 }
 

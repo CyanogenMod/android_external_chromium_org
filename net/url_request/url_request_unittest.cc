@@ -16,6 +16,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -49,6 +50,7 @@
 #include "net/disk_cache/disk_cache.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
+#include "net/http/http_byte_range.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
@@ -160,6 +162,26 @@ void TestLoadTimingReusedWithProxy(
 
 // Tests load timing information in the case of a cache hit, when no cache
 // validation request was sent over the wire.
+base::StringPiece TestNetResourceProvider(int key) {
+  return "header";
+}
+
+void FillBuffer(char* buffer, size_t len) {
+  static bool called = false;
+  if (!called) {
+    called = true;
+    int seed = static_cast<int>(Time::Now().ToInternalValue());
+    srand(seed);
+  }
+
+  for (size_t i = 0; i < len; i++) {
+    buffer[i] = static_cast<char>(rand());
+    if (!buffer[i])
+      buffer[i] = 'g';
+  }
+}
+
+#if !defined(OS_IOS)
 void TestLoadTimingCacheHitNoNetwork(
     const net::LoadTimingInfo& load_timing_info) {
   EXPECT_FALSE(load_timing_info.socket_reused);
@@ -197,10 +219,6 @@ void TestLoadTimingNoHttpResponse(
   EXPECT_TRUE(load_timing_info.receive_headers_end.is_null());
 }
 
-base::StringPiece TestNetResourceProvider(int key) {
-  return "header";
-}
-
 // Do a case-insensitive search through |haystack| for |needle|.
 bool ContainsString(const std::string& haystack, const char* needle) {
   std::string::const_iterator it =
@@ -210,21 +228,6 @@ bool ContainsString(const std::string& haystack, const char* needle) {
                   needle + strlen(needle),
                   base::CaseInsensitiveCompare<char>());
   return it != haystack.end();
-}
-
-void FillBuffer(char* buffer, size_t len) {
-  static bool called = false;
-  if (!called) {
-    called = true;
-    int seed = static_cast<int>(Time::Now().ToInternalValue());
-    srand(seed);
-  }
-
-  for (size_t i = 0; i < len; i++) {
-    buffer[i] = static_cast<char>(rand());
-    if (!buffer[i])
-      buffer[i] = 'g';
-  }
 }
 
 UploadDataStream* CreateSimpleUploadData(const char* data) {
@@ -276,6 +279,7 @@ bool FingerprintsEqual(const HashValueVector& a, const HashValueVector& b) {
 
   return true;
 }
+#endif  // !defined(OS_IOS)
 
 // A network delegate that allows the user to choose a subset of request stages
 // to block in. When blocking, the delegate can do one of the following:
@@ -756,10 +760,10 @@ TEST_F(URLRequestTest, FileTestFullSpecifiedRange) {
     URLRequest r(temp_url, DEFAULT_PRIORITY, &d, &default_context_);
 
     HttpRequestHeaders headers;
-    headers.SetHeader(HttpRequestHeaders::kRange,
-                      base::StringPrintf(
-                           "bytes=%" PRIuS "-%" PRIuS,
-                           first_byte_position, last_byte_position));
+    headers.SetHeader(
+        HttpRequestHeaders::kRange,
+        net::HttpByteRange::Bounded(
+            first_byte_position, last_byte_position).GetHeaderValue());
     r.SetExtraRequestHeaders(headers);
     r.Start();
     EXPECT_TRUE(r.is_pending());
@@ -801,8 +805,8 @@ TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
 
     HttpRequestHeaders headers;
     headers.SetHeader(HttpRequestHeaders::kRange,
-                      base::StringPrintf("bytes=%" PRIuS "-",
-                                         first_byte_position));
+                      net::HttpByteRange::RightUnbounded(
+                          first_byte_position).GetHeaderValue());
     r.SetExtraRequestHeaders(headers);
     r.Start();
     EXPECT_TRUE(r.is_pending());
@@ -837,8 +841,7 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
     URLRequest r(temp_url, DEFAULT_PRIORITY, &d, &default_context_);
 
     HttpRequestHeaders headers;
-    headers.SetHeader(HttpRequestHeaders::kRange,
-                      "bytes=0-0,10-200,200-300");
+    headers.SetHeader(HttpRequestHeaders::kRange, "bytes=0-0,10-200,200-300");
     r.SetExtraRequestHeaders(headers);
     r.Start();
     EXPECT_TRUE(r.is_pending());
@@ -848,6 +851,40 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
   }
 
   EXPECT_TRUE(base::DeleteFile(temp_path, false));
+}
+
+TEST_F(URLRequestTest, AllowFileURLs) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  base::FilePath test_file;
+  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir.path(), &test_file));
+  std::string test_data("monkey");
+  file_util::WriteFile(test_file, test_data.data(), test_data.size());
+  GURL test_file_url = net::FilePathToFileURL(test_file);
+
+  {
+    TestDelegate d;
+    TestNetworkDelegate network_delegate;
+    network_delegate.set_can_access_files(true);
+    default_context_.set_network_delegate(&network_delegate);
+    URLRequest r(test_file_url, DEFAULT_PRIORITY, &d, &default_context_);
+    r.Start();
+    base::RunLoop().Run();
+    EXPECT_FALSE(d.request_failed());
+    EXPECT_EQ(test_data, d.data_received());
+  }
+
+  {
+    TestDelegate d;
+    TestNetworkDelegate network_delegate;
+    network_delegate.set_can_access_files(false);
+    default_context_.set_network_delegate(&network_delegate);
+    URLRequest r(test_file_url, DEFAULT_PRIORITY, &d, &default_context_);
+    r.Start();
+    base::RunLoop().Run();
+    EXPECT_TRUE(d.request_failed());
+    EXPECT_EQ("", d.data_received());
+  }
 }
 
 TEST_F(URLRequestTest, InvalidUrlTest) {
@@ -1896,6 +1933,31 @@ TEST_F(URLRequestTest, SetJobPriority) {
   EXPECT_EQ(MEDIUM, job->priority());
 }
 
+// Setting the IGNORE_LIMITS load flag should be okay if the priority
+// is MAXIMUM_PRIORITY.
+TEST_F(URLRequestTest, PriorityIgnoreLimits) {
+  TestDelegate d;
+  URLRequest req(GURL("http://test_intercept/foo"),
+                 MAXIMUM_PRIORITY,
+                 &d,
+                 &default_context_);
+  EXPECT_EQ(MAXIMUM_PRIORITY, req.priority());
+
+  scoped_refptr<URLRequestTestJob> job =
+      new URLRequestTestJob(&req, &default_network_delegate_);
+  AddTestInterceptor()->set_main_intercept_job(job.get());
+
+  req.SetLoadFlags(LOAD_IGNORE_LIMITS);
+  EXPECT_EQ(MAXIMUM_PRIORITY, req.priority());
+
+  req.SetPriority(MAXIMUM_PRIORITY);
+  EXPECT_EQ(MAXIMUM_PRIORITY, req.priority());
+
+  req.Start();
+  EXPECT_EQ(MAXIMUM_PRIORITY, req.priority());
+  EXPECT_EQ(MAXIMUM_PRIORITY, job->priority());
+}
+
 // TODO(droger): Support SpawnedTestServer on iOS (see http://crbug.com/148666).
 #if !defined(OS_IOS)
 // A subclass of SpawnedTestServer that uses a statically-configured hostname.
@@ -2004,7 +2066,7 @@ TEST_F(URLRequestTest, DoNotSendCookies) {
                    DEFAULT_PRIORITY,
                    &d,
                    &default_context_);
-    req.set_load_flags(LOAD_DO_NOT_SEND_COOKIES);
+    req.SetLoadFlags(LOAD_DO_NOT_SEND_COOKIES);
     req.Start();
     base::RunLoop().Run();
 
@@ -2048,7 +2110,7 @@ TEST_F(URLRequestTest, DoNotSaveCookies) {
         DEFAULT_PRIORITY,
         &d,
         &default_context_);
-    req.set_load_flags(LOAD_DO_NOT_SAVE_COOKIES);
+    req.SetLoadFlags(LOAD_DO_NOT_SAVE_COOKIES);
     req.Start();
 
     base::RunLoop().Run();
@@ -2490,7 +2552,7 @@ TEST_F(URLRequestTest, DoNotOverrideReferrer) {
     HttpRequestHeaders headers;
     headers.SetHeader(HttpRequestHeaders::kReferer, "http://bar.com/");
     req.SetExtraRequestHeaders(headers);
-    req.set_load_flags(LOAD_VALIDATE_CACHE);
+    req.SetLoadFlags(LOAD_VALIDATE_CACHE);
 
     req.Start();
     base::RunLoop().Run();
@@ -4655,15 +4717,6 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
                                     0,
                                     kuint64max,
                                     base::Time()));
-
-    // This file should just be ignored in the upload stream.
-    element_readers.push_back(new UploadFileElementReader(
-        base::MessageLoopProxy::current().get(),
-        base::FilePath(FILE_PATH_LITERAL(
-            "c:\\path\\to\\non\\existant\\file.randomness.12345")),
-        0,
-        kuint64max,
-        base::Time()));
     r.set_upload(make_scoped_ptr(
         new UploadDataStream(element_readers.Pass(), 0)));
 
@@ -4686,6 +4739,50 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
 
     EXPECT_EQ(size, d.bytes_received());
     EXPECT_EQ(std::string(&buf[0], size), d.data_received());
+  }
+}
+
+TEST_F(URLRequestTestHTTP, PostUnreadableFileTest) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  {
+    URLRequest r(test_server_.GetURL("echo"), DEFAULT_PRIORITY,
+                 &d, &default_context_);
+    r.set_method("POST");
+
+    ScopedVector<UploadElementReader> element_readers;
+
+    element_readers.push_back(new UploadFileElementReader(
+        base::MessageLoopProxy::current().get(),
+        base::FilePath(FILE_PATH_LITERAL(
+            "c:\\path\\to\\non\\existant\\file.randomness.12345")),
+        0,
+        kuint64max,
+        base::Time()));
+    r.set_upload(make_scoped_ptr(
+        new UploadDataStream(element_readers.Pass(), 0)));
+
+    r.Start();
+    EXPECT_TRUE(r.is_pending());
+
+    base::RunLoop().Run();
+
+    // TODO(tzik): Remove this #if after we stop supporting Chrome Frame.
+    // http://crbug.com/317432
+#if defined(CHROME_FRAME_NET_TESTS)
+    EXPECT_FALSE(d.request_failed());
+    EXPECT_FALSE(d.received_data_before_response());
+    EXPECT_EQ(0, d.bytes_received());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(OK, r.status().error());
+#else
+    EXPECT_TRUE(d.request_failed());
+    EXPECT_FALSE(d.received_data_before_response());
+    EXPECT_EQ(0, d.bytes_received());
+    EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    EXPECT_EQ(ERR_FILE_NOT_FOUND, r.status().error());
+#endif  // defined(CHROME_FRAME_NET_TESTS)
   }
 }
 
@@ -5301,7 +5398,7 @@ TEST_F(URLRequestTestHTTP, BasicAuth) {
                  DEFAULT_PRIORITY,
                  &d,
                  &default_context_);
-    r.set_load_flags(LOAD_VALIDATE_CACHE);
+    r.SetLoadFlags(LOAD_VALIDATE_CACHE);
     r.Start();
 
     base::RunLoop().Run();
@@ -5421,7 +5518,7 @@ TEST_F(URLRequestTestHTTP, BasicAuthLoadTiming) {
                  DEFAULT_PRIORITY,
                  &d,
                  &default_context_);
-    r.set_load_flags(LOAD_VALIDATE_CACHE);
+    r.SetLoadFlags(LOAD_VALIDATE_CACHE);
     r.Start();
 
     base::RunLoop().Run();

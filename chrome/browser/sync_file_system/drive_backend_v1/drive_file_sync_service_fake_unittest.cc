@@ -28,10 +28,10 @@
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
 #include "extensions/common/id_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -88,6 +88,7 @@ void DidProcessRemoteChange(SyncStatusCode* status_out,
   *url_out = url;
 }
 
+#if !defined(OS_ANDROID)
 void DidGetRemoteVersions(
     SyncStatusCode* status_out,
     std::vector<RemoteFileSyncService::Version>* versions_out,
@@ -105,6 +106,7 @@ void DidDownloadRemoteVersion(
   *status_out = status;
   *downloaded_out = downloaded.Pass();
 }
+#endif  // !defined(OS_ANDROID)
 
 void ExpectEqStatus(bool* done,
                     SyncStatusCode expected,
@@ -144,6 +146,7 @@ GURL ExtensionNameToGURL(const std::string& extension_name) {
       ExtensionNameToId(extension_name));
 }
 
+#if !defined(OS_ANDROID)
 ACTION(InvokeCompletionCallback) {
   base::MessageLoopProxy::current()->PostTask(FROM_HERE, arg2);
 }
@@ -179,6 +182,7 @@ ACTION(InvokeDidApplyRemoteChange) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE, base::Bind(arg3, SYNC_STATUS_OK));
 }
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace
 

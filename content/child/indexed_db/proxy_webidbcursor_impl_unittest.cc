@@ -14,11 +14,11 @@
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 
-using WebKit::WebData;
-using WebKit::WebIDBCallbacks;
-using WebKit::WebIDBDatabase;
-using WebKit::WebIDBKey;
-using WebKit::WebIDBKeyTypeNumber;
+using blink::WebData;
+using blink::WebIDBCallbacks;
+using blink::WebIDBDatabase;
+using blink::WebIDBKey;
+using blink::WebIDBKeyTypeNumber;
 
 namespace content {
 
@@ -41,7 +41,8 @@ class MockDispatcher : public IndexedDBDispatcher {
     callbacks_.reset(callbacks);
   }
 
-  virtual void RequestIDBCursorContinue(const IndexedDBKey&,
+  virtual void RequestIDBCursorContinue(const IndexedDBKey& key,
+                                        const IndexedDBKey& primary_key,
                                         WebIDBCallbacks* callbacks,
                                         int32 ipc_cursor_id) OVERRIDE {
     ++continue_calls_;

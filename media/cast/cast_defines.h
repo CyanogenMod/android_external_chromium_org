@@ -18,7 +18,7 @@ namespace cast {
 
 const int64 kDontShowTimeoutMs = 33;
 const float kDefaultCongestionControlBackOff = 0.875f;
-const uint8 kStartFrameId = 255;
+const uint32 kStartFrameId = GG_UINT32_C(0xffffffff);
 const uint32 kVideoFrequency = 90000;
 const int64 kSkippedFramesCheckPeriodkMs = 10000;
 
@@ -30,6 +30,8 @@ const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
 
 enum DefaultSettings {
+  kDefaultAudioEncoderBitrate = 0,  // This means "auto," and may mean VBR.
+  kDefaultAudioSamplingRate = 48000,
   kDefaultMaxQp = 56,
   kDefaultMinQp = 4,
   kDefaultMaxFrameRate = 30,
@@ -45,6 +47,9 @@ const size_t kMinLengthOfRtcp = 8;
 
 // Basic RTP header + cast header.
 const size_t kMinLengthOfRtp = 12 + 6;
+
+const size_t kAesBlockSize = 16;
+const size_t kAesKeySize = 16;
 
 // Each uint16 represents one packet id within a cast frame.
 typedef std::set<uint16> PacketIdSet;
@@ -63,12 +68,12 @@ static const int64 kUnixEpochInNtpSeconds = GG_INT64_C(2208988800);
 // fractional NTP seconds.
 static const double kMagicFractionalUnit = 4.294967296E3;
 
-inline bool IsNewerFrameId(uint8 frame_id, uint8 prev_frame_id) {
+inline bool IsNewerFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id != prev_frame_id) &&
-      static_cast<uint8>(frame_id - prev_frame_id) < 0x80;
+      static_cast<uint32>(frame_id - prev_frame_id) < 0x80000000;
 }
 
-inline bool IsOlderFrameId(uint8 frame_id, uint8 prev_frame_id) {
+inline bool IsOlderFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id == prev_frame_id) || IsNewerFrameId(prev_frame_id, frame_id);
 }
 
@@ -128,6 +133,64 @@ inline base::TimeTicks ConvertNtpToTimeTicks(uint32 ntp_seconds,
       base::TimeDelta::FromMicroseconds(ntp_time_us -
           (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond));
   return base::TimeTicks::UnixEpoch() + elapsed_since_unix_epoch;
+}
+
+class FrameIdWrapHelper {
+ public:
+  FrameIdWrapHelper()
+      : first_(true),
+        can_we_wrap_(false),
+        frame_id_wrap_count_(0) {}
+
+  uint32 MapTo32bitsFrameId(const uint8 over_the_wire_frame_id) {
+    if (first_) {
+      first_ = false;
+      if (over_the_wire_frame_id == 0xff) {
+        // Special case for startup.
+        return kStartFrameId;
+      }
+    }
+    if (can_we_wrap_) {
+      if (over_the_wire_frame_id < 0x0f) {
+        // Disable wrap check until we are closer to the max of uint8.
+        can_we_wrap_ = false;
+      }
+    } else {
+      if (over_the_wire_frame_id > 0xf0) {
+        // Enable wrap check until we have wrapped.
+        can_we_wrap_ = true;
+      }
+    }
+    return (frame_id_wrap_count_ << 8) + over_the_wire_frame_id;
+  }
+
+ private:
+  bool first_;
+  bool can_we_wrap_;
+  uint32 frame_id_wrap_count_;
+};
+
+inline std::string GetAesNonce(uint32 frame_id, const std::string& iv_mask) {
+  std::string aes_nonce(kAesBlockSize, 0);
+
+  // Serializing frame_id in big-endian order (aes_nonce[8] is the most
+  // significant byte of frame_id).
+  aes_nonce[11] = frame_id & 0xff;
+  aes_nonce[10] = (frame_id >> 8) & 0xff;
+  aes_nonce[9] = (frame_id >> 16) & 0xff;
+  aes_nonce[8] = (frame_id >> 24) & 0xff;
+
+  for (size_t i = 0; i < kAesBlockSize; ++i) {
+    aes_nonce[i] ^= iv_mask[i];
+  }
+  return aes_nonce;
+}
+
+inline uint32 GetVideoRtpTimestamp(const base::TimeTicks& time_ticks) {
+  base::TimeTicks zero_time;
+  base::TimeDelta recorded_delta = time_ticks - zero_time;
+  // Timestamp is in 90 KHz for video.
+  return static_cast<uint32>(recorded_delta.InMilliseconds() * 90);
 }
 
 }  // namespace cast

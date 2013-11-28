@@ -9,6 +9,7 @@
 #include "base/android/jni_helper.h"
 #include "base/android/scoped_java_ref.h"
 #include "jni/WindowAndroid_jni.h"
+#include "ui/base/android/window_android_observer.h"
 
 namespace ui {
 
@@ -50,13 +51,41 @@ bool WindowAndroid::GrabSnapshot(
   return true;
 }
 
+void WindowAndroid::OnCompositingDidCommit() {
+  FOR_EACH_OBSERVER(WindowAndroidObserver,
+                    observer_list_,
+                    OnCompositingDidCommit());
+}
+
+void WindowAndroid::AddObserver(WindowAndroidObserver* observer) {
+  if (!observer_list_.HasObserver(observer))
+    observer_list_.AddObserver(observer);
+}
+
+void WindowAndroid::RemoveObserver(WindowAndroidObserver* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
+void WindowAndroid::AttachCompositor() {
+  FOR_EACH_OBSERVER(WindowAndroidObserver,
+                    observer_list_,
+                    OnAttachCompositor());
+}
+
+void WindowAndroid::DetachCompositor() {
+  FOR_EACH_OBSERVER(WindowAndroidObserver,
+                    observer_list_,
+                    OnDetachCompositor());
+  observer_list_.Clear();
+}
+
 // ----------------------------------------------------------------------------
 // Native JNI methods
 // ----------------------------------------------------------------------------
 
-jint Init(JNIEnv* env, jobject obj) {
+jlong Init(JNIEnv* env, jobject obj) {
   WindowAndroid* window = new WindowAndroid(env, obj);
-  return reinterpret_cast<jint>(window);
+  return reinterpret_cast<intptr_t>(window);
 }
 
 }  // namespace ui

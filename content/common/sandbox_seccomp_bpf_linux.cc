@@ -42,6 +42,7 @@
 #endif
 
 #if defined(SECCOMP_BPF_SANDBOX)
+#include "base/posix/eintr_wrapper.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
@@ -1900,8 +1901,8 @@ void WarmupPolicy(Sandbox::EvaluateSyscall policy,
     InitGpuBrokerProcess(policy, broker_process);
 
     if (IsArchitectureX86_64() || IsArchitectureI386()) {
-      // Accelerated video decode dlopen()'s a shared object
-      // inside the sandbox, so preload it now.
+      // Accelerated video decode dlopen()'s some shared objects
+      // inside the sandbox, so preload them now.
       if (IsAcceleratedVideoDecodeEnabled()) {
         const char* I965DrvVideoPath = NULL;
 
@@ -1912,12 +1913,17 @@ void WarmupPolicy(Sandbox::EvaluateSyscall policy,
         }
 
         dlopen(I965DrvVideoPath, RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+        dlopen("libva.so.1", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+        dlopen("libva-x11.so.1", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
       }
     }
   } else if (policy == ArmGpuProcessPolicy ||
              policy == ArmGpuProcessPolicyWithShmat) {
     // Create a new broker process.
     InitGpuBrokerProcess(policy, broker_process);
+
+    // Preload the Mali library.
+    dlopen("/usr/lib/libmali.so", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
 
     // Preload the Tegra libraries.
     dlopen("/usr/lib/libnvrm.so", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
@@ -1977,7 +1983,7 @@ void StartSandboxWithPolicy(Sandbox::EvaluateSyscall syscall_policy,
   // the object to be destroyed after the sandbox has been started. Note that
   // doing so does not stop the sandbox.
   Sandbox sandbox;
-  sandbox.SetSandboxPolicy(syscall_policy, broker_process);
+  sandbox.SetSandboxPolicyDeprecated(syscall_policy, broker_process);
   sandbox.StartSandbox();
 }
 

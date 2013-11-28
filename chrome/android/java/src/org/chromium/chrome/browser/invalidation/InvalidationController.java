@@ -14,6 +14,7 @@ import com.google.common.base.Preconditions;
 import org.chromium.base.ActivityStatus;
 import org.chromium.base.CalledByNative;
 import org.chromium.sync.internal_api.pub.base.ModelType;
+import org.chromium.sync.notifier.InvalidationClientNameProvider;
 import org.chromium.sync.notifier.InvalidationIntentProtocol;
 import org.chromium.sync.notifier.InvalidationPreferences;
 import org.chromium.sync.notifier.InvalidationService;
@@ -27,6 +28,13 @@ import java.util.Set;
  */
 public class InvalidationController implements ActivityStatus.StateListener {
     private static final Object LOCK = new Object();
+
+    // TODO: These constants are defined here only to maintain compatibility with downstream.  They
+    // should be removed eventually.
+    // Key to use when initializing the UniqueIdentificationGeneratorFactory's entry for this class.
+    public static final String ID_GENERATOR = "INVALIDATION_CONTROLLER_ID_GENERATOR";
+    // Pref key to use for UUID-based generator.
+    public static final String INVALIDATIONS_UUID_PREF_KEY = "chromium.invalidations.uuid";
 
     private static InvalidationController sInstance;
 
@@ -130,5 +138,17 @@ public class InvalidationController implements ActivityStatus.StateListener {
                 start();
             }
         }
+    }
+
+    /**
+     * Fetches the Invalidator client name.
+     *
+     * Note that there is a naming discrepancy here.  In C++, we refer to the invalidation client
+     * identifier that is unique for every invalidation client instance in an account as the client
+     * ID.  In Java, we call it the client name.
+     */
+    @CalledByNative
+    public byte[] getInvalidatorClientId() {
+        return InvalidationClientNameProvider.get().getInvalidatorClientName();
     }
 }

@@ -526,7 +526,7 @@ void JumpList::Observe(int type,
       if (top_sites) {
         top_sites->GetMostVisitedURLs(
             base::Bind(&JumpList::OnMostVisitedURLsAvailable,
-                       weak_ptr_factory_.GetWeakPtr()));
+                       weak_ptr_factory_.GetWeakPtr()), false);
       }
       break;
     }
@@ -684,8 +684,7 @@ void JumpList::StartLoadingFavicon() {
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
   task_id_ = favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(profile_,
-                                          url,
+      FaviconService::FaviconForURLParams(url,
                                           chrome::FAVICON,
                                           gfx::kFaviconSize),
       base::Bind(&JumpList::OnFaviconDataAvailable,

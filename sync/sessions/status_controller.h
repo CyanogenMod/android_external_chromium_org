@@ -47,12 +47,6 @@ class SYNC_EXPORT_PRIVATE StatusController {
   ~StatusController();
 
   // ClientToServer messages.
-  const ModelTypeSet updates_request_types() const {
-    return model_neutral_.updates_request_types;
-  }
-  void set_updates_request_types(ModelTypeSet value) {
-    model_neutral_.updates_request_types = value;
-  }
   const ModelTypeSet commit_request_types() const {
     return model_neutral_.commit_request_types;
   }
@@ -146,10 +140,6 @@ class SYNC_EXPORT_PRIVATE StatusController {
   void set_types_needing_local_migration(ModelTypeSet types);
 
   void UpdateStartTime();
-
-  void set_debug_info_sent();
-
-  bool debug_info_sent() const;
 
  private:
   friend class ScopedModelSafeGroupRestriction;

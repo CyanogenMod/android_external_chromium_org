@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/browser_command_controller.h"
 
+#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
@@ -29,6 +30,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_utils.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_restriction.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
@@ -61,7 +63,7 @@
 #include "ash/multi_profile_uma.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
-#include "chrome/browser/ui/ash/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #endif
 
 using content::NavigationEntry;
@@ -487,11 +489,14 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       browser_->SetMetroSnapMode(false);
       break;
     case IDC_WIN8_DESKTOP_RESTART:
+      if (!VerifyMetroSwitchForApps(window()->GetNativeWindow(), id))
+        break;
+
       chrome::AttemptRestartToDesktopMode();
       content::RecordAction(content::UserMetricsAction("Win8DesktopRestart"));
       break;
     case IDC_WIN8_METRO_RESTART:
-      if (!VerifySwitchToMetroForApps(window()->GetNativeWindow()))
+      if (!VerifyMetroSwitchForApps(window()->GetNativeWindow(), id))
         break;
 
       // SwitchToMetroUIHandler deletes itself.
@@ -651,6 +656,9 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_CREATE_SHORTCUTS:
       CreateApplicationShortcuts(browser_);
+      break;
+    case IDC_CREATE_HOSTED_APP:
+      CreateHostedAppFromCurrentWebContents(browser_);
       break;
     case IDC_DEV_TOOLS:
       ToggleDevToolsWindow(browser_, DevToolsToggleAction::Show());
@@ -1078,7 +1086,7 @@ void BrowserCommandController::UpdateCommandsForTabState() {
 
   // Changing the encoding is not possible on Chrome-internal webpages.
   NavigationController& nc = current_web_contents->GetController();
-  bool is_chrome_internal = HasInternalURL(nc.GetActiveEntry()) ||
+  bool is_chrome_internal = HasInternalURL(nc.GetLastCommittedEntry()) ||
       current_web_contents->ShowingInterstitialPage();
   command_updater_.UpdateCommandEnabled(IDC_ENCODING_MENU,
       !is_chrome_internal && current_web_contents->IsSavable());
@@ -1089,6 +1097,9 @@ void BrowserCommandController::UpdateCommandsForTabState() {
 #if !defined(OS_MACOSX)
   command_updater_.UpdateCommandEnabled(
       IDC_CREATE_SHORTCUTS,
+      CanCreateApplicationShortcuts(browser_));
+  command_updater_.UpdateCommandEnabled(
+      IDC_CREATE_HOSTED_APP,
       CanCreateApplicationShortcuts(browser_));
 #endif
 

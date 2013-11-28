@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -127,12 +127,14 @@ def MethodFromData(kinds, data):
 def InterfaceToData(interface):
   return {
     istr(0, 'name'):    interface.name,
-    istr(1, 'methods'): map(MethodToData, interface.methods)
+    istr(1, 'peer'):    interface.peer,
+    istr(2, 'methods'): map(MethodToData, interface.methods)
   }
 
 def InterfaceFromData(kinds, data):
   interface = mojom.Interface()
   interface.name = data['name']
+  interface.peer = data['peer']
   interface.methods = map(
     lambda method: MethodFromData(kinds, method), data['methods'])
   return interface
@@ -159,6 +161,13 @@ def ModuleFromData(data):
     lambda interface: InterfaceFromData(kinds, interface), data['interfaces'])
   return module
 
-
-
-
+def OrderedModuleFromData(data):
+  module = ModuleFromData(data)
+  next_interface_ordinal = 0
+  for interface in module.interfaces:
+    next_ordinal = 0
+    for method in interface.methods:
+      if method.ordinal is None:
+        method.ordinal = next_ordinal
+      next_ordinal = method.ordinal + 1
+  return module

@@ -87,6 +87,7 @@
 #include "printing/units.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/platform_device.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -94,7 +95,6 @@
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
@@ -111,9 +111,11 @@
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
+#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
+#include "ui/gfx/size_conversions.h"
 #include "v8/include/v8.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
@@ -152,27 +154,27 @@ using ppapi::thunk::PPB_ImageData_API;
 using ppapi::Var;
 using ppapi::ArrayBufferVar;
 using ppapi::ViewData;
-using WebKit::WebBindings;
-using WebKit::WebCanvas;
-using WebKit::WebCursorInfo;
-using WebKit::WebDocument;
-using WebKit::WebElement;
-using WebKit::WebFrame;
-using WebKit::WebInputEvent;
-using WebKit::WebPlugin;
-using WebKit::WebPluginContainer;
-using WebKit::WebPrintParams;
-using WebKit::WebPrintScalingOption;
-using WebKit::WebScopedUserGesture;
-using WebKit::WebString;
-using WebKit::WebURLError;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderClient;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
-using WebKit::WebUserGestureIndicator;
-using WebKit::WebUserGestureToken;
-using WebKit::WebView;
+using blink::WebBindings;
+using blink::WebCanvas;
+using blink::WebCursorInfo;
+using blink::WebDocument;
+using blink::WebElement;
+using blink::WebFrame;
+using blink::WebInputEvent;
+using blink::WebPlugin;
+using blink::WebPluginContainer;
+using blink::WebPrintParams;
+using blink::WebPrintScalingOption;
+using blink::WebScopedUserGesture;
+using blink::WebString;
+using blink::WebURLError;
+using blink::WebURLLoader;
+using blink::WebURLLoaderClient;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
+using blink::WebUserGestureIndicator;
+using blink::WebUserGestureToken;
+using blink::WebView;
 
 namespace content {
 
@@ -302,20 +304,20 @@ COMPILE_ASSERT_MATCHING_ENUM(TypeGrabbing, PP_MOUSECURSOR_TYPE_GRABBING);
 // Do not assert WebCursorInfo::TypeCustom == PP_CURSORTYPE_CUSTOM;
 // PP_CURSORTYPE_CUSTOM is pinned to allow new cursor types.
 
-COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(WebKit::WebPrintScalingOptionNone,
+COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(blink::WebPrintScalingOptionNone,
                                            PP_PRINTSCALINGOPTION_NONE);
 COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(
-    WebKit::WebPrintScalingOptionFitToPrintableArea,
+    blink::WebPrintScalingOptionFitToPrintableArea,
     PP_PRINTSCALINGOPTION_FIT_TO_PRINTABLE_AREA);
 COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(
-    WebKit::WebPrintScalingOptionSourceSize, PP_PRINTSCALINGOPTION_SOURCE_SIZE);
+    blink::WebPrintScalingOptionSourceSize, PP_PRINTSCALINGOPTION_SOURCE_SIZE);
 
 // Sets |*security_origin| to be the WebKit security origin associated with the
 // document containing the given plugin instance. On success, returns true. If
 // the instance is invalid, returns false and |*security_origin| will be
 // unchanged.
 bool SecurityOriginForInstance(PP_Instance instance_id,
-                               WebKit::WebSecurityOrigin* security_origin) {
+                               blink::WebSecurityOrigin* security_origin) {
   PepperPluginInstanceImpl* instance =
       HostGlobals::Get()->GetInstance(instance_id);
   if (!instance)
@@ -341,13 +343,13 @@ scoped_ptr<const char*[]> StringVectorToArgArray(
 // a plugin. Some poorly behaving plugins (like Flash) incorrectly report that
 // they handle all keys sent to them. This can prevent keystrokes from working
 // for things like screen brightness and volume control.
-bool IsReservedSystemInputEvent(const WebKit::WebInputEvent& event) {
+bool IsReservedSystemInputEvent(const blink::WebInputEvent& event) {
 #if defined(OS_CHROMEOS)
   if (event.type != WebInputEvent::KeyDown &&
       event.type != WebInputEvent::KeyUp)
     return false;
-  const WebKit::WebKeyboardEvent& key_event =
-      static_cast<const WebKit::WebKeyboardEvent&>(event);
+  const blink::WebKeyboardEvent& key_event =
+      static_cast<const blink::WebKeyboardEvent&>(event);
   switch (key_event.windowsKeyCode) {
     case ui::VKEY_BRIGHTNESS_DOWN:
     case ui::VKEY_BRIGHTNESS_UP:
@@ -378,7 +380,7 @@ class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
   }
 
   virtual bool HandleMouseLockedInputEvent(
-      const WebKit::WebMouseEvent &event) OVERRIDE {
+      const blink::WebMouseEvent &event) OVERRIDE {
     plugin_->HandleMouseLockedInputEvent(event);
     return true;
   }
@@ -466,7 +468,7 @@ PPB_Gamepad_API* PepperPluginInstanceImpl::GamepadImpl::AsPPB_Gamepad_API() {
 void PepperPluginInstanceImpl::GamepadImpl::Sample(
     PP_Instance instance,
     PP_GamepadsSampleData* data) {
-  WebKit::WebGamepads webkit_data;
+  blink::WebGamepads webkit_data;
   RenderThreadImpl::current()->SampleGamepads(&webkit_data);
   ConvertWebKitGamepadData(
       bit_cast<ppapi::WebKitGamepads>(webkit_data), data);
@@ -524,7 +526,9 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       external_document_load_(false),
       npp_(new NPP_t),
       isolate_(v8::Isolate::GetCurrent()),
-      view_change_weak_ptr_factory_(this) {
+      is_deleted_(false),
+      view_change_weak_ptr_factory_(this),
+      weak_factory_(this) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
@@ -600,6 +604,8 @@ PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
 // returned, then it needs to keep its own reference on the stack.
 
 void PepperPluginInstanceImpl::Delete() {
+  is_deleted_ = true;
+
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
   // Force the MessageChannel to release its "passthrough object" which should
@@ -628,6 +634,10 @@ void PepperPluginInstanceImpl::Delete() {
   // destruction, so we need its pointers to be up-to-date.
   BindGraphics(pp_instance(), 0);
   container_ = NULL;
+}
+
+bool PepperPluginInstanceImpl::is_deleted() const {
+  return is_deleted_;
 }
 
 void PepperPluginInstanceImpl::Paint(WebCanvas* canvas,
@@ -769,7 +779,7 @@ bool PepperPluginInstanceImpl::Initialize(
 }
 
 bool PepperPluginInstanceImpl::HandleDocumentLoad(
-    const WebKit::WebURLResponse& response) {
+    const blink::WebURLResponse& response) {
   DCHECK(!document_loader_);
   if (external_document_load_) {
     // The external proxy isn't available, so save the response and record
@@ -813,7 +823,7 @@ bool PepperPluginInstanceImpl::HandleDocumentLoad(
       pp_instance(),
       response,
       base::Bind(&PepperPluginInstanceImpl::DidDataFromWebURLResponse,
-                 AsWeakPtr(),
+                 weak_factory_.GetWeakPtr(),
                  response,
                  pending_host_id));
 
@@ -825,7 +835,7 @@ bool PepperPluginInstanceImpl::HandleDocumentLoad(
 
 bool PepperPluginInstanceImpl::SendCompositionEventToPlugin(
     PP_InputEvent_Type type, const base::string16& text) {
-  std::vector<WebKit::WebCompositionUnderline> empty;
+  std::vector<blink::WebCompositionUnderline> empty;
   return SendCompositionEventWithUnderlineInformationToPlugin(
       type, text, empty, static_cast<int>(text.size()),
       static_cast<int>(text.size()));
@@ -835,7 +845,7 @@ bool PepperPluginInstanceImpl::
     SendCompositionEventWithUnderlineInformationToPlugin(
         PP_InputEvent_Type type,
         const base::string16& text,
-        const std::vector<WebKit::WebCompositionUnderline>& underlines,
+        const std::vector<blink::WebCompositionUnderline>& underlines,
         int selection_start,
         int selection_end) {
   // Keep a reference on the stack. See NOTE above.
@@ -924,7 +934,7 @@ bool PepperPluginInstanceImpl::HandleCompositionStart(
 
 bool PepperPluginInstanceImpl::HandleCompositionUpdate(
     const base::string16& text,
-    const std::vector<WebKit::WebCompositionUnderline>& underlines,
+    const std::vector<blink::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
   return SendCompositionEventWithUnderlineInformationToPlugin(
@@ -979,7 +989,7 @@ gfx::Rect PepperPluginInstanceImpl::GetCaretBounds() const {
 }
 
 bool PepperPluginInstanceImpl::HandleInputEvent(
-    const WebKit::WebInputEvent& event,
+    const blink::WebInputEvent& event,
     WebCursorInfo* cursor_info) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleInputEvent");
 
@@ -1374,12 +1384,22 @@ bool PepperPluginInstanceImpl::LoadPrintInterface() {
 }
 
 bool PepperPluginInstanceImpl::LoadPrivateInterface() {
+  // If this is a NaCl app, we want to talk to the trusted NaCl plugin to
+  // call GetInstanceObject. This is necessary to ensure that the properties
+  // the trusted plugin exposes (readyState and lastError) work properly. Note
+  // that untrusted NaCl apps are not allowed to provide PPP_InstancePrivate,
+  // so it's correct to never look up PPP_InstancePrivate for them.
+  //
+  // If this is *not* a NaCl plugin, original_module_ will never be set; we talk
+  // to the "real" module.
+  scoped_refptr<PluginModule> module = original_module_ ? original_module_ :
+                                                          module_;
   // Only check for the interface if the plugin has private permission.
-  if (!module_->permissions().HasPermission(ppapi::PERMISSION_PRIVATE))
+  if (!module->permissions().HasPermission(ppapi::PERMISSION_PRIVATE))
     return false;
   if (!plugin_private_interface_) {
     plugin_private_interface_ = static_cast<const PPP_Instance_Private*>(
-        module_->GetPluginInterface(PPP_INSTANCE_PRIVATE_INTERFACE));
+        module->GetPluginInterface(PPP_INSTANCE_PRIVATE_INTERFACE));
   }
 
   return !!plugin_private_interface_;
@@ -1438,8 +1458,8 @@ void PepperPluginInstanceImpl::UpdateTouchEventRequest() {
   bool raw_touch = (filtered_input_event_mask_ & PP_INPUTEVENT_CLASS_TOUCH) ||
                    (input_event_mask_ & PP_INPUTEVENT_CLASS_TOUCH);
   container_->requestTouchEventType(raw_touch ?
-      WebKit::WebPluginContainer::TouchEventRequestTypeRaw :
-      WebKit::WebPluginContainer::TouchEventRequestTypeSynthesizedMouse);
+      blink::WebPluginContainer::TouchEventRequestTypeRaw :
+      blink::WebPluginContainer::TouchEventRequestTypeSynthesizedMouse);
 }
 
 bool PepperPluginInstanceImpl::IsAcceptingWheelEvents() const {
@@ -1476,16 +1496,6 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
        last_sent_view_data_.Equals(view_data_)))
     return;  // Nothing to update.
 
-  const PP_Size& size = view_data_.rect.size;
-  // Avoid sending a notification with a huge rectangle.
-  if (size.width < 0  || size.width > kMaxPluginSideLength ||
-      size.height < 0 || size.height > kMaxPluginSideLength ||
-      // We know this won't overflow due to above checks.
-      static_cast<uint32>(size.width) * static_cast<uint32>(size.height) >
-          kMaxPluginSize) {
-    return;
-  }
-
   sent_initial_did_change_view_ = true;
   last_sent_view_data_ = view_data_;
   ScopedPPResource resource(
@@ -1493,9 +1503,16 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
       (new PPB_View_Shared(ppapi::OBJECT_IS_IMPL,
                            pp_instance(), view_data_))->GetReference());
 
-  instance_interface_->DidChangeView(pp_instance(), resource,
-                                     &view_data_.rect,
-                                     &view_data_.clip_rect);
+  if (bound_graphics_2d_platform_)
+    bound_graphics_2d_platform_->DidChangeView(view_data_);
+
+  // It's possible that Delete() has been called but the renderer hasn't
+  // released its reference to this object yet.
+  if (instance_interface_) {
+    instance_interface_->DidChangeView(pp_instance(), resource,
+                                       &view_data_.rect,
+                                       &view_data_.clip_rect);
+  }
 }
 
 void PepperPluginInstanceImpl::ReportGeometry() {
@@ -1565,7 +1582,7 @@ int PepperPluginInstanceImpl::PrintBegin(const WebPrintParams& print_params) {
 }
 
 bool PepperPluginInstanceImpl::PrintPage(int page_number,
-                                         WebKit::WebCanvas* canvas) {
+                                         blink::WebCanvas* canvas) {
 #if defined(ENABLE_FULL_PRINTING)
   DCHECK(plugin_print_interface_);
   PP_PrintPageNumberRange_Dev page_range;
@@ -1591,7 +1608,7 @@ bool PepperPluginInstanceImpl::PrintPage(int page_number,
 bool PepperPluginInstanceImpl::PrintPageHelper(
     PP_PrintPageNumberRange_Dev* page_ranges,
     int num_ranges,
-    WebKit::WebCanvas* canvas) {
+    blink::WebCanvas* canvas) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
   DCHECK(plugin_print_interface_);
@@ -1745,7 +1762,7 @@ bool PepperPluginInstanceImpl::IsViewAccelerated() {
 }
 
 bool PepperPluginInstanceImpl::PrintPDFOutput(PP_Resource print_output,
-                                              WebKit::WebCanvas* canvas) {
+                                              blink::WebCanvas* canvas) {
 #if defined(ENABLE_FULL_PRINTING)
   ppapi::thunk::EnterResourceNoLock<PPB_Buffer_API> enter(print_output, true);
   if (enter.failed())
@@ -1868,6 +1885,7 @@ void PepperPluginInstanceImpl::UpdateLayer() {
   }
   if (want_layer) {
     bool opaque = false;
+    scoped_refptr<cc::Layer> plugin_layer;
     if (want_3d_layer) {
       DCHECK(bound_graphics_3d_.get());
       texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
@@ -1875,14 +1893,24 @@ void PepperPluginInstanceImpl::UpdateLayer() {
       texture_layer_->SetTextureMailbox(
           cc::TextureMailbox(mailbox, 0),
           cc::SingleReleaseCallback::Create(base::Bind(&IgnoreCallback)));
+      plugin_layer = texture_layer_;
     } else {
       DCHECK(bound_graphics_2d_platform_);
       texture_layer_ = cc::TextureLayer::CreateForMailbox(this);
       bound_graphics_2d_platform_->AttachedToNewLayer();
       opaque = bound_graphics_2d_platform_->IsAlwaysOpaque();
       texture_layer_->SetFlipped(false);
+      texture_layer_->SetBounds(bound_graphics_2d_platform_->Size());
+      texture_layer_->SetIsDrawable(true);
+      // WebLayer sets the bounds of its containing layer to be the same size as
+      // the plugin DOM element. Because we want to allow scaling/positioning of
+      // the layer in the 2D case (for SetOffset) we need to add this
+      // intermediate layer. If we wanted to support this functionality for the
+      // 3D case, we would need an intermediate layer in that case also.
+      plugin_layer = cc::Layer::Create();
+      plugin_layer->AddChild(texture_layer_);
     }
-    web_layer_.reset(new webkit::WebLayerImpl(texture_layer_));
+    web_layer_.reset(new webkit::WebLayerImpl(plugin_layer));
     if (fullscreen_container_) {
       fullscreen_container_->SetLayer(web_layer_.get());
       // Ignore transparency in fullscreen, since that's what Flash always
@@ -1896,14 +1924,11 @@ void PepperPluginInstanceImpl::UpdateLayer() {
   }
   layer_bound_to_fullscreen_ = !!fullscreen_container_;
   layer_is_hardware_ = want_3d_layer;
+  UpdateLayerTransform();
 }
 
 unsigned PepperPluginInstanceImpl::PrepareTexture() {
   return 0;
-}
-
-WebKit::WebGraphicsContext3D* PepperPluginInstanceImpl::Context3d() {
-  return NULL;
 }
 
 bool PepperPluginInstanceImpl::PrepareTextureMailbox(
@@ -1914,6 +1939,33 @@ bool PepperPluginInstanceImpl::PrepareTextureMailbox(
     return false;
   return bound_graphics_2d_platform_->PrepareTextureMailbox(
       mailbox, release_callback);
+}
+
+void PepperPluginInstanceImpl::UpdateLayerTransform() {
+  if (!bound_graphics_2d_platform_ || !texture_layer_) {
+    // Currently the transform is only applied for Graphics2D.
+    return;
+  }
+
+  gfx::RectF backing_store(bound_graphics_2d_platform_->plugin_offset(),
+                           bound_graphics_2d_platform_->Size());
+  gfx::PointF scale = bound_graphics_2d_platform_->GetResizeScale();
+  backing_store = ScaleRect(backing_store, scale.x(), scale.y());
+
+  gfx::Rect layer_rect(ToEnclosingRect(backing_store));
+  gfx::Size plugin_size(PP_ToGfxSize(view_data_.rect.size));
+  layer_rect.Intersect(gfx::Rect(plugin_size));
+  texture_layer_->SetPosition(layer_rect.origin());
+  texture_layer_->SetBounds(layer_rect.size());
+
+  gfx::PointF u(PointAtOffsetFromOrigin(
+      layer_rect.origin() - backing_store.origin()));
+  gfx::PointF v(PointAtOffsetFromOrigin(
+      layer_rect.bottom_right() - backing_store.origin()));
+  gfx::RectF uv(BoundingRect(u, v));
+  if (!backing_store.IsEmpty())
+    uv.Scale(1.0f / backing_store.width(), 1.0f / backing_store.height());
+  texture_layer_->SetUV(uv.origin(), uv.bottom_right());
 }
 
 void PepperPluginInstanceImpl::AddPluginObject(PluginObject* plugin_object) {
@@ -1953,9 +2005,9 @@ void PepperPluginInstanceImpl::OnMouseLockLost() {
 }
 
 void PepperPluginInstanceImpl::HandleMouseLockedInputEvent(
-    const WebKit::WebMouseEvent& event) {
+    const blink::WebMouseEvent& event) {
   // |cursor_info| is ignored since it is hidden when the mouse is locked.
-  WebKit::WebCursorInfo cursor_info;
+  blink::WebCursorInfo cursor_info;
   HandleInputEvent(event, &cursor_info);
 }
 
@@ -2015,9 +2067,9 @@ void PepperPluginInstanceImpl::SimulateImeSetCompositionEvent(
   base::string16 utf16_text =
       base::UTF8ToUTF16AndAdjustOffsets(input_event.character_text, &offsets);
 
-  std::vector<WebKit::WebCompositionUnderline> underlines;
+  std::vector<blink::WebCompositionUnderline> underlines;
   for (size_t i = 2; i + 1 < offsets.size(); ++i) {
-    WebKit::WebCompositionUnderline underline;
+    blink::WebCompositionUnderline underline;
     underline.startOffset = offsets[i];
     underline.endOffset = offsets[i + 1];
     if (input_event.composition_target_segment == static_cast<int32_t>(i - 2))
@@ -2169,7 +2221,7 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   NPVariant result;
   bool ok = false;
   if (IsProcessingUserGesture()) {
-    WebKit::WebScopedUserGesture user_gesture(CurrentUserGestureToken());
+    blink::WebScopedUserGesture user_gesture(CurrentUserGestureToken());
     ok = WebBindings::evaluate(NULL, frame->windowObject(), &np_script,
                                &result);
   } else {
@@ -2211,27 +2263,29 @@ PP_Var PepperPluginInstanceImpl::GetDefaultCharSet(PP_Instance instance) {
 // Therefore, |content_decryptor_delegate_| must have been initialized when
 // the following methods are called.
 void PepperPluginInstanceImpl::KeyAdded(PP_Instance instance,
-                                        PP_Var key_system_var,
-                                        PP_Var session_id_var) {
-  content_decryptor_delegate_->KeyAdded(key_system_var, session_id_var);
+                                        uint32_t reference_id) {
+  content_decryptor_delegate_->KeyAdded(reference_id);
 }
 
 void PepperPluginInstanceImpl::KeyMessage(PP_Instance instance,
-                                          PP_Var key_system_var,
-                                          PP_Var session_id_var,
+                                          uint32_t reference_id,
                                           PP_Var message_var,
                                           PP_Var default_url_var) {
   content_decryptor_delegate_->KeyMessage(
-      key_system_var, session_id_var, message_var, default_url_var);
+      reference_id, message_var, default_url_var);
 }
 
 void PepperPluginInstanceImpl::KeyError(PP_Instance instance,
-                                        PP_Var key_system_var,
-                                        PP_Var session_id_var,
+                                        uint32_t reference_id,
                                         int32_t media_error,
                                         int32_t system_code) {
-  content_decryptor_delegate_->KeyError(
-      key_system_var, session_id_var, media_error, system_code);
+  content_decryptor_delegate_->KeyError(reference_id, media_error, system_code);
+}
+
+void PepperPluginInstanceImpl::SetSessionId(PP_Instance instance,
+                                            uint32_t reference_id,
+                                            PP_Var session_id_var) {
+  content_decryptor_delegate_->SetSessionId(reference_id, session_id_var);
 }
 
 void PepperPluginInstanceImpl::DeliverBlock(
@@ -2293,7 +2347,7 @@ void PepperPluginInstanceImpl::SelectedFindResultChanged(PP_Instance instance,
                                                          int32_t index) {
   DCHECK_NE(find_identifier_, -1);
   render_view_->reportFindInPageSelection(
-      find_identifier_, index + 1, WebKit::WebRect());
+      find_identifier_, index + 1, blink::WebRect());
 }
 
 PP_Bool PepperPluginInstanceImpl::IsFullscreen(PP_Instance instance) {
@@ -2307,7 +2361,7 @@ PP_Bool PepperPluginInstanceImpl::SetFullscreen(PP_Instance instance,
 
 PP_Bool PepperPluginInstanceImpl::GetScreenSize(PP_Instance instance,
                                                 PP_Size* size) {
-  WebKit::WebScreenInfo info = render_view_->screenInfo();
+  blink::WebScreenInfo info = render_view_->screenInfo();
   *size = PP_MakeSize(info.rect.width, info.rect.height);
   return PP_TRUE;
 }
@@ -2319,12 +2373,12 @@ ppapi::Resource* PepperPluginInstanceImpl::GetSingletonResource(
   switch (id) {
     case ppapi::BROKER_SINGLETON_ID:
     case ppapi::BROWSER_FONT_SINGLETON_ID:
-    case ppapi::CRX_FILESYSTEM_SINGLETON_ID:
     case ppapi::EXTENSIONS_COMMON_SINGLETON_ID:
     case ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ppapi::FLASH_FILE_SINGLETON_ID:
     case ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
     case ppapi::FLASH_SINGLETON_ID:
+    case ppapi::ISOLATED_FILESYSTEM_SINGLETON_ID:
     case ppapi::NETWORK_PROXY_SINGLETON_ID:
     case ppapi::PDF_SINGLETON_ID:
     case ppapi::TRUETYPE_FONT_SINGLETON_ID:
@@ -2496,7 +2550,7 @@ void PepperPluginInstanceImpl::SelectionChanged(PP_Instance instance) {
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&PepperPluginInstanceImpl::RequestSurroundingText,
-                 AsWeakPtr(),
+                 weak_factory_.GetWeakPtr(),
                  static_cast<size_t>(kExtraCharsForTextInput)));
 }
 
@@ -2531,7 +2585,7 @@ PP_Bool PepperPluginInstanceImpl::DocumentCanRequest(PP_Instance instance,
   if (!url_string)
     return PP_FALSE;
 
-  WebKit::WebSecurityOrigin security_origin;
+  blink::WebSecurityOrigin security_origin;
   if (!SecurityOriginForInstance(instance, &security_origin))
     return PP_FALSE;
 
@@ -2545,11 +2599,11 @@ PP_Bool PepperPluginInstanceImpl::DocumentCanRequest(PP_Instance instance,
 PP_Bool PepperPluginInstanceImpl::DocumentCanAccessDocument(
     PP_Instance instance,
     PP_Instance target) {
-  WebKit::WebSecurityOrigin our_origin;
+  blink::WebSecurityOrigin our_origin;
   if (!SecurityOriginForInstance(instance, &our_origin))
     return PP_FALSE;
 
-  WebKit::WebSecurityOrigin target_origin;
+  blink::WebSecurityOrigin target_origin;
   if (!SecurityOriginForInstance(instance, &target_origin))
     return PP_FALSE;
 
@@ -2559,7 +2613,7 @@ PP_Bool PepperPluginInstanceImpl::DocumentCanAccessDocument(
 PP_Var PepperPluginInstanceImpl::GetDocumentURL(
     PP_Instance instance,
     PP_URLComponents_Dev* components) {
-  WebKit::WebDocument document = container()->element().document();
+  blink::WebDocument document = container()->element().document();
   return ppapi::PPB_URLUtil_Shared::GenerateURLReturn(document.url(),
                                                       components);
 }
@@ -2574,7 +2628,7 @@ PP_Var PepperPluginInstanceImpl::GetPluginInstanceURL(
 PP_Var PepperPluginInstanceImpl::GetPluginReferrerURL(
     PP_Instance instance,
     PP_URLComponents_Dev* components) {
-  WebKit::WebDocument document = container()->element().document();
+  blink::WebDocument document = container()->element().document();
   if (!full_frame_)
     return ppapi::PPB_URLUtil_Shared::GenerateURLReturn(document.url(),
                                                         components);
@@ -2651,7 +2705,7 @@ PP_ExternalPluginResult PepperPluginInstanceImpl::ResetAsProxied(
     document_loader_ = NULL;
     // Pass the response to the new proxy.
     HandleDocumentLoad(external_document_response_);
-    external_document_response_ = WebKit::WebURLResponse();
+    external_document_response_ = blink::WebURLResponse();
     // Replay any document load events we've received to the real loader.
     external_document_loader_->ReplayReceivedData(document_loader_);
     external_document_loader_.reset(NULL);
@@ -2670,10 +2724,6 @@ NPP PepperPluginInstanceImpl::instanceNPP() {
   return npp_.get();
 }
 
-v8::Isolate* PepperPluginInstanceImpl::GetIsolate() const {
-  return isolate_;
-}
-
 PepperPluginInstance* PepperPluginInstance::Get(PP_Instance instance_id) {
   return HostGlobals::Get()->GetInstance(instance_id);
 }
@@ -2682,8 +2732,12 @@ RenderView* PepperPluginInstanceImpl::GetRenderView() {
   return render_view_;
 }
 
-WebKit::WebPluginContainer* PepperPluginInstanceImpl::GetContainer() {
+blink::WebPluginContainer* PepperPluginInstanceImpl::GetContainer() {
   return container_;
+}
+
+v8::Isolate* PepperPluginInstanceImpl::GetIsolate() const {
+  return isolate_;
 }
 
 ppapi::VarTracker* PepperPluginInstanceImpl::GetVarTracker() {
@@ -2880,17 +2934,22 @@ int PepperPluginInstanceImpl::MakePendingFileRefRendererHost(
       scoped_ptr<ppapi::host::ResourceHost>(file_ref_host));
 }
 
+void PepperPluginInstanceImpl::SetEmbedProperty(PP_Var key,
+                                                PP_Var value) {
+  message_channel_->SetReadOnlyProperty(key, value);
+}
+
 bool PepperPluginInstanceImpl::CanAccessMainFrame() const {
   if (!container_)
     return false;
-  WebKit::WebDocument containing_document = container_->element().document();
+  blink::WebDocument containing_document = container_->element().document();
 
   if (!containing_document.frame() ||
       !containing_document.frame()->view() ||
       !containing_document.frame()->view()->mainFrame()) {
     return false;
   }
-  WebKit::WebDocument main_document =
+  blink::WebDocument main_document =
       containing_document.frame()->view()->mainFrame()->document();
 
   return containing_document.securityOrigin().canAccess(
@@ -2908,7 +2967,7 @@ void PepperPluginInstanceImpl::KeepSizeAttributesBeforeFullscreen() {
 }
 
 void PepperPluginInstanceImpl::SetSizeAttributesForFullscreen() {
-  WebKit::WebScreenInfo info = render_view_->screenInfo();
+  blink::WebScreenInfo info = render_view_->screenInfo();
   screen_size_for_fullscreen_ = gfx::Size(info.rect.width, info.rect.height);
   std::string width = StringPrintf("%d", screen_size_for_fullscreen_.width());
   std::string height = StringPrintf("%d", screen_size_for_fullscreen_.height());
@@ -2975,7 +3034,7 @@ void PepperPluginInstanceImpl::UnSetAndDeleteLockTargetAdapter() {
 }
 
 void PepperPluginInstanceImpl::DidDataFromWebURLResponse(
-    const WebKit::WebURLResponse& response,
+    const blink::WebURLResponse& response,
     int pending_host_id,
     const ppapi::URLResponseInfoData& data) {
   RendererPpapiHostImpl* host_impl = module_->renderer_ppapi_host();

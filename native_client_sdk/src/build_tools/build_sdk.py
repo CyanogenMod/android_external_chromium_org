@@ -823,7 +823,7 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
 
   env = dict(os.environ)
   env['NACL_SDK_ROOT'] = pepperdir
-  env['PEPPER_DIR'] = os.path.dirname(pepperdir)
+  env['PEPPER_DIR'] = os.path.basename(pepperdir)  # pepper_NN
   env['NACLPORTS_NO_ANNOTATE'] = "1"
   env['NACLPORTS_NO_UPLOAD'] = "1"
 
@@ -865,6 +865,7 @@ def BuildStepBuildAppEngine(pepperdir, chrome_revision):
   cmd = ['make', 'upload', 'REVISION=%s' % chrome_revision]
   env = dict(os.environ)
   env['NACL_SDK_ROOT'] = pepperdir
+  env['NACLPORTS_NO_ANNOTATE'] = "1"
   buildbot_common.Run(cmd, env=env, cwd=GONACL_APPENGINE_SRC_DIR)
 
 
@@ -902,6 +903,8 @@ def main(args):
 
   global options
   options, args = parser.parse_args(args[1:])
+  if args:
+    parser.error("Unexpected arguments: %s" % str(args))
 
   generate_make.use_gyp = options.gyp
   if buildbot_common.IsSDKBuilder():

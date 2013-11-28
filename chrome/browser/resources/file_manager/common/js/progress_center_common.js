@@ -5,16 +5,6 @@
 'use strict';
 
 /**
- * Where to display the item.
- * @enum {string}
- * @const
- */
-var ProgressItemContainer = Object.freeze({
-  CLIENT: 'client',
-  NOTIFICATION: 'notification'
-});
-
-/**
  * Event of the ProgressCenter class.
  * @enum {string}
  * @const
@@ -38,7 +28,7 @@ var ProgressCenterEvent = Object.freeze({
  */
 var ProgressItemState = Object.freeze({
   PROGRESSING: 'progressing',
-  COMPLETE: 'complete',
+  COMPLETED: 'completed',
   ERROR: 'error',
   CANCELED: 'canceled'
 });
@@ -99,16 +89,10 @@ var ProgressCenterItem = function() {
   this.progressValue = 0;
 
   /**
-   * Where to the item is displayed.
-   * @type {ProgressItemContainer}
-   */
-  this.container = ProgressItemContainer.CLIENT;
-
-  /**
    * Type of progress item.
    * @type {ProgressItemType}
    */
-  this.type = ProgressItemType.TRANSFER;
+  this.type = null;
 
   /**
    * Whether the item is summarized item or not.
@@ -146,10 +130,10 @@ ProgressCenterItem.prototype = {
   },
 
   /**
-   * Gets progress rate by percent.
-   * @return {number} Progress rate by percent.
+   * Gets progress rate in percent.
+   * @return {number} Progress rate in percent.
    */
-  get progressRateByPercent() {
+  get progressRateInPercent() {
     return ~~(100 * this.progressValue / this.progressMax);
   },
 

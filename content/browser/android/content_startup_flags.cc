@@ -60,6 +60,7 @@ void SetContentCommandLineFlags(int max_render_process_count,
   parsed_command_line->AppendSwitch(switches::kEnableBeginFrameScheduling);
   parsed_command_line->AppendSwitch(switches::kEnableDeadlineScheduling);
 
+  parsed_command_line->AppendSwitch(switches::kDisableGestureDebounce);
   parsed_command_line->AppendSwitch(switches::kEnableGestureTapHighlight);
   parsed_command_line->AppendSwitch(switches::kEnablePinch);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayFullscreenVideo);
@@ -72,10 +73,15 @@ void SetContentCommandLineFlags(int max_render_process_count,
   parsed_command_line->AppendSwitch(switches::kDisableGpuShaderDiskCache);
 
   parsed_command_line->AppendSwitch(switches::kEnableViewport);
+  parsed_command_line->AppendSwitch(switches::kEnableViewportMeta);
+  parsed_command_line->AppendSwitch(
+      switches::kMainFrameResizesAreOrientationChanges);
 
   // Disable anti-aliasing.
   parsed_command_line->AppendSwitch(
       cc::switches::kDisableCompositedAntialiasing);
+
+  parsed_command_line->AppendSwitch(switches::kUIPrioritizeInGpuProcess);
 
   if (!plugin_descriptor.empty()) {
     parsed_command_line->AppendSwitchNative(

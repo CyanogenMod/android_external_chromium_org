@@ -10,7 +10,7 @@
 #include "base/callback.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/extensions/api/feedback_private/blob_reader.h"
+#include "chrome/browser/extensions/blob_reader.h"
 #include "chrome/browser/feedback/feedback_data.h"
 #include "chrome/common/extensions/api/feedback_private.h"
 
@@ -44,13 +44,16 @@ class FeedbackService {
                             const SendFeedbackCallback& callback);
 
   // Platform specific methods:
-  // Get's the email address of the logged in user.
+  // Gets the email address of the logged in user.
   virtual std::string GetUserEmail() = 0;
 
   // Start to gather system information.
   // The |callback| will be invoked once the query is completed.
   virtual void GetSystemInformation(
       const GetSystemInformationCallback& callback) = 0;
+
+  // Gets the histograms in JSON.
+  virtual void GetHistograms(std::string* histograms) = 0;
 
  protected:
   FeedbackService();

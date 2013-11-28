@@ -10,8 +10,8 @@
 #include "chrome/browser/policy/cloud/cloud_policy_client.h"
 #include "chrome/browser/policy/cloud/mock_cloud_policy_client.h"
 #include "chrome/browser/policy/cloud/test_request_interceptor.h"
-#include "chrome/browser/policy/policy_test_utils.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "chrome/browser/policy/test/policy_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
@@ -98,7 +98,8 @@ class CloudPolicyManagerTest : public InProcessBrowserTest {
   }
 #else
   UserCloudPolicyManager* policy_manager() {
-    return UserCloudPolicyManagerFactory::GetForProfile(browser()->profile());
+    return UserCloudPolicyManagerFactory::GetForBrowserContext(
+        browser()->profile());
   }
 #endif  // defined(OS_CHROMEOS)
 

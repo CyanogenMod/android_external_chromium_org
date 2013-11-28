@@ -5,11 +5,13 @@
 #include "cc/layers/picture_layer_impl.h"
 
 #include <algorithm>
+#include <limits>
 
 #include "base/time/time.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/debug_colors.h"
+#include "cc/debug/micro_benchmark_impl.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/layers/quad_sink.h"
@@ -26,6 +28,10 @@
 
 namespace {
 const float kMaxScaleRatioDuringPinch = 2.0f;
+
+// When creating a new tiling during pinch, snap to an existing
+// tiling's scale if the desired scale is within this ratio.
+const float kSnapToExistingTilingRatio = 0.2f;
 }
 
 namespace cc {
@@ -382,7 +388,7 @@ void PictureLayerImpl::DidBeginTracing() {
 
 void PictureLayerImpl::DidLoseOutputSurface() {
   if (tilings_)
-    tilings_->RemoveAllTilings();
+    RemoveAllTilings();
 
   ResetRasterScale();
 }
@@ -552,8 +558,7 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
   UpdateLCDTextStatus(other->is_using_lcd_text_);
 
   if (!DrawsContent()) {
-    ResetRasterScale();
-    tilings_->RemoveAllTilings();
+    RemoveAllTilings();
     return;
   }
 
@@ -596,7 +601,7 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
                           tiling_invalidation,
                           MinimumContentsScale());
   } else {
-    tilings_->RemoveAllTilings();
+    RemoveAllTilings();
   }
 
   SanityCheckTilingState();
@@ -777,7 +782,15 @@ void PictureLayerImpl::RemoveTiling(float contents_scale) {
       break;
     }
   }
+  if (tilings_->num_tilings() == 0)
+    ResetRasterScale();
   SanityCheckTilingState();
+}
+
+void PictureLayerImpl::RemoveAllTilings() {
+  tilings_->RemoveAllTilings();
+  // If there are no tilings, then raster scales are no longer meaningful.
+  ResetRasterScale();
 }
 
 namespace {
@@ -786,16 +799,6 @@ inline float PositiveRatio(float float1, float float2) {
   DCHECK_GT(float1, 0);
   DCHECK_GT(float2, 0);
   return float1 > float2 ? float1 / float2 : float2 / float1;
-}
-
-inline bool IsCloserToThan(
-    PictureLayerTiling* layer1,
-    PictureLayerTiling* layer2,
-    float contents_scale) {
-  // Absolute value for ratios.
-  float ratio1 = PositiveRatio(layer1->contents_scale(), contents_scale);
-  float ratio2 = PositiveRatio(layer2->contents_scale(), contents_scale);
-  return ratio1 < ratio2;
 }
 
 }  // namespace
@@ -816,6 +819,11 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
       low_res_raster_contents_scale_ == 0.f ||
       ShouldAdjustRasterScale(animating_transform_to_screen);
 
+  if (tilings_->num_tilings() == 0) {
+    DCHECK(change_target_tiling)
+        << "A layer with no tilings shouldn't have valid raster scales";
+  }
+
   // Store the value for the next time ShouldAdjustRasterScale is called.
   raster_source_scale_was_animating_ = animating_transform_to_screen;
 
@@ -825,13 +833,7 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
   if (!layer_tree_impl()->device_viewport_valid_for_tile_management())
     return;
 
-  raster_page_scale_ = ideal_page_scale_;
-  raster_device_scale_ = ideal_device_scale_;
-  raster_source_scale_ = ideal_source_scale_;
-
-  CalculateRasterContentsScale(animating_transform_to_screen,
-                               &raster_contents_scale_,
-                               &low_res_raster_contents_scale_);
+  RecalculateRasterScales(animating_transform_to_screen);
 
   PictureLayerTiling* high_res = NULL;
   PictureLayerTiling* low_res = NULL;
@@ -864,11 +866,14 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
       low_res != high_res)
     low_res = AddTiling(low_res_raster_contents_scale_);
 
-  high_res->set_resolution(HIGH_RESOLUTION);
+  // Set low-res if we have one.
+  if (!low_res)
+    low_res = previous_low_res;
   if (low_res && low_res != high_res)
     low_res->set_resolution(LOW_RESOLUTION);
-  else if (!low_res && previous_low_res)
-    previous_low_res->set_resolution(LOW_RESOLUTION);
+
+  // Make sure we always have one high-res (even if high == low).
+  high_res->set_resolution(HIGH_RESOLUTION);
 
   SanityCheckTilingState();
 }
@@ -885,10 +890,12 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
 
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
   if (is_pinching && raster_page_scale_) {
-    // If the page scale diverges too far during pinch, change raster target to
-    // the current page scale.
-    float ratio = PositiveRatio(ideal_page_scale_, raster_page_scale_);
-    if (ratio >= kMaxScaleRatioDuringPinch)
+    // We change our raster scale when it is:
+    // - Higher than ideal (need a lower-res tiling available)
+    // - Too far from ideal (need a higher-res tiling available)
+    float ratio = ideal_page_scale_ / raster_page_scale_;
+    if (raster_page_scale_ > ideal_page_scale_ ||
+        ratio > kMaxScaleRatioDuringPinch)
       return true;
   }
 
@@ -905,41 +912,74 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
   return false;
 }
 
-void PictureLayerImpl::CalculateRasterContentsScale(
-    bool animating_transform_to_screen,
-    float* raster_contents_scale,
-    float* low_res_raster_contents_scale) const {
-  *raster_contents_scale = ideal_contents_scale_;
+float PictureLayerImpl::SnappedContentsScale(float scale) {
+  // If a tiling exists within the max snapping ratio, snap to its scale.
+  float snapped_contents_scale = scale;
+  float snapped_ratio = kSnapToExistingTilingRatio;
+  for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
+    float tiling_contents_scale = tilings_->tiling_at(i)->contents_scale();
+    float ratio = PositiveRatio(tiling_contents_scale, scale);
+    if (ratio < snapped_ratio) {
+      snapped_contents_scale = tiling_contents_scale;
+      snapped_ratio = ratio;
+    }
+  }
+  return snapped_contents_scale;
+}
+
+void PictureLayerImpl::RecalculateRasterScales(
+    bool animating_transform_to_screen) {
+  raster_device_scale_ = ideal_device_scale_;
+  raster_source_scale_ = ideal_source_scale_;
+
+  bool is_pinching = layer_tree_impl()->PinchGestureActive();
+  if (!is_pinching) {
+    // When not pinching, we use ideal scale:
+    raster_page_scale_ = ideal_page_scale_;
+    raster_contents_scale_ = ideal_contents_scale_;
+  } else {
+    // See ShouldAdjustRasterScale:
+    // - When zooming out, preemptively create new tiling at lower resolution.
+    // - When zooming in, approximate ideal using multiple of kMaxScaleRatio.
+    bool zooming_out = raster_page_scale_ > ideal_page_scale_;
+    float desired_contents_scale =
+        zooming_out ? raster_contents_scale_ / kMaxScaleRatioDuringPinch
+                    : raster_contents_scale_ * kMaxScaleRatioDuringPinch;
+    raster_contents_scale_ = SnappedContentsScale(desired_contents_scale);
+    raster_page_scale_ = raster_contents_scale_ / raster_device_scale_;
+  }
 
   // Don't allow animating CSS scales to drop below 1.  This is needed because
   // changes in raster source scale aren't handled.  See the comment in
   // ShouldAdjustRasterScale.
   if (animating_transform_to_screen) {
-    *raster_contents_scale = std::max(
-        *raster_contents_scale, 1.f * ideal_page_scale_ * ideal_device_scale_);
+    raster_contents_scale_ = std::max(
+        raster_contents_scale_, 1.f * ideal_page_scale_ * ideal_device_scale_);
   }
 
   // If this layer would only create one tile at this content scale,
   // don't create a low res tiling.
   gfx::Size content_bounds =
-      gfx::ToCeiledSize(gfx::ScaleSize(bounds(), *raster_contents_scale));
+      gfx::ToCeiledSize(gfx::ScaleSize(bounds(), raster_contents_scale_));
   gfx::Size tile_size = CalculateTileSize(content_bounds);
   if (tile_size.width() >= content_bounds.width() &&
       tile_size.height() >= content_bounds.height()) {
-    *low_res_raster_contents_scale = *raster_contents_scale;
+    low_res_raster_contents_scale_ = raster_contents_scale_;
     return;
   }
 
   float low_res_factor =
       layer_tree_impl()->settings().low_res_contents_scale_factor;
-  *low_res_raster_contents_scale = std::max(
-      *raster_contents_scale * low_res_factor,
+  low_res_raster_contents_scale_ = std::max(
+      raster_contents_scale_ * low_res_factor,
       MinimumContentsScale());
 }
 
 void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
     std::vector<PictureLayerTiling*> used_tilings) {
   DCHECK(layer_tree_impl()->IsActiveTree());
+  if (tilings_->num_tilings() == 0)
+    return;
 
   float min_acceptable_high_res_scale = std::min(
       raster_contents_scale_, ideal_contents_scale_);
@@ -983,6 +1023,7 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
       twin->RemoveTiling(to_remove[i]->contents_scale());
     tilings_->Remove(to_remove[i]);
   }
+  DCHECK_GT(tilings_->num_tilings(), 0u);
 
   SanityCheckTilingState();
 }
@@ -1076,6 +1117,11 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
   state->Set("pictures", pile_->AsValue().release());
   state->Set("invalidation", invalidation_.AsValue().release());
 
+  Region unrecorded_region(gfx::Rect(pile_->size()));
+  unrecorded_region.Subtract(pile_->recorded_region());
+  if (!unrecorded_region.IsEmpty())
+    state->Set("unrecorded_region", unrecorded_region.AsValue().release());
+
   scoped_ptr<base::ListValue> coverage_tiles(new base::ListValue);
   for (PictureLayerTilingSet::CoverageIterator iter(tilings_.get(),
                                                     contents_scale_x(),
@@ -1098,6 +1144,10 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
 size_t PictureLayerImpl::GPUMemoryUsageInBytes() const {
   const_cast<PictureLayerImpl*>(this)->DoPostCommitInitializationIfNeeded();
   return tilings_->GPUMemoryUsageInBytes();
+}
+
+void PictureLayerImpl::RunMicroBenchmark(MicroBenchmarkImpl* benchmark) {
+  benchmark->RunOnLayer(this);
 }
 
 }  // namespace cc

@@ -392,7 +392,7 @@
             '../base/base.gyp:base',
             '../media/media.gyp:media_java',
             '../net/net.gyp:net',
-            '../ui/ui.gyp:ui_java',
+            '../ui/android/ui_android.gyp:ui_java',
             'common_aidl',
             'content_common',
             'page_transition_types_java',
@@ -476,12 +476,22 @@
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
+        {
+          'target_name': 'java_view_jni_headers',
+          'type': 'none',
+          'variables': {
+            'jni_gen_package': 'content',
+            'input_java_class': 'android/view/ViewConfiguration.class',
+          },
+          'includes': [ '../build/jar_file_jni_generator.gypi' ],
+        },
 
         {
           'target_name': 'content_jni_headers',
           'type': 'none',
           'dependencies': [
             'java_set_jni_headers',
+            'java_view_jni_headers'
           ],
           'direct_dependent_settings': {
             'include_dirs': [

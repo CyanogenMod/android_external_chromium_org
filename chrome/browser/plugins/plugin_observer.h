@@ -34,11 +34,11 @@ class PluginObserver : public content::WebContentsObserver,
   virtual ~PluginObserver();
 
   // content::WebContentsObserver implementation.
+  virtual void RenderViewCreated(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void PluginCrashed(const base::FilePath& plugin_path,
                              base::ProcessId plugin_pid) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void AboutToNavigateRenderView(
-      content::RenderViewHost* render_view_host) OVERRIDE;
 
  private:
   explicit PluginObserver(content::WebContents* web_contents);
@@ -65,12 +65,12 @@ class PluginObserver : public content::WebContentsObserver,
   void OnCouldNotLoadPlugin(const base::FilePath& plugin_path);
   void OnNPAPINotSupported(const std::string& identifier);
 
-  base::WeakPtrFactory<PluginObserver> weak_ptr_factory_;
-
 #if defined(ENABLE_PLUGIN_INSTALLATION)
   // Stores all PluginPlaceholderHosts, keyed by their routing ID.
   std::map<int, PluginPlaceholderHost*> plugin_placeholders_;
 #endif
+
+  base::WeakPtrFactory<PluginObserver> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginObserver);
 };

@@ -855,7 +855,7 @@ void OneClickSigninHelper::ShowInfoBarIfPossible(net::URLRequest* request,
             << " g-c-s='" << google_chrome_signin_value << "'";
   }
 
-  if (!gaia::IsGaiaSignonRealm(request->original_url().GetOrigin()))
+  if (!gaia::IsGaiaSignonRealm(request->url().GetOrigin()))
     return;
 
   // Parse Google-Accounts-SignIn.
@@ -1099,10 +1099,11 @@ void OneClickSigninHelper::set_do_not_start_sync_for_testing() {
   do_not_start_sync_for_testing_ = true;
 }
 
-void OneClickSigninHelper::NavigateToPendingEntry(
+void OneClickSigninHelper::DidStartNavigationToPendingEntry(
     const GURL& url,
     content::NavigationController::ReloadType reload_type) {
-  VLOG(1) << "OneClickSigninHelper::NavigateToPendingEntry: url=" << url.spec();
+  VLOG(1) << "OneClickSigninHelper::DidStartNavigationToPendingEntry: url=" <<
+      url.spec();
   // If the tab navigates to a new page, and this page is not a valid Gaia
   // sign in redirect or reponse, or the expected continue URL, make sure to
   // clear the internal state.  This is needed to detect navigations in the
@@ -1194,6 +1195,10 @@ void OneClickSigninHelper::DidStopLoading(
       continue_url_.is_valid() &&
       url.ReplaceComponents(replacements) ==
         continue_url_.ReplaceComponents(replacements));
+  const bool original_continue_url_match = (
+      original_continue_url_.is_valid() &&
+      url.ReplaceComponents(replacements) ==
+        original_continue_url_.ReplaceComponents(replacements));
 
   if (continue_url_match)
     RemoveSigninRedirectURLHistoryItem(contents);
@@ -1203,7 +1208,12 @@ void OneClickSigninHelper::DidStopLoading(
   // sync.
   if (email_.empty()) {
     VLOG(1) << "OneClickSigninHelper::DidStopLoading: nothing to do";
-    if (continue_url_match) {
+    // Original-url check done because some user actions cans get us to a page
+    // via a POST instead of a GET (and thus to immediate "cuntinue url") but
+    // we still want redirects from the "blank.html" landing page to work for
+    // non-security related redirects like NTP.
+    // https://code.google.com/p/chromium/issues/detail?id=321938
+    if (original_continue_url_match) {
       if (auto_accept_ == AUTO_ACCEPT_EXPLICIT)
         RedirectToSignin();
       std::string unused_value;
@@ -1435,7 +1445,9 @@ void OneClickSigninHelper::OnStateChanged() {
     if (sync_service->FirstSetupInProgress())
       return;
 
-    if (sync_service->sync_initialized()) {
+    if (sync_service->sync_initialized() &&
+        signin::GetSourceForPromoURL(original_continue_url_)
+            != signin::SOURCE_SETTINGS) {
       contents->GetController().LoadURL(original_continue_url_,
                                         content::Referrer(),
                                         content::PAGE_TRANSITION_AUTO_TOPLEVEL,

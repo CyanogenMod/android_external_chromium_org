@@ -6,11 +6,11 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/testing_pref_store.h"
 #include "chrome/browser/extensions/api/signed_in_devices/signed_in_devices_manager.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/extensions/api/signed_in_devices.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "extensions/browser/event_router.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,9 +31,9 @@ TEST(SignedInDevicesManager, UpdateListener) {
       profile.get(), CreateProfileSyncServiceMock);
   SignedInDevicesManager manager(profile.get());
 
-  EventListenerInfo info(
-      api::signed_in_devices::OnDeviceInfoChange::kEventName,
-      "extension1");
+  EventListenerInfo info(api::signed_in_devices::OnDeviceInfoChange::kEventName,
+                         "extension1",
+                         profile.get());
 
   // Add a listener.
   manager.OnListenerAdded(info);

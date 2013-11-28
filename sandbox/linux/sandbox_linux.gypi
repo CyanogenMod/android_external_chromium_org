@@ -19,6 +19,11 @@
       }, {
         'compile_seccomp_bpf': 0,
       }],
+      ['OS=="linux" and (target_arch=="ia32" or target_arch=="x64")', {
+        'compile_seccomp_bpf_demo': 1,
+      }, {
+        'compile_seccomp_bpf_demo': 0,
+      }],
     ],
   },
   'target_defaults': {
@@ -100,9 +105,9 @@
         'seccomp-bpf/errorcode.h',
         'seccomp-bpf/instruction.h',
         'seccomp-bpf/linux_seccomp.h',
-        'seccomp-bpf/port.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
+        'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/sandbox_bpf_policy_forward.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
@@ -119,6 +124,26 @@
       ],
       'include_dirs': [
         '../..',
+      ],
+    },
+    {
+      # A demonstration program for the seccomp-bpf sandbox.
+      'target_name': 'seccomp_bpf_demo',
+      'conditions': [
+        ['compile_seccomp_bpf_demo==1', {
+          'type': 'executable',
+          'sources': [
+            'seccomp-bpf/demo.cc',
+          ],
+          'dependencies': [
+            'seccomp_bpf',
+          ],
+        }, {
+          'type': 'none',
+        }],
+      ],
+      'include_dirs': [
+        '../../',
       ],
     },
     {
@@ -147,6 +172,8 @@
       'sources': [
         'services/broker_process.cc',
         'services/broker_process.h',
+        'services/init_process_reaper.cc',
+        'services/init_process_reaper.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -209,6 +236,7 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        'sandbox_services',
       ],
       'include_dirs': [
         '..',

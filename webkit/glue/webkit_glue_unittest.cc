@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/glue/webkit_glue.h"
-
 #include <string>
 
 #include "base/run_loop.h"
@@ -35,7 +33,7 @@ class TestWebKitPlatformSupport
   }
 
   virtual webkit_glue::WebSocketStreamHandleBridge* CreateWebSocketStreamBridge(
-      WebKit::WebSocketStreamHandle*,
+      blink::WebSocketStreamHandle*,
       webkit_glue::WebSocketStreamHandleDelegate*) OVERRIDE {
     return NULL;
   }

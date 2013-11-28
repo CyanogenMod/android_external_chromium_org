@@ -25,7 +25,7 @@ public class FaviconHelper {
     public static final int TOUCH_ICON = 1 << 1;
     public static final int TOUCH_PRECOMPOSED_ICON = 1 << 2;
 
-    private int mNativeFaviconHelper;
+    private long mNativeFaviconHelper;
 
     /**
      * Callback interface for getting the result from getLocalFaviconImageForURL method.
@@ -57,6 +57,7 @@ public class FaviconHelper {
      * Clean up the C++ side of this class. After the call, this class instance shouldn't be used.
      */
     public void destroy() {
+        assert mNativeFaviconHelper != 0;
         nativeDestroy(mNativeFaviconHelper);
         mNativeFaviconHelper = 0;
     }
@@ -92,8 +93,8 @@ public class FaviconHelper {
 
     /**
      * Get 16x16 Favicon bitmap for the requested arguments. Only retrives favicons in synced
-     * session storage. (e.g. favicons synced from other devices). TODO (apiccion) provide a way
-     * to obtain higher resolution favicons.
+     * session storage. (e.g. favicons synced from other devices).
+     * TODO(apiccion): provide a way to obtain higher resolution favicons.
      * @param profile   Profile used for the FaviconService construction.
      * @param pageUrl   The target Page URL to get the favicon.
      *
@@ -104,13 +105,13 @@ public class FaviconHelper {
         return nativeGetSyncedFaviconImageForURL(mNativeFaviconHelper, profile, pageUrl);
     }
 
-    private static native int nativeInit();
-    private static native void nativeDestroy(int nativeFaviconHelper);
-    private static native boolean nativeGetLocalFaviconImageForURL(int nativeFaviconHelper,
+    private static native long nativeInit();
+    private static native void nativeDestroy(long nativeFaviconHelper);
+    private static native boolean nativeGetLocalFaviconImageForURL(long nativeFaviconHelper,
             Profile profile, String pageUrl, int iconTypes, int desiredSizeInDip,
             FaviconImageCallback faviconImageCallback);
-    private static native Bitmap nativeGetSyncedFaviconImageForURL(int nativeFaviconHelper,
+    private static native Bitmap nativeGetSyncedFaviconImageForURL(long nativeFaviconHelper,
             Profile profile, String pageUrl);
-    private static native int nativeGetDominantColorForBitmap(int nativeFaviconHelper,
+    private static native int nativeGetDominantColorForBitmap(long nativeFaviconHelper,
             Bitmap image);
 }

@@ -592,7 +592,7 @@ TEST_F(WindowManagerTest, MAYBE_TransformActivate) {
   gfx::Transform transform;
   transform.Translate(size.width(), 0);
   transform.Rotate(90.0f);
-  root_window->SetTransform(transform);
+  root_window->GetDispatcher()->SetTransform(transform);
 
   test::TestActivationDelegate d1;
   aura::test::TestWindowDelegate wd;
@@ -713,39 +713,6 @@ TEST_F(WindowManagerTest, UpdateCursorVisibility) {
   views::corewm::CursorManager* cursor_manager =
       ash::Shell::GetInstance()->cursor_manager();
 
-  generator.MoveMouseTo(gfx::Point(0, 0));
-  EXPECT_TRUE(cursor_manager->IsCursorVisible());
-  EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());
-  generator.PressTouch();
-  EXPECT_FALSE(cursor_manager->IsCursorVisible());
-  EXPECT_FALSE(cursor_manager->IsMouseEventsEnabled());
-  generator.MoveMouseTo(gfx::Point(0, 0));
-  EXPECT_TRUE(cursor_manager->IsCursorVisible());
-  EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());
-  generator.ReleaseTouch();
-  EXPECT_TRUE(cursor_manager->IsCursorVisible());
-  EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());
-
-  // If someone else made cursor invisible keep it invisible even after it
-  // received mouse events.
-  cursor_manager->EnableMouseEvents();
-  cursor_manager->HideCursor();
-  generator.MoveMouseTo(gfx::Point(0, 0));
-  EXPECT_FALSE(cursor_manager->IsCursorVisible());
-  EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());
-  generator.PressTouch();
-  EXPECT_FALSE(cursor_manager->IsCursorVisible());
-  EXPECT_FALSE(cursor_manager->IsMouseEventsEnabled());
-  generator.MoveMouseTo(gfx::Point(0, 0));
-  EXPECT_FALSE(cursor_manager->IsCursorVisible());
-  EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());
-  generator.ReleaseTouch();
-  EXPECT_FALSE(cursor_manager->IsCursorVisible());
-  EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());
-
-  // Back to normal.
-  cursor_manager->EnableMouseEvents();
-  cursor_manager->ShowCursor();
   generator.MoveMouseTo(gfx::Point(0, 0));
   EXPECT_TRUE(cursor_manager->IsCursorVisible());
   EXPECT_TRUE(cursor_manager->IsMouseEventsEnabled());

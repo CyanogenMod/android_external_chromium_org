@@ -5,8 +5,11 @@
 """A library for cross-platform browser tests."""
 
 import inspect
+import logging
 import os
 import sys
+
+from telemetry import exception_formatter
 
 from telemetry.core.browser import Browser
 from telemetry.core.browser_options import BrowserFinderOptions
@@ -14,6 +17,16 @@ from telemetry.core.tab import Tab
 
 from telemetry.page.page_measurement import PageMeasurement
 from telemetry.page.page_runner import Run as RunPage
+
+
+# Ensure Python >= 2.6
+if sys.version_info < (2, 6):
+  logging.critical('Need Python 2.6 or greater.')
+  sys.exit(1)
+
+
+exception_formatter.InstallUnhandledExceptionFormatter()
+
 
 __all__ = []
 

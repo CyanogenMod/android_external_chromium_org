@@ -68,9 +68,9 @@ import org.chromium.content.browser.input.InsertionHandleController;
 import org.chromium.content.browser.input.SelectPopupDialog;
 import org.chromium.content.browser.input.SelectionHandleController;
 import org.chromium.content.common.TraceEvent;
-import org.chromium.ui.ViewAndroid;
-import org.chromium.ui.ViewAndroidDelegate;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.ViewAndroid;
+import org.chromium.ui.base.ViewAndroidDelegate;
+import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
@@ -87,16 +87,6 @@ import java.util.Map;
 @JNINamespace("content")
 public class ContentViewCore
         implements MotionEventDelegate, NavigationClient, AccessibilityStateChangeListener {
-
-    /**
-     * Indicates that input events are batched together and delivered just before vsync.
-     */
-    public static final int INPUT_EVENTS_DELIVERED_AT_VSYNC = 1;
-
-    /**
-     * Opposite of INPUT_EVENTS_DELIVERED_AT_VSYNC.
-     */
-    public static final int INPUT_EVENTS_DELIVERED_IMMEDIATELY = 0;
 
     private static final String TAG = "ContentViewCore";
 
@@ -291,10 +281,9 @@ public class ContentViewCore
             public void onVSync(long frameTimeMicros) {
                 animateIfNecessary(frameTimeMicros);
 
-                if (mDidSignalVSyncUsingInputEvent) {
-                    TraceEvent.instant("ContentViewCore::onVSync ignored");
-                    mDidSignalVSyncUsingInputEvent = false;
-                    return;
+                if (mRequestedVSyncForInput) {
+                    mRequestedVSyncForInput = false;
+                    removeVSyncSubscriber();
                 }
                 if (mNativeContentViewCore != 0) {
                     nativeOnVSync(mNativeContentViewCore, frameTimeMicros);
@@ -364,12 +353,9 @@ public class ContentViewCore
     private ContentSettings mContentSettings;
 
     // Native pointer to C++ ContentViewCoreImpl object which will be set by nativeInit().
-    private int mNativeContentViewCore = 0;
+    private long mNativeContentViewCore = 0;
 
-    private boolean mAttachedToWindow = false;
-
-    // Pid of the renderer process backing this ContentViewCore.
-    private int mPid = 0;
+    private boolean mInForeground = false;
 
     private ContentViewGestureHandler mContentViewGestureHandler;
     private GestureStateListener mGestureStateListener;
@@ -457,8 +443,27 @@ public class ContentViewCore
     // Whether we should animate at the next vsync tick.
     private boolean mNeedAnimate = false;
 
+    // Whether we requested a proactive vsync event in response to touch input.
+    // This reduces the latency of responding to input by ensuring the renderer
+    // is sent a BeginFrame for every touch event we receive. Otherwise the
+    // renderer's SetNeedsBeginFrame message would get serviced at the next
+    // vsync.
+    private boolean mRequestedVSyncForInput = false;
+
     private ViewAndroid mViewAndroid;
 
+    public static class UMAActionAfterDoubleTap {
+        public static final int NAVIGATE_BACK = 0;
+        public static final int NAVIGATE_STOP = 1;
+        public static final int NO_ACTION = 2;
+        public static final int COUNT = 3;
+    }
+
+    public static class UMASingleTapType {
+        public static final int DELAYED_TAP = 0;
+        public static final int UNDELAYED_TAP = 1;
+        public static final int COUNT = 2;
+    }
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -538,7 +543,7 @@ public class ContentViewCore
             @SuppressWarnings("deprecation")  // AbsoluteLayout.LayoutParams
             public void setAnchorViewPosition(
                     View view, float x, float y, float width, float height) {
-                assert(view.getParent() == mContainerView);
+                assert view.getParent() == mContainerView;
 
                 float scale = (float) DeviceDisplayInfo.create(getContext()).getDIPScale();
 
@@ -567,7 +572,7 @@ public class ContentViewCore
 
                     android.widget.AbsoluteLayout.LayoutParams lp =
                             new android.widget.AbsoluteLayout.LayoutParams(
-                                scaledWidth, (int)(height * scale), leftMargin, topMargin);
+                                scaledWidth, (int) (height * scale), leftMargin, topMargin);
                     view.setLayoutParams(lp);
                 } else {
                     Log.e(TAG, "Unknown layout " + mContainerView.getClass().getName());
@@ -715,8 +720,7 @@ public class ContentViewCore
     // Note that the caller remains the owner of the nativeWebContents and is responsible for
     // deleting it after destroying the ContentViewCore.
     public void initialize(ViewGroup containerView, InternalAccessDelegate internalDispatcher,
-            int nativeWebContents, WindowAndroid windowAndroid,
-            int inputEventDeliveryMode) {
+            long nativeWebContents, WindowAndroid windowAndroid) {
         // Check whether to use hardware acceleration. This is a bit hacky, and
         // only works if the Context is actually an Activity (as it is in the
         // Chrome application).
@@ -743,9 +747,9 @@ public class ContentViewCore
             }
         };
 
-        int windowNativePointer = windowAndroid != null ? windowAndroid.getNativePointer() : 0;
+        long windowNativePointer = windowAndroid != null ? windowAndroid.getNativePointer() : 0;
 
-        int viewAndroidNativePointer = 0;
+        long viewAndroidNativePointer = 0;
         if (windowNativePointer != 0) {
             mViewAndroid = new ViewAndroid(windowAndroid, getViewAndroidDelegate());
             viewAndroidNativePointer = mViewAndroid.getNativePointer();
@@ -754,7 +758,7 @@ public class ContentViewCore
         mNativeContentViewCore = nativeInit(mHardwareAccelerated,
                 nativeWebContents, viewAndroidNativePointer, windowNativePointer);
         mContentSettings = new ContentSettings(this, mNativeContentViewCore);
-        initializeContainerView(internalDispatcher, inputEventDeliveryMode);
+        initializeContainerView(internalDispatcher);
 
         mAccessibilityInjector = AccessibilityInjector.newInstance(this);
 
@@ -774,12 +778,11 @@ public class ContentViewCore
             }
         };
 
-        mPid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
         sendOrientationChangeEvent();
     }
 
     @CalledByNative
-    void onNativeContentViewCoreDestroyed(int nativeContentViewCore) {
+    void onNativeContentViewCoreDestroyed(long nativeContentViewCore) {
         assert nativeContentViewCore == mNativeContentViewCore;
         mNativeContentViewCore = 0;
     }
@@ -799,8 +802,7 @@ public class ContentViewCore
      * @param internalDispatcher Handles dispatching all hidden or super methods to the
      *                           containerView.
      */
-    private void initializeContainerView(InternalAccessDelegate internalDispatcher,
-            int inputEventDeliveryMode) {
+    private void initializeContainerView(InternalAccessDelegate internalDispatcher) {
         TraceEvent.begin();
         mContainerViewInternals = internalDispatcher;
 
@@ -808,8 +810,7 @@ public class ContentViewCore
         mContainerView.setClickable(true);
 
         mZoomManager = new ZoomManager(mContext, this);
-        mContentViewGestureHandler = new ContentViewGestureHandler(mContext, this, mZoomManager,
-                inputEventDeliveryMode);
+        mContentViewGestureHandler = new ContentViewGestureHandler(mContext, this, mZoomManager);
         mZoomControlsDelegate = new ZoomControlsDelegate() {
             @Override
             public void invokeZoomPicker() {}
@@ -926,7 +927,7 @@ public class ContentViewCore
      * @return native ContentViewCore pointer.
      */
     @CalledByNative
-    public int getNativeContentViewCore() {
+    public long getNativeContentViewCore() {
         return mNativeContentViewCore;
     }
 
@@ -999,6 +1000,7 @@ public class ContentViewCore
      * Stops loading the current web contents.
      */
     public void stopLoading() {
+        reportActionAfterDoubleTapUMA(ContentViewCore.UMAActionAfterDoubleTap.NAVIGATE_STOP);
         if (mNativeContentViewCore != 0) nativeStopLoading(mNativeContentViewCore);
     }
 
@@ -1202,6 +1204,7 @@ public class ContentViewCore
      * Goes to the navigation entry before the current one.
      */
     public void goBack() {
+        reportActionAfterDoubleTapUMA(ContentViewCore.UMAActionAfterDoubleTap.NAVIGATE_BACK);
         if (mNativeContentViewCore != 0) nativeGoBack(mNativeContentViewCore);
     }
 
@@ -1229,9 +1232,21 @@ public class ContentViewCore
     /**
      * Reload the current page.
      */
-    public void reload() {
+    public void reload(boolean checkForRepost) {
         mAccessibilityInjector.addOrRemoveAccessibilityApisIfNecessary();
-        if (mNativeContentViewCore != 0) nativeReload(mNativeContentViewCore);
+        if (mNativeContentViewCore != 0) {
+            nativeReload(mNativeContentViewCore, checkForRepost);
+        }
+    }
+
+    /**
+     * Reload the current page, ignoring the contents of the cache.
+     */
+    public void reloadIgnoringCache(boolean checkForRepost) {
+        mAccessibilityInjector.addOrRemoveAccessibilityApisIfNecessary();
+        if (mNativeContentViewCore != 0) {
+            nativeReloadIgnoringCache(mNativeContentViewCore, checkForRepost);
+        }
     }
 
     /**
@@ -1277,6 +1292,10 @@ public class ContentViewCore
      */
     public boolean onTouchEvent(MotionEvent event) {
         undoScrollFocusedEditableNodeIntoViewIfNeeded(false);
+        if (!mRequestedVSyncForInput) {
+            mRequestedVSyncForInput = true;
+            addVSyncSubscriber();
+        }
         return mContentViewGestureHandler.onTouchEvent(event);
     }
 
@@ -1323,6 +1342,10 @@ public class ContentViewCore
         }
     }
 
+    private void reportActionAfterDoubleTapUMA(int type) {
+        mContentViewGestureHandler.reportActionAfterDoubleTapUMA(type);
+    }
+
     @Override
     public boolean sendGesture(int type, long timeMs, int x, int y, Bundle b) {
         if (offerGestureToEmbedder(type)) return false;
@@ -1333,8 +1356,8 @@ public class ContentViewCore
             case ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE:
                 nativeShowPressState(mNativeContentViewCore, timeMs, x, y);
                 return true;
-            case ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL:
-                nativeShowPressCancel(mNativeContentViewCore, timeMs, x, y);
+            case ContentViewGestureHandler.GESTURE_TAP_CANCEL:
+                nativeTapCancel(mNativeContentViewCore, timeMs, x, y);
                 return true;
             case ContentViewGestureHandler.GESTURE_TAP_DOWN:
                 nativeTapDown(mNativeContentViewCore, timeMs, x, y);
@@ -1393,14 +1416,29 @@ public class ContentViewCore
         }
     }
 
+    @VisibleForTesting
+    public void sendDoubleTapForTest(long timeMs, int x, int y, Bundle b) {
+        sendGesture(ContentViewGestureHandler.GESTURE_DOUBLE_TAP, timeMs, x, y, b);
+    }
+
     @Override
-    public void onSentLastGestureForVSync(long eventTimeMs) {
-        if (isVSyncNotificationEnabled()) {
-            mDidSignalVSyncUsingInputEvent = true;
-        }
-        if (mNativeContentViewCore != 0) {
-            nativeOnVSync(mNativeContentViewCore, eventTimeMs * 1000);
-        }
+    public void sendSingleTapUMA(int type) {
+        if (mNativeContentViewCore == 0) return;
+        nativeSendSingleTapUma(
+                mNativeContentViewCore,
+                type,
+                UMASingleTapType.COUNT);
+    }
+
+    @Override
+    public void sendActionAfterDoubleTapUMA(int type,
+            boolean clickDelayEnabled) {
+        if (mNativeContentViewCore == 0) return;
+        nativeSendActionAfterDoubleTapUma(
+                mNativeContentViewCore,
+                type,
+                clickDelayEnabled,
+                UMAActionAfterDoubleTap.COUNT);
     }
 
     public void setGestureStateListener(GestureStateListener pinchGestureStateListener) {
@@ -1465,6 +1503,17 @@ public class ContentViewCore
      * To be called when the ContentView is shown.
      */
     public void onShow() {
+        assert mNativeContentViewCore != 0;
+        if (!mInForeground) {
+            int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
+            ChildProcessLauncher.getBindingManager().bindAsHighPriority(pid);
+            // Normally the initial binding is removed in onRenderProcessSwap(), but it is possible
+            // to construct WebContents and spawn the renderer before passing it to ContentViewCore.
+            // In this case there will be no onRenderProcessSwap() call and the initial binding will
+            // be removed here.
+            ChildProcessLauncher.getBindingManager().removeInitialBinding(pid);
+        }
+        mInForeground = true;
         nativeOnShow(mNativeContentViewCore);
         setAccessibilityState(mAccessibilityManager.isEnabled());
     }
@@ -1473,6 +1522,12 @@ public class ContentViewCore
      * To be called when the ContentView is hidden.
      */
     public void onHide() {
+        assert mNativeContentViewCore != 0;
+        if (mInForeground) {
+            int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
+            ChildProcessLauncher.getBindingManager().unbindAsHighPriority(pid);
+        }
+        mInForeground = false;
         hidePopupDialog();
         setInjectedAccessibility(false);
         nativeOnHide(mNativeContentViewCore);
@@ -1532,16 +1587,6 @@ public class ContentViewCore
      */
     @SuppressWarnings("javadoc")
     public void onAttachedToWindow() {
-        mAttachedToWindow = true;
-        if (mNativeContentViewCore != 0) {
-            assert mPid == nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.getBindingManager().bindAsHighPriority(mPid);
-            // Normally the initial binding is removed in onRenderProcessSwap(), but it is possible
-            // to construct WebContents and spawn the renderer before passing it to ContentViewCore.
-            // In this case there will be no onRenderProcessSwap() call and the initial binding will
-            // be removed here.
-            ChildProcessLauncher.getBindingManager().removeInitialBinding(mPid);
-        }
         setAccessibilityState(mAccessibilityManager.isEnabled());
     }
 
@@ -1550,11 +1595,6 @@ public class ContentViewCore
      */
     @SuppressWarnings("javadoc")
     public void onDetachedFromWindow() {
-        mAttachedToWindow = false;
-        if (mNativeContentViewCore != 0) {
-            assert mPid == nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.getBindingManager().unbindAsHighPriority(mPid);
-        }
         setInjectedAccessibility(false);
         hidePopupDialog();
         mZoomControlsDelegate.dismissZoomPicker();
@@ -1838,10 +1878,10 @@ public class ContentViewCore
                     // up hovering over the right position after the scroll.
                     final MotionEvent eventFakeMouseMove = MotionEvent.obtain(event);
                     mFakeMouseMoveRunnable = new Runnable() {
-                          @Override
-                          public void run() {
-                              onHoverEvent(eventFakeMouseMove);
-                          }
+                        @Override
+                        public void run() {
+                            onHoverEvent(eventFakeMouseMove);
+                        }
                     };
                     mContainerView.postDelayed(mFakeMouseMoveRunnable, 250);
                     return true;
@@ -1957,27 +1997,6 @@ public class ContentViewCore
         } else {
             return mContainerViewInternals.super_awakenScrollBars(startDelay, invalidate);
         }
-    }
-
-    /**
-     * Called by native side when the corresponding renderer crashes. Note that if a renderer is
-     * shared between tabs, this might be called multiple times while the tab is crashed. This is
-     * because the tabs sharing a renderer also share RenderProcessHost. When one of those tabs
-     * reloads and a new renderer is created for the shared RenderProcessHost, all tabs are notified
-     * in onRenderProcessSwap(), not only the one that reloads. If this renderer dies, all the other
-     * dead tabs are notified again.
-     * @param alreadyCrashed true iff this tab is already in crashed state but the shared renderer
-     *                       resurrected and died again since the last time this was called.
-     */
-    @SuppressWarnings("unused")
-    @CalledByNative
-    private void onTabCrash(boolean alreadyCrashed) {
-        assert mPid != 0;
-        if (!alreadyCrashed) {
-            getContentViewClient().onRendererCrash(
-                    ChildProcessLauncher.getBindingManager().isOomProtected(mPid));
-        }
-        mPid = 0;
     }
 
     private void handleTapOrPress(
@@ -2312,14 +2331,6 @@ public class ContentViewCore
         nativeClearSslPreferences(mNativeContentViewCore);
     }
 
-    /**
-     * @return Whether the native ContentView has crashed.
-     */
-    public boolean isCrashed() {
-        if (mNativeContentViewCore == 0) return false;
-        return nativeCrashed(mNativeContentViewCore);
-    }
-
     private boolean isSelectionHandleShowing() {
         return mSelectionHandleController != null && mSelectionHandleController.isShowing();
     }
@@ -2524,18 +2535,8 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private GenericTouchGesture createOnePointTouchGesture(int startX,
-            int startY, int deltaX, int deltaY) {
-        return new GenericTouchGesture(this, startX, startY, deltaX, deltaY);
-    }
-
-    @SuppressWarnings("unused")
-    @CalledByNative
-    private GenericTouchGesture createTwoPointTouchGesture(
-            int startX0, int startY0, int deltaX0, int deltaY0,
-            int startX1, int startY1, int deltaX1, int deltaY1) {
-        return new GenericTouchGesture(this, startX0, startY0, deltaX0, deltaY0,
-                startX1, startY1, deltaX1, deltaY1);
+    private TouchEventSynthesizer createTouchEventSynthesizer() {
+        return new TouchEventSynthesizer(this);
     }
 
     @SuppressWarnings("unused")
@@ -2633,8 +2634,7 @@ public class ContentViewCore
     @SuppressWarnings("unused")
     @CalledByNative
     private void onRenderProcessSwap(int oldPid, int newPid) {
-        assert mPid == oldPid || mPid == newPid;
-        if (mAttachedToWindow && oldPid != newPid) {
+        if (mInForeground && oldPid != newPid) {
             ChildProcessLauncher.getBindingManager().unbindAsHighPriority(oldPid);
             ChildProcessLauncher.getBindingManager().bindAsHighPriority(newPid);
         }
@@ -2642,7 +2642,6 @@ public class ContentViewCore
         // We want to remove the initial binding even if the ContentView is not attached, so that
         // renderers for ContentViews loading in background do not retain the high priority.
         ChildProcessLauncher.getBindingManager().removeInitialBinding(newPid);
-        mPid = newPid;
 
         attachImeAdapter();
     }
@@ -3192,18 +3191,23 @@ public class ContentViewCore
         return false;
     }
 
-    private native int nativeInit(boolean hardwareAccelerated, int webContentsPtr,
-            int viewAndroidPtr, int windowAndroidPtr);
+    private native long nativeInit(boolean hardwareAccelerated, long webContentsPtr,
+            long viewAndroidPtr, long windowAndroidPtr);
 
     @CalledByNative
     private ContentVideoViewClient getContentVideoViewClient() {
-        return mContentViewClient.getContentVideoViewClient();
+        return getContentViewClient().getContentVideoViewClient();
     }
 
-    private native void nativeOnJavaContentViewCoreDestroyed(int nativeContentViewCoreImpl);
+    @CalledByNative
+    private boolean shouldBlockMediaRequest(String url) {
+        return getContentViewClient().shouldBlockMediaRequest(url);
+    }
+
+    private native void nativeOnJavaContentViewCoreDestroyed(long nativeContentViewCoreImpl);
 
     private native void nativeLoadUrl(
-            int nativeContentViewCoreImpl,
+            long nativeContentViewCoreImpl,
             String url,
             int loadUrlType,
             int transitionType,
@@ -3214,165 +3218,171 @@ public class ContentViewCore
             String virtualUrlForDataUrl,
             boolean canLoadLocalResources);
 
-    private native String nativeGetURL(int nativeContentViewCoreImpl);
+    private native String nativeGetURL(long nativeContentViewCoreImpl);
 
-    private native String nativeGetTitle(int nativeContentViewCoreImpl);
+    private native String nativeGetTitle(long nativeContentViewCoreImpl);
 
     private native void nativeShowInterstitialPage(
-            int nativeContentViewCoreImpl, String url, int nativeInterstitialPageDelegateAndroid);
-    private native boolean nativeIsShowingInterstitialPage(int nativeContentViewCoreImpl);
+            long nativeContentViewCoreImpl, String url, long nativeInterstitialPageDelegateAndroid);
+    private native boolean nativeIsShowingInterstitialPage(long nativeContentViewCoreImpl);
 
-    private native boolean nativeIsIncognito(int nativeContentViewCoreImpl);
+    private native boolean nativeIsIncognito(long nativeContentViewCoreImpl);
 
-    // Returns true if the native side crashed so that java side can draw a sad tab.
-    private native boolean nativeCrashed(int nativeContentViewCoreImpl);
-
-    private native void nativeSetFocus(int nativeContentViewCoreImpl, boolean focused);
+    private native void nativeSetFocus(long nativeContentViewCoreImpl, boolean focused);
 
     private native void nativeSendOrientationChangeEvent(
-            int nativeContentViewCoreImpl, int orientation);
+            long nativeContentViewCoreImpl, int orientation);
 
     // All touch events (including flings, scrolls etc) accept coordinates in physical pixels.
     private native boolean nativeSendTouchEvent(
-            int nativeContentViewCoreImpl, long timeMs, int action, TouchPoint[] pts);
+            long nativeContentViewCoreImpl, long timeMs, int action, TouchPoint[] pts);
 
     private native int nativeSendMouseMoveEvent(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native int nativeSendMouseWheelEvent(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y, float verticalAxis);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y, float verticalAxis);
 
     private native void nativeScrollBegin(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
-    private native void nativeScrollEnd(int nativeContentViewCoreImpl, long timeMs);
+    private native void nativeScrollEnd(long nativeContentViewCoreImpl, long timeMs);
 
     private native void nativeScrollBy(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y,
+            long nativeContentViewCoreImpl, long timeMs, float x, float y,
             float deltaX, float deltaY);
 
     private native void nativeFlingStart(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y, float vx, float vy);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y, float vx, float vy);
 
-    private native void nativeFlingCancel(int nativeContentViewCoreImpl, long timeMs);
+    private native void nativeFlingCancel(long nativeContentViewCoreImpl, long timeMs);
 
     private native void nativeSingleTap(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y, boolean linkPreviewTap);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y, boolean linkPreviewTap);
 
     private native void nativeSingleTapUnconfirmed(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native void nativeShowPressState(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
-    private native void nativeShowPressCancel(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+    private native void nativeTapCancel(
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native void nativeTapDown(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native void nativeDoubleTap(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native void nativeLongPress(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y, boolean linkPreviewTap);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y, boolean linkPreviewTap);
 
     private native void nativeLongTap(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y, boolean linkPreviewTap);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y, boolean linkPreviewTap);
 
     private native void nativePinchBegin(
-            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
-    private native void nativePinchEnd(int nativeContentViewCoreImpl, long timeMs);
+    private native void nativePinchEnd(long nativeContentViewCoreImpl, long timeMs);
 
-    private native void nativePinchBy(int nativeContentViewCoreImpl, long timeMs,
+    private native void nativePinchBy(long nativeContentViewCoreImpl, long timeMs,
             float anchorX, float anchorY, float deltaScale);
 
     private native void nativeSelectBetweenCoordinates(
-            int nativeContentViewCoreImpl, float x1, float y1, float x2, float y2);
+            long nativeContentViewCoreImpl, float x1, float y1, float x2, float y2);
 
-    private native void nativeMoveCaret(int nativeContentViewCoreImpl, float x, float y);
+    private native void nativeMoveCaret(long nativeContentViewCoreImpl, float x, float y);
 
-    private native boolean nativeCanGoBack(int nativeContentViewCoreImpl);
-    private native boolean nativeCanGoForward(int nativeContentViewCoreImpl);
-    private native boolean nativeCanGoToOffset(int nativeContentViewCoreImpl, int offset);
-    private native void nativeGoBack(int nativeContentViewCoreImpl);
-    private native void nativeGoForward(int nativeContentViewCoreImpl);
-    private native void nativeGoToOffset(int nativeContentViewCoreImpl, int offset);
-    private native void nativeGoToNavigationIndex(int nativeContentViewCoreImpl, int index);
-    private native void nativeLoadIfNecessary(int nativeContentViewCoreImpl);
-    private native void nativeRequestRestoreLoad(int nativeContentViewCoreImpl);
+    private native boolean nativeCanGoBack(long nativeContentViewCoreImpl);
+    private native boolean nativeCanGoForward(long nativeContentViewCoreImpl);
+    private native boolean nativeCanGoToOffset(long nativeContentViewCoreImpl, int offset);
+    private native void nativeGoBack(long nativeContentViewCoreImpl);
+    private native void nativeGoForward(long nativeContentViewCoreImpl);
+    private native void nativeGoToOffset(long nativeContentViewCoreImpl, int offset);
+    private native void nativeGoToNavigationIndex(long nativeContentViewCoreImpl, int index);
+    private native void nativeLoadIfNecessary(long nativeContentViewCoreImpl);
+    private native void nativeRequestRestoreLoad(long nativeContentViewCoreImpl);
 
-    private native void nativeStopLoading(int nativeContentViewCoreImpl);
+    private native void nativeStopLoading(long nativeContentViewCoreImpl);
 
-    private native void nativeReload(int nativeContentViewCoreImpl);
+    private native void nativeReload(long nativeContentViewCoreImpl, boolean checkForRepost);
+    private native void nativeReloadIgnoringCache(
+            long nativeContentViewCoreImpl, boolean checkForRepost);
 
-    private native void nativeCancelPendingReload(int nativeContentViewCoreImpl);
+    private native void nativeCancelPendingReload(long nativeContentViewCoreImpl);
 
-    private native void nativeContinuePendingReload(int nativeContentViewCoreImpl);
+    private native void nativeContinuePendingReload(long nativeContentViewCoreImpl);
 
-    private native void nativeSelectPopupMenuItems(int nativeContentViewCoreImpl, int[] indices);
+    private native void nativeSelectPopupMenuItems(long nativeContentViewCoreImpl, int[] indices);
 
-    private native void nativeScrollFocusedEditableNodeIntoView(int nativeContentViewCoreImpl);
-    private native void nativeUndoScrollFocusedEditableNodeIntoView(int nativeContentViewCoreImpl);
+    private native void nativeScrollFocusedEditableNodeIntoView(long nativeContentViewCoreImpl);
+    private native void nativeUndoScrollFocusedEditableNodeIntoView(long nativeContentViewCoreImpl);
 
-    private native void nativeClearHistory(int nativeContentViewCoreImpl);
+    private native void nativeClearHistory(long nativeContentViewCoreImpl);
 
-    private native void nativeEvaluateJavaScript(int nativeContentViewCoreImpl,
+    private native void nativeEvaluateJavaScript(long nativeContentViewCoreImpl,
             String script, JavaScriptCallback callback, boolean startRenderer);
 
-    private native int nativeGetNativeImeAdapter(int nativeContentViewCoreImpl);
+    private native int nativeGetNativeImeAdapter(long nativeContentViewCoreImpl);
 
-    private native int nativeGetCurrentRenderProcessId(int nativeContentViewCoreImpl);
+    private native int nativeGetCurrentRenderProcessId(long nativeContentViewCoreImpl);
 
-    private native int nativeGetBackgroundColor(int nativeContentViewCoreImpl);
+    private native int nativeGetBackgroundColor(long nativeContentViewCoreImpl);
 
-    private native void nativeOnShow(int nativeContentViewCoreImpl);
-    private native void nativeOnHide(int nativeContentViewCoreImpl);
+    private native void nativeOnShow(long nativeContentViewCoreImpl);
+    private native void nativeOnHide(long nativeContentViewCoreImpl);
 
-    private native void nativeSetUseDesktopUserAgent(int nativeContentViewCoreImpl,
+    private native void nativeSetUseDesktopUserAgent(long nativeContentViewCoreImpl,
             boolean enabled, boolean reloadOnChange);
-    private native boolean nativeGetUseDesktopUserAgent(int nativeContentViewCoreImpl);
+    private native boolean nativeGetUseDesktopUserAgent(long nativeContentViewCoreImpl);
 
-    private native void nativeClearSslPreferences(int nativeContentViewCoreImpl);
+    private native void nativeClearSslPreferences(long nativeContentViewCoreImpl);
 
-    private native void nativeAddJavascriptInterface(int nativeContentViewCoreImpl, Object object,
+    private native void nativeAddJavascriptInterface(long nativeContentViewCoreImpl, Object object,
             String name, Class requiredAnnotation, HashSet<Object> retainedObjectSet);
 
-    private native void nativeRemoveJavascriptInterface(int nativeContentViewCoreImpl, String name);
+    private native void nativeRemoveJavascriptInterface(long nativeContentViewCoreImpl,
+            String name);
 
-    private native int nativeGetNavigationHistory(int nativeContentViewCoreImpl, Object context);
-    private native void nativeGetDirectedNavigationHistory(int nativeContentViewCoreImpl,
+    private native int nativeGetNavigationHistory(long nativeContentViewCoreImpl, Object context);
+    private native void nativeGetDirectedNavigationHistory(long nativeContentViewCoreImpl,
             Object context, boolean isForward, int maxEntries);
     private native String nativeGetOriginalUrlForActiveNavigationEntry(
-            int nativeContentViewCoreImpl);
+            long nativeContentViewCoreImpl);
 
-    private native void nativeUpdateVSyncParameters(int nativeContentViewCoreImpl,
+    private native void nativeUpdateVSyncParameters(long nativeContentViewCoreImpl,
             long timebaseMicros, long intervalMicros);
 
-    private native void nativeOnVSync(int nativeContentViewCoreImpl, long frameTimeMicros);
+    private native void nativeOnVSync(long nativeContentViewCoreImpl, long frameTimeMicros);
 
-    private native boolean nativeOnAnimate(int nativeContentViewCoreImpl, long frameTimeMicros);
+    private native boolean nativeOnAnimate(long nativeContentViewCoreImpl, long frameTimeMicros);
 
-    private native boolean nativePopulateBitmapFromCompositor(int nativeContentViewCoreImpl,
+    private native boolean nativePopulateBitmapFromCompositor(long nativeContentViewCoreImpl,
             Bitmap bitmap);
 
-    private native void nativeWasResized(int nativeContentViewCoreImpl);
+    private native void nativeWasResized(long nativeContentViewCoreImpl);
 
-    private native boolean nativeIsRenderWidgetHostViewReady(int nativeContentViewCoreImpl);
+    private native boolean nativeIsRenderWidgetHostViewReady(long nativeContentViewCoreImpl);
 
-    private native void nativeExitFullscreen(int nativeContentViewCoreImpl);
-    private native void nativeUpdateTopControlsState(int nativeContentViewCoreImpl,
+    private native void nativeExitFullscreen(long nativeContentViewCoreImpl);
+    private native void nativeUpdateTopControlsState(long nativeContentViewCoreImpl,
             boolean enableHiding, boolean enableShowing, boolean animate);
 
-    private native void nativeShowImeIfNeeded(int nativeContentViewCoreImpl);
+    private native void nativeShowImeIfNeeded(long nativeContentViewCoreImpl);
 
     private native void nativeAttachExternalVideoSurface(
-            int nativeContentViewCoreImpl, int playerId, Surface surface);
+            long nativeContentViewCoreImpl, int playerId, Surface surface);
 
     private native void nativeDetachExternalVideoSurface(
-            int nativeContentViewCoreImpl, int playerId);
+            long nativeContentViewCoreImpl, int playerId);
 
     private native void nativeSetAccessibilityEnabled(
-            int nativeContentViewCoreImpl, boolean enabled);
+            long nativeContentViewCoreImpl, boolean enabled);
+
+    private native void nativeSendSingleTapUma(long nativeContentViewCoreImpl,
+            int type, int count);
+
+    private native void nativeSendActionAfterDoubleTapUma(long nativeContentViewCoreImpl,
+            int type, boolean hasDelay, int count);
 }

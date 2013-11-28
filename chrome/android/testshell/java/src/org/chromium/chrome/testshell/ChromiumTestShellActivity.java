@@ -6,17 +6,24 @@ package org.chromium.chrome.testshell;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.res.TypedArray;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
-import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.widget.Toast;
 
+import org.chromium.base.ApiCompatibilityUtils;
+import org.chromium.base.BaseSwitches;
+import org.chromium.base.CommandLine;
 import org.chromium.base.MemoryPressureListener;
 import org.chromium.chrome.browser.DevToolsServer;
+import org.chromium.chrome.browser.appmenu.AppMenuHandler;
+import org.chromium.chrome.browser.appmenu.AppMenuPropertiesDelegate;
+import org.chromium.chrome.browser.printing.PrintingControllerFactory;
+import org.chromium.chrome.browser.printing.TabPrinter;
 import org.chromium.chrome.testshell.sync.SyncController;
 import org.chromium.content.browser.ActivityContentVideoViewClient;
 import org.chromium.content.browser.BrowserStartupController;
@@ -24,21 +31,24 @@ import org.chromium.content.browser.ContentVideoViewClient;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.DeviceUtils;
-import org.chromium.content.browser.TracingControllerAndroid;
-import org.chromium.content.common.CommandLine;
+import org.chromium.printing.PrintingController;
 import org.chromium.sync.signin.ChromeSigninController;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * The {@link android.app.Activity} component of a basic test shell to test Chrome features.
  */
-public class ChromiumTestShellActivity extends Activity implements MenuHandler {
+public class ChromiumTestShellActivity extends Activity implements AppMenuPropertiesDelegate {
     private static final String TAG = "ChromiumTestShellActivity";
 
     private WindowAndroid mWindow;
     private TabManager mTabManager;
     private DevToolsServer mDevToolsServer;
     private SyncController mSyncController;
+    private PrintingController mPrintingController;
+
+    private AppMenuHandler mAppMenuHandler;
 
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
@@ -71,19 +81,23 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
     private void finishInitialization(final Bundle savedInstanceState) {
         setContentView(R.layout.testshell_activity);
         mTabManager = (TabManager) findViewById(R.id.tab_manager);
+
+        mWindow = new ActivityWindowAndroid(this);
+        mWindow.restoreInstanceState(savedInstanceState);
+        mTabManager.setWindow(mWindow);
+
         String startupUrl = getUrlFromIntent(getIntent());
         if (!TextUtils.isEmpty(startupUrl)) {
             mTabManager.setStartupUrl(startupUrl);
         }
         TestShellToolbar mToolbar = (TestShellToolbar) findViewById(R.id.toolbar);
-        mToolbar.setMenuHandler(this);
-
-        mWindow = new WindowAndroid(this);
-        mWindow.restoreInstanceState(savedInstanceState);
-        mTabManager.setWindow(mWindow);
-
+        mAppMenuHandler = new AppMenuHandler(this, this, R.menu.main_menu);
+        mToolbar.setMenuHandler(mAppMenuHandler);
         mDevToolsServer = new DevToolsServer("chromium_testshell");
         mDevToolsServer.setRemoteDebuggingEnabled(true);
+
+        mPrintingController = PrintingControllerFactory.create(this);
+
         mSyncController = SyncController.get(this);
         // In case this method is called after the first onStart(), we need to inform the
         // SyncController that we have started.
@@ -155,6 +169,13 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
     }
 
     /**
+     * @return The {@link WindowAndroid} associated with this activity.
+     */
+    public WindowAndroid getWindowAndroid() {
+        return mWindow;
+    }
+
+    /**
      * @return The {@link TestShellTab} that is currently visible.
      */
     public TestShellTab getActiveTab() {
@@ -185,18 +206,15 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
     }
 
     /**
-     * From {@link MenuHandler}.
+     * Override the menu key event to show AppMenu.
      */
     @Override
-    public void showPopupMenu() {
-        openOptionsMenu();
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        MenuInflater inflater = getMenuInflater();
-        inflater.inflate(R.menu.main_menu, menu);
-        return true;
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_MENU && event.getRepeatCount() == 0) {
+            mAppMenuHandler.showAppMenu(findViewById(R.id.menu_button), true, false);
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     @Override
@@ -208,24 +226,24 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
                 else
                     SyncController.openSigninDialog(getFragmentManager());
                 return true;
+            case R.id.print:
+                if (getActiveTab() != null) {
+                    mPrintingController.startPrint(new TabPrinter(getActiveTab()));
+                }
+                return true;
+            case R.id.back_menu_id:
+                if (getActiveTab().canGoBack()) getActiveTab().goBack();
+                return true;
+            case R.id.forward_menu_id:
+                if (getActiveTab().canGoForward()) getActiveTab().goForward();
+                return true;
             default:
                 return super.onOptionsItemSelected(item);
         }
     }
 
-    @Override
-    public boolean onPrepareOptionsMenu(Menu menu) {
-        menu.setGroupVisible(R.id.MAIN_MENU, true);
-        MenuItem signinItem = menu.findItem(R.id.signin);
-        if (ChromeSigninController.get(this).isSignedIn())
-            signinItem.setTitle(ChromeSigninController.get(this).getSignedInAccountName());
-        else
-            signinItem.setTitle(R.string.signin_sign_in);
-        return true;
-    }
-
     private void waitForDebuggerIfNeeded() {
-        if (CommandLine.getInstance().hasSwitch(CommandLine.WAIT_FOR_JAVA_DEBUGGER)) {
+        if (CommandLine.getInstance().hasSwitch(BaseSwitches.WAIT_FOR_JAVA_DEBUGGER)) {
             Log.e(TAG, "Waiting for Java debugger to connect...");
             android.os.Debug.waitForDebugger();
             Log.e(TAG, "Java debugger connected. Resuming execution.");
@@ -234,5 +252,54 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
 
     private static String getUrlFromIntent(Intent intent) {
         return intent != null ? intent.getDataString() : null;
+    }
+
+    @Override
+    public boolean shouldShowAppMenu() {
+        return true;
+    }
+
+    @Override
+    public void prepareMenu(Menu menu) {
+        // Disable the "Back" menu item if there is no page to go to.
+        MenuItem backMenuItem = menu.findItem(R.id.back_menu_id);
+        backMenuItem.setEnabled(getActiveTab().canGoBack());
+
+        // Disable the "Forward" menu item if there is no page to go to.
+        MenuItem forwardMenuItem = menu.findItem(R.id.forward_menu_id);
+        forwardMenuItem.setEnabled(getActiveTab().canGoForward());
+
+        // ChromiumTestShell does not know about bookmarks yet
+        menu.findItem(R.id.bookmark_this_page_id).setEnabled(false);
+
+        MenuItem signinItem = menu.findItem(R.id.signin);
+        if (ChromeSigninController.get(this).isSignedIn()) {
+            signinItem.setTitle(ChromeSigninController.get(this).getSignedInAccountName());
+        } else {
+            signinItem.setTitle(R.string.signin_sign_in);
+        }
+
+        menu.findItem(R.id.print).setVisible(ApiCompatibilityUtils.isPrintingSupported());
+
+        menu.setGroupVisible(R.id.MAIN_MENU, true);
+    }
+
+    @Override
+    public boolean shouldShowIconRow() {
+        return true;
+    }
+
+    @Override
+    public int getMenuThemeResourceId() {
+        return android.R.style.Theme_Holo_Light;
+    }
+
+    @Override
+    public int getItemRowHeight() {
+        TypedArray a = obtainStyledAttributes(
+                new int[] {android.R.attr.listPreferredItemHeightSmall});
+        int itemRowHeight = a.getDimensionPixelSize(0, 0);
+        a.recycle();
+        return itemRowHeight;
     }
 }

@@ -85,6 +85,7 @@
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/extension_ime_util.h"
@@ -122,6 +123,9 @@ const int kSessionLengthLimitMaxMs = 24 * 60 * 60 * 1000;  // 24 hours.
 
 const char kDisplaySettingsSubPageName[] = "display";
 const char kDisplayOverscanSettingsSubPageName[] = "displayOverscan";
+
+// The URL for the Google Drive settings page.
+const char kDriveSettingsPageURL[] = "https://drive.google.com";
 
 void ExtractIMEInfo(const input_method::InputMethodDescriptor& ime,
                     const input_method::InputMethodUtil& util,
@@ -199,10 +203,6 @@ ash::DriveOperationStatusList ConvertToDriveStatusList(
 }
 
 void BluetoothPowerFailure() {
-  // TODO(sad): Show an error bubble?
-}
-
-void BluetoothDiscoveryFailure() {
   // TODO(sad): Show an error bubble?
 }
 
@@ -528,11 +528,15 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual void ShowDriveSettings() OVERRIDE {
-    // TODO(hshi): Open the drive-specific settings page once we put it in.
-    // For now just show search result for downoads settings.
-    std::string sub_page = std::string(chrome::kSearchSubPage) + "#" +
-        l10n_util::GetStringUTF8(IDS_OPTIONS_DOWNLOADLOCATION_GROUP_NAME);
-    ShowSettingsSubPageForAppropriateBrowser(sub_page);
+    // TODO(tengs): Open the drive-specific settings page once we put it in.
+    // For now just show Google Drive main page.
+    chrome::ScopedTabbedBrowserDisplayer displayer(
+         ProfileManager::GetDefaultProfileOrOffTheRecord(),
+         chrome::HOST_DESKTOP_TYPE_ASH);
+    chrome::ShowSingletonTabOverwritingNTP(
+        displayer.browser(),
+        chrome::GetSingletonTabNavigateParams(displayer.browser(),
+                                              GURL(kDriveSettingsPageURL)));
   }
 
   virtual void ShowIMESettings() OVERRIDE {
@@ -838,10 +842,6 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
         IDS_SYSTEM_TRAY_MENU_BUBBLE_WIDTH_PIXELS);
   }
 
-  virtual void MaybeSpeak(const std::string& utterance) const OVERRIDE {
-    AccessibilityManager::Get()->MaybeSpeak(utterance);
-  }
-
  private:
   ash::SystemTray* GetPrimarySystemTray() {
     return ash::Shell::GetInstance()->GetPrimarySystemTray();
@@ -1115,6 +1115,13 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   // Overridden from InputMethodManager::Observer.
   virtual void InputMethodChanged(
       input_method::InputMethodManager* manager, bool show_message) OVERRIDE {
+    // |show_message| in ash means the message_center notifications
+    // which should not be shown unless kDisableIMEModeIndicator is
+    // on, since the mode indicator already notifies the user.
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDisableIMEModeIndicator)) {
+      show_message = false;
+    }
     GetSystemTrayNotifier()->NotifyRefreshIME(show_message);
   }
 

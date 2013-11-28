@@ -5,15 +5,20 @@
 #ifndef UI_APP_LIST_TEST_APP_LIST_TEST_VIEW_DELEGATE_H_
 #define UI_APP_LIST_TEST_APP_LIST_TEST_VIEW_DELEGATE_H_
 
+#include <string>
+
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/app_list/app_list_view_delegate.h"
 
 namespace app_list {
 namespace test {
 
+class AppListTestModel;
+
 // A concrete AppListViewDelegate for unit tests.
-class AppListTestViewDelegate  : public AppListViewDelegate {
+class AppListTestViewDelegate : public AppListViewDelegate {
  public:
   AppListTestViewDelegate();
   virtual ~AppListTestViewDelegate();
@@ -23,9 +28,14 @@ class AppListTestViewDelegate  : public AppListViewDelegate {
     test_signin_delegate_ = signin_delegate;
   }
 
+  void SetUsers(const Users& users) {
+    users_ = users;
+  }
+
   // AppListViewDelegate overrides:
+  virtual bool ForceNativeDesktop() const OVERRIDE;
   virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE {}
-  virtual void InitModel(AppListModel* model) OVERRIDE {}
+  virtual AppListModel* GetModel() OVERRIDE;
   virtual SigninDelegate* GetSigninDelegate() OVERRIDE;
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
@@ -43,13 +53,22 @@ class AppListTestViewDelegate  : public AppListViewDelegate {
   virtual void OpenSettings() OVERRIDE {}
   virtual void OpenHelp() OVERRIDE {}
   virtual void OpenFeedback() OVERRIDE {}
+  virtual void ToggleSpeechRecognition() OVERRIDE {}
   virtual void ShowForProfileByPath(
-      const base::FilePath& profile_path) OVERRIDE {};
+      const base::FilePath& profile_path) OVERRIDE {}
   virtual content::WebContents* GetStartPageContents() OVERRIDE;
+  virtual const Users& GetUsers() const OVERRIDE;
+
+  // Do a bulk replacement of the items in the model.
+  void ReplaceTestModel(int item_count);
+
+  AppListTestModel* GetTestModel() { return model_.get(); }
 
  private:
   int dismiss_count_;
+  Users users_;
   SigninDelegate* test_signin_delegate_;  // Weak. Owned by test.
+  scoped_ptr<AppListTestModel> model_;
 };
 
 }  // namespace test

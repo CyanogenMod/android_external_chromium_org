@@ -173,15 +173,13 @@ void QuicTestClient::Initialize(IPEndPoint address,
                                 const string& hostname,
                                 bool secure) {
   server_address_ = address;
-  stream_ = NULL;
-  stream_error_ = QUIC_STREAM_NO_ERROR;
   priority_ = 3;
-  bytes_read_ = 0;
-  bytes_written_= 0;
   connect_attempted_ = false;
   secure_ = secure;
   auto_reconnect_ = false;
+  buffer_body_ = true;
   proof_verifier_ = NULL;
+  ClearPerRequestState();
   ExpectCertificates(secure_);
 }
 
@@ -222,16 +220,19 @@ ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
 
   scoped_ptr<BalsaHeaders> munged_headers(MungeHeaders(message.headers(),
                                           secure_));
-  return GetOrCreateStream()->SendRequest(
+  ssize_t ret = GetOrCreateStream()->SendRequest(
       munged_headers.get() ? *munged_headers.get() : *message.headers(),
       message.body(),
       message.has_complete_message());
+  WaitForWriteToFlush();
+  return ret;
 }
 
 ssize_t QuicTestClient::SendData(string data, bool last_data) {
   QuicReliableClientStream* stream = GetOrCreateStream();
   if (!stream) { return 0; }
   GetOrCreateStream()->SendBody(data, last_data);
+  WaitForWriteToFlush();
   return data.length();
 }
 
@@ -304,9 +305,7 @@ void QuicTestClient::ResetConnection() {
 }
 
 void QuicTestClient::Disconnect() {
-  if (client_->connected()) {
-    client_->Disconnect();
-  }
+  client_->Disconnect();
   connect_attempted_ = false;
 }
 
@@ -318,9 +317,13 @@ void QuicTestClient::ClearPerRequestState() {
   stream_error_ = QUIC_STREAM_NO_ERROR;
   stream_ = NULL;
   response_ = "";
+  response_complete_ = false;
+  response_headers_complete_ = false;
   headers_.Clear();
   bytes_read_ = 0;
   bytes_written_ = 0;
+  response_header_size_ = 0;
+  response_body_size_ = 0;
 }
 
 void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
@@ -370,6 +373,22 @@ ssize_t QuicTestClient::Send(const void *buffer, size_t size) {
   return SendData(string(static_cast<const char*>(buffer), size), false);
 }
 
+bool QuicTestClient::response_headers_complete() const {
+  if (stream_ != NULL) {
+    return stream_->headers_decompressed();
+  } else {
+    return response_headers_complete_;
+  }
+}
+
+const BalsaHeaders* QuicTestClient::response_headers() const {
+  if (stream_ != NULL) {
+    return &stream_->headers();
+  } else {
+    return &headers_;
+  }
+}
+
 int QuicTestClient::response_size() const {
   return bytes_read_;
 }
@@ -386,11 +405,18 @@ void QuicTestClient::OnClose(ReliableQuicStream* stream) {
   if (stream_ != stream) {
     return;
   }
-  response_ = stream_->data();
+  if (buffer_body()) {
+    // TODO(fnk): The stream still buffers the whole thing. Fix that.
+    response_ = stream_->data();
+  }
+  response_complete_ = true;
+  response_headers_complete_ = stream_->headers_decompressed();
   headers_.CopyFrom(stream_->headers());
   stream_error_ = stream_->stream_error();
   bytes_read_ = stream_->stream_bytes_read();
   bytes_written_ = stream_->stream_bytes_written();
+  response_header_size_ = headers_.GetSizeForWriteBuffer();
+  response_body_size_ = stream_->data().size();
   stream_ = NULL;
 }
 
@@ -401,6 +427,12 @@ void QuicTestClient::UseWriter(QuicTestWriter* writer) {
 void QuicTestClient::UseGuid(QuicGuid guid) {
   DCHECK(!connected());
   reinterpret_cast<QuicEpollClient*>(client_.get())->UseGuid(guid);
+}
+
+void QuicTestClient::WaitForWriteToFlush() {
+  while (connected() && client()->session()->HasQueuedData()) {
+    client_->WaitForEvents();
+  }
 }
 
 }  // namespace test

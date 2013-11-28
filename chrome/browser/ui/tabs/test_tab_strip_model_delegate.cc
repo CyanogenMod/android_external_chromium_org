@@ -13,7 +13,9 @@ TestTabStripModelDelegate::TestTabStripModelDelegate() {
 TestTabStripModelDelegate::~TestTabStripModelDelegate() {
 }
 
-void TestTabStripModelDelegate::AddBlankTabAt(int index, bool foreground) {
+void TestTabStripModelDelegate::AddTabAt(const GURL& url,
+                                            int index,
+                                            bool foreground) {
 }
 
 Browser* TestTabStripModelDelegate::CreateNewStripWithContents(
@@ -48,6 +50,11 @@ void TestTabStripModelDelegate::CloseFrameAfterDragSession() {
 
 void TestTabStripModelDelegate::CreateHistoricalTab(
     content::WebContents* contents) {
+}
+
+bool TestTabStripModelDelegate::ShouldRunUnloadListenerBeforeClosing(
+    content::WebContents* contents) {
+  return false;
 }
 
 bool TestTabStripModelDelegate::RunUnloadListenerBeforeClosing(

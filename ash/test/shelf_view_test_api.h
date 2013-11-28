@@ -10,12 +10,16 @@
 
 namespace gfx {
 class Rect;
+class Size;
 }
 
 namespace ash {
 
+class LauncherDelegate;
+
 namespace internal {
-class LauncherButton;
+class OverflowBubble;
+class ShelfButton;
 class ShelfView;
 }
 
@@ -31,7 +35,10 @@ class ShelfViewTestAPI {
   int GetButtonCount();
 
   // Retrieve the button at |index|.
-  internal::LauncherButton* GetButton(int index);
+  internal::ShelfButton* GetButton(int index);
+
+  // First visible button index.
+  int GetFirstVisibleIndex();
 
   // Last visible button index.
   int GetLastVisibleIndex();
@@ -55,8 +62,26 @@ class ShelfViewTestAPI {
   // An accessor for |shelf_view|.
   internal::ShelfView* shelf_view() { return shelf_view_; }
 
+  // An accessor for overflow bubble.
+  internal::OverflowBubble* overflow_bubble();
+
+  // Returns the preferred size of |shelf_view_|.
+  gfx::Size GetPreferredSize();
+
+  // Returns the button size.
+  int GetButtonSize();
+
+  // Returns the button space size.
+  int GetButtonSpacing();
+
   // Wrapper for ShelfView::SameDragType.
   bool SameDragType(LauncherItemType typea, LauncherItemType typeb) const;
+
+  // Sets LauncherDelegate.
+  void SetLauncherDelegate(LauncherDelegate* delegate);
+
+  // Returns re-insertable bounds in screen.
+  gfx::Rect GetBoundsForDragInsertInScreen();
 
  private:
   internal::ShelfView* shelf_view_;

@@ -19,7 +19,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, PopupStaysClosed) {
       TemplateURLServiceFactory::GetForProfile(browser()->profile()));
 
   LocationBar* location_bar = GetLocationBar(browser());
-  OmniboxView* omnibox_view = location_bar->GetLocationEntry();
+  OmniboxView* omnibox_view = location_bar->GetOmniboxView();
   AutocompleteController* autocomplete_controller =
       GetAutocompleteController(browser());
   OmniboxPopupModel* popup_model = omnibox_view->model()->popup_model();
@@ -42,7 +42,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, PopupStaysClosed) {
   // location_bar or location_bar->().
   autocomplete_controller->Start(
       AutocompleteInput(ASCIIToUTF16("keyword command"), string16::npos,
-                        string16(), GURL(), AutocompleteInput::NEW_TAB_PAGE,
+                        string16(), GURL(), AutocompleteInput::NTP,
                         true, false, true, AutocompleteInput::ALL_MATCHES));
   location_bar->AcceptInput();
   WaitForAutocompleteDone(autocomplete_controller);

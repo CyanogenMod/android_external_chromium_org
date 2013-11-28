@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
@@ -17,7 +18,6 @@
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/cloud/cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/cloud_policy_service.h"
-#include "chrome/browser/policy/cloud/component_cloud_policy_service.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class GoogleServiceAuthError;
@@ -36,7 +36,6 @@ namespace policy {
 class CloudExternalDataManager;
 class DeviceManagementService;
 class PolicyOAuth2TokenFetcher;
-class ResourceCache;
 
 // UserCloudPolicyManagerChromeOS implements logic for initializing user policy
 // on Chrome OS.
@@ -44,19 +43,24 @@ class UserCloudPolicyManagerChromeOS
     : public CloudPolicyManager,
       public CloudPolicyClient::Observer,
       public CloudPolicyService::Observer,
-      public ComponentCloudPolicyService::Delegate,
       public BrowserContextKeyedService {
  public:
-  // |task_runner| is the runner for policy refresh tasks.
   // If |wait_for_policy_fetch| is true, IsInitializationComplete() will return
   // false as long as there hasn't been a successful policy fetch.
+  // |task_runner| is the runner for policy refresh tasks.
+  // |file_task_runner| is used for file operations. Currently this must be the
+  // FILE BrowserThread.
+  // |io_task_runner| is used for network IO. Currently this must be the IO
+  // BrowserThread.
   UserCloudPolicyManagerChromeOS(
       scoped_ptr<CloudPolicyStore> store,
       scoped_ptr<CloudExternalDataManager> external_data_manager,
-      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
-      scoped_ptr<ResourceCache> resource_cache,
+      const base::FilePath& component_policy_cache_path,
       bool wait_for_policy_fetch,
-      base::TimeDelta initial_policy_fetch_timeout);
+      base::TimeDelta initial_policy_fetch_timeout,
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& io_task_runner);
   virtual ~UserCloudPolicyManagerChromeOS();
 
   // Initializes the cloud connection. |local_state| and
@@ -83,11 +87,6 @@ class UserCloudPolicyManagerChromeOS
   // ConfigurationPolicyProvider:
   virtual void Shutdown() OVERRIDE;
   virtual bool IsInitializationComplete(PolicyDomain domain) const OVERRIDE;
-  virtual void RegisterPolicyDomain(
-      scoped_refptr<const PolicyDomainDescriptor> descriptor) OVERRIDE;
-
-  // CloudPolicyManager:
-  virtual scoped_ptr<PolicyBundle> CreatePolicyBundle() OVERRIDE;
 
   // CloudPolicyService::Observer:
   virtual void OnInitializationCompleted(CloudPolicyService* service) OVERRIDE;
@@ -98,7 +97,6 @@ class UserCloudPolicyManagerChromeOS
   virtual void OnClientError(CloudPolicyClient* client) OVERRIDE;
 
   // ComponentCloudPolicyService::Delegate:
-  virtual void OnComponentCloudPolicyRefreshNeeded() OVERRIDE;
   virtual void OnComponentCloudPolicyUpdated() OVERRIDE;
 
  private:
@@ -129,9 +127,8 @@ class UserCloudPolicyManagerChromeOS
   // Manages external data referenced by policies.
   scoped_ptr<CloudExternalDataManager> external_data_manager_;
 
-  // Handles fetching and storing cloud policy for components. It uses the
-  // |store_|, so destroy it first.
-  scoped_ptr<ComponentCloudPolicyService> component_policy_service_;
+  // Path where policy for components will be cached.
+  base::FilePath component_policy_cache_path_;
 
   // Whether to wait for a policy fetch to complete before reporting
   // IsInitializationComplete().

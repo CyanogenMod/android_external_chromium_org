@@ -23,7 +23,7 @@ NET_EXPORT_PRIVATE extern bool FLAGS_track_retransmission_history;
 namespace net {
 
 // Class which tracks the set of packets sent on a QUIC connection.
-// It keeps track of the retransmittable data ssociated with each
+// It keeps track of the retransmittable data associated with each
 // packets. If a packet is retransmitted, it will keep track of each
 // version of a packet so that if a previous transmission is acked,
 // the data will not be retransmitted.
@@ -54,13 +54,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
     // Called to return the sequence number of the next packet to be sent.
     virtual QuicPacketSequenceNumber GetNextPacketSequenceNumber() = 0;
-
-    // Called when a packet has been explicitly NACK'd.  If a packet
-    // has been retransmitted with mutliple sequence numbers, this will
-    // only be called for the sequence number (if any) associated with
-    // retransmittable frames.
-    virtual void OnPacketNacked(QuicPacketSequenceNumber sequence_number,
-                                size_t nack_count) = 0;
   };
 
   QuicSentPacketManager(bool is_server, HelperInterface* helper);
@@ -78,7 +71,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
                              QuicPacketSequenceNumber new_sequence_number);
 
   // Processes the ReceivedPacketInfo data from the incoming ack.
-  void OnIncomingAck(const ReceivedPacketInfo& received_info,
+  void OnPacketAcked(const ReceivedPacketInfo& received_info,
                      bool is_truncated_ack);
 
   // Discards any information for the packet corresponding to |sequence_number|.
@@ -91,11 +84,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Returns true if |sequence_number| is a retransmission of a packet.
   bool IsRetransmission(QuicPacketSequenceNumber sequence_number) const;
-
-  // Returns the number of times the data in the packet |sequence_number|
-  // has been transmitted.
-  size_t GetRetransmissionCount(
-      QuicPacketSequenceNumber sequence_number) const;
 
   // Returns true if the non-FEC packet |sequence_number| is unacked.
   bool IsUnacked(QuicPacketSequenceNumber sequence_number) const;
@@ -131,8 +119,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Returns true if there are any unacked packets.
   bool HasUnackedPackets() const;
 
-  // Returns the number of unacked packets.
-  size_t GetNumUnackedPackets() const;
+  // Returns the number of unacked packets which have retransmittable frames.
+  size_t GetNumRetransmittablePackets() const;
 
   // Returns true if there are any unacked FEC packets.
   bool HasUnackedFecPackets() const;
@@ -155,32 +143,24 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool IsPreviousTransmission(QuicPacketSequenceNumber sequence_number) const;
 
  private:
-  struct RetransmissionInfo {
-    RetransmissionInfo() {}
-    explicit RetransmissionInfo(QuicPacketSequenceNumber sequence_number,
-                                QuicSequenceNumberLength sequence_number_length)
-        : sequence_number(sequence_number),
-          sequence_number_length(sequence_number_length),
-          number_nacks(0),
-          number_retransmissions(0) {
+  struct TransmissionInfo {
+    TransmissionInfo() {}
+    TransmissionInfo(RetransmittableFrames* retransmittable_frames,
+                     QuicSequenceNumberLength sequence_number_length)
+        : retransmittable_frames(retransmittable_frames),
+          sequence_number_length(sequence_number_length) {
     }
 
-    QuicPacketSequenceNumber sequence_number;
+    RetransmittableFrames* retransmittable_frames;
     QuicSequenceNumberLength sequence_number_length;
-    size_t number_nacks;
-    // TODO(ianswett): I believe this is now obsolete, or could at least be
-    // changed to a bool.
-    size_t number_retransmissions;
   };
 
   typedef linked_hash_map<QuicPacketSequenceNumber,
-                          RetransmittableFrames*> UnackedPacketMap;
+                          TransmissionInfo> UnackedPacketMap;
   typedef linked_hash_map<QuicPacketSequenceNumber,
                           QuicTime> UnackedFecPacketMap;
   typedef linked_hash_map<QuicPacketSequenceNumber,
                           TransmissionType> PendingRetransmissionMap;
-  typedef base::hash_map<QuicPacketSequenceNumber,
-                         RetransmissionInfo> RetransmissionMap;
   typedef base::hash_map<QuicPacketSequenceNumber, SequenceNumberSet*>
                          PreviousTransmissionMap;
 
@@ -227,11 +207,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Pending retransmissions which have not been packetized and sent yet.
   PendingRetransmissionMap pending_retransmissions_;
-
-  // Map from sequence number to the retransmission info for a packet.
-  // This includes the retransmission timeout, and the NACK count.  Only
-  // the new transmission of a packet will have entries in this map.
-  RetransmissionMap retransmission_map_;
 
   // Map from sequence number to set of all sequence number that this packet has
   // been transmitted as.  If a packet has not been retransmitted, it will not

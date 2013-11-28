@@ -16,7 +16,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 
@@ -61,7 +61,7 @@ class TestContentRendererClient : public ContentRendererClient {
   virtual ~TestContentRendererClient() {
   }
   virtual bool AllowBrowserPlugin(
-      WebKit::WebPluginContainer* container) OVERRIDE {
+      blink::WebPluginContainer* container) OVERRIDE {
     // Allow BrowserPlugin for tests.
     return true;
   }
@@ -114,7 +114,7 @@ std::string BrowserPluginTest::ExecuteScriptAndReturnString(
     const std::string& script) {
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> value = GetMainFrame()->executeScriptAndReturnValue(
-      WebKit::WebScriptSource(WebKit::WebString::fromUTF8(script.c_str())));
+      blink::WebScriptSource(blink::WebString::fromUTF8(script.c_str())));
   if (value.IsEmpty() || !value->IsString())
     return std::string();
 
@@ -129,7 +129,7 @@ int BrowserPluginTest::ExecuteScriptAndReturnInt(
     const std::string& script) {
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> value = GetMainFrame()->executeScriptAndReturnValue(
-      WebKit::WebScriptSource(WebKit::WebString::fromUTF8(script.c_str())));
+      blink::WebScriptSource(blink::WebString::fromUTF8(script.c_str())));
   if (value.IsEmpty() || !value->IsInt32())
     return 0;
 
@@ -142,7 +142,7 @@ bool BrowserPluginTest::ExecuteScriptAndReturnBool(
     const std::string& script, bool* result) {
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> value = GetMainFrame()->executeScriptAndReturnValue(
-      WebKit::WebScriptSource(WebKit::WebString::fromUTF8(script.c_str())));
+      blink::WebScriptSource(blink::WebString::fromUTF8(script.c_str())));
   if (value.IsEmpty() || !value->IsBoolean())
     return false;
 

@@ -38,15 +38,16 @@
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/media/audio_mirroring_manager.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/speech/speech_recognition_manager_impl.h"
 #include "content/browser/startup_task_runner.h"
-#include "content/browser/tracing/trace_controller_impl.h"
 #include "content/browser/webui/content_web_ui_controller_factory.h"
 #include "content/browser/webui/url_data_manager.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_shutdown.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/tracing_controller.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
@@ -70,6 +71,10 @@
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "content/browser/theme_helper_mac.h"
+#endif
+
 #if defined(OS_WIN)
 #include <windows.h>
 #include <commctrl.h>
@@ -82,12 +87,12 @@
 #include "ui/base/l10n/l10n_util_win.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if defined(USE_GLIB)
 #include <glib-object.h>
 #endif
 
-#if defined(OS_LINUX)
-#include "content/browser/device_monitor_linux.h"
+#if defined(OS_LINUX) && defined(USE_UDEV)
+#include "content/browser/device_monitor_udev.h"
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include "content/browser/device_monitor_mac.h"
 #endif
@@ -175,7 +180,7 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
 }
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if defined(USE_GLIB)
 static void GLibLogHandler(const gchar* log_domain,
                            GLogLevelFlags log_level,
                            const gchar* message,
@@ -313,7 +318,10 @@ BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
     : parameters_(parameters),
       parsed_command_line_(parameters.command_line),
       result_code_(RESULT_CODE_NORMAL_EXIT),
-      created_threads_(false) {
+      created_threads_(false),
+      // ContentMainRunner should have enabled tracing of the browser process
+      // when kTraceStartup is in the command line.
+      is_tracing_startup_(base::debug::TraceLog::GetInstance()->IsEnabled()) {
   DCHECK(!g_current_browser_main_loop);
   g_current_browser_main_loop = this;
 }
@@ -336,6 +344,13 @@ void BrowserMainLoop::Init() {
 
 void BrowserMainLoop::EarlyInitialization() {
   TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  // No thread should be created before this call, as SetupSandbox()
+  // will end-up using fork().
+  SetupSandbox(parsed_command_line_);
+#endif
+
 #if defined(USE_X11)
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess) ||
       parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
@@ -345,10 +360,10 @@ void BrowserMainLoop::EarlyInitialization() {
   }
 #endif
 
-  // Due to bugs in GLib we need to initialize GLib/GTK before we start threads;
-  // see crbug.com/309093. Sandbox setup spawns sub-processes and a thread
-  // running waitpid().
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  // GLib's spawning of new processes is buggy, so it's important that at this
+  // point GLib does not need to start DBUS. Chrome should always start with
+  // DBUS_SESSION_BUS_ADDRESS properly set. See crbug.com/309093.
+#if defined(USE_GLIB)
   // g_type_init will be deprecated in 2.36. 2.35 is the development
   // version for 2.36, hence do not call g_type_init starting 2.35.
   // http://developer.gnome.org/gobject/unstable/gobject-Type-Information.html#g-type-init
@@ -379,10 +394,6 @@ void BrowserMainLoop::EarlyInitialization() {
   // We want to be sure to init NSPR on the main thread.
   crypto::EnsureNSPRInit();
 #endif  // !defined(USE_OPENSSL)
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  SetupSandbox(parsed_command_line_);
-#endif
 
   if (parsed_command_line_.HasSwitch(switches::kEnableSSLCachedInfo))
     net::SSLConfigService::EnableCachedInfo();
@@ -469,10 +480,9 @@ void BrowserMainLoop::MainMessageLoopStart() {
   }
 
   // Start tracing to a file if needed.
-  if (base::debug::TraceLog::GetInstance()->IsEnabled()) {
+  if (is_tracing_startup_) {
     TRACE_EVENT0("startup", "BrowserMainLoop::InitStartupTracing")
-    TraceControllerImpl::GetInstance()->InitStartupTracing(
-        parsed_command_line_);
+    InitStartupTracing(parsed_command_line_);
   }
 
   {
@@ -736,10 +746,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
       base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
                  true));
 
-  if (RenderProcessHost::run_renderer_in_process() &&
-      !RenderProcessHost::AllHostsIterator().IsAtEnd()) {
-    delete RenderProcessHost::AllHostsIterator().GetCurrentValue();
-  }
+  if (RenderProcessHost::run_renderer_in_process())
+    RenderProcessHostImpl::ShutDownInProcessRenderer();
 
   if (parts_) {
     TRACE_EVENT0("shutdown",
@@ -956,7 +964,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #endif
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && defined(USE_UDEV)
   device_monitor_linux_.reset(new DeviceMonitorLinux());
 #elif defined(OS_MACOSX)
   device_monitor_mac_.reset(new DeviceMonitorMac());
@@ -1021,6 +1029,10 @@ int BrowserMainLoop::BrowserThreadsStarted() {
             CAUSE_FOR_GPU_LAUNCH_BROWSER_STARTUP));
   }
 #endif  // !defined(OS_IOS)
+
+#if defined(OS_MACOSX)
+  ThemeHelperMac::GetInstance();
+#endif
   return result_code_;
 }
 
@@ -1065,6 +1077,44 @@ void BrowserMainLoop::MainMessageLoopRun() {
   base::RunLoop run_loop;
   run_loop.Run();
 #endif
+}
+
+void BrowserMainLoop::InitStartupTracing(const CommandLine& command_line) {
+  DCHECK(is_tracing_startup_);
+
+  base::FilePath trace_file = command_line.GetSwitchValuePath(
+      switches::kTraceStartupFile);
+  // trace_file = "none" means that startup events will show up for the next
+  // begin/end tracing (via about:tracing or AutomationProxy::BeginTracing/
+  // EndTracing, for example).
+  if (trace_file == base::FilePath().AppendASCII("none"))
+    return;
+
+  if (trace_file.empty()) {
+    // Default to saving the startup trace into the current dir.
+    trace_file = base::FilePath().AppendASCII("chrometrace.log");
+  }
+
+  std::string delay_str = command_line.GetSwitchValueASCII(
+      switches::kTraceStartupDuration);
+  int delay_secs = 5;
+  if (!delay_str.empty() && !base::StringToInt(delay_str, &delay_secs)) {
+    DLOG(WARNING) << "Could not parse --" << switches::kTraceStartupDuration
+        << "=" << delay_str << " defaulting to 5 (secs)";
+    delay_secs = 5;
+  }
+
+  BrowserThread::PostDelayedTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&BrowserMainLoop::EndStartupTracing,
+                 base::Unretained(this), trace_file),
+      base::TimeDelta::FromSeconds(delay_secs));
+}
+
+void BrowserMainLoop::EndStartupTracing(const base::FilePath& trace_file) {
+  is_tracing_startup_ = false;
+  TracingController::GetInstance()->DisableRecording(
+      trace_file, TracingController::TracingFileResultCallback());
 }
 
 }  // namespace content

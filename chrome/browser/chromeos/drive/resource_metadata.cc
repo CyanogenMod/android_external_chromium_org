@@ -100,7 +100,7 @@ FileError ResourceMetadata::Reset() {
     return FILE_ERROR_NO_LOCAL_SPACE;
 
   if (!storage_->SetLargestChangestamp(0) ||
-      !RemoveEntryRecursively(util::kDriveGrandRootSpecialResourceId) ||
+      !RemoveEntryRecursively(util::kDriveGrandRootLocalId) ||
       !SetUpDefaultEntries())
     return FILE_ERROR_FAILED;
 
@@ -114,26 +114,37 @@ ResourceMetadata::~ResourceMetadata() {
 bool ResourceMetadata::SetUpDefaultEntries() {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
 
-  // Initialize the grand root and "other" entries. "/drive" and "/drive/other".
+  // Initialize "/drive", "/drive/other" and "drive/trash".
   ResourceEntry entry;
-  if (!storage_->GetEntry(util::kDriveGrandRootSpecialResourceId, &entry)) {
+  if (!storage_->GetEntry(util::kDriveGrandRootLocalId, &entry)) {
     ResourceEntry root;
     root.mutable_file_info()->set_is_directory(true);
-    root.set_resource_id(util::kDriveGrandRootSpecialResourceId);
-    root.set_local_id(util::kDriveGrandRootSpecialResourceId);
+    // TODO(hashimoto): Stop setting dummy resource ID here.
+    root.set_resource_id(util::kDriveGrandRootLocalId);
+    root.set_local_id(util::kDriveGrandRootLocalId);
     root.set_title(util::kDriveGrandRootDirName);
     SetBaseNameFromTitle(&root);
     if (!storage_->PutEntry(root))
       return false;
   }
-  if (!storage_->GetEntry(util::kDriveOtherDirSpecialResourceId, &entry)) {
+  if (!storage_->GetEntry(util::kDriveOtherDirLocalId, &entry)) {
     ResourceEntry other_dir;
     other_dir.mutable_file_info()->set_is_directory(true);
-    other_dir.set_resource_id(util::kDriveOtherDirSpecialResourceId);
-    other_dir.set_local_id(util::kDriveOtherDirSpecialResourceId);
-    other_dir.set_parent_local_id(util::kDriveGrandRootSpecialResourceId);
+    // TODO(hashimoto): Stop setting dummy resource ID here.
+    other_dir.set_resource_id(util::kDriveOtherDirLocalId);
+    other_dir.set_local_id(util::kDriveOtherDirLocalId);
+    other_dir.set_parent_local_id(util::kDriveGrandRootLocalId);
     other_dir.set_title(util::kDriveOtherDirName);
     if (!PutEntryUnderDirectory(other_dir))
+      return false;
+  }
+  if (!storage_->GetEntry(util::kDriveTrashDirLocalId, &entry)) {
+    ResourceEntry trash_dir;
+    trash_dir.mutable_file_info()->set_is_directory(true);
+    trash_dir.set_local_id(util::kDriveTrashDirLocalId);
+    trash_dir.set_parent_local_id(util::kDriveGrandRootLocalId);
+    trash_dir.set_title(util::kDriveTrashDirName);
+    if (!PutEntryUnderDirectory(trash_dir))
       return false;
   }
   return true;
@@ -200,8 +211,10 @@ FileError ResourceMetadata::RemoveEntry(const std::string& id) {
   if (!EnoughDiskSpaceIsAvailableForDBOperation(storage_->directory_path()))
     return FILE_ERROR_NO_LOCAL_SPACE;
 
-  // Disallow deletion of special entries "/drive" and "/drive/other".
-  if (util::IsSpecialResourceId(id))
+  // Disallow deletion of default entries.
+  if (id == util::kDriveGrandRootLocalId ||
+      id == util::kDriveOtherDirLocalId ||
+      id == util::kDriveTrashDirLocalId)
     return FILE_ERROR_ACCESS_DENIED;
 
   ResourceEntry entry;
@@ -387,7 +400,7 @@ FileError ResourceMetadata::GetIdByPath(const base::FilePath& file_path,
     return FILE_ERROR_NOT_FOUND;
 
   // Iterate over the remaining components.
-  std::string id = util::kDriveGrandRootSpecialResourceId;
+  std::string id = util::kDriveGrandRootLocalId;
   for (size_t i = 1; i < components.size(); ++i) {
     const std::string component = base::FilePath(components[i]).AsUTF8Unsafe();
     id = storage_->GetChild(id, component);

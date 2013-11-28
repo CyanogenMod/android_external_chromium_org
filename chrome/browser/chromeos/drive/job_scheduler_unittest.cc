@@ -360,6 +360,22 @@ TEST_F(JobSchedulerTest, GetRemainingFileList) {
   ASSERT_TRUE(resource_list);
 }
 
+TEST_F(JobSchedulerTest, GetResourceEntry) {
+  ConnectToWifi();
+
+  google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+  scoped_ptr<google_apis::ResourceEntry> entry;
+
+  scheduler_->GetResourceEntry(
+      "file:2_file_resource_id",  // resource ID
+      ClientContext(USER_INITIATED),
+      google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+  base::RunLoop().RunUntilIdle();
+
+  ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
+  ASSERT_TRUE(entry);
+}
+
 TEST_F(JobSchedulerTest, GetShareUrl) {
   ConnectToWifi();
 
@@ -384,6 +400,7 @@ TEST_F(JobSchedulerTest, DeleteResource) {
 
   scheduler_->DeleteResource(
       "file:2_file_resource_id",
+      ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
@@ -424,16 +441,17 @@ TEST_F(JobSchedulerTest, CopyHostedDocument) {
   ASSERT_TRUE(entry);
 }
 
-TEST_F(JobSchedulerTest, MoveResource) {
+TEST_F(JobSchedulerTest, UpdateResource) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
   scoped_ptr<google_apis::ResourceEntry> entry;
 
-  scheduler_->MoveResource(
+  scheduler_->UpdateResource(
       "file:2_file_resource_id",  // resource ID
       "folder:1_folder_resource_id",  // parent resource ID
       "New Document",  // new title
+      base::Time(),
       base::Time(),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
@@ -478,6 +496,7 @@ TEST_F(JobSchedulerTest, RemoveResourceFromDirectory) {
   scheduler_->RemoveResourceFromDirectory(
       "folder:1_folder_resource_id",
       "file:subdirectory_file_1_id",  // resource ID
+      ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 

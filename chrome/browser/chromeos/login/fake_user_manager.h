@@ -48,10 +48,11 @@ class FakeUserManager : public UserManager {
   virtual void SwitchActiveUser(const std::string& email) OVERRIDE;
   virtual void SaveUserDisplayName(const std::string& username,
       const string16& display_name) OVERRIDE;
-  virtual void UpdateUserAccountData(const std::string&, const string16&,
-                                     const std::string&) OVERRIDE;
 
   // Not implemented.
+  virtual void UpdateUserAccountData(
+      const std::string& user_id,
+      const UserAccountData& account_data) OVERRIDE {}
   virtual void Shutdown() OVERRIDE {}
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
   virtual SupervisedUserManager* GetSupervisedUserManager() OVERRIDE;
@@ -65,9 +66,11 @@ class FakeUserManager : public UserManager {
   virtual void RemoveUserFromList(const std::string& email) OVERRIDE {}
   virtual bool IsKnownUser(const std::string& email) const OVERRIDE;
   virtual const User* FindUser(const std::string& email) const OVERRIDE;
+  virtual User* FindUserAndModify(const std::string& email) OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetPrimaryUser() const OVERRIDE;
+  virtual Profile* GetProfileByUser(const User* profile) const OVERRIDE;
   virtual User* GetUserByProfile(Profile* profile) const OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
@@ -115,8 +118,10 @@ class FakeUserManager : public UserManager {
   virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
   virtual base::FilePath GetUserProfileDir(const std::string& email) const
       OVERRIDE;
-  virtual void RespectLocalePreference(Profile* profile, const User* user) const
-      OVERRIDE;
+  virtual bool RespectLocalePreference(
+      Profile* profile,
+      const User* user,
+      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
   void set_owner_email(const std::string& owner_email) {
     owner_email_ = owner_email;

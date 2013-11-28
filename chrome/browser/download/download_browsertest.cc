@@ -56,7 +56,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -79,6 +78,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "content/test/net/url_request_slow_download_job.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
@@ -2331,7 +2331,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaGet) {
           DownloadManagerForBrowser(browser()), 1,
           content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL));
   content::ContextMenuParams context_menu_params;
-  context_menu_params.media_type = WebKit::WebContextMenuData::MediaTypeImage;
+  context_menu_params.media_type = blink::WebContextMenuData::MediaTypeImage;
   context_menu_params.src_url = url;
   context_menu_params.page_url = url;
   TestRenderViewContextMenu menu(
@@ -2412,7 +2412,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaPost) {
           DownloadManagerForBrowser(browser()), 1,
           content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL));
   content::ContextMenuParams context_menu_params;
-  context_menu_params.media_type = WebKit::WebContextMenuData::MediaTypeImage;
+  context_menu_params.media_type = blink::WebContextMenuData::MediaTypeImage;
   context_menu_params.src_url = jpeg_url;
   context_menu_params.page_url = jpeg_url;
   TestRenderViewContextMenu menu(web_contents, context_menu_params);
@@ -2735,15 +2735,15 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, LoadURLExternallyReferrerPolicy) {
   // Click on the link with the alt key pressed. This will download the link
   // target.
   WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
   mouse_event.x = 15;
   mouse_event.y = 15;
   mouse_event.clickCount = 1;
-  mouse_event.modifiers = WebKit::WebInputEvent::AltKey;
+  mouse_event.modifiers = blink::WebInputEvent::AltKey;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 
   waiter->WaitForFinished();
@@ -3013,7 +3013,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
   fd = base::kInvalidPlatformFileValue;
 #if defined(OS_POSIX)
   // Make it readable by chronos on chromeos
-  file_util::SetPosixFilePermissions(file_path, 0755);
+  base::SetPosixFilePermissions(file_path, 0755);
 #endif
 
   // Ensure that we have enough disk space.
@@ -3058,7 +3058,14 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
                                     false));
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_DenyDanger) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_DownloadTest_DenyDanger DISABLED_DownloadTest_DenyDanger
+#else
+#define MAYBE_DownloadTest_DenyDanger DownloadTest_DenyDanger
+#endif
+
+IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_DenyDanger) {
   ASSERT_TRUE(test_server()->Start());
   GURL url(test_server()->GetURL("files/downloads/dangerous/dangerous.crx"));
   scoped_ptr<content::DownloadTestObserver> observer(

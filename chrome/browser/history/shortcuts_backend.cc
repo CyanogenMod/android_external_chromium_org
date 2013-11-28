@@ -22,10 +22,10 @@
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 
 using content::BrowserThread;
 
@@ -189,7 +189,7 @@ void ShortcutsBackend::RemoveObserver(ShortcutsBackendObserver* obs) {
   observer_list_.RemoveObserver(obs);
 }
 
-void ShortcutsBackend::OnOmniboxNavigation(const string16& text,
+void ShortcutsBackend::AddOrUpdateShortcut(const string16& text,
                                            const AutocompleteMatch& match) {
   const string16 text_lowercase(base::i18n::ToLower(text));
   const base::Time now(base::Time::Now());

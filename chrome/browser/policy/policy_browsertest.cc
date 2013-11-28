@@ -35,7 +35,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
@@ -48,9 +47,11 @@
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/cloud/test_request_interceptor.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
+#include "chrome/browser/policy/policy_service.h"
+#include "chrome/browser/policy/policy_service_impl.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
@@ -76,7 +77,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
@@ -84,6 +84,8 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -114,6 +116,9 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -152,7 +157,6 @@
 
 using content::BrowserThread;
 using content::URLRequestMockHTTPJob;
-using testing::AnyNumber;
 using testing::Mock;
 using testing::Return;
 using testing::_;
@@ -302,6 +306,7 @@ void CheckURLIsBlocked(Browser* browser, const char* spec) {
   EXPECT_TRUE(result);
 }
 
+#if !defined(OS_CHROMEOS)
 // Downloads a file named |file| and expects it to be saved to |dir|, which
 // must be empty.
 void DownloadAndVerifyFile(
@@ -326,7 +331,8 @@ void DownloadAndVerifyFile(
   EXPECT_EQ(base::FilePath(), enumerator.Next());
 }
 
-#if defined(OS_CHROMEOS)
+#else
+
 int CountScreenshots() {
   DownloadPrefs* download_prefs = DownloadPrefs::FromBrowserContext(
       ash::Shell::GetInstance()->delegate()->GetCurrentBrowserContext());
@@ -346,7 +352,7 @@ bool IsWebGLEnabled(content::WebContents* contents) {
   EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
       contents,
       "var canvas = document.createElement('canvas');"
-      "var context = canvas.getContext('experimental-webgl');"
+      "var context = canvas.getContext('webgl');"
       "domAutomationController.send(context != null);",
       &result));
   return result;
@@ -586,7 +592,6 @@ class PolicyTest : public InProcessBrowserTest {
     CommandLine::ForCurrentProcess()->AppendSwitch("noerrdialogs");
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
 
@@ -699,14 +704,14 @@ class PolicyTest : public InProcessBrowserTest {
   void PerformClick(int x, int y) {
     content::WebContents* contents =
         browser()->tab_strip_model()->GetActiveWebContents();
-    WebKit::WebMouseEvent click_event;
-    click_event.type = WebKit::WebInputEvent::MouseDown;
-    click_event.button = WebKit::WebMouseEvent::ButtonLeft;
+    blink::WebMouseEvent click_event;
+    click_event.type = blink::WebInputEvent::MouseDown;
+    click_event.button = blink::WebMouseEvent::ButtonLeft;
     click_event.clickCount = 1;
     click_event.x = x;
     click_event.y = y;
     contents->GetRenderViewHost()->ForwardMouseEvent(click_event);
-    click_event.type = WebKit::WebInputEvent::MouseUp;
+    click_event.type = blink::WebInputEvent::MouseUp;
     contents->GetRenderViewHost()->ForwardMouseEvent(click_event);
   }
 
@@ -909,7 +914,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   chrome::FocusLocationBar(browser());
   LocationBar* location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "stuff to search for");
-  OmniboxEditModel* model = location_bar->GetLocationEntry()->model();
+  OmniboxEditModel* model = location_bar->GetOmniboxView()->model();
   EXPECT_TRUE(model->CurrentMatch(NULL).destination_url.is_valid());
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
@@ -929,6 +934,39 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   EXPECT_EQ(GURL(content::kAboutBlankURL), web_contents->GetURL());
 }
 
+IN_PROC_BROWSER_TEST_F(PolicyTest, PolicyPreprocessing) {
+  // Add an individual proxy policy value.
+  PolicyMap policies;
+  policies.Set(key::kProxyServerMode,
+               POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateIntegerValue(3),
+               NULL);
+  UpdateProviderPolicy(policies);
+
+  // It should be removed and replaced with a dictionary.
+  PolicyMap expected;
+  scoped_ptr<base::DictionaryValue> expected_value(new base::DictionaryValue);
+  expected_value->SetInteger(key::kProxyServerMode, 3);
+  expected.Set(key::kProxySettings,
+               POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               expected_value.release(),
+               NULL);
+
+  // Check both the browser and the profile.
+  const PolicyMap& actual_from_browser =
+      g_browser_process->browser_policy_connector()
+          ->GetPolicyService()
+          ->GetPolicies(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
+  EXPECT_TRUE(expected.Equals(actual_from_browser));
+  const PolicyMap& actual_from_profile =
+      ProfilePolicyConnectorFactory::GetForProfile(browser()->profile())
+          ->policy_service()
+          ->GetPolicies(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
+  EXPECT_TRUE(expected.Equals(actual_from_profile));
+}
+
 IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
   // Makes the requests fail since all we want to check is that the redirection
   // is done properly.
@@ -946,7 +984,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
   chrome::FocusLocationBar(browser());
   LocationBar* location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "http://google.com/");
-  OmniboxEditModel* model = location_bar->GetLocationEntry()->model();
+  OmniboxEditModel* model = location_bar->GetOmniboxView()->model();
   no_safesearch_observer.Wait();
   EXPECT_TRUE(model->CurrentMatch(NULL).destination_url.is_valid());
   content::WebContents* web_contents =
@@ -972,10 +1010,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
 
   // Verify that searching from google.com works.
   chrome::FocusLocationBar(browser());
-  location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "http://google.com/");
   safesearch_observer.Wait();
-  model = location_bar->GetLocationEntry()->model();
   EXPECT_TRUE(model->CurrentMatch(NULL).destination_url.is_valid());
   web_contents = browser()->tab_strip_model()->GetActiveWebContents();
   std::string expected_url("http://google.com/?");
@@ -988,7 +1024,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   MakeRequestFail make_request_fail("search.example");
 
-  chrome::EnableInstantExtendedAPIForTesting();
+  chrome::EnableQueryExtractionForTesting();
 
   // Verifies that a default search is made using the provider configured via
   // policy. Also checks that default search can be completely disabled.
@@ -1057,22 +1093,21 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   // first URL pattern.
   chrome::FocusLocationBar(browser());
   LocationBar* location_bar = browser()->window()->GetLocationBar();
+  OmniboxView* omnibox_view = location_bar->GetOmniboxView();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?espv=1#q=foobar");
   EXPECT_TRUE(
       browser()->toolbar_model()->WouldPerformSearchTermReplacement(false));
-  EXPECT_EQ(ASCIIToUTF16("foobar"),
-            location_bar->GetLocationEntry()->GetText());
+  EXPECT_EQ(ASCIIToUTF16("foobar"), omnibox_view->GetText());
 
   // Verify that not using espv=1 does not do search term replacement.
   chrome::FocusLocationBar(browser());
-  location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?q=foobar");
   EXPECT_FALSE(
       browser()->toolbar_model()->WouldPerformSearchTermReplacement(false));
   EXPECT_EQ(ASCIIToUTF16("https://www.google.com/?q=foobar"),
-            location_bar->GetLocationEntry()->GetText());
+            omnibox_view->GetText());
 
   // Verify that searching from the omnibox does search term replacement with
   // second URL pattern.
@@ -1081,8 +1116,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
       "https://www.google.com/search?espv=1#q=banana");
   EXPECT_TRUE(
       browser()->toolbar_model()->WouldPerformSearchTermReplacement(false));
-  EXPECT_EQ(ASCIIToUTF16("banana"),
-            location_bar->GetLocationEntry()->GetText());
+  EXPECT_EQ(ASCIIToUTF16("banana"), omnibox_view->GetText());
 
   // Verify that searching from the omnibox does search term replacement with
   // standard search URL pattern.
@@ -1091,8 +1125,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
       "https://www.google.com/search?q=tractor+parts&espv=1");
   EXPECT_TRUE(
       browser()->toolbar_model()->WouldPerformSearchTermReplacement(false));
-  EXPECT_EQ(ASCIIToUTF16("tractor parts"),
-            location_bar->GetLocationEntry()->GetText());
+  EXPECT_EQ(ASCIIToUTF16("tractor parts"), omnibox_view->GetText());
 
   // Verify that searching from the omnibox prioritizes hash over query.
   chrome::FocusLocationBar(browser());
@@ -1100,12 +1133,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
       "https://www.google.com/search?q=tractor+parts&espv=1#q=foobar");
   EXPECT_TRUE(
       browser()->toolbar_model()->WouldPerformSearchTermReplacement(false));
-  EXPECT_EQ(ASCIIToUTF16("foobar"),
-            location_bar->GetLocationEntry()->GetText());
+  EXPECT_EQ(ASCIIToUTF16("foobar"), omnibox_view->GetText());
 }
 
-// The linux and win  bots can't create a GL context. http://crbug.com/103379
-#if defined(OS_MACOSX)
 IN_PROC_BROWSER_TEST_F(PolicyTest, Disable3DAPIs) {
   ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   // WebGL is enabled by default.
@@ -1129,7 +1159,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Disable3DAPIs) {
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_RELOAD));
   EXPECT_TRUE(IsWebGLEnabled(contents));
 }
-#endif
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, DisableSpdy) {
   // Verifies that SPDY can be disable by policy.
@@ -1328,7 +1357,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DeveloperToolsDisabled) {
   EXPECT_FALSE(DevToolsWindow::GetDockedInstanceForInspectedTab(contents));
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, WebStoreIconHidden) {
+// TODO(samarth): remove along with rest of NTP4 code.
+IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_WebStoreIconHidden) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -1554,10 +1584,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
 
   // Wait until any background pages belonging to force-installed extensions
   // have been loaded.
-  ExtensionProcessManager* manager =
+  extensions::ProcessManager* manager =
       extensions::ExtensionSystem::Get(browser()->profile())->process_manager();
-  ExtensionProcessManager::ViewSet all_views = manager->GetAllViews();
-  for (ExtensionProcessManager::ViewSet::const_iterator iter =
+  extensions::ProcessManager::ViewSet all_views = manager->GetAllViews();
+  for (extensions::ProcessManager::ViewSet::const_iterator iter =
            all_views.begin();
        iter != all_views.end();) {
     if (!(*iter)->IsLoading()) {
@@ -1711,7 +1741,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
   UpdateProviderPolicy(policies);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_HOME));
   content::WaitForLoadStop(contents);
-  EXPECT_TRUE(chrome::IsNTPURL(contents->GetURL(),browser()->profile()));
+  EXPECT_EQ(GURL(chrome::kChromeUINewTabURL), contents->GetURL());
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, IncognitoEnabled) {
@@ -2022,10 +2052,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, FullscreenAllowedApp) {
   // Launch an app that tries to open a fullscreen window.
   TestAddShellWindowObserver add_window_observer(
       apps::ShellWindowRegistry::Get(browser()->profile()));
-  OpenApplication(AppLaunchParams(browser()->profile(),
-                                  extension,
-                                  extension_misc::LAUNCH_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(), extension,
+                                  extensions::LAUNCH_NONE, NEW_WINDOW));
   apps::ShellWindow* window = add_window_observer.WaitForShellWindow();
   ASSERT_TRUE(window);
 
@@ -2096,7 +2124,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisableAudioOutput) {
   audio_handler->RemoveAudioObserver(test_observer.get());
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_SessionLengthLimit) {
+// Disabled, see http://crbug.com/315308.
+IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_PRE_SessionLengthLimit) {
   // Indicate that the session started 2 hours ago and no user activity has
   // occurred yet.
   g_browser_process->local_state()->SetInt64(
@@ -2105,7 +2134,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_SessionLengthLimit) {
           .ToInternalValue());
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, SessionLengthLimit) {
+// Disabled, see http://crbug.com/315308.
+IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_SessionLengthLimit) {
   content::MockNotificationObserver observer;
   content::NotificationRegistrar registrar;
   registrar.Add(&observer,
@@ -2137,7 +2167,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SessionLengthLimit) {
   Mock::VerifyAndClearExpectations(&observer);
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_WaitForInitialUserActivityUsatisfied) {
+// Disabled, see http://crbug.com/315308.
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       DISABLED_PRE_WaitForInitialUserActivityUsatisfied) {
   // Indicate that the session started 2 hours ago and no user activity has
   // occurred yet.
   g_browser_process->local_state()->SetInt64(
@@ -2146,7 +2178,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_WaitForInitialUserActivityUsatisfied) {
           .ToInternalValue());
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, WaitForInitialUserActivityUsatisfied) {
+// Disabled, see http://crbug.com/315308.
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       DISABLED_WaitForInitialUserActivityUsatisfied) {
   content::MockNotificationObserver observer;
   content::NotificationRegistrar registrar;
   registrar.Add(&observer,
@@ -2175,7 +2209,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, WaitForInitialUserActivityUsatisfied) {
   Mock::VerifyAndClearExpectations(&observer);
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_WaitForInitialUserActivitySatisfied) {
+// Disabled, see http://crbug.com/315308.
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       DISABLED_PRE_WaitForInitialUserActivitySatisfied) {
   // Indicate that initial user activity in this session occurred 2 hours ago.
   g_browser_process->local_state()->SetInt64(
       prefs::kSessionStartTime,
@@ -2186,7 +2222,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_WaitForInitialUserActivitySatisfied) {
       true);
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, WaitForInitialUserActivitySatisfied) {
+// Disabled, see http://crbug.com/315308.
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       DISABLED_WaitForInitialUserActivitySatisfied) {
   content::MockNotificationObserver observer;
   content::NotificationRegistrar registrar;
   registrar.Add(&observer,
@@ -2634,7 +2672,7 @@ class MediaStreamDevicesControllerBrowserTest
   }
 
   void FinishAudioTest() {
-    content::MediaStreamRequest request(0, 0, 0,
+    content::MediaStreamRequest request(0, 0, 0, std::string(),
                                         request_url_.GetOrigin(),
                                         content::MEDIA_DEVICE_ACCESS,
                                         std::string(), std::string(),
@@ -2653,7 +2691,7 @@ class MediaStreamDevicesControllerBrowserTest
   void FinishVideoTest() {
     // TODO(raymes): Test MEDIA_DEVICE_OPEN (Pepper) which grants both webcam
     // and microphone permissions at the same time.
-    content::MediaStreamRequest request(0, 0, 0,
+    content::MediaStreamRequest request(0, 0, 0, std::string(),
                                         request_url_.GetOrigin(),
                                         content::MEDIA_DEVICE_ACCESS,
                                         std::string(),

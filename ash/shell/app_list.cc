@@ -8,6 +8,7 @@
 #include "ash/shell.h"
 #include "ash/shell/example_factory.h"
 #include "ash/shell/toplevel_window.h"
+#include "ash/shell_delegate.h"
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
@@ -126,7 +127,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
       case EXAMPLES_WINDOW: {
         views::examples::ShowExamplesWindowWithContent(
             views::examples::DO_NOTHING_ON_CLOSE,
-            ash::Shell::GetInstance()->browser_context(),
+            Shell::GetInstance()->delegate()->GetCurrentBrowserContext(),
             NULL);
         break;
       }
@@ -193,7 +194,11 @@ class ExampleSearchResult : public app_list::SearchResult {
 
 class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
  public:
-  ExampleAppListViewDelegate() : model_(NULL) {}
+  ExampleAppListViewDelegate()
+      : model_(new app_list::AppListModel) {
+    PopulateApps(model_->item_list());
+    DecorateSearchBox(model_->search_box());
+  }
 
  private:
   void PopulateApps(app_list::AppListItemList* item_list) {
@@ -227,16 +232,20 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     search_box_model->SetHintText(ASCIIToUTF16("Type to search..."));
   }
 
-  // Overridden from ash::AppListViewDelegate:
+  // Overridden from app_list::AppListViewDelegate:
+  virtual bool ForceNativeDesktop() const OVERRIDE {
+    return false;
+  }
+
   virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE {
     // Nothing needs to be done.
   }
 
-  virtual void InitModel(app_list::AppListModel* model) OVERRIDE {
-    model_ = model;
-    PopulateApps(model_->item_list());
-    DecorateSearchBox(model_->search_box());
+  virtual const Users& GetUsers() const OVERRIDE {
+    return users_;
   }
+
+  virtual app_list::AppListModel* GetModel() OVERRIDE { return model_.get(); }
 
   virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE {
     return NULL;
@@ -245,6 +254,7 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
       const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE {
+    callback.Run(base::FilePath());
   }
 
   virtual void OpenSearchResult(app_list::SearchResult* result,
@@ -314,6 +324,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     // Nothing needs to be done.
   }
 
+  virtual void ToggleSpeechRecognition() OVERRIDE {
+    NOTIMPLEMENTED();
+  }
+
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE {
     // Nothing needs to be done.
@@ -323,7 +337,8 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     return NULL;
   }
 
-  app_list::AppListModel* model_;
+  scoped_ptr<app_list::AppListModel> model_;
+  Users users_;
 
   DISALLOW_COPY_AND_ASSIGN(ExampleAppListViewDelegate);
 };

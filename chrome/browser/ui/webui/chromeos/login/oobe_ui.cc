@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/eula_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_app_menu_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_autolaunch_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_enable_screen_handler.h"
@@ -80,22 +81,6 @@ const char kDemoUserLoginJSPath[] = "demo_user_login.js";
 const char kEnrollmentHTMLPath[] = "enrollment.html";
 const char kEnrollmentCSSPath[] = "enrollment.css";
 const char kEnrollmentJSPath[] = "enrollment.js";
-
-// Filter handler of chrome://oobe data source.
-bool HandleRequestCallback(
-    const std::string& path,
-    const content::WebUIDataSource::GotDataCallback& callback) {
-  if (UserManager::Get()->IsUserLoggedIn() &&
-      !UserManager::Get()->IsLoggedInAsStub() &&
-      !ScreenLocker::default_screen_locker()) {
-    scoped_refptr<base::RefCountedBytes> empty_bytes =
-        new base::RefCountedBytes();
-    callback.Run(empty_bytes.get());
-    return true;
-  }
-
-  return false;
-}
 
 // Creates a WebUIDataSource for chrome://oobe
 content::WebUIDataSource* CreateOobeUIDataSource(
@@ -257,9 +242,13 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   error_screen_handler_ = new ErrorScreenHandler(network_state_informer_);
   AddScreenHandler(error_screen_handler_);
 
+  gaia_screen_handler_ = new GaiaScreenHandler(network_state_informer_);
+  AddScreenHandler(gaia_screen_handler_);
+
   signin_screen_handler_ = new SigninScreenHandler(network_state_informer_,
                                                    error_screen_handler_,
-                                                   core_handler_);
+                                                   core_handler_,
+                                                   gaia_screen_handler_);
   AddScreenHandler(signin_screen_handler_);
 
   AppLaunchSplashScreenHandler* app_launch_splash_screen_handler =
@@ -446,11 +435,15 @@ void OobeUI::ShowRetailModeLoginSpinner() {
   signin_screen_handler_->ShowRetailModeLoginSpinner();
 }
 
-void OobeUI::ShowSigninScreen(SigninScreenHandlerDelegate* delegate,
+void OobeUI::ShowSigninScreen(const LoginScreenContext& context,
+                              SigninScreenHandlerDelegate* delegate,
                               NativeWindowDelegate* native_window_delegate) {
   signin_screen_handler_->SetDelegate(delegate);
   signin_screen_handler_->SetNativeWindowDelegate(native_window_delegate);
-  signin_screen_handler_->Show(core_handler_->show_oobe_ui());
+
+  LoginScreenContext actual_context(context);
+  actual_context.set_oobe_ui(core_handler_->show_oobe_ui());
+  signin_screen_handler_->Show(actual_context);
 }
 
 void OobeUI::ResetSigninScreenHandlerDelegate() {

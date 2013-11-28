@@ -47,26 +47,6 @@ void GetBlacklistedLanguages(const PrefService* prefs,
   }
 }
 
-// Converts the language code for Translate. This removes the sub code (like
-// -US) except for Chinese, and converts the synonyms.
-// The same logic exists at language_options.js, and please keep consistensy
-// with the JavaScript file.
-std::string ConvertLangCodeForTranslation(const std::string &lang) {
-  std::vector<std::string> tokens;
-  base::SplitString(lang, '-', &tokens);
-  if (tokens.size() < 1)
-    return lang;
-
-  std::string main_part = tokens[0];
-
-  // Translate doesn't support General Chinese and the sub code is necessary.
-  if (main_part == "zh")
-    return lang;
-
-  translate::ToTranslateLanguageSynonym(&main_part);
-  return main_part;
-}
-
 // Expands language codes to make these more suitable for Accept-Language.
 // Example: ['en-US', 'ja', 'en-CA'] => ['en-US', 'en', 'ja', 'en-CA'].
 // 'en' won't appear twice as this function eliminates duplicates.
@@ -102,6 +82,21 @@ void ExpandLanguageCodes(const std::vector<std::string>& languages,
 
 TranslatePrefs::TranslatePrefs(PrefService* user_prefs)
     : prefs_(user_prefs) {
+}
+
+void TranslatePrefs::ResetToDefaults() {
+  ClearBlockedLanguages();
+  ClearBlacklistedSites();
+  ClearWhitelistedLanguagePairs();
+
+  std::vector<std::string> languages;
+  GetLanguageList(&languages);
+  for (std::vector<std::string>::const_iterator it = languages.begin();
+      it != languages.end(); ++it) {
+    const std::string& language = *it;
+    ResetTranslationAcceptedCount(language);
+    ResetTranslationDeniedCount(language);
+  }
 }
 
 bool TranslatePrefs::IsBlockedLanguage(
@@ -189,11 +184,11 @@ void TranslatePrefs::RemoveLanguagePairFromWhitelist(
   dict->Remove(original_language, NULL);
 }
 
-bool TranslatePrefs::HasBlacklistedLanguages() const {
+bool TranslatePrefs::HasBlockedLanguages() const {
   return !IsListEmpty(kPrefTranslateBlockedLanguages);
 }
 
-void TranslatePrefs::ClearBlacklistedLanguages() {
+void TranslatePrefs::ClearBlockedLanguages() {
   prefs_->ClearPref(kPrefTranslateBlockedLanguages);
 }
 
@@ -469,6 +464,24 @@ void TranslatePrefs::CreateBlockedLanguages(
 
   blocked_languages->insert(blocked_languages->begin(),
                             result.begin(), result.end());
+}
+
+// static
+std::string TranslatePrefs::ConvertLangCodeForTranslation(
+    const std::string &lang) {
+  std::vector<std::string> tokens;
+  base::SplitString(lang, '-', &tokens);
+  if (tokens.size() < 1)
+    return lang;
+
+  std::string main_part = tokens[0];
+
+  // Translate doesn't support General Chinese and the sub code is necessary.
+  if (main_part == "zh")
+    return lang;
+
+  translate::ToTranslateLanguageSynonym(&main_part);
+  return main_part;
 }
 
 bool TranslatePrefs::IsValueInList(const ListValue* list,

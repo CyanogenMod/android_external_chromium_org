@@ -56,6 +56,7 @@ class TestingOmniboxView : public OmniboxView {
       const string16& display_text, size_t user_text_length) OVERRIDE {
     return false;
   }
+  virtual void OnInlineAutocompleteTextCleared() OVERRIDE {}
   virtual void OnRevertTemporaryText() OVERRIDE {}
   virtual void OnBeforePossibleChange() OVERRIDE {}
   virtual bool OnAfterPossibleChange() OVERRIDE { return false; }
@@ -74,7 +75,6 @@ class TestingOmniboxView : public OmniboxView {
   virtual int GetMaxEditWidth(int entry_width) const OVERRIDE {
     return entry_width;
   }
-  virtual views::View* AddToView(views::View* parent) OVERRIDE { return NULL; }
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE {
     return 0;
   }

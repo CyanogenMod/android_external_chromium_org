@@ -26,15 +26,16 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/browser/test_autofill_external_delegate.h"
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/form_data.h"
@@ -56,7 +57,7 @@
 
 using content::WebContents;
 using testing::_;
-using WebKit::WebFormElement;
+using blink::WebFormElement;
 
 namespace autofill {
 
@@ -75,13 +76,8 @@ class TestPersonalDataManager : public PersonalDataManager {
     CreateTestCreditCards(&credit_cards_);
   }
 
-  void SetBrowserContext(content::BrowserContext* context) {
-    set_browser_context(context);
-  }
-
-  void SetPrefService(PrefService* pref_service) {
-    set_pref_service(pref_service);
-  }
+  using PersonalDataManager::set_database;
+  using PersonalDataManager::set_pref_service;
 
   // Factory method for keyed service.  PersonalDataManager is NULL for testing.
   static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
@@ -206,41 +202,6 @@ class TestPersonalDataManager : public PersonalDataManager {
   DISALLOW_COPY_AND_ASSIGN(TestPersonalDataManager);
 };
 
-// Populates |form| with 3 fields and a field with autocomplete attribute.
-void CreateTestFormWithAutocompleteAttribute(FormData* form) {
-  form->name = ASCIIToUTF16("UserSpecified");
-  form->method = ASCIIToUTF16("POST");
-  form->origin = GURL("http://myform.com/userspecified.html");
-  form->action = GURL("http://myform.com/submit.html");
-  form->user_submitted = true;
-
-  FormFieldData field;
-  test::CreateTestFormField("First Name", "firstname", "", "text", &field);
-  form->fields.push_back(field);
-  test::CreateTestFormField("Middle Name", "middlename", "", "text", &field);
-  form->fields.push_back(field);
-  test::CreateTestFormField("Last Name", "lastname", "", "text", &field);
-  form->fields.push_back(field);
-  field.autocomplete_attribute="cc-type";
-  test::CreateTestFormField("cc-type", "cc-type", "", "text", &field);
-  form->fields.push_back(field);
-}
-
-// Populates |form| with data corresponding to a simple shipping options form.
-void CreateTestShippingOptionsFormData(FormData* form) {
-  form->name = ASCIIToUTF16("Shipping Options");
-  form->method = ASCIIToUTF16("POST");
-  form->origin = GURL("http://myform.com/shipping.html");
-  form->action = GURL("http://myform.com/submit.html");
-  form->user_submitted = true;
-
-  FormFieldData field;
-  test::CreateTestFormField("Shipping1", "option", "option1", "radio", &field);
-  form->fields.push_back(field);
-  test::CreateTestFormField("Shipping2", "option", "option2", "radio", &field);
-  form->fields.push_back(field);
-}
-
 // Populates |form| with data corresponding to a simple credit card form.
 // Note that this actually appends fields to the form data, which can be useful
 // for building up more complex test forms.
@@ -272,31 +233,6 @@ void CreateTestCreditCardFormData(FormData* form,
     form->fields.push_back(field);
     test::CreateTestFormField("", "ccyear", "", "text", &field);
     form->fields.push_back(field);
-  }
-}
-
-void ExpectSuggestions(int page_id,
-                       const std::vector<base::string16>& values,
-                       const std::vector<base::string16>& labels,
-                       const std::vector<base::string16>& icons,
-                       const std::vector<int>& unique_ids,
-                       int expected_page_id,
-                       size_t expected_num_suggestions,
-                       const base::string16 expected_values[],
-                       const base::string16 expected_labels[],
-                       const base::string16 expected_icons[],
-                       const int expected_unique_ids[]) {
-  EXPECT_EQ(expected_page_id, page_id);
-  ASSERT_EQ(expected_num_suggestions, values.size());
-  ASSERT_EQ(expected_num_suggestions, labels.size());
-  ASSERT_EQ(expected_num_suggestions, icons.size());
-  ASSERT_EQ(expected_num_suggestions, unique_ids.size());
-  for (size_t i = 0; i < expected_num_suggestions; ++i) {
-    SCOPED_TRACE(base::StringPrintf("i: %" PRIuS, i));
-    EXPECT_EQ(expected_values[i], values[i]);
-    EXPECT_EQ(expected_labels[i], labels[i]);
-    EXPECT_EQ(expected_icons[i], icons[i]);
-    EXPECT_EQ(expected_unique_ids[i], unique_ids[i]);
   }
 }
 
@@ -606,8 +542,7 @@ class TestAutofillExternalDelegate : public AutofillExternalDelegate {
   explicit TestAutofillExternalDelegate(content::WebContents* web_contents,
                                         AutofillManager* autofill_manager,
                                         AutofillDriver* autofill_driver)
-      : AutofillExternalDelegate(web_contents, autofill_manager,
-                                 autofill_driver),
+      : AutofillExternalDelegate(autofill_manager, autofill_driver),
         on_query_seen_(false),
         on_suggestions_returned_seen_(false) {}
   virtual ~TestAutofillExternalDelegate() {}
@@ -697,16 +632,15 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
     autofill::PersonalDataManagerFactory::GetInstance()->SetTestingFactory(
         profile(), TestPersonalDataManager::Build);
 
-
     autofill::TabAutofillManagerDelegate::CreateForWebContents(web_contents());
 
-    personal_data_.SetBrowserContext(profile());
-    personal_data_.SetPrefService(profile()->GetPrefs());
+    autofill::TabAutofillManagerDelegate* manager_delegate =
+        autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
+    personal_data_.set_database(manager_delegate->GetDatabase());
+    personal_data_.set_pref_service(profile()->GetPrefs());
     autofill_driver_.reset(new MockAutofillDriver(web_contents()));
     autofill_manager_.reset(new TestAutofillManager(
-        autofill_driver_.get(),
-        autofill::TabAutofillManagerDelegate::FromWebContents(web_contents()),
-        &personal_data_));
+        autofill_driver_.get(), manager_delegate, &personal_data_));
 
     external_delegate_.reset(new TestAutofillExternalDelegate(
         web_contents(),
@@ -724,9 +658,9 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
     autofill_driver_.reset();
     ChromeRenderViewHostTestHarness::TearDown();
 
-    // Remove the BrowserContext so TestPersonalDataManager does not need to
-    // care about removing self as an observer in destruction.
-    personal_data_.SetBrowserContext(NULL);
+    // Remove the AutofillWebDataService so TestPersonalDataManager does not
+    // need to care about removing self as an observer in destruction.
+    personal_data_.set_database(scoped_refptr<AutofillWebDataService>(NULL));
   }
 
   void GetAutofillSuggestions(int query_id,
@@ -1000,7 +934,7 @@ TEST_F(AutofillManagerTest, GetProfileSuggestionsMethodGet) {
   base::string16 expected_labels[] = {base::string16()};
   base::string16 expected_icons[] = {base::string16()};
   int expected_unique_ids[] =
-      {WebKit::WebAutofillClient::MenuItemIDWarningMessage};
+      {blink::WebAutofillClient::MenuItemIDWarningMessage};
   external_delegate_->CheckSuggestions(
       kDefaultPageID, arraysize(expected_values), expected_values,
       expected_labels, expected_icons, expected_unique_ids);

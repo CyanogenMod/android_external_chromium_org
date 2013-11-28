@@ -83,6 +83,12 @@ PACKAGE_INFO = {
         '/data/local/tmp/content-browser-tests-command-line',
         None,
         None),
+    'chromedriver_webview_shell': PackageInfo(
+        'org.chromium.chromedriver_webview_shell',
+        'org.chromium.chromedriver_webview_shell.Main',
+        None,
+        None,
+        None),
 }
 
 
@@ -118,7 +124,7 @@ DEVICE_PERF_OUTPUT_DIR = (
 
 SCREENSHOTS_DIR = os.path.join(DIR_SOURCE_ROOT, 'out_screenshots')
 
-ANDROID_SDK_VERSION = 18
+ANDROID_SDK_VERSION = 19
 ANDROID_SDK_ROOT = os.path.join(DIR_SOURCE_ROOT,
                                 'third_party/android_tools/sdk')
 ANDROID_NDK_ROOT = os.path.join(DIR_SOURCE_ROOT,

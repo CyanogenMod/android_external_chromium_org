@@ -85,6 +85,7 @@ public class InvalidationService extends AndroidListener {
         Account account = intent.hasExtra(InvalidationIntentProtocol.EXTRA_ACCOUNT) ?
                 (Account) intent.getParcelableExtra(InvalidationIntentProtocol.EXTRA_ACCOUNT)
                 : null;
+
         ensureAccount(account);
         ensureClientStartState();
 
@@ -265,7 +266,8 @@ public class InvalidationService extends AndroidListener {
      * {@link InvalidationPreferences#setAccount}.
      */
     private void startClient() {
-        Intent startIntent = AndroidListener.createStartIntent(this, CLIENT_TYPE, getClientName());
+        byte[] clientName = InvalidationClientNameProvider.get().getInvalidatorClientName();
+        Intent startIntent = AndroidListener.createStartIntent(this, CLIENT_TYPE, clientName);
         startService(startIntent);
         setIsClientStarted(true);
     }
@@ -494,13 +496,6 @@ public class InvalidationService extends AndroidListener {
 
     private static String getOAuth2ScopeWithType() {
         return "oauth2:" + SyncStatusHelper.CHROME_SYNC_OAUTH2_SCOPE;
-    }
-
-    /** Returns the client name used for the notification client. */
-    private static byte[] getClientName() {
-        // TODO(dsmyers): we should use the same client name as the native sync code.
-        // Bug: https://code.google.com/p/chromium/issues/detail?id=172391
-        return Long.toString(RANDOM.nextLong()).getBytes();
     }
 
     private static void setClientId(byte[] clientId) {

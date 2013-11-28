@@ -15,6 +15,7 @@
 #include "cc/output/output_surface.h"
 #include "content/browser/aura/browser_compositor_output_surface.h"
 #include "content/browser/aura/browser_compositor_output_surface_proxy.h"
+#include "content/browser/aura/gpu_browser_compositor_output_surface.h"
 #include "content/browser/aura/reflector_impl.h"
 #include "content/browser/aura/software_browser_compositor_output_surface.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
@@ -46,7 +47,6 @@ namespace content {
 
 struct GpuProcessTransportFactory::PerCompositorData {
   int surface_id;
-  scoped_ptr<CompositorSwapClient> swap_client;
 #if defined(OS_WIN)
   scoped_ptr<AcceleratedSurface> accelerated_surface;
 #endif
@@ -55,7 +55,7 @@ struct GpuProcessTransportFactory::PerCompositorData {
 
 class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
  public:
-  OwnedTexture(WebKit::WebGraphicsContext3D* host_context,
+  OwnedTexture(blink::WebGraphicsContext3D* host_context,
                const gfx::Size& size,
                float device_scale_factor,
                unsigned int texture_id)
@@ -67,10 +67,12 @@ class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
 
   // ui::Texture overrides:
   virtual unsigned int PrepareTexture() OVERRIDE {
+    if (!host_context_ || host_context_->isContextLost())
+      return 0u;
     return texture_id_;
   }
 
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() OVERRIDE {
+  virtual blink::WebGraphicsContext3D* HostContext3D() OVERRIDE {
     return host_context_;
   }
 
@@ -96,7 +98,7 @@ class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
 
   // The OnLostResources() callback will happen before this context
   // pointer is destroyed.
-  WebKit::WebGraphicsContext3D* host_context_;
+  blink::WebGraphicsContext3D* host_context_;
   unsigned texture_id_;
 
   DISALLOW_COPY_AND_ASSIGN(OwnedTexture);
@@ -105,7 +107,7 @@ class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
 class ImageTransportClientTexture : public OwnedTexture {
  public:
   ImageTransportClientTexture(
-      WebKit::WebGraphicsContext3D* host_context,
+      blink::WebGraphicsContext3D* host_context,
       float device_scale_factor)
       : OwnedTexture(host_context,
                      gfx::Size(0, 0),
@@ -141,48 +143,6 @@ class ImageTransportClientTexture : public OwnedTexture {
   DISALLOW_COPY_AND_ASSIGN(ImageTransportClientTexture);
 };
 
-class CompositorSwapClient
-    : public base::SupportsWeakPtr<CompositorSwapClient>,
-      public WebGraphicsContext3DSwapBuffersClient {
- public:
-  CompositorSwapClient(ui::Compositor* compositor,
-                       GpuProcessTransportFactory* factory)
-      : compositor_(compositor),
-        factory_(factory) {
-  }
-
-  virtual ~CompositorSwapClient() {
-  }
-
-  virtual void OnViewContextSwapBuffersPosted() OVERRIDE {
-    compositor_->OnSwapBuffersPosted();
-  }
-
-  virtual void OnViewContextSwapBuffersComplete() OVERRIDE {
-    compositor_->OnSwapBuffersComplete();
-  }
-
-  virtual void OnViewContextSwapBuffersAborted() OVERRIDE {
-    // Recreating contexts directly from here causes issues, so post a task
-    // instead.
-    // TODO(piman): Fix the underlying issues.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&CompositorSwapClient::OnLostContext, this->AsWeakPtr()));
-  }
-
- private:
-  void OnLostContext() {
-    factory_->OnLostContext(compositor_);
-    // Note: previous line destroyed this. Don't access members from now on.
-  }
-
-  ui::Compositor* compositor_;
-  GpuProcessTransportFactory* factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(CompositorSwapClient);
-};
-
 GpuProcessTransportFactory::GpuProcessTransportFactory()
     : callback_factory_(this) {
   output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
@@ -198,8 +158,7 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 GpuProcessTransportFactory::CreateOffscreenCommandBufferContext() {
-  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client;
-  return CreateContextCommon(swap_client, 0);
+  return CreateContextCommon(0);
 }
 
 scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
@@ -226,17 +185,12 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
     data = CreatePerCompositorData(compositor);
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
-  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client_weak_ptr;
-  if (data->swap_client)
-    swap_client_weak_ptr = data->swap_client->AsWeakPtr();
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing)) {
     context_provider = ContextProviderCommandBuffer::Create(
-        GpuProcessTransportFactory::CreateContextCommon(
-            swap_client_weak_ptr,
-            data->surface_id),
-            "Compositor");
+        GpuProcessTransportFactory::CreateContextCommon(data->surface_id),
+        "Compositor");
   }
 
   UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
@@ -247,9 +201,14 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
                  " compositing with browser threaded compositing. Aborting.";
     }
 
-    scoped_ptr<SoftwareBrowserCompositorOutputSurface> surface =
-        SoftwareBrowserCompositorOutputSurface::Create(
-            CreateSoftwareOutputDevice(compositor));
+    scoped_ptr<SoftwareBrowserCompositorOutputSurface> surface(
+        new SoftwareBrowserCompositorOutputSurface(
+            output_surface_proxy_,
+            CreateSoftwareOutputDevice(compositor),
+            per_compositor_data_[compositor]->surface_id,
+            &output_surface_map_,
+            base::MessageLoopProxy::current().get(),
+            compositor->AsWeakPtr()));
     return surface.PassAs<cc::OutputSurface>();
   }
 
@@ -264,7 +223,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
       compositor_thread_task_runner.get());
 
   scoped_ptr<BrowserCompositorOutputSurface> surface(
-      new BrowserCompositorOutputSurface(
+      new GpuBrowserCompositorOutputSurface(
           context_provider,
           per_compositor_data_[compositor]->surface_id,
           &output_surface_map_,
@@ -452,18 +411,6 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
   return shared_main_thread_contexts_;
 }
 
-void GpuProcessTransportFactory::OnLostContext(ui::Compositor* compositor) {
-  LOG(ERROR) << "Lost UI compositor context.";
-  PerCompositorData* data = per_compositor_data_[compositor];
-  DCHECK(data);
-
-  // Prevent callbacks from other contexts in the same share group from
-  // calling us again.
-  if (data->swap_client.get())
-    data->swap_client.reset(new CompositorSwapClient(compositor, this));
-  compositor->OnSwapBuffersAborted();
-}
-
 GpuProcessTransportFactory::PerCompositorData*
 GpuProcessTransportFactory::CreatePerCompositorData(
     ui::Compositor* compositor) {
@@ -474,8 +421,6 @@ GpuProcessTransportFactory::CreatePerCompositorData(
 
   PerCompositorData* data = new PerCompositorData;
   data->surface_id = tracker->AddSurfaceForNativeWidget(widget);
-  if (!ui::Compositor::WasInitializedWithThread())
-    data->swap_client.reset(new CompositorSwapClient(compositor, this));
 #if defined(OS_WIN)
   if (GpuDataManagerImpl::GetInstance()->IsUsingAcceleratedSurface())
     data->accelerated_surface.reset(new AcceleratedSurface(widget));
@@ -490,29 +435,29 @@ GpuProcessTransportFactory::CreatePerCompositorData(
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
-GpuProcessTransportFactory::CreateContextCommon(
-    const base::WeakPtr<WebGraphicsContext3DSwapBuffersClient>& swap_client,
-    int surface_id) {
+GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
   if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  WebKit::WebGraphicsContext3D::Attributes attrs;
+  blink::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   attrs.depth = false;
   attrs.stencil = false;
   attrs.antialias = false;
   attrs.noAutomaticFlushes = true;
+  CauseForGpuLaunch cause =
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
   scoped_refptr<GpuChannelHost> gpu_channel_host(
-      BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
+      BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(cause));
   if (!gpu_channel_host)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
+  bool use_echo_for_swap_ack = true;
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
           surface_id,
           url,
           gpu_channel_host.get(),
-          swap_client,
+          use_echo_for_swap_ack,
           attrs,
           false,
           WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits()));

@@ -42,13 +42,22 @@ public class AwTestBase
     @Override
     protected void setUp() throws Exception {
         super.setUp();
-        final Context context = getActivity();
-        getInstrumentation().runOnMainSync(new Runnable() {
-            @Override
-            public void run() {
-                AwBrowserProcess.start(context);
-             }
-        });
+        if (needsBrowserProcessStarted()) {
+            final Context context = getActivity();
+            getInstrumentation().runOnMainSync(new Runnable() {
+                @Override
+                public void run() {
+                    AwBrowserProcess.start(context);
+                 }
+            });
+        }
+    }
+
+    /* Override this to return false if the test doesn't want the browser startup sequence to
+     * be run automatically.
+     */
+    protected boolean needsBrowserProcessStarted() {
+        return true;
     }
 
     /**
@@ -72,6 +81,16 @@ public class AwTestBase
             @Override
             public void run() {
                 awContents.getSettings().setJavaScriptEnabled(true);
+            }
+        });
+    }
+
+    protected void setNetworkAvailableOnUiThread(final AwContents awContents,
+            final boolean networkUp) {
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                awContents.setNetworkAvailable(networkUp);
             }
         });
     }
@@ -203,6 +222,9 @@ public class AwTestBase
         public AwTestContainerView createAwTestContainerView(AwTestRunnerActivity activity) {
             return new AwTestContainerView(activity);
         }
+        public AwSettings createAwSettings(Context context, boolean supportsLegacyQuirks) {
+            return new AwSettings(context, false, supportsLegacyQuirks);
+        }
     }
 
     protected TestDependencyFactory createTestDependencyFactory() {
@@ -237,12 +259,13 @@ public class AwTestBase
         final TestDependencyFactory testDependencyFactory = createTestDependencyFactory();
         final AwTestContainerView testContainerView =
             testDependencyFactory.createAwTestContainerView(getActivity());
+        AwSettings awSettings = testDependencyFactory.createAwSettings(getActivity(),
+                supportsLegacyQuirks);
         // TODO(mnaganov): Should also have tests for the "pure Chromium" mode.
         // See http://crbug.com/278106
         testContainerView.initialize(new AwContents(
                 mBrowserContext, testContainerView, testContainerView.getInternalAccessDelegate(),
-                awContentsClient, false, testDependencyFactory.createLayoutSizer(),
-                supportsLegacyQuirks));
+                awContentsClient, awSettings, testDependencyFactory.createLayoutSizer()));
         AwContents.setShouldDownloadFavicons();
         return testContainerView;
     }
@@ -354,7 +377,7 @@ public class AwTestBase
         return runTestOnUiThreadAndGetResult(new Callable<Float>() {
             @Override
             public Float call() throws Exception {
-                return awContents.getContentViewCore().getScale();
+                return awContents.getPageScaleFactor();
             }
         });
     }

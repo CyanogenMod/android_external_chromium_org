@@ -16,6 +16,7 @@ LoggingStats::LoggingStats(base::TickClock* clock)
       start_time_(),
       clock_(clock) {
   memset(counts_, 0, sizeof(counts_));
+  memset(start_time_, 0, sizeof(start_time_));
 }
 
 LoggingStats::~LoggingStats() {}
@@ -29,13 +30,13 @@ void LoggingStats::Reset() {
 
 void LoggingStats::InsertFrameEvent(CastLoggingEvent event,
                                     uint32 rtp_timestamp,
-                                    uint8 frame_id) {
+                                    uint32 frame_id) {
   InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
 }
 
 void LoggingStats::InsertFrameEventWithSize(CastLoggingEvent event,
                                             uint32 rtp_timestamp,
-                                            uint8 frame_id,
+                                            uint32 frame_id,
                                             int frame_size) {
   InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
   // Update size.
@@ -46,7 +47,7 @@ void LoggingStats::InsertFrameEventWithSize(CastLoggingEvent event,
 
 void LoggingStats::InsertFrameEventWithDelay(CastLoggingEvent event,
                                              uint32 rtp_timestamp,
-                                             uint8 frame_id,
+                                             uint32 frame_id,
                                              base::TimeDelta delay) {
   InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
   // Update size.
@@ -63,7 +64,7 @@ void LoggingStats::InsertFrameEventWithDelay(CastLoggingEvent event,
 }
 
 void LoggingStats::InsertBaseFrameEvent(CastLoggingEvent event,
-                                        uint8 frame_id,
+                                        uint32 frame_id,
                                         uint32 rtp_timestamp) {
   // Does this belong to an existing event?
   FrameStatsMap::iterator it = frame_stats_.find(event);
@@ -79,10 +80,10 @@ void LoggingStats::InsertBaseFrameEvent(CastLoggingEvent event,
 
 void LoggingStats::InsertPacketEvent(CastLoggingEvent event,
                                      uint32 rtp_timestamp,
-                                     uint8 frame_id,
+                                     uint32 frame_id,
                                      uint16 packet_id,
                                      uint16 max_packet_id,
-                                     int size) {
+                                     size_t size) {
   // Does this packet belong to an existing event?
   PacketStatsMap::iterator it = packet_stats_.find(event);
   if (it == packet_stats_.end()) {

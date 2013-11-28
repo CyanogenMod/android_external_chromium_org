@@ -80,7 +80,7 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
       PP_Instance instance) const OVERRIDE;
   virtual RenderView* GetRenderViewForInstance(
       PP_Instance instance) const OVERRIDE;
-  virtual WebKit::WebPluginContainer* GetContainerForInstance(
+  virtual blink::WebPluginContainer* GetContainerForInstance(
       PP_Instance instance) const OVERRIDE;
   virtual base::ProcessId GetPluginPID() const OVERRIDE;
   virtual bool HasUserGesture(PP_Instance instance) const OVERRIDE;
@@ -97,6 +97,7 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
       const std::vector<IPC::Message>& nested_msgs,
       const base::Callback<void(
           const std::vector<int>&)>& callback) const OVERRIDE;
+  virtual GURL GetDocumentURL(PP_Instance instance) const OVERRIDE;
 
  private:
   RendererPpapiHostImpl(PluginModule* module,

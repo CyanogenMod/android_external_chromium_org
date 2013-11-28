@@ -8,13 +8,16 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/common/content_export.h"
 #include "url/gurl.h"
 
 namespace content {
 
+class Navigator;
 class RenderFrameHostImpl;
 
 // When a page contains iframes, its renderer process maintains a tree structure
@@ -25,12 +28,18 @@ class CONTENT_EXPORT FrameTreeNode {
  public:
   static const int64 kInvalidFrameId;
 
-  FrameTreeNode(int64 frame_id, const std::string& name,
+  FrameTreeNode(Navigator* navigator,
+                RenderViewHostDelegate* render_view_delegate,
+                RenderWidgetHostDelegate* render_widget_delegate,
+                RenderFrameHostManager::Delegate* manager_delegate,
+                int64 frame_id,
+                const std::string& name,
                 scoped_ptr<RenderFrameHostImpl> render_frame_host);
+
   ~FrameTreeNode();
 
   void AddChild(scoped_ptr<FrameTreeNode> child);
-  void RemoveChild(int64 child_id);
+  void RemoveChild(FrameTreeNode* child);
 
   // Transitional API allowing the RenderFrameHost of a FrameTreeNode
   // representing the main frame to be provided by someone else. After
@@ -42,11 +51,24 @@ class CONTENT_EXPORT FrameTreeNode {
   // no longer owned by the RenderViewHostImpl.
   void ResetForMainFrame(RenderFrameHostImpl* new_render_frame_host);
 
+  Navigator* navigator() {
+    return navigator_.get();
+  }
+
+  RenderFrameHostManager* render_manager() {
+    return &render_manager_;
+  }
+
+  int64 frame_tree_node_id() const {
+    return frame_tree_node_id_;
+  }
+
+  // DO NOT USE.  Only used by FrameTree until we replace renderer-specific
+  // frame IDs with RenderFrameHost routing IDs.
   void set_frame_id(int64 frame_id) {
     DCHECK_EQ(frame_id_, kInvalidFrameId);
     frame_id_ = frame_id;
   }
-
   int64 frame_id() const {
     return frame_id_;
   }
@@ -76,7 +98,28 @@ class CONTENT_EXPORT FrameTreeNode {
   }
 
  private:
-  // The unique identifier for the frame in the page.
+  // The next available browser-global FrameTreeNode ID.
+  static int64 next_frame_tree_node_id_;
+
+  // The Navigator object responsible for managing navigations at this node
+  // of the frame tree.
+  scoped_refptr<Navigator> navigator_;
+
+  // Manages creation and swapping of RenderViewHosts for this frame.  This must
+  // be declared before |children_| so that it gets deleted after them.  That's
+  // currently necessary so that RenderFrameHostImpl's destructor can call
+  // GetProcess.
+  // TODO(creis): This will eliminate the need for |render_frame_host_| below.
+  RenderFrameHostManager render_manager_;
+
+  // A browser-global identifier for the frame in the page, which stays stable
+  // even if the frame does a cross-process navigation.
+  const int64 frame_tree_node_id_;
+
+  // The renderer-specific identifier for the frame in the page.
+  // TODO(creis): Remove this in favor of the RenderFrameHost's routing ID once
+  // we create FrameTreeNodes for all frames (even without a flag), since this
+  // value can change after cross-process navigations.
   int64 frame_id_;
 
   // The assigned name of the frame. This name can be empty, unlike the unique
@@ -90,7 +133,7 @@ class CONTENT_EXPORT FrameTreeNode {
   // |render_frame_host_| below is not deleted on destruction.
   //
   // For the mainframe, the FrameTree does not own the |render_frame_host_|.
-  // This is a transitional wart because RenderViewHostManager does not yet
+  // This is a transitional wart because RenderFrameHostManager does not yet
   // have the bookkeeping logic to handle creating a pending RenderFrameHost
   // along with a pending RenderViewHost. Thus, for the main frame, the
   // RenderViewHost currently retains ownership and the FrameTreeNode should

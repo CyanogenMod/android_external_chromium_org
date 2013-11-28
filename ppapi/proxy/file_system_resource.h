@@ -9,6 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/pp_file_info.h"
+#include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_resource.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
@@ -49,6 +50,7 @@ class PPAPI_PROXY_EXPORT FileSystemResource
   virtual PP_FileSystemType GetType() OVERRIDE;
 
   int32_t InitIsolatedFileSystem(const std::string& fsid,
+                                 PP_IsolatedFileSystemType_Private type,
                                  const base::Callback<void(int32_t)>& callback);
  private:
   // Called when the host has responded to our open request.
@@ -63,6 +65,7 @@ class PPAPI_PROXY_EXPORT FileSystemResource
   PP_FileSystemType type_;
   bool called_open_;
   uint32_t callback_count_;
+  int32_t callback_result_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemResource);
 };
