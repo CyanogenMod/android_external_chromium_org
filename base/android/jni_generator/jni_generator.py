@@ -500,13 +500,8 @@ class JNIFromJavaP(object):
 
   @staticmethod
   def CreateFromClass(class_file, namespace):
-    p = subprocess.Popen(args=['java', '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     class_name = os.path.splitext(os.path.basename(class_file))[0]
-    if re.match('.*?"1\.[56]', p.communicate()[1].split('\n')[0]) is not None:
-      javap_args = ['javap', class_name]
-    else:
-      javap_args = ['javap', '-XDcompat', class_name]
-    p = subprocess.Popen(args=javap_args,
+    p = subprocess.Popen(args=['javap', class_name],
                          cwd=os.path.dirname(class_file),
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
