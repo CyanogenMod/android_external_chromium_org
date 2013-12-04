@@ -4,16 +4,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# If no flags are given, prints the current content shell flags.
+# If no flags are given, prints the current SWE android browser flags.
 #
-# Otherwise, the given flags are used to REPLACE (not modify) the content shell
-# flags. For example:
-#   adb_content_shell_command_line --enable-webgl
+# Otherwise, the given flags are used to REPLACE (not modify) the SWE
+# android browser flags. For example:
+#   swe_command_line --enable-webgl
 #
-# To remove all content shell flags, pass an empty string for the flags:
-#   adb_content_shell_command_line ""
+# To remove all SWE android browser flags, pass an empty string for the flags:
+#   swe_command_line ""
 
-CMD_LINE_FILE=/data/local/tmp/content-shell-command-line
+CMD_LINE_FILE=/data/data/com.android.swe.browser/config/swe-command-line
 
 if [ $# -eq 0 ] ; then
   # If nothing specified, print the command line (stripping off "content_shell")
