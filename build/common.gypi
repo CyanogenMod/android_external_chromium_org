@@ -3279,6 +3279,10 @@
               '-Wno-deprecated-declarations',
 
               '-Wno-deprecated',
+
+              '-Wno-uninitialized',
+
+              '-Wno-unused-const-variable',
             ],
             'cflags!': [
               # Clang doesn't seem to know know this flag.
