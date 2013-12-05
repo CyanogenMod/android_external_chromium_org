@@ -3236,10 +3236,6 @@
                       '-march=<(arm_arch)',
                     ],
                   }],
-                  ['clang==1 and clang_use_lto!=0', {
-                    'ldflags' : [ '-flto' ]
-
-                  }],
                   ['arm_tune!=""', {
                     'cflags': [
                       '-mtune=<(arm_tune)',

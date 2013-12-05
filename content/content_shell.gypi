@@ -1009,6 +1009,9 @@
                 '-lgabi++',  # For rtti
               ],
             }],
+            ['OS == "android" and clang == 1 and clang_use_lto != 0', {
+              'ldflags' : [ '-flto' ]
+            }],
           ],
         },
         {
