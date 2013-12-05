@@ -4,6 +4,7 @@
 
 package org.chromium.android_webview;
 
+import android.app.Activity;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -52,6 +53,8 @@ import org.chromium.content.common.CleanupReference;
 import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
 import org.chromium.components.navigation_interception.NavigationParams;
 import org.chromium.net.GURLUtils;
+import org.chromium.ui.ActivityWindowAndroid;
+import org.chromium.ui.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.io.File;
@@ -162,6 +165,7 @@ public class AwContents {
     private OverScrollGlow mOverScrollGlow;
     // This can be accessed on any thread after construction. See AwContentsIoThreadClient.
     private final AwSettings mSettings;
+    private final ScrollAccessibilityHelper mScrollAccessibilityHelper;
 
     private boolean mIsPaused;
     private boolean mIsViewVisible;
@@ -199,6 +203,9 @@ public class AwContents {
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
     private ComponentCallbacks2 mComponentCallbacks;
+
+    // This flag is to ShouldOverrideUrlNavigation through the resourcethrottle.
+    private boolean mDeferredShouldOverrideUrlLoadingIsPendingForPopup;
 
     private static final class DestroyRunnable implements Runnable {
         private int mNativeAwContents;
@@ -289,21 +296,40 @@ public class AwContents {
     }
 
     //--------------------------------------------------------------------------------------------
-    // Use this delegate only to post onPageStarted messages, since using WebContentsObserver
-    // causes bugs with existing applications. The three problems observed are stale URLs,
-    // out of order onPageStarted's and double onPageStarted's.
+    // When the navigation is for a newly created WebView (i.e. a popup), intercept the navigation
+    // here for implementing shouldOverrideUrlLoading. This is to send the shouldOverrideUrlLoading
+    // callback to the correct WebViewClient that is associated with the WebView.
+    // Otherwise, use this delegate only to post onPageStarted messages. The navigations are
+    // intercepted via handleNavigation API of ContentRendererClient and communicated via a SYNC
+    // IPC. This is to prevent cancelling XHRs that may have already started.
+    //
+    // As for posting the onPageStarted, we could have used WebContentsObserver. However using
+    // it causes these problems at the time: stale URLs, out of order onPageStarted's and double
+    // onPageStarted's.
+    //
     // TODO(sgurun) implementing onPageStarted via a resource throttle has a performance hit
     // waiting for UI thread. Let's try to find a non-resource-throttle solution.
     private class InterceptNavigationDelegateImpl implements InterceptNavigationDelegate {
         @Override
         public boolean shouldIgnoreNavigation(NavigationParams navigationParams) {
             final String url = navigationParams.url;
-            mContentsClient.getCallbackHelper().postOnPageStarted(url);
-            return false;
+            boolean ignoreNavigation = false;
+            if (mDeferredShouldOverrideUrlLoadingIsPendingForPopup) {
+                mDeferredShouldOverrideUrlLoadingIsPendingForPopup = false;
+                // If this is used for all navigations in future, cases for application initiated
+                // load, redirect and backforward should also be filtered out.
+                if (!navigationParams.isPost) {
+                    ignoreNavigation = mContentsClient.shouldOverrideUrlLoading(url);
+                }
+            }
+            if (!ignoreNavigation) {
+                mContentsClient.getCallbackHelper().postOnPageStarted(url);
+            }
+            return ignoreNavigation;
         }
     }
 
-    //--------------------------------------------------------------------------------------------
+    //-------------------------------------------`-------------------------------------------------
     private class AwLayoutSizerDelegate implements AwLayoutSizer.Delegate {
         @Override
         public void requestLayout() {
@@ -317,7 +343,14 @@ public class AwContents {
 
         @Override
         public void setFixedLayoutSize(int widthDip, int heightDip) {
+            if (mNativeAwContents == 0) return;
             nativeSetFixedLayoutSize(mNativeAwContents, widthDip, heightDip);
+        }
+
+        @Override
+        public boolean isLayoutParamsHeightWrapContent() {
+            return mContainerView.getLayoutParams() != null &&
+                mContainerView.getLayoutParams().height == ViewGroup.LayoutParams.WRAP_CONTENT;
         }
     }
 
@@ -380,7 +413,6 @@ public class AwContents {
             mScrollOffsetManager.onFlingStartGesture(velocityX, velocityY);
         }
 
-
         @Override
         public void onFlingCancelGesture() {
             mScrollOffsetManager.onFlingCancelGesture();
@@ -389,6 +421,11 @@ public class AwContents {
         @Override
         public void onUnhandledFlingStartEvent() {
             mScrollOffsetManager.onUnhandledFlingStartEvent();
+        }
+
+        @Override
+        public void onScrollUpdateGestureConsumed() {
+            mScrollAccessibilityHelper.postViewScrolledAccessibilityEventCallback();
         }
     }
 
@@ -447,10 +484,13 @@ public class AwContents {
             ContentViewCore.GestureStateListener pinchGestureStateListener,
             ContentViewClient contentViewClient,
             ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
-      ContentViewCore contentViewCore = new ContentViewCore(containerView.getContext());
+      Context context = containerView.getContext();
+      ContentViewCore contentViewCore = new ContentViewCore(context);
       // Note INPUT_EVENTS_DELIVERED_IMMEDIATELY is passed to avoid triggering vsync in the
       // compositor, not because input events are delivered immediately.
-      contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents, null,
+      contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
+              context instanceof Activity ?
+                      new ActivityWindowAndroid((Activity) context) : new WindowAndroid(context),
                 ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
       contentViewCore.setGestureStateListener(pinchGestureStateListener);
       contentViewCore.setContentViewClient(contentViewClient);
@@ -507,6 +547,7 @@ public class AwContents {
         mSettings.setDIPScale(mDIPScale);
         mScrollOffsetManager = new AwScrollOffsetManager(new AwScrollOffsetManagerDelegate(),
                 new OverScroller(mContainerView.getContext()));
+        mScrollAccessibilityHelper = new ScrollAccessibilityHelper(mContainerView);
 
         setOverScrollMode(mContainerView.getOverScrollMode());
         setScrollBarStyle(mInternalAccessAdapter.super_getScrollBarStyle());
@@ -549,7 +590,7 @@ public class AwContents {
                 mZoomControls);
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
-        mContentsClient.installWebContentsObserver(mContentViewCore);
+        mContentsClient.installWebContentsObserver(mContentViewCore, mSettings);
         mSettings.setWebContents(nativeWebContents);
         nativeSetDipScale(mNativeAwContents, (float) mDIPScale);
         updateGlobalVisibleRect();
@@ -580,6 +621,7 @@ public class AwContents {
     // Recap: supplyContentsForPopup() is called on the parent window's content, this method is
     // called on the popup window's content.
     private void receivePopupContents(int popupNativeAwContents) {
+        mDeferredShouldOverrideUrlLoadingIsPendingForPopup = true;
         // Save existing view state.
         final boolean wasAttached = mIsAttachedToWindow;
         final boolean wasViewVisible = mIsViewVisible;
@@ -803,6 +845,7 @@ public class AwContents {
     }
 
     private void syncOnNewPictureStateToNative() {
+        if (mNativeAwContents == 0) return;
         nativeEnableOnNewPicture(mNativeAwContents, mPictureListenerEnabled || mClearViewActive);
     }
 
@@ -1001,6 +1044,10 @@ public class AwContents {
      * @see View#onScrollChanged(int,int)
      */
     public void onContainerViewScrollChanged(int l, int t, int oldl, int oldt) {
+        // A side-effect of View.onScrollChanged is that the scroll accessibility event being sent
+        // by the base class implementation. This is completely hidden from the base classes and
+        // cannot be prevented, which is why we need the code below.
+        mScrollAccessibilityHelper.removePostedViewScrolledAccessibilityEventCallback();
         mScrollOffsetManager.onContainerViewScrollChanged(l, t);
     }
 
@@ -1183,10 +1230,27 @@ public class AwContents {
         return mContentViewCore.onKeyUp(keyCode, event);
     }
 
+    private boolean isDpadEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * @see android.webkit.WebView#dispatchKeyEvent(KeyEvent)
      */
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (isDpadEvent(event)) {
+            mSettings.setSpatialNavigationEnabled(true);
+        }
         return mContentViewCore.dispatchKeyEvent(event);
     }
 
@@ -1445,6 +1509,10 @@ public class AwContents {
     public boolean onTouchEvent(MotionEvent event) {
         if (mNativeAwContents == 0) return false;
 
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            mSettings.setSpatialNavigationEnabled(false);
+        }
+
         mScrollOffsetManager.setProcessingTouchEvent(true);
         boolean rv = mContentViewCore.onTouchEvent(event);
         mScrollOffsetManager.setProcessingTouchEvent(false);
@@ -1520,6 +1588,8 @@ public class AwContents {
           mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
           mComponentCallbacks = null;
         }
+
+        mScrollAccessibilityHelper.removePostedCallbacks();
 
         if (mPendingDetachCleanupReferences != null) {
             for (int i = 0; i < mPendingDetachCleanupReferences.size(); ++i) {

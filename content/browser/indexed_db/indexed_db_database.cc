@@ -1630,6 +1630,9 @@ void IndexedDBDatabase::CreateTransaction(
     uint16 mode) {
 
   DCHECK(connections_.has(connection));
+  DCHECK(transactions_.find(transaction_id) == transactions_.end());
+  if (transactions_.find(transaction_id) != transactions_.end())
+    return;
 
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       transaction_id,
@@ -1637,7 +1640,6 @@ void IndexedDBDatabase::CreateTransaction(
       std::set<int64>(object_store_ids.begin(), object_store_ids.end()),
       static_cast<indexed_db::TransactionMode>(mode),
       this);
-  DCHECK(transactions_.find(transaction_id) == transactions_.end());
   transactions_[transaction_id] = transaction;
 }
 

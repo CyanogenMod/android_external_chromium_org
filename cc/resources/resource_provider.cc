@@ -86,6 +86,8 @@ ResourceProvider::Resource::Resource()
       format(0),
       filter(0),
       image_id(0),
+      bound_image_id(0),
+      dirty_image(false),
       texture_pool(0),
       hint(TextureUsageAny),
       type(static_cast<ResourceType>(0)) {}
@@ -118,6 +120,8 @@ ResourceProvider::Resource::Resource(
       format(format),
       filter(filter),
       image_id(0),
+      bound_image_id(0),
+      dirty_image(false),
       texture_pool(texture_pool),
       hint(hint),
       type(GLTexture) {}
@@ -143,6 +147,8 @@ ResourceProvider::Resource::Resource(
       format(format),
       filter(filter),
       image_id(0),
+      bound_image_id(0),
+      dirty_image(false),
       texture_pool(0),
       hint(TextureUsageAny),
       type(Bitmap) {}
@@ -620,7 +626,6 @@ ResourceProvider::ScopedSamplerGL::ScopedSamplerGL(
 }
 
 ResourceProvider::ScopedSamplerGL::~ScopedSamplerGL() {
-  resource_provider_->UnbindForSampling(resource_id_, target_, unit_);
 }
 
 ResourceProvider::ScopedWriteLockGL::ScopedWriteLockGL(
@@ -1116,29 +1121,15 @@ void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
     resource->filter = filter;
   }
 
-  if (resource->image_id)
+  if (resource->image_id && resource->dirty_image) {
+    // Release image currently bound to texture.
+    if (resource->bound_image_id)
+      context3d->releaseTexImage2DCHROMIUM(target, resource->bound_image_id);
     context3d->bindTexImage2DCHROMIUM(target, resource->image_id);
+    resource->bound_image_id = resource->image_id;
+    resource->dirty_image = false;
+  }
 
-  // Active unit being GL_TEXTURE0 is effectively the ground state.
-  if (unit != GL_TEXTURE0)
-    GLC(context3d, context3d->activeTexture(GL_TEXTURE0));
-}
-
-void ResourceProvider::UnbindForSampling(
-    ResourceProvider::ResourceId resource_id, GLenum target, GLenum unit) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ResourceMap::iterator it = resources_.find(resource_id);
-  DCHECK(it != resources_.end());
-  Resource* resource = &it->second;
-
-  if (!resource->image_id)
-    return;
-
-  WebGraphicsContext3D* context3d = output_surface_->context3d();
-  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(context3d));
-  if (unit != GL_TEXTURE0)
-    GLC(context3d, context3d->activeTexture(unit));
-  context3d->releaseTexImage2DCHROMIUM(target, resource->image_id);
   // Active unit being GL_TEXTURE0 is effectively the ground state.
   if (unit != GL_TEXTURE0)
     GLC(context3d, context3d->activeTexture(GL_TEXTURE0));
@@ -1374,6 +1365,8 @@ void ResourceProvider::ReleaseImage(ResourceId id) {
   DCHECK(context3d);
   context3d->destroyImageCHROMIUM(resource->image_id);
   resource->image_id = 0;
+  resource->bound_image_id = 0;
+  resource->dirty_image = false;
   resource->allocated = false;
 }
 
@@ -1413,6 +1406,7 @@ void ResourceProvider::UnmapImage(ResourceId id) {
     WebGraphicsContext3D* context3d = output_surface_->context3d();
     DCHECK(context3d);
     context3d->unmapImageCHROMIUM(resource->image_id);
+    resource->dirty_image = true;
   }
 }
 

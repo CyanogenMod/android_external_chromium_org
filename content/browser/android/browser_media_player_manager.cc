@@ -383,9 +383,13 @@ void BrowserMediaPlayerManager::OnInitialize(
   RemovePlayer(player_id);
 
   RenderProcessHost* host = render_view_host()->GetProcess();
+  ContentViewCoreImpl* content_view_core_impl =
+      static_cast<ContentViewCoreImpl*>(
+          ContentViewCore::FromWebContents(web_contents_));
   AddPlayer(media::MediaPlayerAndroid::Create(
       player_id, url, source_type, first_party_for_cookies,
-      host->GetBrowserContext()->IsOffTheRecord(), this));
+      host->GetBrowserContext()->IsOffTheRecord(), this,
+      !content_view_core_impl->ShouldBlockMediaRequest(url)));
 }
 
 void BrowserMediaPlayerManager::OnStart(int player_id) {

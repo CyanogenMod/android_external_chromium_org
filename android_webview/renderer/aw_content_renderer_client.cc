@@ -106,16 +106,17 @@ bool AwContentRendererClient::HandleNavigation(
                           gurl.SchemeIs(chrome::kAboutScheme)))
     return false;
 
+  // use NavigationInterception throttle to handle the call as that can
+  // be deferred until after the java side has been constructed.
+  if (opener_id != MSG_ROUTING_NONE)
+    return false;
+
   bool ignore_navigation = false;
   base::string16 url =  request.url().string();
 
   int routing_id = view->GetRoutingID();
-  // When opener_id is valid (popup case), use opener id for routing.
-  if (opener_id != MSG_ROUTING_NONE)
-    routing_id = opener_id;
   RenderThread::Get()->Send(new AwViewHostMsg_ShouldOverrideUrlLoading(
       routing_id, url, &ignore_navigation));
-
   return ignore_navigation;
 }
 

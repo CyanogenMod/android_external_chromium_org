@@ -487,6 +487,14 @@ void ContentViewCoreImpl::UnhandledFlingStartEvent() {
   Java_ContentViewCore_unhandledFlingStartEvent(env, j_obj.obj());
 }
 
+void ContentViewCoreImpl::OnScrollUpdateGestureConsumed() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
+  if (j_obj.is_null())
+    return;
+  Java_ContentViewCore_onScrollUpdateGestureConsumed(env, j_obj.obj());
+}
+
 void ContentViewCoreImpl::HasTouchEventHandlers(bool need_touch_events) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
@@ -633,6 +641,17 @@ ScopedJavaLocalRef<jobject> ContentViewCoreImpl::GetContext() {
     return ScopedJavaLocalRef<jobject>();
 
   return Java_ContentViewCore_getContext(env, obj.obj());
+}
+
+bool ContentViewCoreImpl::ShouldBlockMediaRequest(const GURL& url) {
+  JNIEnv* env = AttachCurrentThread();
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return true;
+  ScopedJavaLocalRef<jstring> j_url = ConvertUTF8ToJavaString(env, url.spec());
+  return Java_ContentViewCore_shouldBlockMediaRequest(env, obj.obj(),
+                                                      j_url.obj());
 }
 
 gfx::Size ContentViewCoreImpl::GetPhysicalBackingSize() const {
@@ -808,12 +827,7 @@ jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
 
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetURL(
     JNIEnv* env, jobject) const {
-  // The current users of the Java API expect to use the active entry
-  // rather than the visible entry, which is exposed by WebContents::GetURL.
-  content::NavigationEntry* entry =
-      web_contents_->GetController().GetActiveEntry();
-  GURL url = entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
-  return ConvertUTF8ToJavaString(env, url.spec());
+  return ConvertUTF8ToJavaString(env, GetWebContents()->GetURL().spec());
 }
 
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetTitle(
@@ -1443,7 +1457,7 @@ void ContentViewCoreImpl::GetDirectedNavigationHistory(JNIEnv* env,
 ScopedJavaLocalRef<jstring>
 ContentViewCoreImpl::GetOriginalUrlForActiveNavigationEntry(JNIEnv* env,
                                                             jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (entry == NULL)
     return ScopedJavaLocalRef<jstring>(env, NULL);
   return ConvertUTF8ToJavaString(env, entry->GetOriginalRequestURL().spec());
@@ -1518,7 +1532,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
 
 bool ContentViewCoreImpl::GetUseDesktopUserAgent(
     JNIEnv* env, jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   return entry && entry->GetIsOverridingUserAgent();
 }
 
@@ -1567,7 +1581,7 @@ void ContentViewCoreImpl::SetUseDesktopUserAgent(
     return;
 
   // Make sure the navigation entry actually exists.
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (!entry)
     return;
 

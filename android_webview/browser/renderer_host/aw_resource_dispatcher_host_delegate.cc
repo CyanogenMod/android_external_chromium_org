@@ -66,7 +66,6 @@ class IoThreadClientThrottle : public content::ResourceThrottle {
   virtual void WillStartRequest(bool* defer) OVERRIDE;
   virtual void WillRedirectRequest(const GURL& new_url, bool* defer) OVERRIDE;
 
-  bool MaybeDeferRequest(bool* defer);
   void OnIoThreadClientReady(int new_child_id, int new_route_id);
   bool MaybeBlockRequest();
   bool ShouldBlockRequest();
@@ -100,19 +99,7 @@ void IoThreadClientThrottle::WillStartRequest(bool* defer) {
     return;
   }
   DCHECK(child_id_);
-  if (!MaybeDeferRequest(defer)) {
-    MaybeBlockRequest();
-  }
-}
-
-void IoThreadClientThrottle::WillRedirectRequest(const GURL& new_url,
-                                                 bool* defer) {
-  WillStartRequest(defer);
-}
-
-bool IoThreadClientThrottle::MaybeDeferRequest(bool* defer) {
   *defer = false;
-
   // Defer all requests of a pop up that is still not associated with Java
   // client so that the client will get a chance to override requests.
   scoped_ptr<AwContentsIoThreadClient> io_client =
@@ -121,8 +108,14 @@ bool IoThreadClientThrottle::MaybeDeferRequest(bool* defer) {
     *defer = true;
     AwResourceDispatcherHostDelegate::AddPendingThrottle(
         child_id_, route_id_, this);
+  } else {
+    MaybeBlockRequest();
   }
-  return *defer;
+}
+
+void IoThreadClientThrottle::WillRedirectRequest(const GURL& new_url,
+                                                 bool* defer) {
+  WillStartRequest(defer);
 }
 
 void IoThreadClientThrottle::OnIoThreadClientReady(int new_child_id,
@@ -212,15 +205,12 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
     int route_id,
     bool is_continuation_of_transferred_request,
     ScopedVector<content::ResourceThrottle>* throttles) {
-  // If io_client is NULL, then the browser side objects have already been
-  // destroyed, so do not do anything to the request. Conversely if the
-  // request relates to a not-yet-created popup window, then the client will
-  // be non-NULL but PopupPendingAssociation() will be set.
-  scoped_ptr<AwContentsIoThreadClient> io_client =
-      AwContentsIoThreadClient::FromID(child_id, route_id);
-  if (!io_client)
-    return;
 
+  // We always push the throttles here. Checking the existence of io_client
+  // is racy when a popup window is created. That is because RequestBeginning
+  // is called whether or not requests are blocked via BlockRequestForRoute()
+  // however io_client may or may not be ready at the time depending on whether
+  // webcontents is created.
   throttles->push_back(new IoThreadClientThrottle(
       child_id, route_id, request));
 
@@ -277,6 +267,19 @@ void AwResourceDispatcherHostDelegate::DownloadStarting(
 bool AwResourceDispatcherHostDelegate::AcceptAuthRequest(
     net::URLRequest* request,
     net::AuthChallengeInfo* auth_info) {
+  return true;
+}
+
+bool AwResourceDispatcherHostDelegate::AcceptSSLClientCertificateRequest(
+    net::URLRequest* request,
+    net::SSLCertRequestInfo* cert_info) {
+  // WebView does not support client certificate selection, however it does
+  // send a no-certificate response to the server to allow it decide how to
+  // proceed. The base class returns false here, which causes the entire
+  // resource request to be abort. We don't want that, so we must return true
+  // here (and subsequently complete the request in
+  // AwContentBrowserClient::SelectClientCertificate) to get the intended
+  // behavior.
   return true;
 }
 

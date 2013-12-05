@@ -47,12 +47,15 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   // before decoding the media stream. This allows |manager_| to track
   // unused resources and free them when needed. On the other hand, it needs
   // to call ReleaseMediaResources() when it is done with decoding.
+  // |load_media_resource| indcates whether the media resource should be
+  // initialized after the player created.
   static MediaPlayerAndroid* Create(int player_id,
                                     const GURL& url,
                                     SourceType source_type,
                                     const GURL& first_party_for_cookies,
                                     bool hide_url_log,
-                                    MediaPlayerManager* manager);
+                                    MediaPlayerManager* manager,
+                                    bool load_media_resource);
 
   // Passing an external java surface object to the player.
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) = 0;
