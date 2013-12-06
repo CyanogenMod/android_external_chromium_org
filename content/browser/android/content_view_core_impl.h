@@ -256,6 +256,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   bool HasFocus();
   void ConfirmTouchEvent(InputEventAckState ack_result);
   void UnhandledFlingStartEvent();
+  void OnScrollUpdateGestureConsumed();
   void HasTouchEventHandlers(bool need_touch_events);
   void OnSelectionChanged(const std::string& text);
   void OnSelectionBoundsChanged(
@@ -284,6 +285,9 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Returns the context that the ContentViewCore was created with, it would
   // typically be an Activity context for an on screen view.
   base::android::ScopedJavaLocalRef<jobject> GetContext();
+
+  // Returns True if the given media should be blocked to load.
+  bool ShouldBlockMediaRequest(const GURL& url);
 
   // --------------------------------------------------------------------------
   // Methods called from native code

@@ -84,7 +84,7 @@ class RenderbufferAttachment
     return true;
   }
 
-  virtual void DetachFromFramebuffer() const OVERRIDE {
+  virtual void DetachFromFramebuffer(Framebuffer* framebuffer) const OVERRIDE {
     // Nothing to do for renderbuffers.
   }
 
@@ -188,8 +188,10 @@ class TextureAttachment
     return texture_ref_->texture()->CanRenderTo();
   }
 
-  virtual void DetachFromFramebuffer() const OVERRIDE {
+  virtual void DetachFromFramebuffer(Framebuffer* framebuffer)
+      const OVERRIDE {
     texture_ref_->texture()->DetachFromFramebuffer();
+    framebuffer->OnTextureRefDetached(texture_ref_.get());
   }
 
   virtual bool ValidForAttachmentType(
@@ -225,6 +227,10 @@ class TextureAttachment
   DISALLOW_COPY_AND_ASSIGN(TextureAttachment);
 };
 
+FramebufferManager::TextureDetachObserver::TextureDetachObserver() {}
+
+FramebufferManager::TextureDetachObserver::~TextureDetachObserver() {}
+
 FramebufferManager::FramebufferManager(
     uint32 max_draw_buffers, uint32 max_color_attachments)
     : framebuffer_state_change_count_(1),
@@ -247,7 +253,7 @@ void Framebuffer::MarkAsDeleted() {
   deleted_ = true;
   while (!attachments_.empty()) {
     Attachment* attachment = attachments_.begin()->second.get();
-    attachment->DetachFromFramebuffer();
+    attachment->DetachFromFramebuffer(this);
     attachments_.erase(attachments_.begin());
   }
 }
@@ -532,7 +538,7 @@ void Framebuffer::AttachRenderbuffer(
     GLenum attachment, Renderbuffer* renderbuffer) {
   const Attachment* a = GetAttachment(attachment);
   if (a)
-    a->DetachFromFramebuffer();
+    a->DetachFromFramebuffer(this);
   if (renderbuffer) {
     attachments_[attachment] = scoped_refptr<Attachment>(
         new RenderbufferAttachment(renderbuffer));
@@ -547,7 +553,7 @@ void Framebuffer::AttachTexture(
     GLint level, GLsizei samples) {
   const Attachment* a = GetAttachment(attachment);
   if (a)
-    a->DetachFromFramebuffer();
+    a->DetachFromFramebuffer(this);
   if (texture_ref) {
     attachments_[attachment] = scoped_refptr<Attachment>(
         new TextureAttachment(texture_ref, target, level, samples));
@@ -566,6 +572,10 @@ const Framebuffer::Attachment*
     return it->second.get();
   }
   return NULL;
+}
+
+void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
+  manager_->OnTextureRefDetached(texture);
 }
 
 bool FramebufferManager::GetClientId(
@@ -603,6 +613,12 @@ bool FramebufferManager::IsComplete(
   DCHECK(framebuffer);
   return framebuffer->framebuffer_complete_state_count_id() ==
       framebuffer_state_change_count_;
+}
+
+void FramebufferManager::OnTextureRefDetached(TextureRef* texture) {
+  FOR_EACH_OBSERVER(TextureDetachObserver,
+                    texture_detach_observers_,
+                    OnTextureRefDetachedFromFramebuffer(texture));
 }
 
 }  // namespace gles2

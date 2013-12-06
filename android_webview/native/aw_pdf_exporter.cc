@@ -95,6 +95,7 @@ void AwPdfExporter::CreatePdfSettings(JNIEnv* env, jobject obj) {
   margins.bottom =
       MilsToDots(Java_AwPdfExporter_getBottomMargin(env, obj), dpi);
   print_settings_->SetCustomMargins(margins);
+  print_settings_->should_print_backgrounds = true;
 }
 
 void AwPdfExporter::DidExportPdf(bool success) {

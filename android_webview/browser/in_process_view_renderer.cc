@@ -147,7 +147,7 @@ const int64 kFallbackTickTimeoutInMilliseconds = 20;
 
 // Used to calculate memory and resource allocation. Determined experimentally.
 size_t g_memory_multiplier = 10;
-const size_t kMaxNumTilesToFillDisplay = 20;
+size_t g_num_gralloc_limit = 150;
 const size_t kBytesPerPixel = 4;
 const size_t kMemoryAllocationStep = 5 * 1024 * 1024;
 
@@ -290,23 +290,29 @@ void InProcessViewRenderer::CalculateTileMemoryPolicy() {
   if (cl->HasSwitch(switches::kTileMemoryMultiplier)) {
     std::string string_value =
         cl->GetSwitchValueASCII(switches::kTileMemoryMultiplier);
-    int int_value;
+    int int_value = 0;
     if (base::StringToInt(string_value, &int_value) &&
         int_value >= 2 && int_value <= 50) {
       g_memory_multiplier = int_value;
     }
   }
 
-  if (cl->HasSwitch(switches::kDefaultTileWidth) ||
-      cl->HasSwitch(switches::kDefaultTileHeight)) {
-    return;
+  if (cl->HasSwitch(switches::kNumGrallocBuffersPerWebview)) {
+    std::string string_value =
+        cl->GetSwitchValueASCII(switches::kNumGrallocBuffersPerWebview);
+    int int_value = 0;
+    if (base::StringToInt(string_value, &int_value) &&
+        int_value >= 50 && int_value <= 500) {
+      g_num_gralloc_limit = int_value;
+    }
   }
 
-  const int default_tile_size = 512;
-  std::stringstream size;
-  size << default_tile_size;
-  cl->AppendSwitchASCII(switches::kDefaultTileWidth, size.str());
-  cl->AppendSwitchASCII(switches::kDefaultTileHeight, size.str());
+  const char kDefaultTileSize[] = "384";
+  if (!cl->HasSwitch(switches::kDefaultTileWidth))
+    cl->AppendSwitchASCII(switches::kDefaultTileWidth, kDefaultTileSize);
+
+  if (!cl->HasSwitch(switches::kDefaultTileHeight))
+    cl->AppendSwitchASCII(switches::kDefaultTileHeight, kDefaultTileSize);
 }
 
 bool InProcessViewRenderer::RequestProcessGL() {
@@ -478,7 +484,7 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   // Round up to a multiple of kMemoryAllocationStep.
   policy.bytes_limit =
       (policy.bytes_limit / kMemoryAllocationStep + 1) * kMemoryAllocationStep;
-  policy.num_resources_limit = kMaxNumTilesToFillDisplay * g_memory_multiplier;
+  policy.num_resources_limit = g_num_gralloc_limit;
   SetMemoryPolicy(policy);
 
   DCHECK(gl_surface_);
@@ -630,6 +636,7 @@ skia::RefPtr<SkPicture> InProcessViewRenderer::CapturePicture(int width,
 
 void InProcessViewRenderer::EnableOnNewPicture(bool enabled) {
   on_new_picture_enable_ = enabled;
+  EnsureContinuousInvalidation(NULL, false);
 }
 
 void InProcessViewRenderer::SetIsPaused(bool paused) {
@@ -886,8 +893,7 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
   // This method should be called again when any of these conditions change.
   bool need_invalidate =
       compositor_needs_continuous_invalidate_ || invalidate_ignore_compositor;
-  bool throttle = is_paused_ || (attached_to_window_ && !window_visible_);
-  if (!need_invalidate || block_invalidates_ || throttle)
+  if (!need_invalidate || block_invalidates_)
     return;
 
   if (draw_info) {
@@ -899,6 +905,11 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
   } else {
     client_->PostInvalidate();
   }
+
+  bool throttle_fallback_tick = (is_paused_ && !on_new_picture_enable_) ||
+                                (attached_to_window_ && !window_visible_);
+  if (throttle_fallback_tick)
+    return;
 
   block_invalidates_ = compositor_needs_continuous_invalidate_;
 

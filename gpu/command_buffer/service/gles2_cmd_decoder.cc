@@ -524,7 +524,8 @@ bool GLES2Decoder::IsAngle() {
 
 // This class implements GLES2Decoder so we don't have to expose all the GLES2
 // cmd stuff to outside this class.
-class GLES2DecoderImpl : public GLES2Decoder {
+class GLES2DecoderImpl : public GLES2Decoder,
+                         public FramebufferManager::TextureDetachObserver {
  public:
   // Used by PrepForSetUniformByLocation to validate types.
   struct BaseUniformInfo {
@@ -646,6 +647,10 @@ class GLES2DecoderImpl : public GLES2Decoder {
   bool BoundFramebufferHasStencilAttachment();
 
   virtual error::ContextLostReason GetContextLostReason() OVERRIDE;
+
+  // Overridden from FramebufferManager::TextureDetachObserver:
+  virtual void OnTextureRefDetachedFromFramebuffer(
+      TextureRef* texture) OVERRIDE;
 
  private:
   friend class ScopedFrameBufferBinder;
@@ -1403,12 +1408,17 @@ class GLES2DecoderImpl : public GLES2Decoder {
   void RestoreStateForAttrib(GLuint attrib);
 
   // If texture is a stream texture, this will update the stream to the newest
-  // buffer.
-  void UpdateStreamTextureIfNeeded(Texture* texture);
+  // buffer and bind the texture implicitly.
+  void UpdateStreamTextureIfNeeded(Texture* texture, GLuint texture_unit_index);
 
-  // Returns false if unrenderable textures were replaced.
+  // If an image is bound to texture, this will call Will/DidUseTexImage
+  // if needed.
+  void DoWillUseTexImageIfNeeded(Texture* texture, GLenum textarget);
+  void DoDidUseTexImageIfNeeded(Texture* texture, GLenum textarget);
+
+  // Returns false if textures were replaced.
   bool PrepareTexturesForRender();
-  void RestoreStateForNonRenderableTextures();
+  void RestoreStateForTextures();
 
   // Returns true if GL_FIXED attribs were simulated.
   bool SimulateFixedAttribs(
@@ -2537,6 +2547,8 @@ bool GLES2DecoderImpl::Initialize(
       AsyncPixelTransferManager::Create(context.get()));
   async_pixel_transfer_manager_->Initialize(texture_manager());
 
+  framebuffer_manager()->AddObserver(this);
+
   return true;
 }
 
@@ -3256,6 +3268,8 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
   // Should destroy the transfer manager before the texture manager held
   // by the context group.
   async_pixel_transfer_manager_.reset();
+
+  framebuffer_manager()->RemoveObserver(this);
 
   if (group_.get()) {
     group_->Destroy(this, have_context);
@@ -4924,6 +4938,9 @@ void GLES2DecoderImpl::DoFramebufferTexture2DCommon(
     return;
   }
 
+  if (texture_ref)
+    DoWillUseTexImageIfNeeded(texture_ref->texture(), textarget);
+
   LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER(name);
   if (0 == samples) {
     glFramebufferTexture2DEXT(target, attachment, textarget, service_id, level);
@@ -4944,6 +4961,10 @@ void GLES2DecoderImpl::DoFramebufferTexture2DCommon(
   if (framebuffer == state_.bound_draw_framebuffer.get()) {
     clear_state_dirty_ = true;
   }
+
+  if (texture_ref)
+    DoDidUseTexImageIfNeeded(texture_ref->texture(), textarget);
+
   OnFboChanged();
 }
 
@@ -5650,21 +5671,62 @@ void GLES2DecoderImpl::PerformanceWarning(
                      std::string("PERFORMANCE WARNING: ") + msg);
 }
 
-void GLES2DecoderImpl::UpdateStreamTextureIfNeeded(Texture* texture) {
+void GLES2DecoderImpl::UpdateStreamTextureIfNeeded(Texture* texture,
+                                                   GLuint texture_unit_index) {
   if (texture && texture->IsStreamTexture()) {
     DCHECK(stream_texture_manager());
     StreamTexture* stream_tex =
         stream_texture_manager()->LookupStreamTexture(texture->service_id());
-    if (stream_tex)
+    if (stream_tex) {
+      glActiveTexture(GL_TEXTURE0 + texture_unit_index);
       stream_tex->Update();
+    }
+  }
+}
+
+void GLES2DecoderImpl::DoWillUseTexImageIfNeeded(
+    Texture* texture, GLenum textarget) {
+  // This might be supported in the future.
+  if (textarget != GL_TEXTURE_2D)
+    return;
+  // Image is already in use if texture is attached to a framebuffer.
+  if (texture && !texture->IsAttachedToFramebuffer()) {
+    gfx::GLImage* image = texture->GetLevelImage(textarget, 0);
+    if (image) {
+      ScopedGLErrorSuppressor suppressor(
+          "GLES2DecoderImpl::DoWillUseTexImageIfNeeded",
+          this);
+      glBindTexture(textarget, texture->service_id());
+      image->WillUseTexImage();
+      RestoreCurrentTexture2DBindings();
+    }
+  }
+}
+
+void GLES2DecoderImpl::DoDidUseTexImageIfNeeded(
+    Texture* texture, GLenum textarget) {
+  // This might be supported in the future.
+  if (textarget != GL_TEXTURE_2D)
+    return;
+  // Image is still in use if texture is attached to a framebuffer.
+  if (texture && !texture->IsAttachedToFramebuffer()) {
+    gfx::GLImage* image = texture->GetLevelImage(textarget, 0);
+    if (image) {
+      ScopedGLErrorSuppressor suppressor(
+          "GLES2DecoderImpl::DoDidUseTexImageIfNeeded",
+          this);
+      glBindTexture(textarget, texture->service_id());
+      image->DidUseTexImage();
+      RestoreCurrentTexture2DBindings();
+    }
   }
 }
 
 bool GLES2DecoderImpl::PrepareTexturesForRender() {
   DCHECK(state_.current_program.get());
-  bool have_unrenderable_textures =
-      texture_manager()->HaveUnrenderableTextures();
-  if (!have_unrenderable_textures && !features().oes_egl_image_external) {
+  if (!texture_manager()->HaveUnrenderableTextures() &&
+      !texture_manager()->HaveImages() &&
+      !features().oes_egl_image_external) {
     return true;
   }
 
@@ -5679,16 +5741,14 @@ bool GLES2DecoderImpl::PrepareTexturesForRender() {
       GLuint texture_unit_index = uniform_info->texture_units[jj];
       if (texture_unit_index < state_.texture_units.size()) {
         TextureUnit& texture_unit = state_.texture_units[texture_unit_index];
-        TextureRef* texture =
+        TextureRef* texture_ref =
             texture_unit.GetInfoForSamplerType(uniform_info->type).get();
-        if (texture)
-          UpdateStreamTextureIfNeeded(texture->texture());
-        if (have_unrenderable_textures &&
-            (!texture || !texture_manager()->CanRender(texture))) {
+        GLenum textarget = GetBindTargetForSamplerType(uniform_info->type);
+        if (!texture_ref || !texture_manager()->CanRender(texture_ref)) {
           textures_set = true;
           glActiveTexture(GL_TEXTURE0 + texture_unit_index);
           glBindTexture(
-              GetBindTargetForSamplerType(uniform_info->type),
+              textarget,
               texture_manager()->black_texture_id(uniform_info->type));
           LOCAL_RENDER_WARNING(
               std::string("texture bound to texture unit ") +
@@ -5696,7 +5756,23 @@ bool GLES2DecoderImpl::PrepareTexturesForRender() {
               " is not renderable. It maybe non-power-of-2 and have"
               " incompatible texture filtering or is not"
               " 'texture complete'");
+          continue;
         }
+
+        Texture* texture = texture_ref->texture();
+        if (textarget == GL_TEXTURE_2D) {
+          gfx::GLImage* image = texture->GetLevelImage(textarget, 0);
+          if (image && !texture->IsAttachedToFramebuffer()) {
+            ScopedGLErrorSuppressor suppressor(
+                "GLES2DecoderImpl::PrepareTexturesForRender", this);
+            textures_set = true;
+            glActiveTexture(GL_TEXTURE0 + texture_unit_index);
+            image->WillUseTexImage();
+            continue;
+          }
+        }
+
+        UpdateStreamTextureIfNeeded(texture, texture_unit_index);
       }
       // else: should this be an error?
     }
@@ -5704,7 +5780,7 @@ bool GLES2DecoderImpl::PrepareTexturesForRender() {
   return !textures_set;
 }
 
-void GLES2DecoderImpl::RestoreStateForNonRenderableTextures() {
+void GLES2DecoderImpl::RestoreStateForTextures() {
   DCHECK(state_.current_program.get());
   const Program::SamplerIndices& sampler_indices =
       state_.current_program->sampler_indices();
@@ -5717,9 +5793,7 @@ void GLES2DecoderImpl::RestoreStateForNonRenderableTextures() {
       if (texture_unit_index < state_.texture_units.size()) {
         TextureUnit& texture_unit = state_.texture_units[texture_unit_index];
         TextureRef* texture_ref =
-            uniform_info->type == GL_SAMPLER_2D
-                ? texture_unit.bound_texture_2d.get()
-                : texture_unit.bound_texture_cube_map.get();
+            texture_unit.GetInfoForSamplerType(uniform_info->type).get();
         if (!texture_ref || !texture_manager()->CanRender(texture_ref)) {
           glActiveTexture(GL_TEXTURE0 + texture_unit_index);
           // Get the texture_ref info that was previously bound here.
@@ -5728,6 +5802,20 @@ void GLES2DecoderImpl::RestoreStateForNonRenderableTextures() {
                             : texture_unit.bound_texture_cube_map.get();
           glBindTexture(texture_unit.bind_target,
                         texture_ref ? texture_ref->service_id() : 0);
+          continue;
+        }
+
+        Texture* texture = texture_ref->texture();
+        if (texture_unit.bind_target == GL_TEXTURE_2D) {
+          gfx::GLImage* image = texture->GetLevelImage(
+              texture_unit.bind_target, 0);
+          if (image && !texture->IsAttachedToFramebuffer()) {
+            ScopedGLErrorSuppressor suppressor(
+                "GLES2DecoderImpl::RestoreStateForTextures", this);
+            glActiveTexture(GL_TEXTURE0 + texture_unit_index);
+            image->DidUseTexImage();
+            continue;
+          }
         }
       }
     }
@@ -6070,7 +6158,7 @@ error::Error GLES2DecoderImpl::DoDrawArrays(
       }
       ProcessPendingQueries();
       if (textures_set) {
-        RestoreStateForNonRenderableTextures();
+        RestoreStateForTextures();
       }
       if (simulated_fixed_attribs) {
         RestoreStateForSimulatedFixedAttribs();
@@ -6204,7 +6292,7 @@ error::Error GLES2DecoderImpl::DoDrawElements(
 
       ProcessPendingQueries();
       if (textures_set) {
-        RestoreStateForNonRenderableTextures();
+        RestoreStateForTextures();
       }
       if (simulated_fixed_attribs) {
         RestoreStateForSimulatedFixedAttribs();
@@ -9786,6 +9874,8 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
         dest_texture_ref, GL_TEXTURE_2D, level, true);
   }
 
+  DoWillUseTexImageIfNeeded(source_texture, source_texture->target());
+
   // GL_TEXTURE_EXTERNAL_OES texture requires apply a transform matrix
   // before presenting.
   if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
@@ -9818,6 +9908,8 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
         unpack_premultiply_alpha_,
         unpack_unpremultiply_alpha_);
   }
+
+  DoDidUseTexImageIfNeeded(source_texture, source_texture->target());
 }
 
 static GLenum ExtractTypeFromStorageFormat(GLenum internalformat) {
@@ -10479,6 +10571,12 @@ error::Error GLES2DecoderImpl::HandleWaitAsyncTexImage2DCHROMIUM(
   delegate->WaitForTransferCompletion();
   ProcessFinishedAsyncTransfers();
   return error::kNoError;
+}
+
+void GLES2DecoderImpl::OnTextureRefDetachedFromFramebuffer(
+    TextureRef* texture_ref) {
+  Texture* texture = texture_ref->texture();
+  DoDidUseTexImageIfNeeded(texture, texture->target());
 }
 
 // Include the auto-generated part of this file. We split this because it means

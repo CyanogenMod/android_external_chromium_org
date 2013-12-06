@@ -176,8 +176,8 @@ import java.util.Map;
     }
 
     /**
-     * An interface that allows the embedder to be notified when the pinch gesture starts and
-     * stops.
+     * An interface that allows the embedder to be notified of events and state changes related to
+     * gesture processing.
      */
     public interface GestureStateListener {
         /**
@@ -204,6 +204,14 @@ import java.util.Map;
          * Called when a fling event was not handled by the renderer.
          */
         void onUnhandledFlingStartEvent();
+
+        /**
+         * Called to indicate that a scroll update gesture had been consumed by the page.
+         * This callback is called whenever any layer is scrolled (like a frame or div). It is
+         * not called when a JS touch handler consumes the event (preventDefault), it is not called
+         * for JS-initiated scrolling.
+         */
+        void onScrollUpdateGestureConsumed();
     }
 
     /**
@@ -365,6 +373,9 @@ import java.util.Map;
     private InsertionHandleController mInsertionHandleController;
 
     private Runnable mDeferredHandleFadeInRunnable;
+
+    private PositionObserver mPositionObserver;
+    private PositionObserver.Listener mPositionListener;
 
     // Size of the viewport in physical pixels as set from onSizeChanged.
     private int mViewportWidthPix;
@@ -706,6 +717,15 @@ import java.util.Map;
         mHardwareAccelerated = hasHardwareAcceleration(mContext);
 
         mContainerView = containerView;
+        mPositionObserver = new ViewPositionObserver(mContainerView);
+        mPositionListener = new PositionObserver.Listener() {
+            @Override
+            public void onPositionChanged(int x, int y) {
+                if (isSelectionHandleShowing() || isInsertionHandleShowing()) {
+                    temporarilyHideTextHandles();
+                }
+            }
+        };
 
         int windowNativePointer = windowAndroid != null ? windowAndroid.getNativePointer() : 0;
 
@@ -1251,6 +1271,14 @@ import java.util.Map;
     private void unhandledFlingStartEvent() {
         if (mGestureStateListener != null) {
             mGestureStateListener.onUnhandledFlingStartEvent();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private void onScrollUpdateGestureConsumed() {
+        if (mGestureStateListener != null) {
+            mGestureStateListener.onScrollUpdateGestureConsumed();
         }
     }
 
@@ -2003,7 +2031,8 @@ import java.util.Map;
 
     private SelectionHandleController getSelectionHandleController() {
         if (mSelectionHandleController == null) {
-            mSelectionHandleController = new SelectionHandleController(getContainerView()) {
+            mSelectionHandleController = new SelectionHandleController(
+                    getContainerView(), mPositionObserver) {
                 @Override
                 public void selectBetweenCoordinates(int x1, int y1, int x2, int y2) {
                     if (mNativeContentViewCore != 0 && !(x1 == x2 && y1 == y2)) {
@@ -2029,7 +2058,8 @@ import java.util.Map;
 
     private InsertionHandleController getInsertionHandleController() {
         if (mInsertionHandleController == null) {
-            mInsertionHandleController = new InsertionHandleController(getContainerView()) {
+            mInsertionHandleController = new InsertionHandleController(
+                    getContainerView(), mPositionObserver) {
                 private static final int AVERAGE_LINE_HEIGHT = 14;
 
                 @Override
@@ -2095,6 +2125,7 @@ import java.util.Map;
         if (mInsertionHandleController != null) {
             mInsertionHandleController.hideAndDisallowAutomaticShowing();
         }
+        mPositionObserver.removeListener(mPositionListener);
     }
 
     private void showSelectActionBar() {
@@ -2214,10 +2245,10 @@ import java.util.Map;
     // Makes the insertion/selection handles invisible. They will fade back in shortly after the
     // last call to scheduleTextHandleFadeIn (or temporarilyHideTextHandles).
     private void temporarilyHideTextHandles() {
-        if (isSelectionHandleShowing()) {
+        if (isSelectionHandleShowing() && !mSelectionHandleController.isDragging()) {
             mSelectionHandleController.setHandleVisibility(HandleView.INVISIBLE);
         }
-        if (isInsertionHandleShowing()) {
+        if (isInsertionHandleShowing() && !mInsertionHandleController.isDragging()) {
             mInsertionHandleController.setHandleVisibility(HandleView.INVISIBLE);
         }
         scheduleTextHandleFadeIn();
@@ -2467,6 +2498,9 @@ import java.util.Map;
                 }
             }
             mHasSelection = false;
+        }
+        if (isSelectionHandleShowing() || isInsertionHandleShowing()) {
+            mPositionObserver.addListener(mPositionListener);
         }
     }
 
@@ -2979,6 +3013,11 @@ import java.util.Map;
     @CalledByNative
     private ContentVideoViewClient getContentVideoViewClient() {
         return mContentViewClient.getContentVideoViewClient();
+    }
+
+    @CalledByNative
+    private boolean shouldBlockMediaRequest(String url) {
+        return mContentViewClient.shouldBlockMediaRequest(url);
     }
 
     private native void nativeOnJavaContentViewCoreDestroyed(int nativeContentViewCoreImpl);

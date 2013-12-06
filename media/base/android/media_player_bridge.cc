@@ -37,7 +37,8 @@ MediaPlayerAndroid* MediaPlayerAndroid::Create(
     SourceType source_type,
     const GURL& first_party_for_cookies,
     bool hide_url_log,
-    MediaPlayerManager* manager) {
+    MediaPlayerManager* manager,
+    bool load_media_resource) {
   if (source_type == SOURCE_TYPE_URL) {
     MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
         player_id,
@@ -45,7 +46,8 @@ MediaPlayerAndroid* MediaPlayerAndroid::Create(
         first_party_for_cookies,
         hide_url_log,
         manager);
-    media_player_bridge->Initialize();
+    if (load_media_resource)
+      media_player_bridge->Initialize();
     return media_player_bridge;
   } else {
     return new MediaSourcePlayer(

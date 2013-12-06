@@ -7,11 +7,34 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
 
+// === START ANDROID WORKAROUND b/11392857
+#include <sys/system_properties.h>
+
+namespace {
+bool RequiresGrallocUnbind() {
+  static const char* kPropertyName = "ro.webview.gralloc_unbind";
+  char prop_value[PROP_VALUE_MAX];
+  int prop_value_length = __system_property_get(kPropertyName, prop_value);
+  if (prop_value_length == 1) {
+    if (strcmp(prop_value, "1") == 0) {
+      return true;
+    } else if (strcmp(prop_value, "0") == 0) {
+      return false;
+    }
+  }
+  LOG_IF(WARNING, prop_value_length > 0)
+      << "Unrecognized value for " << kPropertyName << ": " << prop_value;
+  return strcmp((char*)glGetString(GL_VENDOR), "NVIDIA Corporation") == 0;
+}
+}
+// === END   ANDROID WORKAROUND b/11392857
+
 namespace gfx {
 
 GLImageEGL::GLImageEGL(gfx::Size size)
     : egl_image_(EGL_NO_IMAGE_KHR),
-      size_(size) {
+      size_(size),
+      in_use_(false) {
 }
 
 GLImageEGL::~GLImageEGL() {
@@ -40,25 +63,6 @@ bool GLImageEGL::Initialize(gfx::GpuMemoryBufferHandle buffer) {
   return true;
 }
 
-bool GLImageEGL::BindTexImage() {
-  if (egl_image_ == EGL_NO_IMAGE_KHR) {
-    LOG(ERROR) << "NULL EGLImage in BindTexImage";
-    return false;
-  }
-
-  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
-
-  if (glGetError() != GL_NO_ERROR) {
-    return false;
-  }
-
-  return true;
-}
-
-gfx::Size GLImageEGL::GetSize() {
-  return size_;
-}
-
 void GLImageEGL::Destroy() {
   if (egl_image_ == EGL_NO_IMAGE_KHR)
     return;
@@ -74,12 +78,44 @@ void GLImageEGL::Destroy() {
   egl_image_ = EGL_NO_IMAGE_KHR;
 }
 
+gfx::Size GLImageEGL::GetSize() {
+  return size_;
+}
+
+bool GLImageEGL::BindTexImage() {
+  if (egl_image_ == EGL_NO_IMAGE_KHR) {
+    LOG(ERROR) << "NULL EGLImage in BindTexImage";
+    return false;
+  }
+
+  // Defer ImageTargetTexture2D if not currently in use.
+  if (!in_use_)
+    return true;
+
+  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
+  DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
+  return true;
+}
+
 void GLImageEGL::ReleaseTexImage() {
-  // === START ANDROID WORKAROUND http://b/10205015 and http://b/10892941
-  static bool is_qcom = strcmp((char*)glGetString(GL_VENDOR), "Qualcomm") == 0;
-  static bool is_arm = strcmp((char*)glGetString(GL_VENDOR), "ARM") == 0;
-  if (is_qcom || is_arm) return;
-  // === END   ANDROID WORKAROUND http://b/10205015 and http://b/10892941
+  // Nothing to do here as image is released after each use.
+}
+
+void GLImageEGL::WillUseTexImage() {
+  DCHECK(egl_image_);
+  DCHECK(!in_use_);
+  in_use_ = true;
+  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
+  DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
+}
+
+void GLImageEGL::DidUseTexImage() {
+  DCHECK(in_use_);
+  in_use_ = false;
+  // === START ANDROID WORKAROUND b/11392857
+  static bool requires_gralloc_unbind = RequiresGrallocUnbind();
+  if (!requires_gralloc_unbind) return;
+  // === END   ANDROID WORKAROUND b/11392857
   char zero[4] = { 0, };
   glTexImage2D(GL_TEXTURE_2D,
                0,

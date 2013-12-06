@@ -368,6 +368,8 @@ class CC_EXPORT ResourceProvider {
     // TODO(skyostil): Use a separate sampler object for filter state.
     GLenum filter;
     unsigned image_id;
+    unsigned bound_image_id;
+    bool dirty_image;
     GLenum texture_pool;
     TextureUsageHint hint;
     ResourceType type;
@@ -417,9 +419,6 @@ class CC_EXPORT ResourceProvider {
                        GLenum target,
                        GLenum unit,
                        GLenum filter);
-  void UnbindForSampling(ResourceProvider::ResourceId resource_id,
-                         GLenum target,
-                         GLenum unit);
 
   OutputSurface* output_surface_;
   bool lost_output_surface_;

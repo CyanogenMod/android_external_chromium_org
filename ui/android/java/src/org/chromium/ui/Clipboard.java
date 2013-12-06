@@ -10,6 +10,7 @@ import org.chromium.base.JNINamespace;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.os.Build;
 import android.text.TextUtils;
 
 /**
@@ -76,6 +77,23 @@ public class Clipboard {
     }
 
     /**
+     * Gets the HTML text of top item on the primary clip on the Android clipboard.
+     *
+     * @return a Java string with the html text if any, or null if there is no html
+     *         text or no entries on the primary clip.
+     */
+    @CalledByNative
+    private String getHtmlText() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            final ClipData clip = mClipboardManager.getPrimaryClip();
+            if (clip != null && clip.getItemCount() > 0) {
+                return clip.getItemAt(0).getHtmlText();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Emulates the behavior of the now-deprecated
      * {@link android.text.ClipboardManager#setText(CharSequence)}, setting the
      * clipboard's current primary clip to a plain-text clip that consists of
@@ -90,22 +108,18 @@ public class Clipboard {
     }
 
     /**
-     * Approximates the behavior of the now-deprecated
-     * {@link android.text.ClipboardManager#hasText()}, returning true if and
-     * only if the clipboard has a primary clip and that clip contains a plain
-     * non-empty text entry (without attempting coercion - URLs and intents
-     * will cause this method to return false).
+     * Writes HTML to the clipboard, together with a plain-text representation
+     * of that very data. This API is only available in Android JellyBean+ and
+     * will be a no-operation in older versions.
      *
-     * @return as described above
+     * @param html The HTML content to be pasted to the clipboard.
+     * @param text Plain-text representation of the HTML content.
      */
-    @SuppressWarnings("javadoc")
     @CalledByNative
-    private boolean hasPlainText() {
-        final ClipData clip = mClipboardManager.getPrimaryClip();
-        if (clip != null && clip.getItemCount() > 0) {
-            final CharSequence text = clip.getItemAt(0).getText();
-            return !TextUtils.isEmpty(text);
+    private void setHTMLText(final String html, final String text) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            mClipboardManager.setPrimaryClip(
+                    ClipData.newHtmlText(null, text, html));
         }
-        return false;
     }
 }

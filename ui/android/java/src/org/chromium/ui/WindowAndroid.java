@@ -4,12 +4,11 @@
 
 package org.chromium.ui;
 
-import android.app.Activity;
-import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.SparseArray;
 import android.widget.Toast;
 
@@ -22,29 +21,26 @@ import org.chromium.base.JNINamespace;
  */
 @JNINamespace("ui")
 public class WindowAndroid {
+    private static final String TAG = "WindowAndroid";
 
     // Native pointer to the c++ WindowAndroid object.
     private int mNativeWindowAndroid = 0;
 
-    // Constants used for intent request code bounding.
-    private static final int REQUEST_CODE_PREFIX = 1000;
-    private static final int REQUEST_CODE_RANGE_SIZE = 100;
     // A string used as a key to store intent errors in a bundle
     static final String WINDOW_CALLBACK_ERRORS = "window_callback_errors";
 
-    private int mNextRequestCode = 0;
-    protected Activity mActivity;
+    protected Context mApplicationContext;
     protected SparseArray<IntentCallback> mOutstandingIntents;
     protected HashMap<Integer, String> mIntentErrors;
 
     /**
-     * @param activity
+     * @param context, the application context..
      */
-    public WindowAndroid(Activity activity) {
-        mActivity = activity;
+    public WindowAndroid(Context context) {
+        assert context == context.getApplicationContext();
+        mApplicationContext = context;
         mOutstandingIntents = new SparseArray<IntentCallback>();
         mIntentErrors = new HashMap<Integer, String>();
-
     }
 
     /**
@@ -56,19 +52,8 @@ public class WindowAndroid {
      * @return Whether the intent was shown.
      */
     public boolean showIntent(Intent intent, IntentCallback callback, int errorId) {
-        int requestCode = REQUEST_CODE_PREFIX + mNextRequestCode;
-        mNextRequestCode = (mNextRequestCode + 1) % REQUEST_CODE_RANGE_SIZE;
-
-        try {
-            mActivity.startActivityForResult(intent, requestCode);
-        } catch (ActivityNotFoundException e) {
-            return false;
-        }
-
-        mOutstandingIntents.put(requestCode, callback);
-        mIntentErrors.put(requestCode, mActivity.getString(errorId));
-
-        return true;
+        Log.d(TAG, "Can't show intent as context is not an Activity: " + intent);
+        return false;
     }
 
     /**
@@ -77,7 +62,7 @@ public class WindowAndroid {
      */
     public void showError(String error) {
         if (error != null) {
-            Toast.makeText(mActivity, error, Toast.LENGTH_SHORT).show();
+            Toast.makeText(mApplicationContext, error, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -86,7 +71,7 @@ public class WindowAndroid {
      * @param resId The error message string's resource id.
      */
     public void showError(int resId) {
-        showError(mActivity.getString(resId));
+        showError(mApplicationContext.getString(resId));
     }
 
     /**
@@ -101,16 +86,25 @@ public class WindowAndroid {
      * Broadcasts the given intent to all interested BroadcastReceivers.
      */
     public void sendBroadcast(Intent intent) {
-        mActivity.sendBroadcast(intent);
+        mApplicationContext.sendBroadcast(intent);
     }
 
     /**
      * TODO(nileshagrawal): Stop returning Activity Context crbug.com/233440.
-     * @return Activity context.
+     * @return Activity context, it could be null. Note, in most cases, you probably
+     * just need Application Context returned by getApplicationContext().
+     * @see #getApplicationContext()
      */
     @Deprecated
     public Context getContext() {
-        return mActivity;
+        return null;
+    }
+
+    /**
+     * @return The application context for this activity.
+     */
+    public Context getApplicationContext() {
+        return mApplicationContext;
     }
 
     /**
@@ -146,20 +140,6 @@ public class WindowAndroid {
      * @return Boolean value of whether the intent was started by the native window.
      */
     public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
-        IntentCallback callback = mOutstandingIntents.get(requestCode);
-        mOutstandingIntents.delete(requestCode);
-        String errorMessage = mIntentErrors.remove(requestCode);
-
-        if (callback != null) {
-            callback.onIntentCompleted(this, resultCode,
-                    mActivity.getContentResolver(), data);
-            return true;
-        } else {
-            if (errorMessage != null) {
-                showCallbackNonExistentError(errorMessage);
-                return true;
-            }
-        }
         return false;
     }
 

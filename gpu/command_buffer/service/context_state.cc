@@ -87,16 +87,6 @@ void ContextState::RestoreBufferBindings() const {
 }
 
 void ContextState::RestoreRenderbufferBindings() const {
-  // === Begin android workaround for b/11061206
-  GLuint context_service_id  =
-      bound_renderbuffer.get() ? bound_renderbuffer->service_id() : 0;
-  GLint current_service_id = 0;
-  glGetIntegerv(GL_RENDERBUFFER_BINDING_EXT, &current_service_id);
-
-  if (context_service_id == static_cast<GLuint>(current_service_id))
-    return;
-  // === End android workaround for b/11061206
-
   // Restore Bindings
   glBindRenderbufferEXT(
       GL_RENDERBUFFER,
