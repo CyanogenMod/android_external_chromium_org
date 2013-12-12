@@ -3283,6 +3283,8 @@
               '-Wno-uninitialized',
 
               '-Wno-unused-const-variable',
+              #Ignore cases where return variables are not used
+              '-Wno-unused-result',
             ],
             'cflags!': [
               # Clang doesn't seem to know know this flag.
