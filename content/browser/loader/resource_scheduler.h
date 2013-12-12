@@ -184,6 +184,9 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
                            net::RequestPriority new_priority,
                            int intra_priority_value);
 
+  //get max number of sockets per host from request's socket pool
+  size_t GetMaxSocketsPerHostForRequest(const net::URLRequest& request) const;
+
   // Returns the client ID for the given |child_id| and |route_id| combo.
   ClientId MakeClientId(int child_id, int route_id);
 

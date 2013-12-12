@@ -964,6 +964,8 @@
       'quic/reliable_quic_stream.h',
       'quic/spdy_utils.cc',
       'quic/spdy_utils.h',
+      'socket/adaptive_connectivity_bridge.cc',
+      'socket/adaptive_connectivity_bridge.h',
       'socket/client_socket_factory.cc',
       'socket/client_socket_factory.h',
       'socket/client_socket_pool.cc',

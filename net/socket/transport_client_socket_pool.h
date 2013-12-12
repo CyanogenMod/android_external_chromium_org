@@ -1,4 +1,4 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -235,6 +235,13 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
       bool include_nested_pools) const OVERRIDE;
   virtual base::TimeDelta ConnectionTimeout() const OVERRIDE;
   virtual ClientSocketPoolHistograms* histograms() const OVERRIDE;
+
+  //adaptive connectivity is specific for transport socket pool
+  void InitAdaptiveConnectivity();
+
+  int max_sockets_per_group()  {
+    return base_.max_sockets_per_group();
+  }
 
   // HigherLayeredPool implementation.
   virtual bool IsStalled() const OVERRIDE;

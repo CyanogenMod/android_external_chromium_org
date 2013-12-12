@@ -1,4 +1,4 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -220,7 +220,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
       ConnectJobFactory* connect_job_factory,
-      HttpNetworkSession* network_session = NULL);
+      HttpNetworkSession* network_session = NULL,
+      bool enable_adaptive_connectivity = false);
 
   virtual ~ClientSocketPoolBaseHelper();
 
@@ -335,6 +336,16 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   // NetworkChangeNotifier::IPAddressObserver methods:
   virtual void OnIPAddressChanged() OVERRIDE;
 
+  void set_max_sockets_per_group(int max_socket_per_group) {
+      max_sockets_per_group_ = max_socket_per_group;
+  }
+  int max_sockets_per_group() {
+      return max_sockets_per_group_;
+  }
+
+  void InitAdaptiveConnectivity() {
+      enable_adaptive_connectivity_=true;
+  }
  private:
   friend class base::RefCounted<ClientSocketPoolBaseHelper>;
 
@@ -366,9 +377,11 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
 
   HttpNetworkSession* network_session_;
 
+
   // A Group is allocated per group_name when there are idle sockets or pending
   // requests.  Otherwise, the Group object is removed from the map.
   // |active_socket_count| tracks the number of sockets held by clients.
+public:
   class Group {
    public:
     Group();
@@ -501,7 +514,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
     CompletionCallback callback;
     int result;
   };
-
+private:
   typedef std::map<const ClientSocketHandle*, CallbackResultPair>
       PendingCallbackMap;
 
@@ -598,8 +611,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   // this pool is stalled.
   void TryToCloseSocketsInLayeredPools();
 
+public:
   GroupMap group_map_;
 
+private:
   // Map of the ClientSocketHandles for which we have a pending Task to invoke a
   // callback.  This is necessary since, before we invoke said callback, it's
   // possible that the request is cancelled.
@@ -622,7 +637,9 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   const int max_sockets_;
 
   // The maximum number of sockets kept per group.
-  const int max_sockets_per_group_;
+  int max_sockets_per_group_;
+
+  bool enable_adaptive_connectivity_;
 
   // Whether to use timer to cleanup idle sockets.
   bool use_cleanup_timer_;
@@ -844,6 +861,13 @@ class ClientSocketPoolBase {
     return helper_.CloseOneIdleConnectionInHigherLayeredPool();
   }
 
+  void InitAdaptiveConnectivity(){
+      helper_.InitAdaptiveConnectivity();
+  };
+
+  int max_sockets_per_group() {
+      return helper_.max_sockets_per_group();
+  }
  private:
   // This adaptor class exists to bridge the
   // internal::ClientSocketPoolBaseHelper::ConnectJobFactory and

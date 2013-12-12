@@ -21,6 +21,7 @@
 #include "net/http/tcp_connections_bridge.h"
 #include "url/gurl.h"
 #include "net/libnetxt/libnetxt_base.h"
+#include "net/socket/adaptive_connectivity_bridge.h"
 
 using base::TimeDelta;
 
@@ -159,12 +160,14 @@ ClientSocketPoolBaseHelper::ClientSocketPoolBaseHelper(
     base::TimeDelta unused_idle_socket_timeout,
     base::TimeDelta used_idle_socket_timeout,
     ConnectJobFactory* connect_job_factory,
-    HttpNetworkSession* network_session)
+    HttpNetworkSession* network_session,
+    bool enable_adaptive_connectivity)
     : idle_socket_count_(0),
       connecting_socket_count_(0),
       handed_out_socket_count_(0),
       max_sockets_(max_sockets),
       max_sockets_per_group_(max_sockets_per_group),
+      enable_adaptive_connectivity_(enable_adaptive_connectivity),
       use_cleanup_timer_(g_cleanup_timer_enabled),
       unused_idle_socket_timeout_(unused_idle_socket_timeout),
       used_idle_socket_timeout_(used_idle_socket_timeout),
@@ -728,6 +731,9 @@ ClientSocketPoolBaseHelper::Group* ClientSocketPoolBaseHelper::GetOrCreateGroup(
     return it->second;
   Group* group = new Group;
   group_map_[group_name] = group;
+  if (enable_adaptive_connectivity_) {
+      adaptive_connectivity::ObserveGroupCreation(this);
+  }
   return group;
 }
 
@@ -741,6 +747,10 @@ void ClientSocketPoolBaseHelper::RemoveGroup(const std::string& group_name) {
 void ClientSocketPoolBaseHelper::RemoveGroup(GroupMap::iterator it) {
   delete it->second;
   group_map_.erase(it);
+
+  if (enable_adaptive_connectivity_){
+      adaptive_connectivity::ObserveGroupRemoval(this);
+  }
 }
 
 // static

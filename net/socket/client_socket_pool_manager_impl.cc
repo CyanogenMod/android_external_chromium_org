@@ -1,4 +1,4 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -14,6 +14,8 @@
 #include "net/socket/transport_client_socket_pool.h"
 #include "net/socket/websocket_transport_client_socket_pool.h"
 #include "net/ssl/ssl_config_service.h"
+
+#include "adaptive_connectivity_bridge.h"
 
 namespace net {
 
@@ -104,6 +106,10 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
       http_proxy_pool_histograms_("HTTPProxy"),
       ssl_socket_pool_for_proxies_histograms_("SSLForProxies") {
   CertDatabase::GetInstance()->AddObserver(this);
+  if (adaptive_connectivity::IsAdaptiveConnectivity(pool_type)) {
+     transport_socket_pool_->InitAdaptiveConnectivity();
+  }
+
 }
 
 ClientSocketPoolManagerImpl::~ClientSocketPoolManagerImpl() {

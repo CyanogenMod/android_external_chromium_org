@@ -1,3 +1,4 @@
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -19,6 +20,9 @@
 #include "net/http/http_server_properties.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "net/http/http_network_session.h"
+#include "net/http/http_transaction_factory.h"
+#include "net/socket/transport_client_socket_pool.h"
 
 namespace content {
 
@@ -482,7 +486,8 @@ class ResourceScheduler::Client {
   }
 
   bool ShouldKeepSearching(
-      const net::HostPortPair& active_request_host) const {
+      const net::HostPortPair& active_request_host,
+      size_t maxNumDelayableRequestsPerHost) const {
     size_t same_host_count = 0;
     for (RequestSet::const_iterator it = in_flight_requests_.begin();
          it != in_flight_requests_.end(); ++it) {
@@ -490,7 +495,7 @@ class ResourceScheduler::Client {
           net::HostPortPair::FromURL((*it)->url_request()->url());
       if (active_request_host.Equals(host_port_pair)) {
         same_host_count++;
-        if (same_host_count >= kMaxNumDelayableRequestsPerHost)
+        if (same_host_count >= maxNumDelayableRequestsPerHost)
           return true;
       }
     }
@@ -594,7 +599,8 @@ class ResourceScheduler::Client {
       return DO_NOT_START_REQUEST_AND_STOP_SEARCHING;
     }
 
-    if (ShouldKeepSearching(host_port_pair)) {
+    if (ShouldKeepSearching(host_port_pair,
+                            GetMaxSocketsPerHostForRequest(url_request))) {
       // There may be other requests for other hosts we'd allow,
       // so keep checking.
       return DO_NOT_START_REQUEST_AND_KEEP_SEARCHING;
@@ -608,6 +614,26 @@ class ResourceScheduler::Client {
     }
 
     return START_REQUEST;
+  }
+
+  size_t GetMaxSocketsPerHostForRequest(const net::URLRequest& request) const {
+    size_t maxRequestsPerHost=kMaxNumDelayableRequestsPerHost;
+
+    net::HttpTransactionFactory* netTransFactory = request.context()->http_transaction_factory();
+    if (netTransFactory == NULL)
+      return maxRequestsPerHost;
+
+    net::HttpNetworkSession* netSession = netTransFactory->GetSession();
+    if (netSession == NULL)
+      return maxRequestsPerHost;
+
+    net::TransportClientSocketPool* netSocketPool = netSession->GetTransportSocketPool(net::HttpNetworkSession::NORMAL_SOCKET_POOL);
+    if (netSocketPool == NULL)
+      return maxRequestsPerHost;
+
+    //update from the pool in real time
+    maxRequestsPerHost=(size_t)netSocketPool->max_sockets_per_group();
+    return maxRequestsPerHost;
   }
 
   void LoadAnyStartablePendingRequests() {

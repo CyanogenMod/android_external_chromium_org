@@ -1,4 +1,4 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -528,6 +528,9 @@ base::TimeDelta TransportClientSocketPool::ConnectionTimeout() const {
 
 ClientSocketPoolHistograms* TransportClientSocketPool::histograms() const {
   return base_.histograms();
+}
+void TransportClientSocketPool::InitAdaptiveConnectivity() {
+    base_.InitAdaptiveConnectivity();
 }
 
 bool TransportClientSocketPool::IsStalled() const {
