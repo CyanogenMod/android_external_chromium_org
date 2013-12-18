@@ -12,7 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/base/ime/character_composer.h"
+#include "ui/base/ime/chromeos/character_composer.h"
 #include "ui/base/ime/chromeos/ibus_bridge.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/input_method_base.h"
@@ -59,15 +59,7 @@ class UI_EXPORT InputMethodIBus
 
   // Process a key returned from the input method.
   virtual void ProcessKeyEventPostIME(const ui::KeyEvent& event,
-                                      uint32 ibus_state,
                                       bool handled);
-
-  // Converts |native_event| to ibus representation.
-  virtual void IBusKeyEventFromNativeKeyEvent(
-      const base::NativeEvent& native_event,
-      uint32* ibus_keyval,
-      uint32* ibus_keycode,
-      uint32* ibus_state);
 
   // Resets context and abandon all pending results and key events.
   void ResetContext();
@@ -84,28 +76,20 @@ class UI_EXPORT InputMethodIBus
   // Asks the client to confirm current composition text.
   void ConfirmCompositionText();
 
-  // Dispatchs a key event which does not contain a native event.
-  bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event);
-
   // Checks the availability of focused text input client and update focus
   // state.
   void UpdateContextFocusState();
 
   // Processes a key event that was already filtered by the input method.
   // A VKEY_PROCESSKEY may be dispatched to the focused View.
-  void ProcessFilteredKeyPressEvent(const base::NativeEvent& native_key_event);
+  void ProcessFilteredKeyPressEvent(const ui::KeyEvent& event);
 
   // Processes a key event that was not filtered by the input method.
-  void ProcessUnfilteredKeyPressEvent(const base::NativeEvent& native_key_event,
-                                      uint32 ibus_state);
-  void ProcessUnfilteredFabricatedKeyPressEvent(EventType type,
-                                                KeyboardCode key_code,
-                                                int event_flags);
+  void ProcessUnfilteredKeyPressEvent(const ui::KeyEvent& event);
 
   // Sends input method result caused by the given key event to the focused text
   // input client.
-  void ProcessInputMethodResult(const base::NativeEvent& native_key_event,
-                                bool filtered);
+  void ProcessInputMethodResult(const ui::KeyEvent& event, bool filtered);
 
   // Checks if the pending input method result needs inserting into the focused
   // text input client as a single character.
@@ -120,9 +104,7 @@ class UI_EXPORT InputMethodIBus
 
   // Passes keyevent and executes character composition if necessary. Returns
   // true if character composer comsumes key event.
-  bool ExecuteCharacterComposer(uint32 ibus_keyval,
-                                uint32 ibus_keycode,
-                                uint32 ibus_state);
+  bool ExecuteCharacterComposer(const ui::KeyEvent& event);
 
   // chromeos::IBusInputContextHandlerInterface overrides:
   virtual void CommitText(const std::string& text) OVERRIDE;
@@ -135,9 +117,7 @@ class UI_EXPORT InputMethodIBus
   void HidePreeditText();
 
   // Callback function for IBusEngineHandlerInterface::ProcessKeyEvent.
-  void ProcessKeyEventDone(uint32 id, ui::KeyEvent* key_event,
-                           uint32 ibus_keyval, uint32 ibus_keycode,
-                           uint32 ibus_state, bool is_handled);
+  void ProcessKeyEventDone(uint32 id, ui::KeyEvent* event, bool is_handled);
 
   // All pending key events. Note: we do not own these object, we just save
   // pointers to these object so that we can abandon them when necessary.

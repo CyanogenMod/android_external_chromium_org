@@ -28,11 +28,6 @@
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/drive/drive_switches.h"
 #include "chrome/browser/drive/event_logger.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -41,6 +36,11 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/time_util.h"
 #include "grit/browser_resources.h"
 
 using content::BrowserThread;
@@ -80,7 +80,7 @@ void GetGCacheContents(const base::FilePath& root_path,
     base::FileEnumerator::FileInfo info = enumerator.GetInfo();
     int64 size = info.GetSize();
     const bool is_directory = info.IsDirectory();
-    const bool is_symbolic_link = file_util::IsLink(info.GetName());
+    const bool is_symbolic_link = base::IsLink(info.GetName());
     const base::Time last_modified = info.GetLastModifiedTime();
 
     base::DictionaryValue* entry = new base::DictionaryValue;
@@ -134,6 +134,7 @@ std::string FormatEntry(const base::FilePath& path,
   StringAppendF(&out, "  resource_id: %s\n", entry.resource_id().c_str());
   StringAppendF(&out, "  parent_local_id: %s\n",
                 entry.parent_local_id().c_str());
+  StringAppendF(&out, "  shared: %s\n", entry.shared() ? "true" : "false");
   StringAppendF(&out, "  shared_with_me: %s\n",
                 entry.shared_with_me() ? "true" : "false");
 
@@ -226,7 +227,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   // Updates respective sections.
   void UpdateDriveRelatedFlagsSection();
   void UpdateDriveRelatedPreferencesSection();
-  void UpdateAuthStatusSection(
+  void UpdateConnectionStatusSection(
       drive::DriveServiceInterface* drive_service);
   void UpdateAboutResourceSection(
       drive::DriveServiceInterface* drive_service);
@@ -427,7 +428,7 @@ void DriveInternalsWebUIHandler::OnPageLoaded(const base::ListValue* args) {
 
   UpdateDriveRelatedFlagsSection();
   UpdateDriveRelatedPreferencesSection();
-  UpdateAuthStatusSection(drive_service);
+  UpdateConnectionStatusSection(drive_service);
   UpdateAboutResourceSection(drive_service);
   UpdateAppListSection(drive_service);
   UpdateLocalMetadataSection(debug_info_collector);
@@ -496,17 +497,37 @@ void DriveInternalsWebUIHandler::UpdateDriveRelatedPreferencesSection() {
                                    preferences);
 }
 
-void DriveInternalsWebUIHandler::UpdateAuthStatusSection(
+void DriveInternalsWebUIHandler::UpdateConnectionStatusSection(
     drive::DriveServiceInterface* drive_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(drive_service);
 
-  base::DictionaryValue auth_status;
-  auth_status.SetBoolean("has-refresh-token",
-                         drive_service->HasRefreshToken());
-  auth_status.SetBoolean("has-access-token",
-                         drive_service->HasAccessToken());
-  web_ui()->CallJavascriptFunction("updateAuthStatus", auth_status);
+  std::string status;
+  switch (drive::util::GetDriveConnectionStatus(Profile::FromWebUI(web_ui()))) {
+    case drive::util::DRIVE_DISCONNECTED_NOSERVICE:
+      status = "no service";
+      break;
+    case drive::util::DRIVE_DISCONNECTED_NONETWORK:
+      status = "no network";
+      break;
+    case drive::util::DRIVE_DISCONNECTED_NOTREADY:
+      status = "not ready";
+      break;
+    case drive::util::DRIVE_CONNECTED_METERED:
+      status = "metered";
+      break;
+    case drive::util::DRIVE_CONNECTED:
+      status = "connected";
+      break;
+  }
+
+  base::DictionaryValue connection_status;
+  connection_status.SetString("status", status);
+  connection_status.SetBoolean("has-refresh-token",
+                               drive_service->HasRefreshToken());
+  connection_status.SetBoolean("has-access-token",
+                               drive_service->HasAccessToken());
+  web_ui()->CallJavascriptFunction("updateConnectionStatus", connection_status);
 }
 
 void DriveInternalsWebUIHandler::UpdateAboutResourceSection(

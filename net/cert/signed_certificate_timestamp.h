@@ -13,6 +13,9 @@
 #include "net/base/hash_value.h"
 #include "net/base/net_export.h"
 
+class Pickle;
+class PickleIterator;
+
 namespace net {
 
 // Structures related to Certificate Transparency (RFC6962).
@@ -93,6 +96,10 @@ struct NET_EXPORT SignedCertificateTimestamp
 
   SignedCertificateTimestamp();
 
+  void Persist(Pickle* pickle);
+  static scoped_refptr<SignedCertificateTimestamp> CreateFromPickle(
+      PickleIterator* iter);
+
   Version version;
   std::string log_id;
   base::Time timestamp;
@@ -101,6 +108,11 @@ struct NET_EXPORT SignedCertificateTimestamp
   // The origin should not participate in equality checks
   // as the same SCT can be provided from multiple sources.
   Origin origin;
+  // The log description is not one of the SCT fields, but a user-readable
+  // name defined alongside the log key. It should not participate
+  // in equality checks as the log's description could change while
+  // the SCT would be the same.
+  std::string log_description;
 
  private:
   friend class base::RefCountedThreadSafe<SignedCertificateTimestamp>;

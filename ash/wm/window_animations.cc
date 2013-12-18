@@ -59,9 +59,6 @@ const float kWindowAnimation_ShowOpacity = 1.f;
 // TODO(sky): if we end up sticking with 0, nuke the code doing the rotation.
 const float kWindowAnimation_MinimizeRotate = 0.f;
 
-// Tween type when cross fading a workspace window.
-const gfx::Tween::Type kCrossFadeTweenType = gfx::Tween::EASE_IN_OUT;
-
 // Scales for AshWindow above/below current workspace.
 const float kLayerScaleAboveSize = 1.1f;
 const float kLayerScaleBelowSize = .9f;
@@ -108,8 +105,8 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
 
   rotation_about_pivot->SetReversed(show);
 
-  base::TimeDelta duration = base::TimeDelta::FromMilliseconds(
-      kLayerAnimationsForMinimizeDurationMS);
+  base::TimeDelta duration = window->layer()->GetAnimator()->
+      GetTransitionDuration();
 
   scoped_ptr<ui::LayerAnimationElement> transition(
       ui::LayerAnimationElement::CreateInterpolatedTransformElement(
@@ -139,6 +136,10 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
 void AnimateShowWindow_Minimize(aura::Window* window) {
   window->layer()->set_delegate(window);
   window->layer()->SetOpacity(kWindowAnimation_HideOpacity);
+  ui::ScopedLayerAnimationSettings settings(window->layer()->GetAnimator());
+  base::TimeDelta duration = base::TimeDelta::FromMilliseconds(
+      kLayerAnimationsForMinimizeDurationMS);
+  settings.SetTransitionDuration(duration);
   AddLayerAnimationsForMinimize(window, true);
 
   // Now that the window has been restored, we need to clear its animation style
@@ -324,7 +325,8 @@ base::TimeDelta CrossFadeImpl(aura::Window* window,
   const bool old_on_top = (old_bounds.width() > new_bounds.width());
 
   // Shorten the animation if there's not much visual movement.
-  const base::TimeDelta duration = GetCrossFadeDuration(old_bounds, new_bounds);
+  const base::TimeDelta duration = GetCrossFadeDuration(window,
+                                                        old_bounds, new_bounds);
 
   // Scale up the old layer while translating to new position.
   {
@@ -416,23 +418,10 @@ void CrossFadeToBounds(aura::Window* window, const gfx::Rect& new_bounds) {
   CrossFadeImpl(window, old_layer, gfx::Tween::EASE_OUT);
 }
 
-void CrossFadeWindowBetweenWorkspaces(aura::Window* new_workspace,
-                                      aura::Window* window,
-                                      ui::Layer* old_layer) {
-  ui::Layer* layer_parent = new_workspace->layer()->parent();
-  layer_parent->Add(old_layer);
-  const bool restoring = old_layer->bounds().width() > window->bounds().width();
-  if (restoring)
-    layer_parent->StackAbove(old_layer, new_workspace->layer());
-  else
-    layer_parent->StackBelow(old_layer, new_workspace->layer());
-
-  CrossFadeImpl(window, old_layer, kCrossFadeTweenType);
-}
-
-base::TimeDelta GetCrossFadeDuration(const gfx::Rect& old_bounds,
+base::TimeDelta GetCrossFadeDuration(aura::Window* window,
+                                     const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) {
-  if (views::corewm::WindowAnimationsDisabled(NULL))
+  if (views::corewm::WindowAnimationsDisabled(window))
     return base::TimeDelta();
 
   int old_area = old_bounds.width() * old_bounds.height();

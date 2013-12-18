@@ -19,8 +19,8 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_device_client.h"
 #include "chromeos/network/network_handler.h"
@@ -31,6 +31,7 @@
 #include "content/public/browser/geolocation_provider.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -253,6 +254,9 @@ class DeviceStatusCollectorTest : public testing::Test {
     return policy::DeviceStatusCollector::kIdlePollIntervalSeconds * 1000;
   }
 
+  // Since this is a unit test running in browser_tests we must do additional
+  // unit test setup and make a TestingBrowserProcess. Must be first member.
+  TestingBrowserProcessInitializer initializer_;
   base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
@@ -602,6 +606,7 @@ TEST_F(DeviceStatusCollectorTest, Location) {
 }
 
 TEST_F(DeviceStatusCollectorTest, ReportUsers) {
+  user_manager_->CreatePublicAccountUser("public@localhost");
   user_manager_->AddUser("user0@managed.com");
   user_manager_->AddUser("user1@managed.com");
   user_manager_->AddUser("user2@managed.com");

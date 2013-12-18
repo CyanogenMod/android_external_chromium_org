@@ -16,7 +16,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/threading/non_thread_safe.h"
+#include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/drive/drive_notification_observer.h"
+#include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/sync_file_system/conflict_resolution_resolver.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util_interface.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_metadata_store.h"
@@ -70,6 +74,8 @@ class DriveFileSyncService : public RemoteFileSyncService,
 
   // Creates DriveFileSyncService.
   static scoped_ptr<DriveFileSyncService> Create(Profile* profile);
+  static void AppendDependsOnFactories(
+      std::set<BrowserContextKeyedServiceFactory*>* factories);
 
   // Creates DriveFileSyncService instance for testing.
   // |metadata_store| must be initialized beforehand.
@@ -78,12 +84,6 @@ class DriveFileSyncService : public RemoteFileSyncService,
       const base::FilePath& base_dir,
       scoped_ptr<drive_backend::APIUtilInterface> api_util,
       scoped_ptr<DriveMetadataStore> metadata_store);
-
-  // Destroys |sync_service| and passes the ownership of |sync_client| to caller
-  // for testing.
-  static scoped_ptr<drive_backend::APIUtilInterface>
-      DestroyAndPassAPIUtilForTesting(
-          scoped_ptr<DriveFileSyncService> sync_service);
 
   // RemoteFileSyncService overrides.
   virtual void AddServiceObserver(Observer* observer) OVERRIDE;
@@ -105,6 +105,7 @@ class DriveFileSyncService : public RemoteFileSyncService,
   virtual RemoteServiceState GetCurrentState() const OVERRIDE;
   virtual void GetOriginStatusMap(OriginStatusMap* status_map) OVERRIDE;
   virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
+  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
   virtual SyncStatusCode SetConflictResolutionPolicy(
       ConflictResolutionPolicy policy) OVERRIDE;
@@ -175,9 +176,6 @@ class DriveFileSyncService : public RemoteFileSyncService,
   void DidInitializeMetadataStore(const SyncStatusCallback& callback,
                                   SyncStatusCode status,
                                   bool created);
-  void DidGetDriveRootResourceId(const SyncStatusCallback& callback,
-                                 google_apis::GDataErrorCode error,
-                                 const std::string& root_resource_id);
 
   void UpdateServiceStateFromLastOperationStatus(
       SyncStatusCode sync_status,
@@ -236,9 +234,6 @@ class DriveFileSyncService : public RemoteFileSyncService,
   void UpdateRegisteredOrigins();
 
   void StartBatchSync(const SyncStatusCallback& callback);
-  void GetDriveDirectoryForOrigin(const GURL& origin,
-                                  const SyncStatusCallback& callback,
-                                  const std::string& sync_root_resource_id);
   void DidGetDriveDirectoryForOrigin(const GURL& origin,
                                      const SyncStatusCallback& callback,
                                      SyncStatusCode status,
@@ -286,7 +281,6 @@ class DriveFileSyncService : public RemoteFileSyncService,
       const base::Time& updated_time,
       SyncFileType file_type);
   void RemoveRemoteChange(const fileapi::FileSystemURL& url);
-  void MaybeMarkAsIncrementalSyncOrigin(const GURL& origin);
 
   // TODO(kinuko,tzik): Move this out of DriveFileSyncService.
   void MarkConflict(
@@ -324,9 +318,6 @@ class DriveFileSyncService : public RemoteFileSyncService,
                                         SyncFileStatus sync_status,
                                         SyncAction action_taken,
                                         SyncDirection direction);
-
-  void HandleSyncRootDirectoryChange(const google_apis::ResourceEntry& entry);
-  void HandleOriginRootDirectoryChange(const google_apis::ResourceEntry& entry);
 
   void EnsureSyncRootDirectory(const ResourceIdCallback& callback);
   void DidEnsureSyncRoot(const ResourceIdCallback& callback,

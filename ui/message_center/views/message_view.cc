@@ -20,6 +20,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/scroll_view.h"
+#include "ui/views/painter.h"
 #include "ui/views/shadow_border.h"
 #include "ui/views/widget/widget.h"
 
@@ -171,6 +172,10 @@ MessageView::MessageView(const string16& display_source)
   close->SetAccessibleName(l10n_util::GetStringUTF16(
       IDS_MESSAGE_CENTER_CLOSE_NOTIFICATION_BUTTON_ACCESSIBLE_NAME));
   close_button_.reset(close);
+
+  focus_painter_ = views::Painter::CreateSolidFocusPainter(
+      kFocusBorderColor,
+      gfx::Insets(0, 1, 3, 2)).Pass();
 }
 
 MessageView::~MessageView() {
@@ -239,6 +244,23 @@ bool MessageView::OnKeyReleased(const ui::KeyEvent& event) {
   return true;
 }
 
+void MessageView::OnPaint(gfx::Canvas* canvas) {
+  SlideOutView::OnPaint(canvas);
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+}
+
+void MessageView::OnFocus() {
+  SlideOutView::OnFocus();
+  // We paint a focus indicator.
+  SchedulePaint();
+}
+
+void MessageView::OnBlur() {
+  SlideOutView::OnBlur();
+  // We paint a focus indicator.
+  SchedulePaint();
+}
+
 void MessageView::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_GESTURE_TAP) {
     ClickOnNotification();
@@ -257,13 +279,6 @@ void MessageView::OnGestureEvent(ui::GestureEvent* event) {
   if (scroller_)
     scroller_->OnGestureEvent(event);
   event->SetHandled();
-}
-
-void MessageView::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (HasFocus()) {
-    canvas->DrawRect(gfx::Rect(1, 0, width() - 2, height() - 2),
-                     message_center::kFocusBorderColor);
-  }
 }
 
 void MessageView::ButtonPressed(views::Button* sender,

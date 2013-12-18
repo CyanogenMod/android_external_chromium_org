@@ -175,6 +175,7 @@ void BufferedSpdyFramer::OnDataFrameHeader(SpdyStreamId stream_id,
                                            bool fin) {
   frames_received_++;
   header_stream_id_ = stream_id;
+  visitor_->OnDataFrameHeader(stream_id, length, fin);
 }
 
 void BufferedSpdyFramer::OnStreamFrameData(SpdyStreamId stream_id,
@@ -251,19 +252,16 @@ SpdyFrame* BufferedSpdyFramer::CreateSynStream(
     SpdyPriority priority,
     uint8 credential_slot,
     SpdyControlFlags flags,
-    bool compressed,
     const SpdyHeaderBlock* headers) {
   return spdy_framer_.CreateSynStream(stream_id, associated_stream_id, priority,
-                                      credential_slot, flags, compressed,
-                                      headers);
+                                      credential_slot, flags, headers);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateSynReply(
     SpdyStreamId stream_id,
     SpdyControlFlags flags,
-    bool compressed,
     const SpdyHeaderBlock* headers) {
-  return spdy_framer_.CreateSynReply(stream_id, flags, compressed, headers);
+  return spdy_framer_.CreateSynReply(stream_id, flags, headers);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateRstStream(
@@ -291,9 +289,8 @@ SpdyFrame* BufferedSpdyFramer::CreateGoAway(
 SpdyFrame* BufferedSpdyFramer::CreateHeaders(
     SpdyStreamId stream_id,
     SpdyControlFlags flags,
-    bool compressed,
     const SpdyHeaderBlock* headers) {
-  return spdy_framer_.CreateHeaders(stream_id, flags, compressed, headers);
+  return spdy_framer_.CreateHeaders(stream_id, flags, headers);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateWindowUpdate(

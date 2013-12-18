@@ -31,6 +31,7 @@ class ChromeNetworkDelegate;
 class CookieSettings;
 class HostContentSettingsMap;
 class ManagedModeURLFilter;
+class MediaDeviceIDSalt;
 class Profile;
 class ProtocolHandlerRegistry;
 class SigninNamesOnIOThread;
@@ -61,6 +62,7 @@ class URLRequestJobFactoryImpl;
 
 namespace policy {
 class PolicyCertVerifier;
+class PolicyHeaderIOHelper;
 class URLBlacklistManager;
 }  // namespace policy
 
@@ -126,6 +128,10 @@ class ProfileIOData {
     return signin_names_.get();
   }
 
+  StringPrefMember* google_services_account_id() const {
+    return &google_services_user_account_id_;
+  }
+
   StringPrefMember* google_services_username() const {
     return &google_services_username_;
   }
@@ -170,9 +176,17 @@ class ProfileIOData {
     return &signin_allowed_;
   }
 
+  std::string GetMediaDeviceIDSalt() const;
+
   net::TransportSecurityState* transport_security_state() const {
     return transport_security_state_.get();
   }
+
+#if defined(OS_CHROMEOS)
+  std::string username_hash() const {
+    return username_hash_;
+  }
+#endif
 
   bool is_incognito() const {
     return is_incognito_;
@@ -182,6 +196,12 @@ class ProfileIOData {
       resource_prefetch_predictor_observer() const {
     return resource_prefetch_predictor_observer_.get();
   }
+
+#if defined(ENABLE_CONFIGURATION_POLICY)
+  policy::PolicyHeaderIOHelper* policy_header_helper() const {
+    return policy_header_helper_.get();
+  }
+#endif
 
 #if defined(ENABLE_MANAGED_USERS)
   const ManagedModeURLFilter* managed_mode_url_filter() const {
@@ -265,6 +285,10 @@ class ProfileIOData {
 
 #if defined(ENABLE_MANAGED_USERS)
     scoped_refptr<const ManagedModeURLFilter> managed_mode_url_filter;
+#endif
+
+#if defined(OS_CHROMEOS)
+    std::string username_hash;
 #endif
 
     // The profile this struct was populated from. It's passed as a void* to
@@ -353,6 +377,7 @@ class ProfileIOData {
     virtual scoped_ptr<net::ClientCertStore> CreateClientCertStore() OVERRIDE;
     virtual bool AllowMicAccess(const GURL& origin) OVERRIDE;
     virtual bool AllowCameraAccess(const GURL& origin) OVERRIDE;
+    virtual std::string GetMediaDeviceIDSalt() OVERRIDE;
 
    private:
     friend class ProfileIOData;
@@ -443,6 +468,7 @@ class ProfileIOData {
   // Provides access to the email addresses of all signed in profiles.
   mutable scoped_ptr<SigninNamesOnIOThread> signin_names_;
 
+  mutable StringPrefMember google_services_user_account_id_;
   mutable StringPrefMember google_services_username_;
   mutable StringPrefMember google_services_username_pattern_;
   mutable BooleanPrefMember reverse_autologin_enabled_;
@@ -452,6 +478,8 @@ class ProfileIOData {
   std::string reverse_autologin_pending_email_;
 
   mutable StringListPrefMember one_click_signin_rejected_email_list_;
+
+  mutable scoped_ptr<MediaDeviceIDSalt> media_device_id_salt_;
 
   // Member variables which are pointed to by the various context objects.
   mutable BooleanPrefMember enable_referrers_;
@@ -476,6 +504,10 @@ class ProfileIOData {
   // Pointed to by NetworkDelegate.
   mutable scoped_ptr<policy::URLBlacklistManager> url_blacklist_manager_;
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
+  mutable scoped_ptr<policy::PolicyHeaderIOHelper> policy_header_helper_;
+#endif
+
   // Pointed to by URLRequestContext.
   mutable scoped_refptr<extensions::InfoMap> extension_info_map_;
   mutable scoped_ptr<net::ServerBoundCertService> server_bound_cert_service_;
@@ -488,6 +520,7 @@ class ProfileIOData {
       http_server_properties_;
 #if defined(OS_CHROMEOS)
   mutable scoped_ptr<policy::PolicyCertVerifier> cert_verifier_;
+  mutable std::string username_hash_;
 #endif
 
   mutable scoped_ptr<net::TransportSecurityPersister>

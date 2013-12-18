@@ -96,7 +96,7 @@ class CommandBufferProxyImpl
       gpu::error::ContextLostReason reason) OVERRIDE;
 
   // gpu::GpuControl implementation:
-  virtual bool SupportsGpuMemoryBuffer() OVERRIDE;
+  virtual gpu::Capabilities GetCapabilities() OVERRIDE;
   virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
       size_t width,
       size_t height,
@@ -110,11 +110,12 @@ class CommandBufferProxyImpl
                                const base::Closure& callback) OVERRIDE;
   virtual void SignalQuery(uint32 query,
                            const base::Closure& callback) OVERRIDE;
+  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
       OVERRIDE;
+  virtual void Echo(const base::Closure& callback) OVERRIDE;
 
   int GetRouteID() const;
-  bool Echo(const base::Closure& callback);
   bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
   void SetChannelErrorCallback(const base::Closure& callback);
 
@@ -127,9 +128,6 @@ class CommandBufferProxyImpl
 
   bool DiscardBackbuffer();
   bool EnsureBackbuffer();
-
-  // Sends an IPC message with the new state of surface visibility.
-  bool SetSurfaceVisible(bool visible);
 
   void SetOnConsoleMessageCallback(
       const GpuConsoleMessageCallback& callback);
@@ -206,6 +204,8 @@ class CommandBufferProxyImpl
 
   // Local cache of id to gpu memory buffer mapping.
   GpuMemoryBufferMap gpu_memory_buffers_;
+
+  gpu::Capabilities capabilities_;
 
   DISALLOW_COPY_AND_ASSIGN(CommandBufferProxyImpl);
 };

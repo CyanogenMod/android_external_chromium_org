@@ -12,10 +12,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google_apis/auth_service_interface.h"
-#include "chrome/browser/google_apis/auth_service_observer.h"
-#include "chrome/browser/google_apis/gdata_wapi_requests.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
+#include "google_apis/drive/auth_service_interface.h"
+#include "google_apis/drive/auth_service_observer.h"
+#include "google_apis/drive/gdata_wapi_requests.h"
+#include "google_apis/drive/gdata_wapi_url_generator.h"
 
 class GURL;
 class OAuth2TokenService;
@@ -133,11 +133,6 @@ class GDataWapiService : public DriveServiceInterface,
       const std::string& resource_id,
       const std::string& new_title,
       const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback TouchResource(
-      const std::string& resource_id,
-      const base::Time& modified_date,
-      const base::Time& last_viewed_by_me_date,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,

@@ -16,17 +16,16 @@ class ProtocolHandlerRegistry;
 // card information gathered from a form submission.
 class RegisterProtocolHandlerInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a new register protocol handler infobar delegate.  Searches
-  // |infobar_service| for an existing delegate for the same |handler|; replaces
-  // it with the new delegate if found, otherwise adds the new infobar to
+  // Creates a new register protocol handler infobar and delegate.  Searches
+  // |infobar_service| for an existing infobar for the same |handler|; replaces
+  // it with the new infobar if found, otherwise adds the new infobar to
   // |infobar_service|.
   static void Create(InfoBarService* infobar_service,
                      ProtocolHandlerRegistry* registry,
                      const ProtocolHandler& handler);
 
  private:
-  RegisterProtocolHandlerInfoBarDelegate(InfoBarService* infobar_service,
-                                         ProtocolHandlerRegistry* registry,
+  RegisterProtocolHandlerInfoBarDelegate(ProtocolHandlerRegistry* registry,
                                          const ProtocolHandler& handler);
   virtual ~RegisterProtocolHandlerInfoBarDelegate();
 
@@ -35,16 +34,16 @@ class RegisterProtocolHandlerInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual RegisterProtocolHandlerInfoBarDelegate*
       AsRegisterProtocolHandlerInfoBarDelegate() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool NeedElevation(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   // Returns a user-friendly name for the protocol of this protocol handler.
-  string16 GetProtocolName(const ProtocolHandler& handler) const;
+  base::string16 GetProtocolName(const ProtocolHandler& handler) const;
 
   ProtocolHandlerRegistry* registry_;
   ProtocolHandler handler_;

@@ -34,6 +34,8 @@ float* ScoredHistoryMatch::raw_term_score_to_topicality_score_ = NULL;
 float* ScoredHistoryMatch::days_ago_to_recency_score_ = NULL;
 bool ScoredHistoryMatch::initialized_ = false;
 int ScoredHistoryMatch::bookmark_value_ = 1;
+bool ScoredHistoryMatch::allow_tld_matches_ = false;
+bool ScoredHistoryMatch::allow_scheme_matches_ = false;
 bool ScoredHistoryMatch::also_do_hup_like_scoring_ = false;
 int ScoredHistoryMatch::max_assigned_score_for_non_inlineable_matches_ = -1;
 
@@ -46,7 +48,7 @@ ScoredHistoryMatch::ScoredHistoryMatch()
 ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
                                        const VisitInfoVector& visits,
                                        const std::string& languages,
-                                       const string16& lower_string,
+                                       const base::string16& lower_string,
                                        const String16Vector& terms,
                                        const RowWordStarts& word_starts,
                                        const base::Time now,
@@ -62,12 +64,12 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
 
   // Figure out where each search term appears in the URL and/or page title
   // so that we can score as well as provide autocomplete highlighting.
-  string16 url = CleanUpUrlForMatching(gurl, languages);
-  string16 title = CleanUpTitleForMatching(row.title());
+  base::string16 url = CleanUpUrlForMatching(gurl, languages);
+  base::string16 title = CleanUpTitleForMatching(row.title());
   int term_num = 0;
   for (String16Vector::const_iterator iter = terms.begin(); iter != terms.end();
        ++iter, ++term_num) {
-    string16 term = *iter;
+    base::string16 term = *iter;
     TermMatches url_term_matches = MatchTermInString(term, url, term_num);
     TermMatches title_term_matches = MatchTermInString(term, title, term_num);
     if (url_term_matches.empty() && title_term_matches.empty())
@@ -132,7 +134,7 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
     // Now, the code that implements this.
     // The deepest prefix for this URL regardless of where the match is.
     const URLPrefix* best_prefix =
-        URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), string16());
+        URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), base::string16());
     DCHECK(best_prefix != NULL);
     const int num_components_in_best_prefix = best_prefix->num_components;
     // If the URL is inlineable, we must have a match.  Note the prefix that
@@ -274,7 +276,7 @@ TermMatches ScoredHistoryMatch::FilterTermMatchesByWordStarts(
 
 float ScoredHistoryMatch::GetTopicalityScore(
     const int num_terms,
-    const string16& url,
+    const base::string16& url,
     const RowWordStarts& word_starts) {
   // Because the below thread is not thread safe, we check that we're
   // only calling it from one thread: the UI thread.  Specifically,
@@ -332,26 +334,33 @@ float ScoredHistoryMatch::GetTopicalityScore(
         (*next_word_starts == iter->offset);
     if ((question_mark_pos != std::string::npos) &&
         (iter->offset > question_mark_pos)) {
-      // match in CGI ?... fragment
+      // The match is in a CGI ?... fragment.
       DCHECK(at_word_boundary);
       term_scores[iter->term_num] += 5;
     } else if ((end_of_hostname_pos != std::string::npos) &&
         (iter->offset > end_of_hostname_pos)) {
-      // match in path
+      // The match is in the path.
       DCHECK(at_word_boundary);
       term_scores[iter->term_num] += 8;
     } else if ((colon_pos == std::string::npos) ||
          (iter->offset > colon_pos)) {
-      // match in hostname
+      // The match is in the hostname.
       if ((last_part_of_hostname_pos == std::string::npos) ||
           (iter->offset < last_part_of_hostname_pos)) {
         // Either there are no dots in the hostname or this match isn't
         // the last dotted component.
         term_scores[iter->term_num] += at_word_boundary ? 10 : 2;
-      } // else: match in the last part of a dotted hostname (usually
-        // this is the top-level domain .com, .net, etc.).  Do not
-        // count this match for scoring.
-    } // else: match in protocol.  Do not count this match for scoring.
+      } else {
+        // The match is in the last part of a dotted hostname (usually this
+        // is the top-level domain .com, .net, etc.).
+        if (allow_tld_matches_)
+          term_scores[iter->term_num] += at_word_boundary ? 10 : 0;
+      }
+    } else {
+      // The match is in the protocol (a.k.a. scheme).
+      if (allow_scheme_matches_)
+        term_scores[iter->term_num] += at_word_boundary ? 10 : 0;
+    }
   }
   // Now do the analogous loop over all matches in the title.
   next_word_starts = word_starts.title_word_starts_.begin();
@@ -562,6 +571,8 @@ void ScoredHistoryMatch::Init() {
         HistoryURLProvider::kScoreForBestInlineableResult - 1;
   }
   bookmark_value_ = OmniboxFieldTrial::HQPBookmarkValue();
+  allow_tld_matches_ = OmniboxFieldTrial::HQPAllowMatchInTLDValue();
+  allow_scheme_matches_ = OmniboxFieldTrial::HQPAllowMatchInSchemeValue();
   initialized_ = true;
 }
 

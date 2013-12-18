@@ -41,16 +41,14 @@ const int kMenuXOffsetFromButton = -7;
 }  // namespace
 
 SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
-                             AppListViewDelegate* view_delegate,
-                             AppListModel* model)
+                             AppListViewDelegate* view_delegate)
     : delegate_(delegate),
       view_delegate_(view_delegate),
-      model_(model),
+      model_(NULL),
       icon_view_(new views::ImageView),
       speech_button_(NULL),
       search_box_(new views::Textfield),
       contents_view_(NULL) {
-  DCHECK(model_);
   AddChildView(icon_view_);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -71,14 +69,23 @@ SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
   search_box_->SetController(this);
   AddChildView(search_box_);
 
-  model_->search_box()->AddObserver(this);
-  IconChanged();
-  SpeechRecognitionButtonPropChanged();
-  HintTextChanged();
+  ModelChanged();
 }
 
 SearchBoxView::~SearchBoxView() {
   model_->search_box()->RemoveObserver(this);
+}
+
+void SearchBoxView::ModelChanged() {
+  if (model_)
+    model_->search_box()->RemoveObserver(this);
+
+  model_ = view_delegate_->GetModel();
+  DCHECK(model_);
+  model_->search_box()->AddObserver(this);
+  IconChanged();
+  SpeechRecognitionButtonPropChanged();
+  HintTextChanged();
 }
 
 bool SearchBoxView::HasSearch() const {
@@ -201,19 +208,16 @@ void SearchBoxView::IconChanged() {
 }
 
 void SearchBoxView::SpeechRecognitionButtonPropChanged() {
-  const SearchBoxModel::ToggleButtonProperty* speech_button_prop =
+  const SearchBoxModel::ButtonProperty* speech_button_prop =
       model_->search_box()->speech_button();
   if (speech_button_prop) {
     if (!speech_button_) {
-      speech_button_ = new views::ToggleImageButton(this);
+      speech_button_ = new views::ImageButton(this);
       AddChildView(speech_button_);
     }
     speech_button_->SetImage(views::Button::STATE_NORMAL,
                             &speech_button_prop->icon);
-    speech_button_->SetToggledImage(views::Button::STATE_NORMAL,
-                                   &speech_button_prop->toggled_icon);
     speech_button_->SetTooltipText(speech_button_prop->tooltip);
-    speech_button_->SetToggledTooltipText(speech_button_prop->toggled_tooltip);
   } else {
     if (speech_button_) {
       // Deleting a view will detach it from its parent.
@@ -221,11 +225,6 @@ void SearchBoxView::SpeechRecognitionButtonPropChanged() {
       speech_button_ = NULL;
     }
   }
-}
-
-void SearchBoxView::SetSpeechRecognitionButtonState(bool toggled) {
-  if (speech_button_)
-    speech_button_->SetToggled(toggled);
 }
 
 void SearchBoxView::HintTextChanged() {

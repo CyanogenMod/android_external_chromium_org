@@ -55,10 +55,7 @@ class ASH_EXPORT WorkspaceLayoutManager : public BaseLayoutManager {
   virtual void OnWindowPropertyChanged(aura::Window* window,
                                        const void* key,
                                        intptr_t old) OVERRIDE;
-
-  // ash::WindowSettings::Observer overrides:
-  virtual void OnTrackedByWorkspaceChanged(wm::WindowState* window_state,
-                                           bool old) OVERRIDE;
+  virtual void OnWindowStackingChanged(aura::Window* window) OVERRIDE;
 
   // WindowStateObserver overrides:
   virtual void OnWindowShowTypeChanged(wm::WindowState* window_state,
@@ -76,7 +73,12 @@ class ASH_EXPORT WorkspaceLayoutManager : public BaseLayoutManager {
 
   void AdjustWindowBoundsWhenAdded(wm::WindowState* window_state);
 
-  void UpdateDesktopVisibility();
+  // Updates the visibility state of the shelf.
+  void UpdateShelfVisibility();
+
+  // Updates the fullscreen state of the workspace and notifies Shell if it
+  // has changed.
+  void UpdateFullscreenState();
 
   // Updates the bounds of the window for a show state change from
   // |last_show_state|.
@@ -87,12 +89,22 @@ class ASH_EXPORT WorkspaceLayoutManager : public BaseLayoutManager {
   // window are set and true is returned. Does nothing otherwise.
   bool SetMaximizedOrFullscreenBounds(wm::WindowState* window_state);
 
+  // Adjusts the |bounds| so that they are flush with the edge of the
+  // workspace if the window represented by |window_state| is side snapped.
+  void AdjustSnappedBounds(wm::WindowState* window_state, gfx::Rect* bounds);
+
+  // Animates the window bounds to |bounds|.
+  void SetChildBoundsAnimated(aura::Window* child, const gfx::Rect& bounds);
+
   internal::ShelfLayoutManager* shelf_;
   aura::Window* window_;
 
   // The work area. Cached to avoid unnecessarily moving windows during a
   // workspace switch.
   gfx::Rect work_area_in_parent_;
+
+  // True if this workspace is currently in fullscreen mode.
+  bool is_fullscreen_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkspaceLayoutManager);
 };

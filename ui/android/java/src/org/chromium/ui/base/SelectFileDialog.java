@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@ package org.chromium.ui.base;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Intent;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -16,7 +15,6 @@ import android.text.TextUtils;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.ui.R;
-import org.chromium.ui.base.WindowAndroid;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -193,7 +191,7 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
     }
 
     private boolean shouldShowImageTypes() {
-        return shouldShowTypes(ALL_IMAGE_TYPES,IMAGE_TYPE);
+        return shouldShowTypes(ALL_IMAGE_TYPES, IMAGE_TYPE);
     }
 
     private boolean shouldShowVideoTypes() {

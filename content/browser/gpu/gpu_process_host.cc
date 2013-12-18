@@ -48,6 +48,10 @@
 #include "ui/surface/accelerated_surface_win.h"
 #endif
 
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_switches.h"
+#endif
+
 namespace content {
 
 bool GpuProcessHost::gpu_enabled_ = true;
@@ -252,7 +256,7 @@ class GpuSandboxedProcessLauncherDelegate
 #endif
 
     if (cmd_line_->HasSwitch(switches::kEnableLogging)) {
-      string16 log_file_path = logging::GetLogFileFullPath();
+      base::string16 log_file_path = logging::GetLogFileFullPath();
       if (!log_file_path.empty()) {
         result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                                  sandbox::TargetPolicy::FILES_ALLOW_ANY,
@@ -1112,6 +1116,9 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kDisableImageTransportSurface,
     switches::kDisableLogging,
     switches::kDisableSeccompFilterSandbox,
+#if defined(ENABLE_WEBRTC)
+    switches::kDisableWebRtcHWEncoding,
+#endif
     switches::kEnableLogging,
     switches::kEnableShareGroupAsyncTextureUpload,
     switches::kGpuStartupDialog,
@@ -1128,6 +1135,9 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
 #endif
 #if defined(USE_AURA)
     switches::kUIPrioritizeInGpuProcess,
+#endif
+#if defined(USE_OZONE)
+    switches::kOzonePlatform,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,

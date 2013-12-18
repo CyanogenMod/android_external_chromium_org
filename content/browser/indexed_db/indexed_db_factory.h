@@ -36,7 +36,7 @@ class CONTENT_EXPORT IndexedDBFactory
   void GetDatabaseNames(scoped_refptr<IndexedDBCallbacks> callbacks,
                         const GURL& origin_url,
                         const base::FilePath& data_directory);
-  void Open(const string16& name,
+  void Open(const base::string16& name,
             int64 version,
             int64 transaction_id,
             scoped_refptr<IndexedDBCallbacks> callbacks,
@@ -44,7 +44,7 @@ class CONTENT_EXPORT IndexedDBFactory
             const GURL& origin_url,
             const base::FilePath& data_directory);
 
-  void DeleteDatabase(const string16& name,
+  void DeleteDatabase(const base::string16& name,
                       scoped_refptr<IndexedDBCallbacks> callbacks,
                       const GURL& origin_url,
                       const base::FilePath& data_directory);
@@ -56,6 +56,11 @@ class CONTENT_EXPORT IndexedDBFactory
       const GURL& origin_url) const;
 
   bool IsBackingStoreOpenForTesting(const GURL& origin_url) const;
+  bool IsBackingStorePendingCloseForTesting(const GURL& origin_url) const;
+
+  // Called by IndexedDBContext after all connections are closed, to
+  // ensure the backing store closed immediately.
+  void ForceClose(const GURL& origin_url);
 
   // Called by the IndexedDBContext destructor so the factory can do cleanup.
   void ContextDestroyed();

@@ -6,12 +6,9 @@ package org.chromium.android_webview.test;
 
 import android.content.Context;
 import android.test.suitebuilder.annotation.SmallTest;
-import android.util.Log;
-import android.view.Gravity;
 import android.view.View;
 
 import org.chromium.android_webview.AwContents;
-import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.test.util.AwTestTouchUtils;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.android_webview.test.util.JavascriptEventObserver;
@@ -127,26 +124,26 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         String content = TEST_PAGE_COMMON_CONTENT + extraContent;
         if (onscrollObserver != null) {
             content +=
-            "<script> " +
-            "   window.onscroll = function(oEvent) { " +
-            "       " + onscrollObserver + ".notifyJava(); " +
-            "   } " +
-            "</script>";
+                    "<script> " +
+                    "   window.onscroll = function(oEvent) { " +
+                    "       " + onscrollObserver + ".notifyJava(); " +
+                    "   } " +
+                    "</script>";
         }
         if (firstFrameObserver != null) {
             content +=
-            "<script> " +
-            "   window.framesToIgnore = 10; " +
-            "   window.onAnimationFrame = function(timestamp) { " +
-            "     if (window.framesToIgnore == 0) { " +
-            "         " + firstFrameObserver + ".notifyJava(); " +
-            "     } else {" +
-            "       window.framesToIgnore -= 1; " +
-            "       window.requestAnimationFrame(window.onAnimationFrame); " +
-            "     } " +
-            "   }; " +
-            "   window.requestAnimationFrame(window.onAnimationFrame); " +
-            "</script>";
+                    "<script> " +
+                    "   window.framesToIgnore = 10; " +
+                    "   window.onAnimationFrame = function(timestamp) { " +
+                    "     if (window.framesToIgnore == 0) { " +
+                    "         " + firstFrameObserver + ".notifyJava(); " +
+                    "     } else {" +
+                    "       window.framesToIgnore -= 1; " +
+                    "       window.requestAnimationFrame(window.onAnimationFrame); " +
+                    "     } " +
+                    "   }; " +
+                    "   window.requestAnimationFrame(window.onAnimationFrame); " +
+                    "</script>";
         }
         return CommonResources.makeHtmlPageFrom(TEST_PAGE_COMMON_HEADERS, content);
     }
@@ -643,7 +640,7 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         });
 
         // Wait for the animation to hit the bottom of the page.
-        for (int i = 1; ; ++i) {
+        for (int i = 1;; ++i) {
             onScrollToCallbackHelper.waitForCallback(scrollToCallCount, i);
             if (checkScrollOnMainSync(testContainerView, 0, maxScrollYPix))
                 break;
@@ -681,7 +678,7 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         });
 
         // Wait for the animation to hit the bottom of the page.
-        for (int i = 1; ; ++i) {
+        for (int i = 1;; ++i) {
             onScrollToCallbackHelper.waitForCallback(scrollToCallCount, i);
             if (checkScrollOnMainSync(testContainerView, 0, 0))
                 break;

@@ -27,7 +27,6 @@
 #include "base/logging.h"
 #include "net/base/iovec.h"
 #include "net/base/ip_endpoint.h"
-#include "net/quic/congestion_control/quic_congestion_manager.h"
 #include "net/quic/iovector.h"
 #include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_ack_notifier_manager.h"
@@ -187,11 +186,6 @@ class NET_EXPORT_PRIVATE QuicConnection
     FORCE
   };
 
-  enum RetransmissionType {
-    INITIAL_ENCRYPTION_ONLY,
-    ALL_PACKETS
-  };
-
   // Constructs a new QuicConnection for the specified |guid| and |address|.
   // |helper| and |writer| must outlive this connection.
   QuicConnection(QuicGuid guid,
@@ -323,11 +317,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
 
-  // Called to retransmit a packet, in the case a packet was sufficiently
-  // nacked by the peer, or not acked within the time out window.
-  void RetransmitPacket(QuicPacketSequenceNumber sequence_number,
-                        TransmissionType transmission_type);
-
   QuicPacketCreator::Options* options() { return packet_creator_.options(); }
 
   bool connected() const { return connected_; }
@@ -414,9 +403,9 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   bool is_server() const { return is_server_; }
 
-  // Returns the underlying congestion manager.
-  const QuicCongestionManager& congestion_manager() const {
-    return congestion_manager_;
+  // Returns the underlying sent packet manager.
+  const QuicSentPacketManager& sent_packet_manager() const {
+    return sent_packet_manager_;
   }
 
   bool CanWrite(TransmissionType transmission_type,
@@ -757,12 +746,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // re-ordering.
   QuicPacketSequenceNumber sequence_number_of_last_inorder_packet_;
 
-  // Congestion manager which controls the rate the connection sends packets
-  // as well as collecting and generating congestion feedback.
-  QuicCongestionManager congestion_manager_;
-
   // Sent packet manager which tracks the status of packets sent by this
-  // connection.
+  // connection and contains the send and receive algorithms to determine when
+  // to send packets.
   QuicSentPacketManager sent_packet_manager_;
 
   // The state of connection in version negotiation finite state machine.
@@ -774,10 +760,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // True by default.  False if we've received or sent an explicit connection
   // close.
   bool connected_;
-
-  // True if the last ack received from the peer may have been truncated.  False
-  // otherwise.
-  bool received_truncated_ack_;
 
   // Set to true if the udp packet headers have a new self or peer address.
   // This is checked later on validating a data or version negotiation packet.

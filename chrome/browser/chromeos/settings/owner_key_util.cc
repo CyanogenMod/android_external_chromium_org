@@ -39,7 +39,7 @@ OwnerKeyUtilImpl::~OwnerKeyUtilImpl() {}
 bool OwnerKeyUtilImpl::ImportPublicKey(std::vector<uint8>* output) {
   // Get the file size (must fit in a 32 bit int for NSS).
   int64 file_size;
-  if (!file_util::GetFileSize(key_file_, &file_size)) {
+  if (!base::GetFileSize(key_file_, &file_size)) {
     LOG(ERROR) << "Could not get size of " << key_file_.value();
     return false;
   }
@@ -58,7 +58,7 @@ bool OwnerKeyUtilImpl::ImportPublicKey(std::vector<uint8>* output) {
   }
 
   // Get the key data off of disk
-  int data_read = file_util::ReadFile(
+  int data_read = base::ReadFile(
       key_file_,
       reinterpret_cast<char*>(vector_as_array(output)),
       safe_file_size);

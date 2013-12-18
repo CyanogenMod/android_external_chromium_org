@@ -10,6 +10,7 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
@@ -32,7 +33,9 @@
 #include "chrome/browser/chromeos/login/test/oobe_screen_waiter.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
@@ -40,8 +43,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
@@ -54,6 +55,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -61,7 +63,9 @@
 #include "content/public/test/test_utils.h"
 #include "extensions/common/extension.h"
 #include "google_apis/gaia/fake_gaia.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_switches.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -100,7 +104,15 @@ const char kTestOwnerEmail[] = "owner@example.com";
 const char kTestEnterpriseAccountId[] = "enterprise-kiosk-app@localhost";
 const char kTestEnterpriseServiceAccountId[] = "service_account@example.com";
 const char kTestRefreshToken[] = "fake-refresh-token";
+const char kTestUserinfoToken[] = "fake-userinfo-token";
+const char kTestLoginToken[] = "fake-login-token";
 const char kTestAccessToken[] = "fake-access-token";
+const char kTestClientId[] = "fake-client-id";
+const char kTestAppScope[] =
+    "https://www.googleapis.com/auth/userinfo.profile";
+
+// Note the path name must be the same as in shill stub.
+const char kStubEthernetServicePath[] = "eth1";
 
 // Helper function for GetConsumerKioskModeStatusCallback.
 void ConsumerKioskModeStatusCheck(
@@ -136,57 +148,43 @@ void CopyTokenService(DeviceOAuth2TokenService** out_token_service,
 // Helper functions for CanConfigureNetwork mock.
 class ScopedCanConfigureNetwork {
  public:
-  explicit ScopedCanConfigureNetwork(bool can_configure)
+  ScopedCanConfigureNetwork(bool can_configure, bool needs_owner_auth)
       : can_configure_(can_configure),
-        callback_(base::Bind(&ScopedCanConfigureNetwork::CanConfigureNetwork,
-                             base::Unretained(this))) {
-    AppLaunchController::SetCanConfigureNetworkCallbackForTesting(&callback_);
+        needs_owner_auth_(needs_owner_auth),
+        can_configure_network_callback_(
+            base::Bind(&ScopedCanConfigureNetwork::CanConfigureNetwork,
+                       base::Unretained(this))),
+        needs_owner_auth_callback_(base::Bind(
+            &ScopedCanConfigureNetwork::NeedsOwnerAuthToConfigureNetwork,
+            base::Unretained(this))) {
+    AppLaunchController::SetCanConfigureNetworkCallbackForTesting(
+        &can_configure_network_callback_);
+    AppLaunchController::SetNeedOwnerAuthToConfigureNetworkCallbackForTesting(
+        &needs_owner_auth_callback_);
   }
   ~ScopedCanConfigureNetwork() {
     AppLaunchController::SetCanConfigureNetworkCallbackForTesting(NULL);
+    AppLaunchController::SetNeedOwnerAuthToConfigureNetworkCallbackForTesting(
+        NULL);
   }
 
   bool CanConfigureNetwork() {
     return can_configure_;
   }
 
+  bool NeedsOwnerAuthToConfigureNetwork() {
+    return needs_owner_auth_;
+  }
+
  private:
   bool can_configure_;
-  AppLaunchController::CanConfigureNetworkCallback callback_;
+  bool needs_owner_auth_;
+  AppLaunchController::ReturnBoolCallback can_configure_network_callback_;
+  AppLaunchController::ReturnBoolCallback needs_owner_auth_callback_;
   DISALLOW_COPY_AND_ASSIGN(ScopedCanConfigureNetwork);
 };
 
 }  // namespace
-
-// Fake NetworkChangeNotifier used to simulate network connectivity.
-class FakeNetworkChangeNotifier : public net::NetworkChangeNotifier {
- public:
-  FakeNetworkChangeNotifier() : connection_type_(CONNECTION_NONE) {}
-
-  virtual ConnectionType GetCurrentConnectionType() const OVERRIDE {
-    return connection_type_;
-  }
-
-  void GoOnline() {
-    SetConnectionType(net::NetworkChangeNotifier::CONNECTION_ETHERNET);
-  }
-
-  void GoOffline() {
-    SetConnectionType(net::NetworkChangeNotifier::CONNECTION_NONE);
-  }
-
-  void SetConnectionType(ConnectionType type) {
-    connection_type_ = type;
-    NotifyObserversOfNetworkChange(type);
-    base::RunLoop().RunUntilIdle();
-  }
-
-  virtual ~FakeNetworkChangeNotifier() {}
-
- private:
-  ConnectionType connection_type_;
-  DISALLOW_COPY_AND_ASSIGN(FakeNetworkChangeNotifier);
-};
 
 // Helper class that monitors app windows to wait for a window to appear.
 class ShellWindowObserver : public apps::ShellWindowRegistry::Observer {
@@ -249,6 +247,9 @@ class KioskTest : public InProcessBrowserTest {
     embedded_test_server()->RegisterRequestHandler(
         base::Bind(&FakeGaia::HandleRequest, base::Unretained(&fake_gaia_)));
     ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+    // Stop IO thread here because no threads are allowed while
+    // spawning sandbox host process. See crbug.com/322732.
+    embedded_test_server()->StopThread();
 
     mock_user_manager_.reset(new MockUserManager);
     AppLaunchController::SkipSplashWaitForTesting();
@@ -259,13 +260,19 @@ class KioskTest : public InProcessBrowserTest {
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     host_resolver()->AddRule("*", "127.0.0.1");
+
+    network_portal_detector_ = new NetworkPortalDetectorTestImpl();
+    NetworkPortalDetector::InitializeForTesting(network_portal_detector_);
+    network_portal_detector_->SetDefaultNetworkPathForTesting(
+        kStubEthernetServicePath);
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    // Restart the thread as the sandbox host process has already been spawned.
+    embedded_test_server()->RestartThreadAndListen();
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
-    // We need to clean up these objects in this specific order.
-    fake_network_notifier_.reset(NULL);
-    disable_network_notifier_.reset(NULL);
-
     AppLaunchController::SetNetworkTimeoutCallbackForTesting(NULL);
     AppLaunchSigninScreen::SetUserManagerForTesting(NULL);
 
@@ -323,7 +330,7 @@ class KioskTest : public InProcessBrowserTest {
     KioskAppManager::Get()->SetAutoLaunchApp(kTestKioskApp);
   }
 
-  void StartAppLaunchFromLoginScreen(bool has_connectivity) {
+  void StartAppLaunchFromLoginScreen(const base::Closure& network_setup_cb) {
     EnableConsumerKioskMode();
 
     // Start UI, find menu entry for this app and launch it.
@@ -344,8 +351,8 @@ class KioskTest : public InProcessBrowserTest {
     ReloadKioskApps();
     apps_loaded_signal.Wait();
 
-    if (!has_connectivity)
-      SimulateNetworkOffline();
+    if (!network_setup_cb.is_null())
+      network_setup_cb.Run();
 
     GetLoginUI()->CallJavascriptFunction(
         "login.AppsMenuButton.runAppForTesting",
@@ -402,15 +409,43 @@ class KioskTest : public InProcessBrowserTest {
   }
 
   void SimulateNetworkOffline() {
-    disable_network_notifier_.reset(
-        new net::NetworkChangeNotifier::DisableForTest);
+    NetworkPortalDetector::CaptivePortalState offline_state;
+    offline_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_OFFLINE;
+    network_portal_detector_->SetDetectionResultsForTesting(
+        kStubEthernetServicePath, offline_state);
+    network_portal_detector_->NotifyObserversForTesting();
+  }
 
-    fake_network_notifier_.reset(new FakeNetworkChangeNotifier);
+  base::Closure SimulateNetworkOfflineClosure() {
+    return base::Bind(&KioskTest::SimulateNetworkOffline,
+                      base::Unretained(this));
   }
 
   void SimulateNetworkOnline() {
-    if (fake_network_notifier_.get())
-      fake_network_notifier_->GoOnline();
+    NetworkPortalDetector::CaptivePortalState online_state;
+    online_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
+    online_state.response_code = 204;
+    network_portal_detector_->SetDetectionResultsForTesting(
+        kStubEthernetServicePath, online_state);
+    network_portal_detector_->NotifyObserversForTesting();
+  }
+
+  base::Closure SimulateNetworkOnlineClosure() {
+    return base::Bind(&KioskTest::SimulateNetworkOnline,
+                      base::Unretained(this));
+  }
+
+  void SimulateNetworkPortal() {
+    NetworkPortalDetector::CaptivePortalState portal_state;
+    portal_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
+    network_portal_detector_->SetDetectionResultsForTesting(
+        kStubEthernetServicePath, portal_state);
+    network_portal_detector_->NotifyObserversForTesting();
+  }
+
+  base::Closure SimulateNetworkPortalClosure() {
+    return base::Bind(&KioskTest::SimulateNetworkPortal,
+                      base::Unretained(this));
   }
 
   void WaitForAppLaunchNetworkTimeout() {
@@ -483,23 +518,21 @@ class KioskTest : public InProcessBrowserTest {
   }
 
   FakeGaia fake_gaia_;
-  scoped_ptr<net::NetworkChangeNotifier::DisableForTest>
-      disable_network_notifier_;
-  scoped_ptr<FakeNetworkChangeNotifier> fake_network_notifier_;
   scoped_ptr<MockUserManager> mock_user_manager_;
+  NetworkPortalDetectorTestImpl* network_portal_detector_;
 };
 
 IN_PROC_BROWSER_TEST_F(KioskTest, InstallAndLaunchApp) {
-  StartAppLaunchFromLoginScreen(true);
+  StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
   WaitForAppLaunchSuccess();
 }
 
 IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkDown) {
-  // Mock network could be configured.
-  ScopedCanConfigureNetwork can_configure_network(true);
+  // Mock network could be configured with owner's password.
+  ScopedCanConfigureNetwork can_configure_network(true, true);
 
   // Start app launch and wait for network connectivity timeout.
-  StartAppLaunchFromLoginScreen(false);
+  StartAppLaunchFromLoginScreen(SimulateNetworkOfflineClosure());
   OobeScreenWaiter splash_waiter(OobeDisplay::SCREEN_APP_LAUNCH_SPLASH);
   splash_waiter.Wait();
   WaitForAppLaunchNetworkTimeout();
@@ -532,10 +565,10 @@ IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkDown) {
 
 IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkDownConfigureNotAllowed) {
   // Mock network could not be configured.
-  ScopedCanConfigureNetwork can_configure_network(false);
+  ScopedCanConfigureNetwork can_configure_network(false, true);
 
   // Start app launch and wait for network connectivity timeout.
-  StartAppLaunchFromLoginScreen(false);
+  StartAppLaunchFromLoginScreen(SimulateNetworkOfflineClosure());
   OobeScreenWaiter splash_waiter(OobeDisplay::SCREEN_APP_LAUNCH_SPLASH);
   splash_waiter.Wait();
   WaitForAppLaunchNetworkTimeout();
@@ -547,8 +580,26 @@ IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkDownConfigureNotAllowed) {
   WaitForAppLaunchSuccess();
 }
 
+IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkPortal) {
+  // Mock network could be configured without the owner password.
+  ScopedCanConfigureNetwork can_configure_network(true, false);
+
+  // Start app launch with network portal state.
+  StartAppLaunchFromLoginScreen(SimulateNetworkPortalClosure());
+  OobeScreenWaiter(OobeDisplay::SCREEN_APP_LAUNCH_SPLASH)
+      .WaitNoAssertCurrentScreen();
+  WaitForAppLaunchNetworkTimeout();
+
+  // Network error should show up automatically since this test does not
+  // require owner auth to configure network.
+  OobeScreenWaiter(OobeDisplay::SCREEN_ERROR_MESSAGE).Wait();
+
+  ASSERT_TRUE(GetAppLaunchController()->showing_network_dialog());
+  WaitForAppLaunchSuccess();
+}
+
 IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppUserCancel) {
-  StartAppLaunchFromLoginScreen(false);
+  StartAppLaunchFromLoginScreen(SimulateNetworkOfflineClosure());
   OobeScreenWaiter splash_waiter(OobeDisplay::SCREEN_APP_LAUNCH_SPLASH);
   splash_waiter.Wait();
 
@@ -801,6 +852,7 @@ class KioskEnterpriseTest : public KioskTest {
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
+    KioskTest::SetUpOnMainThread();
     // Configure kTestEnterpriseKioskApp in device policy.
     em::DeviceLocalAccountsProto* accounts =
         device_policy_test_helper_.device_policy()->payload()
@@ -822,18 +874,39 @@ class KioskEnterpriseTest : public KioskTest {
     DeviceSettingsService::Get()->Load();
 
     // Configure OAuth authentication.
-    FakeGaia::AccessTokenInfo token_info;
-    token_info.token = kTestAccessToken;
-    token_info.email = kTestEnterpriseServiceAccountId;
-    fake_gaia_.IssueOAuthToken(kTestRefreshToken, token_info);
+    GaiaUrls* gaia_urls = GaiaUrls::GetInstance();
+
+    // This token satisfies the userinfo.email request from
+    // DeviceOAuth2TokenService used in token validation.
+    FakeGaia::AccessTokenInfo userinfo_token_info;
+    userinfo_token_info.token = kTestUserinfoToken;
+    userinfo_token_info.scopes.insert(
+        "https://www.googleapis.com/auth/userinfo.email");
+    userinfo_token_info.audience = gaia_urls->oauth2_chrome_client_id();
+    userinfo_token_info.email = kTestEnterpriseServiceAccountId;
+    fake_gaia_.IssueOAuthToken(kTestRefreshToken, userinfo_token_info);
+
+    // The any-api access token for accessing the token minting endpoint.
+    FakeGaia::AccessTokenInfo login_token_info;
+    login_token_info.token = kTestLoginToken;
+    login_token_info.scopes.insert(GaiaConstants::kAnyApiOAuth2Scope);
+    login_token_info.audience = gaia_urls->oauth2_chrome_client_id();
+    fake_gaia_.IssueOAuthToken(kTestRefreshToken, login_token_info);
+
+    // This is the access token requested by the app via the identity API.
+    FakeGaia::AccessTokenInfo access_token_info;
+    access_token_info.token = kTestAccessToken;
+    access_token_info.scopes.insert(kTestAppScope);
+    access_token_info.audience = kTestClientId;
+    access_token_info.email = kTestEnterpriseServiceAccountId;
+    fake_gaia_.IssueOAuthToken(kTestLoginToken, access_token_info);
+
     DeviceOAuth2TokenService* token_service = NULL;
     DeviceOAuth2TokenServiceFactory::Get(
         base::Bind(&CopyTokenService, &token_service));
     base::RunLoop().RunUntilIdle();
     ASSERT_TRUE(token_service);
     token_service->SetAndSaveRefreshToken(kTestRefreshToken);
-
-    KioskTest::SetUpOnMainThread();
   }
 
   static void StorePolicyCallback(bool result) {
@@ -846,8 +919,7 @@ class KioskEnterpriseTest : public KioskTest {
   DISALLOW_COPY_AND_ASSIGN(KioskEnterpriseTest);
 };
 
-// Disabled due to failures; http://crbug.com/306611.
-IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, DISABLED_EnterpriseKioskApp) {
+IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, EnterpriseKioskApp) {
   chromeos::WizardController::SkipPostLoginScreensForTesting();
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();

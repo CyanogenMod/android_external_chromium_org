@@ -23,7 +23,10 @@ class MockPasswordUIView : public PasswordUIView {
   }
   virtual ~MockPasswordUIView() {}
   virtual Profile* GetProfile() OVERRIDE;
-  MOCK_METHOD2(ShowPassword, void(size_t, const string16&));
+#if !defined(OS_ANDROID)
+  virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
+#endif
+  MOCK_METHOD2(ShowPassword, void(size_t, const base::string16&));
   MOCK_METHOD2(SetPasswordList,
                void(const ScopedVector<autofill::PasswordForm>&, bool));
   MOCK_METHOD1(SetPasswordExceptionList,
@@ -39,6 +42,9 @@ class MockPasswordUIView : public PasswordUIView {
   DISALLOW_COPY_AND_ASSIGN(MockPasswordUIView);
 };
 
+#if !defined(OS_ANDROID)
+gfx::NativeWindow MockPasswordUIView::GetNativeWindow() { return NULL; }
+#endif
 Profile* MockPasswordUIView::GetProfile() { return profile_; }
 
 class PasswordManagerPresenterTest : public testing::Test {
@@ -97,7 +103,8 @@ TEST_F(PasswordManagerPresenterTest, UIControllerIsCalled) {
   EXPECT_CALL(
       *GetUIController(),
       SetPasswordList(
-          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(0u)), true));
+          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(0u)),
+          testing::_));
   EXPECT_CALL(*GetUIController(),
               SetPasswordExceptionList(Property(
                   &ScopedVector<autofill::PasswordForm>::size, Eq(0u))));
@@ -107,7 +114,8 @@ TEST_F(PasswordManagerPresenterTest, UIControllerIsCalled) {
   EXPECT_CALL(
       *GetUIController(),
       SetPasswordList(
-          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(1u)), true));
+          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(1u)),
+          testing::_));
   EXPECT_CALL(*GetUIController(),
               SetPasswordExceptionList(Property(
                   &ScopedVector<autofill::PasswordForm>::size, Eq(0u))));
@@ -117,7 +125,8 @@ TEST_F(PasswordManagerPresenterTest, UIControllerIsCalled) {
   EXPECT_CALL(
       *GetUIController(),
       SetPasswordList(
-          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(1u)), true));
+          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(1u)),
+          testing::_));
   EXPECT_CALL(*GetUIController(),
               SetPasswordExceptionList(Property(
                   &ScopedVector<autofill::PasswordForm>::size, Eq(1u))));
@@ -127,7 +136,8 @@ TEST_F(PasswordManagerPresenterTest, UIControllerIsCalled) {
   EXPECT_CALL(
       *GetUIController(),
       SetPasswordList(
-          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(2u)), true));
+          Property(&ScopedVector<autofill::PasswordForm>::size, Eq(2u)),
+          testing::_));
   EXPECT_CALL(*GetUIController(),
               SetPasswordExceptionList(Property(
                   &ScopedVector<autofill::PasswordForm>::size, Eq(1u))));

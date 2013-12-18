@@ -39,6 +39,7 @@ class APIPermission {
     kActivityLogPrivate,
     kAdView,
     kAlarms,
+    kAlwaysOnTopWindows,
     kAppCurrentWindowInternal,
     kAppRuntime,
     kAppWindow,
@@ -52,6 +53,7 @@ class APIPermission {
     kBrailleDisplayPrivate,
     kBrowsingData,
     kCast,
+    kCastStreaming,
     kChromeosInfoPrivate,
     kClipboardRead,
     kClipboardWrite,
@@ -158,7 +160,6 @@ class APIPermission {
     kWebRequest,
     kWebRequestBlocking,
     kWebRequestInternal,
-    kWebRtc,
     kWebrtcAudioPrivate,
     kWebrtcLoggingPrivate,
     kWebstorePrivate,
@@ -169,6 +170,7 @@ class APIPermission {
     kSystemNetwork,
     kSystemInfoCpu,
     kSystemInfoMemory,
+    kFirstRunPrivate,
     kEnumBoundary
   };
 

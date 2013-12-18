@@ -62,15 +62,21 @@ class FakeDB : public DomDistillerDatabaseInterface {
     init_callback_ = callback;
   }
 
-  virtual void SaveEntries(
+  virtual void UpdateEntries(
       scoped_ptr<EntryVector> entries_to_save,
-      DomDistillerDatabaseInterface::SaveCallback callback) OVERRIDE {
+      scoped_ptr<EntryVector> entries_to_remove,
+      DomDistillerDatabaseInterface::UpdateCallback callback) OVERRIDE {
     for (EntryVector::iterator it = entries_to_save->begin();
          it != entries_to_save->end();
          ++it) {
       (*db_)[it->entry_id()] = *it;
     }
-    save_callback_ = callback;
+    for (EntryVector::iterator it = entries_to_remove->begin();
+        it != entries_to_remove->end();
+        ++it) {
+      (*db_).erase(it->entry_id());
+    }
+    update_callback_ = callback;
   }
 
   virtual void LoadEntries(
@@ -95,9 +101,9 @@ class FakeDB : public DomDistillerDatabaseInterface {
     load_callback_.Reset();
   }
 
-  void SaveCallback(bool success) {
-    save_callback_.Run(success);
-    save_callback_.Reset();
+  void UpdateCallback(bool success) {
+    update_callback_.Run(success);
+    update_callback_.Reset();
   }
 
  private:
@@ -113,7 +119,7 @@ class FakeDB : public DomDistillerDatabaseInterface {
 
   Callback init_callback_;
   Callback load_callback_;
-  Callback save_callback_;
+  Callback update_callback_;
 };
 
 class FakeSyncErrorFactory : public syncer::SyncErrorFactory {
@@ -184,6 +190,35 @@ ArticleEntry GetSampleEntry(int id) {
       CreateEntry("entry9", "example.com/entry9/all", "", ""), };
   EXPECT_LT(id, 9);
   return entries[id % 9];
+}
+
+class FakeDistillerObserver : public DomDistillerObserver {
+ public:
+  MOCK_METHOD1(ArticleEntriesUpdated, void(const std::vector<ArticleUpdate>&));
+  virtual ~FakeDistillerObserver() {}
+};
+
+MATCHER_P(AreUpdatesEqual, expected_updates, "") {
+  if (arg.size() != expected_updates.size())
+    return false;
+  std::vector<DomDistillerObserver::ArticleUpdate>::const_iterator expected,
+      actual;
+  for (expected = expected_updates.begin(), actual = arg.begin();
+       expected != expected_updates.end();
+       ++expected, ++actual) {
+    if (expected->entry_id != actual->entry_id) {
+      *result_listener << " Mismatched entry id. Expected: "
+                       << expected->entry_id << " actual: " << actual->entry_id;
+      return false;
+    }
+    if (expected->update_type != actual->update_type) {
+      *result_listener << " Mismatched update. Expected: "
+                       << expected->update_type
+                       << " actual: " << actual->update_type;
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -319,7 +354,7 @@ TEST_F(DomDistillerStoreTest, TestDatabaseLoadMerge) {
   EXPECT_TRUE(AreEntryMapsEqual(db_model_, expected_model));
 }
 
-TEST_F(DomDistillerStoreTest, TestAddEntry) {
+TEST_F(DomDistillerStoreTest, TestAddAndRemoveEntry) {
   CreateStore();
   fake_db_->InitCallback(true);
   fake_db_->LoadCallback(true);
@@ -331,6 +366,12 @@ TEST_F(DomDistillerStoreTest, TestAddEntry) {
 
   EntryMap expected_model;
   AddEntry(GetSampleEntry(0), &expected_model);
+
+  EXPECT_TRUE(AreEntriesEqual(store_->GetEntries(), expected_model));
+  EXPECT_TRUE(AreEntryMapsEqual(db_model_, expected_model));
+
+  store_->RemoveEntry(GetSampleEntry(0));
+  expected_model.clear();
 
   EXPECT_TRUE(AreEntriesEqual(store_->GetEntries(), expected_model));
   EXPECT_TRUE(AreEntryMapsEqual(db_model_, expected_model));
@@ -474,6 +515,66 @@ TEST_F(DomDistillerStoreTest, TestSyncMergeWithSecondDomDistillerStore) {
 
   EXPECT_TRUE(AreEntriesEqual(store_->GetEntries(), expected_model));
   EXPECT_TRUE(AreEntriesEqual(other_store->GetEntries(), expected_model));
+}
+
+TEST_F(DomDistillerStoreTest, TestObserver) {
+  CreateStore();
+  FakeDistillerObserver observer;
+  store_->AddObserver(&observer);
+  fake_db_->InitCallback(true);
+  fake_db_->LoadCallback(true);
+  std::vector<DomDistillerObserver::ArticleUpdate> expected_updates;
+  DomDistillerObserver::ArticleUpdate update;
+  update.entry_id = GetSampleEntry(0).entry_id();
+  update.update_type = DomDistillerObserver::ArticleUpdate::ADD;
+  expected_updates.push_back(update);
+  EXPECT_CALL(observer,
+              ArticleEntriesUpdated(AreUpdatesEqual(expected_updates)));
+  store_->AddEntry(GetSampleEntry(0));
+
+  expected_updates.clear();
+  update.entry_id = GetSampleEntry(1).entry_id();
+  update.update_type = DomDistillerObserver::ArticleUpdate::ADD;
+  expected_updates.push_back(update);
+  EXPECT_CALL(observer,
+              ArticleEntriesUpdated(AreUpdatesEqual(expected_updates)));
+  store_->AddEntry(GetSampleEntry(1));
+
+  expected_updates.clear();
+  update.entry_id = GetSampleEntry(0).entry_id();
+  update.update_type = DomDistillerObserver::ArticleUpdate::REMOVE;
+  expected_updates.clear();
+  expected_updates.push_back(update);
+  EXPECT_CALL(observer,
+              ArticleEntriesUpdated(AreUpdatesEqual(expected_updates)));
+  store_->RemoveEntry(GetSampleEntry(0));
+
+  // Add entry_id = 3 and update entry_id = 1.
+  expected_updates.clear();
+  SyncDataList change_data;
+  change_data.push_back(CreateSyncData(GetSampleEntry(3)));
+  ArticleEntry updated_entry(GetSampleEntry(1));
+  updated_entry.set_title("changed_title");
+  change_data.push_back(CreateSyncData(updated_entry));
+  update.entry_id = GetSampleEntry(3).entry_id();
+  update.update_type = DomDistillerObserver::ArticleUpdate::ADD;
+  expected_updates.push_back(update);
+  update.entry_id = GetSampleEntry(1).entry_id();
+  update.update_type = DomDistillerObserver::ArticleUpdate::UPDATE;
+  expected_updates.push_back(update);
+
+  EXPECT_CALL(observer,
+              ArticleEntriesUpdated(AreUpdatesEqual(expected_updates)));
+
+  FakeSyncErrorFactory* fake_error_factory = new FakeSyncErrorFactory();
+  EntryMap fake_model;
+  FakeSyncChangeProcessor* fake_sync_change_processor =
+      new FakeSyncChangeProcessor(&fake_model);
+  store_->MergeDataAndStartSyncing(
+      kDomDistillerModelType,
+      change_data,
+      make_scoped_ptr<SyncChangeProcessor>(fake_sync_change_processor),
+      make_scoped_ptr<SyncErrorFactory>(fake_error_factory));
 }
 
 }  // namespace dom_distiller

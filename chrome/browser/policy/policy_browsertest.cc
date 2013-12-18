@@ -39,6 +39,7 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
@@ -47,9 +48,6 @@
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/cloud/test_request_interceptor.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/policy_service_impl.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -85,13 +83,17 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_service.h"
+#include "components/policy/core/common/policy_service_impl.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -281,7 +283,7 @@ void CheckCanOpenURL(Browser* browser, const char* spec) {
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(url, contents->GetURL());
-  string16 title = UTF8ToUTF16(url.spec() + " was blocked");
+  base::string16 title = UTF8ToUTF16(url.spec() + " was blocked");
   EXPECT_NE(title, contents->GetTitle());
 }
 
@@ -292,7 +294,7 @@ void CheckURLIsBlocked(Browser* browser, const char* spec) {
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(url, contents->GetURL());
-  string16 title = UTF8ToUTF16(url.spec() + " was blocked");
+  base::string16 title = UTF8ToUTF16(url.spec() + " was blocked");
   EXPECT_EQ(title, contents->GetTitle());
 
   // Verify that the expected error page is being displayed.
@@ -745,8 +747,8 @@ IN_PROC_BROWSER_TEST_F(LocalePolicyTest, ApplicationLocaleValue) {
   // Verifies that the default locale can be overridden with policy.
   EXPECT_EQ("fr", g_browser_process->GetApplicationLocale());
   ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
-  string16 french_title = l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE);
-  string16 title;
+  base::string16 french_title = l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE);
+  base::string16 title;
   EXPECT_TRUE(ui_test_utils::GetCurrentTabTitle(browser(), &title));
   EXPECT_EQ(french_title, title);
 
@@ -754,7 +756,7 @@ IN_PROC_BROWSER_TEST_F(LocalePolicyTest, ApplicationLocaleValue) {
   std::string loaded =
       ui::ResourceBundle::GetSharedInstance().ReloadLocaleResources("en-US");
   EXPECT_EQ("en-US", loaded);
-  string16 english_title = l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE);
+  base::string16 english_title = l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE);
   EXPECT_NE(french_title, english_title);
 }
 #endif
@@ -837,7 +839,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
 
   // Verifies that a default search is made using the provider configured via
   // policy. Also checks that default search can be completely disabled.
-  const string16 kKeyword(ASCIIToUTF16("testsearch"));
+  const base::string16 kKeyword(ASCIIToUTF16("testsearch"));
   const std::string kSearchURL("http://search.example/search?q={searchTerms}");
   const std::string kAlternateURL0(
       "http://search.example/search#q={searchTerms}");
@@ -1028,7 +1030,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
 
   // Verifies that a default search is made using the provider configured via
   // policy. Also checks that default search can be completely disabled.
-  const string16 kKeyword(ASCIIToUTF16("testsearch"));
+  const base::string16 kKeyword(ASCIIToUTF16("testsearch"));
   const std::string kSearchURL("https://www.google.com/search?q={searchTerms}");
   const std::string kInstantURL("http://does/not/exist");
   const std::string kAlternateURL0(
@@ -1137,6 +1139,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, Disable3DAPIs) {
+  // This test assumes Gpu access.
+  if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL))
+    return;
+
   ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   // WebGL is enabled by default.
   content::WebContents* contents =
@@ -1313,7 +1319,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, AlwaysAuthorizePlugins) {
   ui_test_utils::NavigateToURL(browser(), url);
   // This should have triggered the dangerous plugin infobar.
   ASSERT_EQ(1u, infobar_service->infobar_count());
-  EXPECT_TRUE(infobar_service->infobar_at(0)->AsConfirmInfoBarDelegate());
+  EXPECT_TRUE(
+      infobar_service->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate());
   // And the plugin isn't running.
   EXPECT_EQ(0, CountPlugins());
 
@@ -1876,9 +1883,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
 
   // Verify that the translate infobar showed up.
   ASSERT_EQ(1u, infobar_service->infobar_count());
-  InfoBarDelegate* infobar = infobar_service->infobar_at(0);
+  InfoBar* infobar = infobar_service->infobar_at(0);
   TranslateInfoBarDelegate* translate_infobar_delegate =
-      infobar->AsTranslateInfoBarDelegate();
+      infobar->delegate()->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(translate_infobar_delegate);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
             translate_infobar_delegate->infobar_type());
@@ -2052,8 +2059,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, FullscreenAllowedApp) {
   // Launch an app that tries to open a fullscreen window.
   TestAddShellWindowObserver add_window_observer(
       apps::ShellWindowRegistry::Get(browser()->profile()));
-  OpenApplication(AppLaunchParams(browser()->profile(), extension,
-                                  extensions::LAUNCH_NONE, NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extensions::LAUNCH_CONTAINER_NONE,
+                                  NEW_WINDOW));
   apps::ShellWindow* window = add_window_observer.WaitForShellWindow();
   ASSERT_TRUE(window);
 
@@ -2672,7 +2681,7 @@ class MediaStreamDevicesControllerBrowserTest
   }
 
   void FinishAudioTest() {
-    content::MediaStreamRequest request(0, 0, 0, std::string(),
+    content::MediaStreamRequest request(0, 0, 0,
                                         request_url_.GetOrigin(),
                                         content::MEDIA_DEVICE_ACCESS,
                                         std::string(), std::string(),
@@ -2691,7 +2700,7 @@ class MediaStreamDevicesControllerBrowserTest
   void FinishVideoTest() {
     // TODO(raymes): Test MEDIA_DEVICE_OPEN (Pepper) which grants both webcam
     // and microphone permissions at the same time.
-    content::MediaStreamRequest request(0, 0, 0, std::string(),
+    content::MediaStreamRequest request(0, 0, 0,
                                         request_url_.GetOrigin(),
                                         content::MEDIA_DEVICE_ACCESS,
                                         std::string(),

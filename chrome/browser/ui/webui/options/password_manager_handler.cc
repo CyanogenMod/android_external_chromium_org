@@ -17,6 +17,8 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -33,6 +35,12 @@ PasswordManagerHandler::~PasswordManagerHandler() {}
 Profile* PasswordManagerHandler::GetProfile() {
   return Profile::FromWebUI(web_ui());
 }
+
+#if !defined(OS_ANDROID)
+gfx::NativeWindow PasswordManagerHandler::GetNativeWindow() {
+  return web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow();
+}
+#endif
 
 void PasswordManagerHandler::GetLocalizedValues(
     DictionaryValue* localized_strings) {
@@ -112,8 +120,9 @@ void PasswordManagerHandler::HandleRequestShowPassword(const ListValue* args) {
   password_manager_presenter_.RequestShowPassword(static_cast<size_t>(index));
 }
 
-void PasswordManagerHandler::ShowPassword(size_t index,
-                                          const string16& password_value) {
+void PasswordManagerHandler::ShowPassword(
+    size_t index,
+    const base::string16& password_value) {
   // Call back the front end to reveal the password.
   web_ui()->CallJavascriptFunction(
       "PasswordManager.showPassword",
@@ -130,7 +139,7 @@ void PasswordManagerHandler::SetPasswordList(
     bool show_passwords) {
   ListValue entries;
   languages_ = GetProfile()->GetPrefs()->GetString(prefs::kAcceptLanguages);
-  string16 placeholder(ASCIIToUTF16("        "));
+  base::string16 placeholder(ASCIIToUTF16("        "));
   for (size_t i = 0; i < password_list.size(); ++i) {
     ListValue* entry = new ListValue();
     entry->Append(new StringValue(net::FormatUrl(password_list[i]->origin,
@@ -141,7 +150,7 @@ void PasswordManagerHandler::SetPasswordList(
     } else {
       // Use a placeholder value with the same length as the password.
       entry->Append(new StringValue(
-          string16(password_list[i]->password_value.length(), ' ')));
+          base::string16(password_list[i]->password_value.length(), ' ')));
     }
     entries.Append(entry);
   }

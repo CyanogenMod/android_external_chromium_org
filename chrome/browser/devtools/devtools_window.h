@@ -219,17 +219,21 @@ class DevToolsWindow : private content::NotificationObserver,
                                 content::RenderViewHost* inspected_rvh,
                                 DevToolsDockSide dock_side,
                                 bool shared_worker_frontend,
-                                bool external_frontend);
+                                bool external_frontend,
+                                bool can_dock);
   static GURL GetDevToolsURL(Profile* profile,
                              const GURL& base_url,
                              DevToolsDockSide dock_side,
                              bool shared_worker_frontend,
-                             bool external_frontend);
+                             bool external_frontend,
+                             bool can_dock);
   static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
   static DevToolsWindow* AsDevToolsWindow(content::RenderViewHost*);
   static DevToolsDockSide GetDockSideFromPrefs(Profile* profile);
   static std::string SideToString(DevToolsDockSide dock_side);
   static DevToolsDockSide SideFromString(const std::string& dock_side);
+  static bool FindInspectedBrowserAndTabIndex(
+      content::WebContents* inspected_web_contents, Browser**, int* tab);
 
   // content::NotificationObserver:
   virtual void Observe(int type,
@@ -261,7 +265,8 @@ class DevToolsWindow : private content::NotificationObserver,
       GetJavaScriptDialogManager() OVERRIDE;
   virtual content::ColorChooser* OpenColorChooser(
       content::WebContents* web_contents,
-      SkColor color) OVERRIDE;
+      SkColor color,
+      const std::vector<content::ColorSuggestion>& suggestions) OVERRIDE;
   virtual void RunFileChooser(
       content::WebContents* web_contents,
       const content::FileChooserParams& params) OVERRIDE;
@@ -297,6 +302,7 @@ class DevToolsWindow : private content::NotificationObserver,
 
   // DevToolsFileHelper callbacks.
   void FileSavedAs(const std::string& url);
+  void CanceledFileSaveAs(const std::string& url);
   void AppendedTo(const std::string& url);
   void FileSystemsLoaded(
       const std::vector<DevToolsFileHelper::FileSystem>& file_systems);
@@ -311,11 +317,10 @@ class DevToolsWindow : private content::NotificationObserver,
   void SearchCompleted(int request_id,
                        const std::string& file_system_path,
                        const std::vector<std::string>& file_paths);
-  void ShowDevToolsConfirmInfoBar(const string16& message,
+  void ShowDevToolsConfirmInfoBar(const base::string16& message,
                                   const InfoBarCallback& callback);
 
   void CreateDevToolsBrowser();
-  bool FindInspectedBrowserAndTabIndex(Browser**, int* tab);
   BrowserWindow* GetInspectedBrowserWindow();
   bool IsInspectedBrowserPopup();
   void UpdateFrontendDockSide();

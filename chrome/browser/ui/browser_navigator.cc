@@ -18,6 +18,7 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
+#include "chrome/browser/prerender/prerender_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -34,12 +35,16 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_url_handler.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/common/extension.h"
 
+#if defined(USE_ASH)
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#endif
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
 #endif
@@ -499,6 +504,29 @@ void Navigate(NavigateParams* params) {
   if (!params->browser)
     return;
 
+#if defined(USE_ASH)
+  if (source_browser && source_browser != params->browser) {
+    // When the newly created browser was spawned by a browser which visits
+    // another user's desktop, it should be shown on the same desktop as the
+    // originating one. (This is part of the desktop separation per profile).
+    MultiUserWindowManager* manager = MultiUserWindowManager::GetInstance();
+    // Some unit tests have no manager instantiated.
+    if (manager) {
+      aura::Window* src_window = source_browser->window()->GetNativeWindow();
+      aura::Window* new_window = params->browser->window()->GetNativeWindow();
+      const std::string& src_user =
+          manager->GetUserPresentingWindow(src_window);
+      if (src_user != manager->GetUserPresentingWindow(new_window)) {
+        // Once the window gets presented, it should be shown on the same
+        // desktop as the desktop of the creating browser. Note that this
+        // command will not show the window if it wasn't shown yet by the
+        // browser creation.
+        manager->ShowWindowForUser(new_window, src_user);
+      }
+    }
+  }
+#endif
+
   // Navigate() must not return early after this point.
 
   if (GetSourceProfile(params) != params->browser->profile()) {
@@ -606,6 +634,13 @@ void Navigate(NavigateParams* params) {
         // renderer.
 
         LoadURLInContents(params->target_contents, url, params);
+        // For prerender bookkeeping purposes, record that this pending navigate
+        // originated from chrome::Navigate.
+        content::NavigationEntry* entry =
+            params->target_contents->GetController().GetPendingEntry();
+        if (entry)
+          entry->SetExtraData(prerender::kChromeNavigateExtraDataKey,
+                              base::string16());
       }
     }
   } else {
@@ -655,6 +690,13 @@ void Navigate(NavigateParams* params) {
     } else if (params->path_behavior == NavigateParams::IGNORE_AND_NAVIGATE &&
         target->GetURL() != params->url) {
       LoadURLInContents(target, params->url, params);
+      // For prerender bookkeeping purposes, record that this pending navigate
+      // originated from chrome::Navigate.
+      content::NavigationEntry* entry =
+          target->GetController().GetPendingEntry();
+      if (entry)
+        entry->SetExtraData(prerender::kChromeNavigateExtraDataKey,
+                            base::string16());
     }
 
     // If the singleton tab isn't already selected, select it.

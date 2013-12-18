@@ -174,7 +174,8 @@ static sslOptions ssl_defaults = {
     PR_FALSE,   /* enableFalseStart   */
     PR_TRUE,    /* cbcRandomIV        */
     PR_FALSE,   /* enableOCSPStapling */
-    PR_FALSE    /* enableSignedCertTimestamps */
+    PR_FALSE,   /* enableSignedCertTimestamps */
+    PR_FALSE    /* enableFallbackSCSV */
 };
 
 /*
@@ -870,6 +871,10 @@ SSL_OptionSet(PRFileDesc *fd, PRInt32 which, PRBool on)
        ss->opt.enableSignedCertTimestamps = on;
        break;
 
+      case SSL_ENABLE_FALLBACK_SCSV:
+       ss->opt.enableFallbackSCSV = on;
+       break;
+
       default:
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
 	rv = SECFailure;
@@ -943,6 +948,7 @@ SSL_OptionGet(PRFileDesc *fd, PRInt32 which, PRBool *pOn)
     case SSL_ENABLE_SIGNED_CERT_TIMESTAMPS:
        on = ss->opt.enableSignedCertTimestamps;
        break;
+    case SSL_ENABLE_FALLBACK_SCSV: on = ss->opt.enableFallbackSCSV; break;
 
     default:
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -1006,6 +1012,9 @@ SSL_OptionGetDefault(PRInt32 which, PRBool *pOn)
        break;
     case SSL_ENABLE_SIGNED_CERT_TIMESTAMPS:
        on = ssl_defaults.enableSignedCertTimestamps;
+       break;
+    case SSL_ENABLE_FALLBACK_SCSV:
+       on = ssl_defaults.enableFallbackSCSV;
        break;
 
     default:
@@ -1178,6 +1187,10 @@ SSL_OptionSetDefault(PRInt32 which, PRBool on)
        ssl_defaults.enableSignedCertTimestamps = on;
        break;
 
+      case SSL_ENABLE_FALLBACK_SCSV:
+       ssl_defaults.enableFallbackSCSV = on;
+       break;
+
       default:
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
 	return SECFailure;
@@ -1342,6 +1355,19 @@ SSL_CipherPrefSet(PRFileDesc *fd, PRInt32 which, PRBool enabled)
 	rv = ssl3_CipherPrefSet(ss, (ssl3CipherSuite)which, enabled);
     }
     return rv;
+}
+
+SECStatus
+SSL_CipherOrderSet(PRFileDesc *fd, const PRUint16 *ciphers, unsigned int len)
+{
+    sslSocket *ss = ssl_FindSocket(fd);
+
+    if (!ss) {
+	SSL_DBG(("%d: SSL[%d]: bad socket in CipherOrderSet", SSL_GETPID(),
+		fd));
+	return SECFailure;
+    }
+    return ssl3_CipherOrderSet(ss, ciphers, len);
 }
 
 SECStatus 

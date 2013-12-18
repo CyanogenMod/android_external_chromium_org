@@ -41,7 +41,7 @@ class CreateVisualElementsManifestTest : public testing::Test {
     version_ = Version("0.0.0.0");
 
     version_dir_ = test_dir_.path().AppendASCII(version_.GetString());
-    ASSERT_TRUE(file_util::CreateDirectory(version_dir_));
+    ASSERT_TRUE(base::CreateDirectory(version_dir_));
 
     manifest_path_ =
         test_dir_.path().Append(installer::kVisualElementsManifest);
@@ -228,7 +228,7 @@ TEST_F(CreateVisualElementsManifestTest, VisualElementsManifestNotCreated) {
 // Test that VisualElementsManifest.xml is created with the correct content when
 // VisualElements are present.
 TEST_F(CreateVisualElementsManifestTest, VisualElementsManifestCreated) {
-  ASSERT_TRUE(file_util::CreateDirectory(
+  ASSERT_TRUE(base::CreateDirectory(
       version_dir_.Append(installer::kVisualElements)));
   ASSERT_TRUE(
       installer::CreateVisualElementsManifest(test_dir_.path(), version_));
@@ -318,8 +318,7 @@ TEST_F(InstallShortcutTest, CreateAllShortcutsButQuickLaunchShortcut) {
 TEST_F(InstallShortcutTest, ReplaceAll) {
   base::win::ShortcutProperties dummy_properties;
   base::FilePath dummy_target;
-  ASSERT_TRUE(
-      file_util::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
   dummy_properties.set_target(dummy_target);
   dummy_properties.set_working_dir(fake_user_desktop_.path());
   dummy_properties.set_arguments(L"--dummy --args");
@@ -331,7 +330,7 @@ TEST_F(InstallShortcutTest, ReplaceAll) {
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(
                   user_quick_launch_shortcut_, dummy_properties,
                   base::win::SHORTCUT_CREATE_ALWAYS));
-  ASSERT_TRUE(file_util::CreateDirectory(user_start_menu_shortcut_.DirName()));
+  ASSERT_TRUE(base::CreateDirectory(user_start_menu_shortcut_.DirName()));
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(
                   user_start_menu_shortcut_, dummy_properties,
                   base::win::SHORTCUT_CREATE_ALWAYS));
@@ -349,8 +348,7 @@ TEST_F(InstallShortcutTest, ReplaceAll) {
 TEST_F(InstallShortcutTest, ReplaceExisting) {
   base::win::ShortcutProperties dummy_properties;
   base::FilePath dummy_target;
-  ASSERT_TRUE(
-      file_util::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
   dummy_properties.set_target(dummy_target);
   dummy_properties.set_working_dir(fake_user_desktop_.path());
   dummy_properties.set_arguments(L"--dummy --args");
@@ -359,7 +357,7 @@ TEST_F(InstallShortcutTest, ReplaceExisting) {
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(
                   user_desktop_shortcut_, dummy_properties,
                   base::win::SHORTCUT_CREATE_ALWAYS));
-  ASSERT_TRUE(file_util::CreateDirectory(user_start_menu_shortcut_.DirName()));
+  ASSERT_TRUE(base::CreateDirectory(user_start_menu_shortcut_.DirName()));
 
   installer::CreateOrUpdateShortcuts(
       chrome_exe_, *product_, *prefs_, installer::CURRENT_USER,
@@ -372,8 +370,7 @@ TEST_F(InstallShortcutTest, ReplaceExisting) {
 TEST_F(InstallShortcutTest, CreateIfNoSystemLevelAllSystemShortcutsExist) {
   base::win::ShortcutProperties dummy_properties;
   base::FilePath dummy_target;
-  ASSERT_TRUE(
-      file_util::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
   dummy_properties.set_target(dummy_target);
 
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(
@@ -382,7 +379,7 @@ TEST_F(InstallShortcutTest, CreateIfNoSystemLevelAllSystemShortcutsExist) {
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(
                   system_quick_launch_shortcut_, dummy_properties,
                   base::win::SHORTCUT_CREATE_ALWAYS));
-  ASSERT_TRUE(file_util::CreateDirectory(
+  ASSERT_TRUE(base::CreateDirectory(
         system_start_menu_shortcut_.DirName()));
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(
                   system_start_menu_shortcut_, dummy_properties,
@@ -410,8 +407,7 @@ TEST_F(InstallShortcutTest, CreateIfNoSystemLevelNoSystemShortcutsExist) {
 TEST_F(InstallShortcutTest, CreateIfNoSystemLevelSomeSystemShortcutsExist) {
   base::win::ShortcutProperties dummy_properties;
   base::FilePath dummy_target;
-  ASSERT_TRUE(
-      file_util::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_target));
   dummy_properties.set_target(dummy_target);
 
   ASSERT_TRUE(base::win::CreateOrUpdateShortcutLink(

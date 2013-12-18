@@ -23,11 +23,14 @@
     std::string(1, '\x13') + name + value + default_value
 #define OP_STORE_NODE_BOOL(name) std::string(1, '\x14') + name
 #define OP_STORE_NODE_HASH(name) std::string(1, '\x15') + name
+#define OP_STORE_NODE_EFFECTIVE_SLD_HASH(name) std::string(1, '\x16') + name
 #define OP_COMPARE_NODE_BOOL(value) std::string(1, '\x20') + value
 #define OP_COMPARE_NODE_HASH(value) std::string(1, '\x21') + value
 #define OP_COMPARE_NODE_HASH_NOT(value) std::string(1, '\x22') + value
 #define OP_COMPARE_NODE_TO_STORED_BOOL(name) std::string(1, '\x23') + name
 #define OP_COMPARE_NODE_TO_STORED_HASH(name) std::string(1, '\x24') + name
+#define OP_COMPARE_NODE_SUBSTRING(pattern, pattern_length, pattern_sum) \
+    std::string(1, '\x25') + pattern + pattern_length + pattern_sum
 #define OP_STOP_EXECUTING_SENTENCE std::string(1, '\x30')
 #define OP_END_OF_SENTENCE std::string(1, '\x31')
 

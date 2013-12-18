@@ -145,13 +145,8 @@ InProcessBrowserTest::~InProcessBrowserTest() {
 }
 
 void InProcessBrowserTest::SetUp() {
-  // Undo TestingBrowserProcess creation in ChromeTestSuite.
-  // TODO(phajdan.jr): Extract a smaller test suite so we don't need this.
-  DCHECK(g_browser_process);
-  BrowserProcess* old_browser_process = g_browser_process;
-  // g_browser_process must be NULL during its own destruction.
-  g_browser_process = NULL;
-  delete old_browser_process;
+  // Browser tests will create their own g_browser_process later.
+  DCHECK(!g_browser_process);
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   // Allow subclasses to change the command line before running any tests.
@@ -178,7 +173,7 @@ void InProcessBrowserTest::SetUp() {
 #if defined(OS_CHROMEOS)
   // Make sure that the log directory exists.
   base::FilePath log_dir = logging::GetSessionLogFile(*command_line).DirName();
-  file_util::CreateDirectory(log_dir);
+  base::CreateDirectory(log_dir);
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)

@@ -10,7 +10,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -60,7 +60,7 @@ TEST_F(TruncateOperationTest, Truncate) {
 
   // The local file should be truncated.
   int64 local_file_size = 0;
-  file_util::GetFileSize(local_path, &local_file_size);
+  base::GetFileSize(local_path, &local_file_size);
   EXPECT_EQ(1, local_file_size);
 }
 

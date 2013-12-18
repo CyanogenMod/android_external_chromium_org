@@ -7,9 +7,9 @@
 
 #include <string>
 
-#include "chrome/browser/google_apis/auth_service_interface.h"
-#include "chrome/browser/google_apis/base_requests.h"
-#include "chrome/browser/google_apis/drive_common_callbacks.h"
+#include "google_apis/drive/auth_service_interface.h"
+#include "google_apis/drive/base_requests.h"
+#include "google_apis/drive/drive_common_callbacks.h"
 
 namespace base {
 class Time;
@@ -255,17 +255,6 @@ class DriveServiceInterface {
       const std::string& resource_id,
       const std::string& new_title,
       const google_apis::EntryActionCallback& callback) = 0;
-
-  // Touches the resource with |resource_id|.
-  // Its modifiedDate and lastViewedByMeDate fields on the server will be
-  // updated to |modified_date| and |last_viewed_by_me_date| respectively.
-  // Upon completion, invokes |callback| with the updated resource data.
-  // |modified_date|, |last_viewed_by_me_date| and |callback| must not be null.
-  virtual google_apis::CancelCallback TouchResource(
-      const std::string& resource_id,
-      const base::Time& modified_date,
-      const base::Time& last_viewed_by_me_date,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
 
   // Adds a resource (document, file, or collection) identified by its
   // |resource_id| to a collection represented by the |parent_resource_id|.

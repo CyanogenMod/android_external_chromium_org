@@ -15,7 +15,6 @@
 #include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
-#include "base/i18n/char_iterator.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
@@ -113,7 +112,6 @@
 #include "content/renderer/render_view_impl_params.h"
 #include "content/renderer/render_view_mouse_lock_dispatcher.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
-#include "content/renderer/renderer_date_time_picker.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
 #include "content/renderer/renderer_webcolorchooser_impl.h"
 #include "content/renderer/resizing_mode_selector.h"
@@ -156,6 +154,7 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
+#include "third_party/WebKit/public/web/WebColorSuggestion.h"
 #include "third_party/WebKit/public/web/WebDOMEvent.h"
 #include "third_party/WebKit/public/web/WebDOMMessageEvent.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -182,7 +181,6 @@
 #include "third_party/WebKit/public/web/WebPluginAction.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebPluginDocument.h"
-#include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebRange.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
@@ -243,12 +241,8 @@
 
 #if defined(ENABLE_PLUGINS)
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
-#include "content/renderer/npapi/webplugin_impl.h"
-#include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_plugin_registry.h"
-#include "content/renderer/pepper/pepper_webplugin_impl.h"
-#include "content/renderer/pepper/plugin_module.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -303,7 +297,6 @@ using blink::WebPeerConnectionHandlerClient;
 using blink::WebPluginAction;
 using blink::WebPluginContainer;
 using blink::WebPluginDocument;
-using blink::WebPluginParams;
 using blink::WebPoint;
 using blink::WebPopupMenuInfo;
 using blink::WebRange;
@@ -539,7 +532,7 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
 static void NotifyTimezoneChange(blink::WebFrame* frame) {
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Context::Scope context_scope(frame->mainWorldScriptContext());
-  v8::Date::DateTimeConfigurationChangeNotification();
+  v8::Date::DateTimeConfigurationChangeNotification(v8::Isolate::GetCurrent());
   blink::WebFrame* child = frame->firstChild();
   for (; child; child = child->nextSibling())
     NotifyTimezoneChange(child);
@@ -1010,10 +1003,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   ProcessViewLayoutFlags(command_line);
 
-#if defined(ENABLE_PLUGINS)
-  new PepperBrowserConnection(this);
-#endif
-
   GetContentClient()->renderer()->RenderViewCreated(this);
 
   // If we have an opener_id but we weren't created by a renderer, then
@@ -1107,7 +1096,7 @@ RenderViewImpl* RenderViewImpl::Create(
     int32 main_frame_routing_id,
     int32 surface_id,
     int64 session_storage_namespace_id,
-    const string16& frame_name,
+    const base::string16& frame_name,
     bool is_renderer_created,
     bool swapped_out,
     bool hidden,
@@ -1162,115 +1151,6 @@ blink::WebView* RenderViewImpl::webview() const {
 }
 
 #if defined(ENABLE_PLUGINS)
-void RenderViewImpl::PepperInstanceCreated(PepperPluginInstanceImpl* instance) {
-  active_pepper_instances_.insert(instance);
-}
-
-void RenderViewImpl::PepperInstanceDeleted(PepperPluginInstanceImpl* instance) {
-  active_pepper_instances_.erase(instance);
-
-  if (pepper_last_mouse_event_target_ == instance)
-    pepper_last_mouse_event_target_ = NULL;
-  if (focused_pepper_plugin_ == instance)
-    PepperFocusChanged(instance, false);
-}
-
-void RenderViewImpl::PepperDidChangeCursor(
-    PepperPluginInstanceImpl* instance,
-    const blink::WebCursorInfo& cursor) {
-  // Update the cursor appearance immediately if the requesting plugin is the
-  // one which receives the last mouse event. Otherwise, the new cursor won't be
-  // picked up until the plugin gets the next input event. That is bad if, e.g.,
-  // the plugin would like to set an invisible cursor when there isn't any user
-  // input for a while.
-  if (instance == pepper_last_mouse_event_target_)
-    didChangeCursor(cursor);
-}
-
-void RenderViewImpl::PepperDidReceiveMouseEvent(
-    PepperPluginInstanceImpl* instance) {
-  pepper_last_mouse_event_target_ = instance;
-}
-
-void RenderViewImpl::PepperFocusChanged(PepperPluginInstanceImpl* instance,
-                                        bool focused) {
-  if (focused)
-    focused_pepper_plugin_ = instance;
-  else if (focused_pepper_plugin_ == instance)
-    focused_pepper_plugin_ = NULL;
-
-  UpdateTextInputType();
-  UpdateSelectionBounds();
-}
-
-void RenderViewImpl::PepperTextInputTypeChanged(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != focused_pepper_plugin_)
-    return;
-
-  UpdateTextInputType();
-  if (renderer_accessibility_)
-    renderer_accessibility_->FocusedNodeChanged(WebNode());
-}
-
-void RenderViewImpl::PepperCaretPositionChanged(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != focused_pepper_plugin_)
-    return;
-  UpdateSelectionBounds();
-}
-
-void RenderViewImpl::PepperCancelComposition(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != focused_pepper_plugin_)
-    return;
-  Send(new ViewHostMsg_ImeCancelComposition(routing_id()));;
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
-  UpdateCompositionInfo(true);
-#endif
-}
-
-void RenderViewImpl::PepperSelectionChanged(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != focused_pepper_plugin_)
-    return;
-  SyncSelectionIfRequired();
-}
-
-RenderWidgetFullscreenPepper* RenderViewImpl::CreatePepperFullscreenContainer(
-    PepperPluginInstanceImpl* plugin) {
-  GURL active_url;
-  if (webview() && webview()->mainFrame())
-    active_url = GURL(webview()->mainFrame()->document().url());
-  RenderWidgetFullscreenPepper* widget = RenderWidgetFullscreenPepper::Create(
-      routing_id_, plugin, active_url, screen_info_);
-  widget->show(blink::WebNavigationPolicyIgnore);
-  return widget;
-}
-
-void RenderViewImpl::PepperPluginCreated(RendererPpapiHost* host) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_,
-                    DidCreatePepperPlugin(host));
-}
-
-bool RenderViewImpl::GetPepperCaretBounds(gfx::Rect* rect) {
-  if (!focused_pepper_plugin_)
-    return false;
-  *rect = focused_pepper_plugin_->GetCaretBounds();
-  return true;
-}
-
-bool RenderViewImpl::IsPepperAcceptingCompositionEvents() const {
-  if (!focused_pepper_plugin_)
-    return false;
-  return focused_pepper_plugin_->IsPluginAcceptingCompositionEvents();
-}
-
-void RenderViewImpl::PluginCrashed(const base::FilePath& plugin_path,
-                                   base::ProcessId plugin_pid) {
-  Send(new ViewHostMsg_CrashedPlugin(routing_id_, plugin_path, plugin_pid));
-}
-
 void RenderViewImpl::RegisterPluginDelegate(WebPluginDelegateProxy* delegate) {
   plugin_delegates_.insert(delegate);
   // If the renderer is visible, set initial visibility and focus state.
@@ -1290,32 +1170,6 @@ void RenderViewImpl::RegisterPluginDelegate(WebPluginDelegateProxy* delegate) {
 void RenderViewImpl::UnregisterPluginDelegate(
     WebPluginDelegateProxy* delegate) {
   plugin_delegates_.erase(delegate);
-}
-
-bool RenderViewImpl::GetPluginInfo(const GURL& url,
-                                   const GURL& page_url,
-                                   const std::string& mime_type,
-                                   WebPluginInfo* plugin_info,
-                                   std::string* actual_mime_type) {
-  bool found = false;
-  Send(new ViewHostMsg_GetPluginInfo(
-      routing_id_, url, page_url, mime_type, &found, plugin_info,
-      actual_mime_type));
-  return found;
-}
-
-void RenderViewImpl::SimulateImeSetComposition(
-    const string16& text,
-    const std::vector<blink::WebCompositionUnderline>& underlines,
-    int selection_start,
-    int selection_end) {
-  OnImeSetComposition(text, underlines, selection_start, selection_end);
-}
-
-void RenderViewImpl::SimulateImeConfirmComposition(
-    const string16& text,
-    const gfx::Range& replacement_range) {
-  OnImeConfirmComposition(text, replacement_range, false);
 }
 
 #if defined(OS_WIN)
@@ -1819,7 +1673,7 @@ void RenderViewImpl::OnRedo() {
                                             GetFocusedNode());
 }
 
-void RenderViewImpl::OnReplace(const string16& text) {
+void RenderViewImpl::OnReplace(const base::string16& text) {
   if (!webview())
     return;
 
@@ -1830,7 +1684,7 @@ void RenderViewImpl::OnReplace(const string16& text) {
   frame->replaceSelection(text);
 }
 
-void RenderViewImpl::OnReplaceMisspelling(const string16& text) {
+void RenderViewImpl::OnReplaceMisspelling(const base::string16& text) {
   if (!webview())
     return;
 
@@ -1903,7 +1757,7 @@ void RenderViewImpl::OnCopyToFindPboard() {
   // than the |OnCopy()| case.
   WebFrame* frame = webview()->focusedFrame();
   if (frame->hasSelection()) {
-    string16 selection = frame->selectionAsText();
+    base::string16 selection = frame->selectionAsText();
     RenderThread::Get()->Send(
         new ClipboardHostMsg_FindPboardWriteStringAsync(selection));
   }
@@ -2113,7 +1967,7 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
       params.referrer = GetReferrerFromRequest(frame, original_request);
     }
 
-    string16 method = request.httpMethod();
+    base::string16 method = request.httpMethod();
     if (EqualsASCII(method, "POST")) {
       params.is_post = true;
       params.post_id = ExtractPostId(item);
@@ -2170,7 +2024,7 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
 
 // Tell the embedding application that the title of the active page has changed
 void RenderViewImpl::UpdateTitle(WebFrame* frame,
-                                 const string16& title,
+                                 const base::string16& title,
                                  WebTextDirection title_direction) {
   // Ignore all but top level navigations.
   if (frame->parent())
@@ -2179,7 +2033,7 @@ void RenderViewImpl::UpdateTitle(WebFrame* frame,
   base::debug::TraceLog::GetInstance()->UpdateProcessLabel(
       routing_id_, UTF16ToUTF8(title));
 
-  string16 shortened_title = title.substr(0, kMaxTitleChars);
+  base::string16 shortened_title = title.substr(0, kMaxTitleChars);
   Send(new ViewHostMsg_UpdateTitle(routing_id_, page_id_, shortened_title,
                                    title_direction));
 }
@@ -2291,17 +2145,17 @@ void RenderViewImpl::LoadNavigationErrorPage(
 }
 
 bool RenderViewImpl::RunJavaScriptMessage(JavaScriptMessageType type,
-                                          const string16& message,
-                                          const string16& default_value,
+                                          const base::string16& message,
+                                          const base::string16& default_value,
                                           const GURL& frame_url,
-                                          string16* result) {
+                                          base::string16* result) {
   // Don't allow further dialogs if we are waiting to swap out, since the
   // PageGroupLoadDeferrer in our stack prevents it.
   if (suppress_dialogs_until_swap_out_)
     return false;
 
   bool success = false;
-  string16 result_temp;
+  base::string16 result_temp;
   if (!result)
     result = &result_temp;
 
@@ -2329,8 +2183,10 @@ void RenderViewImpl::GetWindowSnapshot(const WindowSnapshotCallback& callback) {
   latency_info.AddLatencyNumber(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
                                 GetLatencyComponentId(),
                                 id);
+  scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
   if (RenderWidgetCompositor* rwc = compositor()) {
-    rwc->SetLatencyInfo(latency_info);
+    latency_info_swap_promise_monitor =
+        rwc->CreateLatencyInfoSwapPromiseMonitor(&latency_info).Pass();
   } else {
     latency_info_.MergeWith(latency_info);
   }
@@ -2432,7 +2288,7 @@ WebView* RenderViewImpl::createView(
       main_frame_routing_id,
       surface_id,
       cloned_session_storage_namespace_id,
-      string16(),  // WebCore will take care of setting the correct name.
+      base::string16(),  // WebCore will take care of setting the correct name.
       true,  // is_renderer_created
       false, // swapped_out
       params.disposition == NEW_BACKGROUND_TAB, // hidden
@@ -2629,7 +2485,7 @@ void RenderViewImpl::didExecuteCommand(const WebString& command_name) {
       StartsWithASCII(name, "Insert", true) ||
       StartsWithASCII(name, "Delete", true))
     return;
-  RenderThreadImpl::current()->RecordUserMetrics(name);
+  RenderThreadImpl::current()->RecordComputedAction(name);
 }
 
 bool RenderViewImpl::handleCurrentKeyboardEvent() {
@@ -2660,10 +2516,15 @@ bool RenderViewImpl::handleCurrentKeyboardEvent() {
 
 blink::WebColorChooser* RenderViewImpl::createColorChooser(
     blink::WebColorChooserClient* client,
-    const blink::WebColor& initial_color) {
+    const blink::WebColor& initial_color,
+    const blink::WebVector<blink::WebColorSuggestion>& suggestions) {
   RendererWebColorChooserImpl* color_chooser =
       new RendererWebColorChooserImpl(this, client);
-  color_chooser->Open(static_cast<SkColor>(initial_color));
+  std::vector<content::ColorSuggestion> color_suggestions;
+  for (size_t i = 0; i < suggestions.size(); i++) {
+    color_suggestions.push_back(content::ColorSuggestion(suggestions[i]));
+  }
+  color_chooser->Open(static_cast<SkColor>(initial_color), color_suggestions);
   return color_chooser;
 }
 
@@ -2699,7 +2560,7 @@ void RenderViewImpl::runModalAlertDialog(WebFrame* frame,
                                          const WebString& message) {
   RunJavaScriptMessage(JAVASCRIPT_MESSAGE_TYPE_ALERT,
                        message,
-                       string16(),
+                       base::string16(),
                        frame->document().url(),
                        NULL);
 }
@@ -2708,7 +2569,7 @@ bool RenderViewImpl::runModalConfirmDialog(WebFrame* frame,
                                            const WebString& message) {
   return RunJavaScriptMessage(JAVASCRIPT_MESSAGE_TYPE_CONFIRM,
                               message,
-                              string16(),
+                              base::string16(),
                               frame->document().url(),
                               NULL);
 }
@@ -2717,7 +2578,7 @@ bool RenderViewImpl::runModalPromptDialog(WebFrame* frame,
                                           const WebString& message,
                                           const WebString& default_value,
                                           WebString* actual_value) {
-  string16 result;
+  base::string16 result;
   bool ok = RunJavaScriptMessage(JAVASCRIPT_MESSAGE_TYPE_PROMPT,
                                  message,
                                  default_value,
@@ -2753,7 +2614,7 @@ bool RenderViewImpl::runModalBeforeUnloadDialog(
   bool success = false;
   // This is an ignored return value, but is included so we can accept the same
   // response as RunJavaScriptMessage.
-  string16 ignored_result;
+  base::string16 ignored_result;
   SendAndRunNestedMessageLoop(new ViewHostMsg_RunBeforeUnloadConfirm(
       routing_id_, frame->document().url(), message, is_reload,
       &success, &ignored_result));
@@ -3120,6 +2981,15 @@ void RenderViewImpl::initializeLayerTreeView() {
 
 WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     WebFrame* frame, const blink::WebURL& url, WebMediaPlayerClient* client) {
+  NOTREACHED();
+  return NULL;
+}
+
+blink::WebMediaPlayer* RenderViewImpl::CreateMediaPlayer(
+    RenderFrame* render_frame,
+    blink::WebFrame* frame,
+    const blink::WebURL& url,
+    blink::WebMediaPlayerClient* client) {
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, WillCreateMediaPlayer(frame, client));
 
@@ -3142,11 +3012,11 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
       RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
       base::Bind(&ContentRendererClient::DeferMediaLoad,
                  base::Unretained(GetContentClient()->renderer()),
-                 static_cast<RenderView*>(this)),
+                 static_cast<RenderFrame*>(render_frame)),
       sink,
       RenderThreadImpl::current()->GetGpuFactories(),
       new RenderMediaLog());
-  return new WebMediaPlayerImpl(frame, client, AsWeakPtr(), params);
+  return new WebMediaPlayerImpl(this, frame, client, AsWeakPtr(), params);
 #endif  // defined(OS_ANDROID)
 }
 
@@ -3215,7 +3085,8 @@ SSLStatus RenderViewImpl::GetSSLStatusOfFrame(blink::WebFrame* frame) const {
                           &ssl_status.cert_id,
                           &ssl_status.cert_status,
                           &ssl_status.security_bits,
-                          &ssl_status.connection_status);
+                          &ssl_status.connection_status,
+                          &ssl_status.signed_certificate_timestamp_ids);
   return ssl_status;
 }
 
@@ -3227,12 +3098,22 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
     WebFrame* frame, WebDataSource::ExtraData* extraData,
     const WebURLRequest& request, WebNavigationType type,
     WebNavigationPolicy default_policy, bool is_redirect) {
+#ifdef OS_ANDROID
+  // The handlenavigation API is deprecated and will be removed once
+  // crbug.com/325351 is resolved.
   if (request.url() != GURL(kSwappedOutURL) &&
-      GetContentClient()->renderer()->HandleNavigation(frame, request, type,
-                                                       default_policy,
-                                                       is_redirect)) {
+      GetContentClient()->renderer()->HandleNavigation(
+          this,
+          static_cast<DocumentState*>(extraData),
+          opener_id_,
+          frame,
+          request,
+          type,
+          default_policy,
+          is_redirect)) {
     return blink::WebNavigationPolicyIgnore;
   }
+#endif
 
   Referrer referrer(GetReferrerFromRequest(frame, request));
 
@@ -3922,7 +3803,7 @@ void RenderViewImpl::didFailLoad(WebFrame* frame, const WebURLError& error) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidFailLoad(frame, error));
 
   const WebURLRequest& failed_request = ds->request();
-  string16 error_description;
+  base::string16 error_description;
   GetContentClient()->renderer()->GetNavigationErrorStrings(
       frame,
       failed_request,
@@ -4224,11 +4105,11 @@ void RenderViewImpl::SendFindReply(int request_id,
 
 // static
 bool RenderViewImpl::ShouldUpdateSelectionTextFromContextMenuParams(
-    const string16& selection_text,
+    const base::string16& selection_text,
     size_t selection_text_offset,
     const gfx::Range& selection_range,
     const ContextMenuParams& params) {
-  string16 trimmed_selection_text;
+  base::string16 trimmed_selection_text;
   if (!selection_text.empty() && !selection_range.is_empty()) {
     const int start = selection_range.GetMin() - selection_text_offset;
     const size_t length = selection_range.length();
@@ -4237,7 +4118,7 @@ bool RenderViewImpl::ShouldUpdateSelectionTextFromContextMenuParams(
                      &trimmed_selection_text);
     }
   }
-  string16 trimmed_params_text;
+  base::string16 trimmed_params_text;
   TrimWhitespace(params.selection_text, TRIM_ALL, &trimmed_params_text);
   return trimmed_params_text != trimmed_selection_text;
 }
@@ -4245,17 +4126,13 @@ bool RenderViewImpl::ShouldUpdateSelectionTextFromContextMenuParams(
 void RenderViewImpl::reportFindInPageMatchCount(int request_id,
                                                 int count,
                                                 bool final_update) {
-  // TODO(jam): switch PepperPluginInstanceImpl to take a RenderFrame
-  main_render_frame_->reportFindInPageMatchCount(
-      request_id, count, final_update);
+  NOTREACHED();
 }
 
 void RenderViewImpl::reportFindInPageSelection(int request_id,
                                                int active_match_ordinal,
                                                const WebRect& selection_rect) {
-  // TODO(jam): switch PepperPluginInstanceImpl to take a RenderFrame
-  main_render_frame_->reportFindInPageSelection(
-      request_id, active_match_ordinal, selection_rect);
+  NOTREACHED();
 }
 
 void RenderViewImpl::requestStorageQuota(
@@ -4364,6 +4241,10 @@ bool RenderViewImpl::Send(IPC::Message* message) {
   return RenderWidget::Send(message);
 }
 
+RenderFrame* RenderViewImpl::GetMainRenderFrame() {
+  return main_render_frame_.get();
+}
+
 int RenderViewImpl::GetRoutingID() const {
   return routing_id_;
 }
@@ -4430,27 +4311,8 @@ bool RenderViewImpl::IsEditableNode(const WebNode& node) const {
   return false;
 }
 
-blink::WebPlugin* RenderViewImpl::CreatePlugin(
-    blink::WebFrame* frame,
-    const WebPluginInfo& info,
-    const blink::WebPluginParams& params) {
-#if defined(ENABLE_PLUGINS)
-  bool pepper_plugin_was_registered = false;
-  scoped_refptr<PluginModule> pepper_module(PluginModule::Create(
-      this, info, &pepper_plugin_was_registered));
-  if (pepper_plugin_was_registered) {
-    if (pepper_module.get())
-      return new PepperWebPluginImpl(pepper_module.get(), params, AsWeakPtr());
-  }
-
-  return new WebPluginImpl(frame, params, info.path, AsWeakPtr());
-#else
-  return NULL;
-#endif
-}
-
-void RenderViewImpl::EvaluateScript(const string16& frame_xpath,
-                                    const string16& jscript,
+void RenderViewImpl::EvaluateScript(const base::string16& frame_xpath,
+                                    const base::string16& jscript,
                                     int id,
                                     bool notify_result) {
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
@@ -4516,13 +4378,6 @@ void RenderViewImpl::RunModalAlertDialog(blink::WebFrame* frame,
   return runModalAlertDialog(frame, message);
 }
 
-void RenderViewImpl::LoadURLExternally(
-    blink::WebFrame* frame,
-    const blink::WebURLRequest& request,
-    blink::WebNavigationPolicy policy) {
-  main_render_frame_->loadURLExternally(frame, request, policy);
-}
-
 void RenderViewImpl::DidStartLoading() {
   didStartLoading();
 }
@@ -4564,7 +4419,7 @@ void RenderViewImpl::SyncSelectionIfRequired() {
   if (!frame)
     return;
 
-  string16 text;
+  base::string16 text;
   size_t offset;
   gfx::Range range;
 #if defined(ENABLE_PLUGINS)
@@ -4691,7 +4546,7 @@ blink::WebPlugin* RenderViewImpl::GetWebPluginFromPluginDocument() {
 }
 
 void RenderViewImpl::OnFind(int request_id,
-                            const string16& search_text,
+                            const base::string16& search_text,
                             const WebFindOptions& options) {
   WebFrame* main_frame = webview()->mainFrame();
 
@@ -4977,7 +4832,7 @@ void RenderViewImpl::OnResetPageEncodingToDefault() {
   webview()->setPageEncoding(no_encoding);
 }
 
-WebFrame* RenderViewImpl::GetChildFrame(const string16& xpath) const {
+WebFrame* RenderViewImpl::GetChildFrame(const base::string16& xpath) const {
   if (xpath.empty())
     return webview()->mainFrame();
 
@@ -4986,11 +4841,11 @@ WebFrame* RenderViewImpl::GetChildFrame(const string16& xpath) const {
   // Example, /html/body/table/tbody/tr/td/iframe\n/frameset/frame[0]
   // should break into 2 xpaths
   // /html/body/table/tbody/tr/td/iframe & /frameset/frame[0]
-  std::vector<string16> xpaths;
+  std::vector<base::string16> xpaths;
   base::SplitString(xpath, '\n', &xpaths);
 
   WebFrame* frame = webview()->mainFrame();
-  for (std::vector<string16>::const_iterator i = xpaths.begin();
+  for (std::vector<base::string16>::const_iterator i = xpaths.begin();
        frame && i != xpaths.end(); ++i) {
     frame = frame->findChildByExpression(*i);
   }
@@ -4998,8 +4853,8 @@ WebFrame* RenderViewImpl::GetChildFrame(const string16& xpath) const {
   return frame;
 }
 
-void RenderViewImpl::OnScriptEvalRequest(const string16& frame_xpath,
-                                         const string16& jscript,
+void RenderViewImpl::OnScriptEvalRequest(const base::string16& frame_xpath,
+                                         const base::string16& jscript,
                                          int id,
                                          bool notify_result) {
   TRACE_EVENT_INSTANT0("test_tracing", "OnScriptEvalRequest",
@@ -5052,7 +4907,7 @@ void RenderViewImpl::OnPostMessageEvent(
   frame->dispatchMessageEventWithOriginCheck(target_origin, msg_event);
 }
 
-void RenderViewImpl::OnCSSInsertRequest(const string16& frame_xpath,
+void RenderViewImpl::OnCSSInsertRequest(const base::string16& frame_xpath,
                                         const std::string& css) {
   WebFrame* frame = GetChildFrame(frame_xpath);
   if (!frame)
@@ -5543,44 +5398,13 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
 
 void RenderViewImpl::DidInitiatePaint() {
 #if defined(ENABLE_PLUGINS)
-  // Notify all instances that we painted.  The same caveats apply as for
-  // ViewFlushedPaint regarding instances closing themselves, so we take
-  // similar precautions.
-  PepperPluginSet plugins = active_pepper_instances_;
-  for (PepperPluginSet::iterator i = plugins.begin(); i != plugins.end(); ++i) {
-    if (active_pepper_instances_.find(*i) != active_pepper_instances_.end())
-      (*i)->ViewInitiatedPaint();
-  }
+  main_render_frame_->DidInitiatePaint();
 #endif
 }
 
 void RenderViewImpl::DidFlushPaint() {
 #if defined(ENABLE_PLUGINS)
-  // Notify all instances that we flushed. This will call into the plugin, and
-  // we it may ask to close itself as a result. This will, in turn, modify our
-  // set, possibly invalidating the iterator. So we iterate on a copy that
-  // won't change out from under us.
-  PepperPluginSet plugins = active_pepper_instances_;
-  for (PepperPluginSet::iterator i = plugins.begin(); i != plugins.end(); ++i) {
-    // The copy above makes sure our iterator is never invalid if some plugins
-    // are destroyed. But some plugin may decide to close all of its views in
-    // response to a paint in one of them, so we need to make sure each one is
-    // still "current" before using it.
-    //
-    // It's possible that a plugin was destroyed, but another one was created
-    // with the same address. In this case, we'll call ViewFlushedPaint on that
-    // new plugin. But that's OK for this particular case since we're just
-    // notifying all of our instances that the view flushed, and the new one is
-    // one of our instances.
-    //
-    // What about the case where a new one is created in a callback at a new
-    // address and we don't issue the callback? We're still OK since this
-    // callback is used for flush callbacks and we could not have possibly
-    // started a new paint for the new plugin while processing a previous paint
-    // for an existing one.
-    if (active_pepper_instances_.find(*i) != active_pepper_instances_.end())
-      (*i)->ViewFlushedPaint();
-  }
+  main_render_frame_->DidFlushPaint();
 #endif
 
   // If the RenderWidget is closing down then early-exit, otherwise we'll crash.
@@ -5624,16 +5448,8 @@ PepperPluginInstanceImpl* RenderViewImpl::GetBitmapForOptimizedPluginPaint(
     gfx::Rect* clip,
     float* scale_factor) {
 #if defined(ENABLE_PLUGINS)
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i) {
-    PepperPluginInstanceImpl* instance = *i;
-    // In Flash fullscreen , the plugin contents should be painted onto the
-    // fullscreen widget instead of the web page.
-    if (!instance->FlashIsFullscreenOrPending() &&
-        instance->GetBitmapForOptimizedPluginPaint(paint_bounds, dib, location,
-                                                   clip, scale_factor))
-      return *i;
-  }
+  return main_render_frame_->GetBitmapForOptimizedPluginPaint(
+      paint_bounds, dib, location, clip, scale_factor);
 #endif
   return NULL;
 }
@@ -5710,7 +5526,7 @@ void RenderViewImpl::OnWindowFrameChanged(const gfx::Rect& window_frame,
 #endif
 }
 
-void RenderViewImpl::OnPluginImeCompositionCompleted(const string16& text,
+void RenderViewImpl::OnPluginImeCompositionCompleted(const base::string16& text,
                                                      int plugin_id) {
   // WebPluginDelegateProxy is responsible for figuring out if this event
   // applies to it or not, so inform all the delegates.
@@ -5742,14 +5558,7 @@ bool RenderViewImpl::WillHandleMouseEvent(const blink::WebMouseEvent& event) {
       gfx::Point(event.globalX, event.globalY);
 
 #if defined(ENABLE_PLUGINS)
-  // This method is called for every mouse event that the render view receives.
-  // And then the mouse event is forwarded to WebKit, which dispatches it to the
-  // event target. Potentially a Pepper plugin will receive the event.
-  // In order to tell whether a plugin gets the last mouse event and which it
-  // is, we set |pepper_last_mouse_event_target_| to NULL here. If a plugin gets
-  // the event, it will notify us via DidReceiveMouseEvent() and set itself as
-  // |pepper_last_mouse_event_target_|.
-  pepper_last_mouse_event_target_ = NULL;
+  main_render_frame_->WillHandleMouseEvent(event);
 #endif
 
   // If the mouse is locked, only the current owner of the mouse lock can
@@ -5798,10 +5607,7 @@ void RenderViewImpl::OnWasHidden() {
     webview()->setVisibilityState(visibilityState(), false);
 
 #if defined(ENABLE_PLUGINS)
-  // Inform PPAPI plugins that their page is no longer visible.
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->PageVisibilityChanged(false);
+  main_render_frame_->PageVisibilityChanged(false);
 
 #if defined(OS_MACOSX)
   // Inform NPAPI plugins that their container is no longer visible.
@@ -5826,10 +5632,7 @@ void RenderViewImpl::OnWasShown(bool needs_repainting) {
     webview()->setVisibilityState(visibilityState(), false);
 
 #if defined(ENABLE_PLUGINS)
-  // Inform PPAPI plugins that their page is visible.
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->PageVisibilityChanged(true);
+  main_render_frame_->PageVisibilityChanged(true);
 
 #if defined(OS_MACOSX)
   // Inform NPAPI plugins that their container is now visible.
@@ -5872,10 +5675,7 @@ void RenderViewImpl::OnSetFocus(bool enable) {
       (*plugin_it)->SetContentAreaFocus(enable);
     }
   }
-  // Notify all Pepper plugins.
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->SetContentAreaFocus(enable);
+  main_render_frame_->OnSetFocus(enable);
 #endif
   // Notify all BrowserPlugins of the RenderView's focus state.
   if (browser_plugin_manager_.get())
@@ -5883,35 +5683,14 @@ void RenderViewImpl::OnSetFocus(bool enable) {
 }
 
 void RenderViewImpl::OnImeSetComposition(
-    const string16& text,
+    const base::string16& text,
     const std::vector<blink::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
 #if defined(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
-    // When a PPAPI plugin has focus, we bypass WebKit.
-    if (!IsPepperAcceptingCompositionEvents()) {
-      pepper_composition_text_ = text;
-    } else {
-      // TODO(kinaba) currently all composition events are sent directly to
-      // plugins. Use DOM event mechanism after WebKit is made aware about
-      // plugins that support composition.
-      // The code below mimics the behavior of WebCore::Editor::setComposition.
-
-      // Empty -> nonempty: composition started.
-      if (pepper_composition_text_.empty() && !text.empty())
-        focused_pepper_plugin_->HandleCompositionStart(string16());
-      // Nonempty -> empty: composition canceled.
-      if (!pepper_composition_text_.empty() && text.empty())
-        focused_pepper_plugin_->HandleCompositionEnd(string16());
-      pepper_composition_text_ = text;
-      // Nonempty: composition is ongoing.
-      if (!pepper_composition_text_.empty()) {
-        focused_pepper_plugin_->HandleCompositionUpdate(
-            pepper_composition_text_, underlines, selection_start,
-            selection_end);
-      }
-    }
+    focused_pepper_plugin_->render_frame()->OnImeSetComposition(
+        text, underlines, selection_start, selection_end);
     return;
   }
 
@@ -5948,49 +5727,13 @@ void RenderViewImpl::OnImeSetComposition(
 }
 
 void RenderViewImpl::OnImeConfirmComposition(
-    const string16& text,
+    const base::string16& text,
     const gfx::Range& replacement_range,
     bool keep_selection) {
 #if defined(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
-    // When a PPAPI plugin has focus, we bypass WebKit.
-    // Here, text.empty() has a special meaning. It means to commit the last
-    // update of composition text (see
-    // RenderWidgetHost::ImeConfirmComposition()).
-    const string16& last_text = text.empty() ? pepper_composition_text_ : text;
-
-    // last_text is empty only when both text and pepper_composition_text_ is.
-    // Ignore it.
-    if (last_text.empty())
-      return;
-
-    if (!IsPepperAcceptingCompositionEvents()) {
-      base::i18n::UTF16CharIterator iterator(&last_text);
-      int32 i = 0;
-      while (iterator.Advance()) {
-        blink::WebKeyboardEvent char_event;
-        char_event.type = blink::WebInputEvent::Char;
-        char_event.timeStampSeconds = base::Time::Now().ToDoubleT();
-        char_event.modifiers = 0;
-        char_event.windowsKeyCode = last_text[i];
-        char_event.nativeKeyCode = last_text[i];
-
-        const int32 char_start = i;
-        for (; i < iterator.array_pos(); ++i) {
-          char_event.text[i - char_start] = last_text[i];
-          char_event.unmodifiedText[i - char_start] = last_text[i];
-        }
-
-        if (webwidget())
-          webwidget()->handleInputEvent(char_event);
-      }
-    } else {
-      // Mimics the order of events sent by WebKit.
-      // See WebCore::Editor::setComposition() for the corresponding code.
-      focused_pepper_plugin_->HandleCompositionEnd(last_text);
-      focused_pepper_plugin_->HandleTextInput(last_text);
-    }
-    pepper_composition_text_.clear();
+    focused_pepper_plugin_->render_frame()->OnImeConfirmComposition(
+        text, replacement_range, keep_selection);
     return;
   }
 #if defined(OS_WIN)
@@ -6123,7 +5866,7 @@ void RenderViewImpl::GetCompositionRange(gfx::Range* range) {
 bool RenderViewImpl::CanComposeInline() {
 #if defined(ENABLE_PLUGINS)
   if (focused_pepper_plugin_)
-    return IsPepperAcceptingCompositionEvents();
+    return focused_pepper_plugin_->IsPluginAcceptingCompositionEvents();
 #endif
   return true;
 }
@@ -6283,8 +6026,9 @@ blink::WebPageVisibilityState RenderViewImpl::visibilityState() const {
       blink::WebPageVisibilityStateHidden :
       blink::WebPageVisibilityStateVisible;
   blink::WebPageVisibilityState override_state = current_state;
+  // TODO(jam): move this method to WebFrameClient.
   if (GetContentClient()->renderer()->
-          ShouldOverridePageVisibilityState(this,
+          ShouldOverridePageVisibilityState(main_render_frame_.get(),
                                             &override_state))
     return override_state;
   return current_state;
@@ -6385,10 +6129,20 @@ void RenderViewImpl::LaunchAndroidContentIntent(const GURL& intent,
 bool RenderViewImpl::openDateTimeChooser(
     const blink::WebDateTimeChooserParams& params,
     blink::WebDateTimeChooserCompletion* completion) {
+  // JavaScript may try to open a date time chooser while one is already open.
+  if (date_time_picker_client_)
+    return false;
   date_time_picker_client_.reset(
       new RendererDateTimePicker(this, params, completion));
   return date_time_picker_client_->Open();
 }
+
+#if defined(OS_ANDROID)
+void RenderViewImpl::DismissDateTimeDialog() {
+  DCHECK(date_time_picker_client_);
+  date_time_picker_client_.reset(NULL);
+}
+#endif
 
 WebMediaPlayer* RenderViewImpl::CreateAndroidWebMediaPlayer(
       WebFrame* frame,
@@ -6652,10 +6406,6 @@ void RenderViewImpl::SetMediaStreamClientForTesting(
   DCHECK(!media_stream_client_);
   DCHECK(!web_user_media_client_);
   media_stream_client_ = media_stream_client;
-}
-
-bool RenderViewImpl::IsPluginFullscreenAllowed() {
-  return renderer_preferences_.plugin_fullscreen_allowed;
 }
 
 void RenderViewImpl::OnReleaseDisambiguationPopupDIB(

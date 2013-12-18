@@ -9,7 +9,6 @@
 
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -103,9 +102,15 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_service.h"
+#include "policy/policy_constants.h"
 #include "ui/gfx/image/image_skia.h"
 #endif  // defined(OS_CHROMEOS)
 
@@ -325,6 +330,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 #if defined(OS_CHROMEOS)
     { "accessibilityExplanation",
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_EXPLANATION },
+    { "accessibilitySettings",
+      IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SETTINGS },
     { "accessibilityHighContrast",
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_HIGH_CONTRAST_DESCRIPTION },
     { "accessibilityScreenMagnifier",
@@ -463,7 +470,7 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 #endif
 
   values->SetString("syncLearnMoreURL", chrome::kSyncLearnMoreURL);
-  string16 omnibox_url = ASCIIToUTF16(chrome::kOmniboxLearnMoreURL);
+  base::string16 omnibox_url = ASCIIToUTF16(chrome::kOmniboxLearnMoreURL);
   values->SetString(
       "defaultSearchGroupLabel",
       l10n_util::GetStringFUTF16(IDS_SEARCH_PREF_EXPLANATION, omnibox_url));
@@ -489,6 +496,13 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 
   values->SetString("accessibilityLearnMoreURL",
                     chrome::kChromeAccessibilityHelpURL);
+
+  std::string settings_url = std::string("chrome-extension://") +
+      extension_misc::kChromeVoxExtensionId +
+      chrome::kChromeAccessibilitySettingsURL;
+
+  values->SetString("accessibilitySettingsURL",
+                    settings_url);
 
   values->SetString("contentProtectionAttestationLearnMoreURL",
                     chrome::kAttestationForContentProtectionLearnMoreURL);
@@ -768,7 +782,18 @@ void BrowserOptionsHandler::InitializeHandler() {
       base::Bind(&BrowserOptionsHandler::OnSigninAllowedPrefChange,
                  base::Unretained(this)));
 
-#if !defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS)
+  if (!policy_registrar_) {
+    policy_registrar_.reset(new policy::PolicyChangeRegistrar(
+        policy::ProfilePolicyConnectorFactory::GetForProfile(profile)->
+            policy_service(),
+        policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME, std::string())));
+    policy_registrar_->Observe(
+        policy::key::kUserAvatarImage,
+        base::Bind(&BrowserOptionsHandler::OnUserImagePolicyChanged,
+                   base::Unretained(this)));
+  }
+#else  // !defined(OS_CHROMEOS)
   profile_pref_registrar_.Add(
       prefs::kProxy,
       base::Bind(&BrowserOptionsHandler::SetupProxySettingsSection,
@@ -813,6 +838,14 @@ void BrowserOptionsHandler::InitializePage() {
     web_ui()->CallJavascriptFunction(
         "BrowserOptions.enableFactoryResetSection");
   }
+
+  OnAccountPictureManagedChanged(
+      policy::ProfilePolicyConnectorFactory::GetForProfile(
+          Profile::FromWebUI(web_ui()))->
+          policy_service()->GetPolicies(
+              policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME,
+                                      std::string()))
+             .Get(policy::key::kUserAvatarImage));
 #endif
 }
 
@@ -1167,6 +1200,11 @@ void BrowserOptionsHandler::UpdateAccountPicture() {
                                      email_value);
   }
 }
+
+void BrowserOptionsHandler::OnAccountPictureManagedChanged(bool managed) {
+  web_ui()->CallJavascriptFunction("BrowserOptions.setAccountPictureManaged",
+                                   base::FundamentalValue(managed));
+}
 #endif
 
 scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
@@ -1204,8 +1242,8 @@ scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
   sync_status->SetBoolean("setupInProgress",
       service && !service->IsManaged() && service->FirstSetupInProgress());
 
-  string16 status_label;
-  string16 link_label;
+  base::string16 status_label;
+  base::string16 link_label;
   bool status_has_error = sync_ui_util::GetStatusLabels(
       service, *signin, sync_ui_util::WITH_HTML, &status_label, &link_label) ==
           sync_ui_util::SYNC_ERROR;
@@ -1263,7 +1301,17 @@ void BrowserOptionsHandler::MouseExists(bool exists) {
   base::FundamentalValue val(exists);
   web_ui()->CallJavascriptFunction("BrowserOptions.showMouseControls", val);
 }
-#endif
+
+void BrowserOptionsHandler::OnUserImagePolicyChanged(
+    const base::Value* previous_policy,
+    const base::Value* current_policy) {
+  const bool had_policy = !!previous_policy;
+  const bool has_policy = !!current_policy;
+  if (had_policy != has_policy)
+    OnAccountPictureManagedChanged(has_policy);
+}
+
+#endif  // defined(OS_CHROMEOS)
 
 void BrowserOptionsHandler::UpdateSyncState() {
   web_ui()->CallJavascriptFunction("BrowserOptions.updateSyncState",
@@ -1409,7 +1457,7 @@ void BrowserOptionsHandler::SetupCloudPrintConnectorSection() {
   }
   base::FundamentalValue disabled(email.empty());
 
-  string16 label_str;
+  base::string16 label_str;
   if (email.empty()) {
     label_str = l10n_util::GetStringFUTF16(
         IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL,

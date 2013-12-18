@@ -38,10 +38,14 @@ scoped_ptr<FileMetadata> CreateFileMetadataFromFileResource(
     const google_apis::FileResource& resource);
 scoped_ptr<FileMetadata> CreateFileMetadataFromChangeResource(
     const google_apis::ChangeResource& change);
+scoped_ptr<FileMetadata> CreateDeletedFileMetadata(
+    int64 change_id,
+    const std::string& file_id);
 
 // Creates a temporary file in |dir_path|.  This must be called on an
-// IO-allowed thread.
-webkit_blob::ScopedFile CreateTemporaryFile();
+// IO-allowed task runner, and the runner must be given as |file_task_runner|.
+webkit_blob::ScopedFile CreateTemporaryFile(
+    base::TaskRunner* file_task_runner);
 
 std::string FileKindToString(FileKind file_kind);
 

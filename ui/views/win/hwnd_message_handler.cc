@@ -377,6 +377,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       use_system_default_icon_(false),
       restore_focus_when_enabled_(false),
       restored_enabled_(false),
+      current_cursor_(NULL),
       previous_cursor_(NULL),
       active_mouse_tracking_flags_(0),
       is_right_mouse_pressed_on_caption_(false),
@@ -386,7 +387,6 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       use_layered_buffer_(false),
       layered_alpha_(255),
       waiting_for_redraw_layered_window_contents_(false),
-      can_update_layered_window_(true),
       is_first_nccalc_(true),
       autohide_factory_(this),
       id_generator_(0) {
@@ -543,7 +543,8 @@ void HWNDMessageHandler::CenterWindow(const gfx::Size& size) {
 }
 
 void HWNDMessageHandler::SetRegion(HRGN region) {
-  SetWindowRgn(hwnd(), region, TRUE);
+  custom_window_region_.Set(region);
+  ResetWindowRegion(false, true);
 }
 
 void HWNDMessageHandler::StackAbove(HWND other_hwnd) {
@@ -752,13 +753,24 @@ void HWNDMessageHandler::SetVisibilityChangedAnimationsEnabled(bool enabled) {
   }
 }
 
-void HWNDMessageHandler::SetTitle(const string16& title) {
+bool HWNDMessageHandler::SetTitle(const string16& title) {
+  string16 current_title;
+  size_t len_with_null = GetWindowTextLength(hwnd()) + 1;
+  if (len_with_null == 1 && title.length() == 0)
+    return false;
+  if (len_with_null - 1 == title.length() &&
+      GetWindowText(
+          hwnd(), WriteInto(&current_title, len_with_null), len_with_null) &&
+      current_title == title)
+    return false;
   SetWindowText(hwnd(), title.c_str());
+  return true;
 }
 
 void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
   if (cursor) {
     previous_cursor_ = ::SetCursor(cursor);
+    current_cursor_ = cursor;
   } else if (previous_cursor_) {
     ::SetCursor(previous_cursor_);
     previous_cursor_ = NULL;
@@ -768,17 +780,9 @@ void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
 void HWNDMessageHandler::FrameTypeChanged() {
   // Called when the frame type could possibly be changing (theme change or
   // DWM composition change).
-  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
-    // We need to toggle the rendering policy of the DWM/glass frame as we
-    // change from opaque to glass. "Non client rendering enabled" means that
-    // the DWM's glass non-client rendering is enabled, which is why
-    // DWMNCRP_ENABLED is used for the native frame case. _DISABLED means the
-    // DWM doesn't render glass, and so is used in the custom frame case.
-    DWMNCRENDERINGPOLICY policy = !delegate_->IsUsingCustomFrame() ?
-        DWMNCRP_ENABLED : DWMNCRP_DISABLED;
-    DwmSetWindowAttribute(hwnd(), DWMWA_NCRENDERING_POLICY,
-                          &policy, sizeof(DWMNCRENDERINGPOLICY));
-  }
+
+  // Update rendering of the DWM/glass frame depending on the new frame type.
+  UpdateDwmNcRenderingPolicy();
 
   // Don't redraw the window here, because we need to hide and show the window
   // which will also trigger a redraw.
@@ -1099,7 +1103,7 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   // automatically makes clicks on transparent pixels fall through, that isn't
   // the case with WS_EX_COMPOSITED. So, we route WS_EX_COMPOSITED through to
   // the delegate to allow for a custom hit mask.
-  if ((window_ex_style() & WS_EX_COMPOSITED) == 0 &&
+  if ((window_ex_style() & WS_EX_COMPOSITED) == 0 && !custom_window_region_ &&
       (!delegate_->IsUsingCustomFrame() || !delegate_->IsWidgetWindow())) {
     if (force)
       SetWindowRgn(hwnd(), NULL, redraw);
@@ -1114,7 +1118,10 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   CRect window_rect;
   GetWindowRect(hwnd(), &window_rect);
   HRGN new_region;
-  if (IsMaximized()) {
+  if (custom_window_region_) {
+    new_region = ::CreateRectRgn(0, 0, 0, 0);
+    ::CombineRgn(new_region, custom_window_region_.Get(), NULL, RGN_COPY);
+  } else if (IsMaximized()) {
     HMONITOR monitor = MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi;
     mi.cbSize = sizeof mi;
@@ -1137,6 +1144,16 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   }
 
   DeleteObject(current_rgn);
+}
+
+void HWNDMessageHandler::UpdateDwmNcRenderingPolicy() {
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+    return;
+  DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
+  if (remove_standard_frame_ || delegate_->IsUsingCustomFrame())
+    policy = DWMNCRP_DISABLED;
+  DwmSetWindowAttribute(hwnd(), DWMWA_NCRENDERING_POLICY,
+                        &policy, sizeof(DWMNCRENDERINGPOLICY));
 }
 
 LRESULT HWNDMessageHandler::DefWindowProcWithRedrawLock(UINT message,
@@ -1297,6 +1314,7 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
               0);
 
   if (remove_standard_frame_) {
+    UpdateDwmNcRenderingPolicy();
     SetWindowLong(hwnd(), GWL_STYLE,
                   GetWindowLong(hwnd(), GWL_STYLE) & ~WS_CAPTION);
     SendFrameChanged();
@@ -1461,6 +1479,17 @@ LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
                                             WPARAM w_param,
                                             LPARAM l_param) {
 #if defined(USE_AURA)
+  // On Windows, if we select the menu item by touch and if the window at the
+  // location is another window on the same thread, that window gets a
+  // WM_MOUSEACTIVATE message and ends up activating itself, which is not
+  // correct. We workaround this by setting a property on the window at the
+  // current cursor location. We check for this property in our
+  // WM_MOUSEACTIVATE handler and don't activate the window if the property is
+  // set.
+  if (::GetProp(hwnd(), kIgnoreTouchMouseActivateForWindow)) {
+    ::RemoveProp(hwnd(), kIgnoreTouchMouseActivateForWindow);
+    return MA_NOACTIVATE;
+  }
   // A child window activation should be treated as if we lost activation.
   POINT cursor_pos = {0};
   ::GetCursorPos(&cursor_pos);
@@ -1952,14 +1981,14 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       cursor = IDC_SIZENESW;
       break;
     case HTCLIENT:
-      // Client-area mouse events set the proper cursor from View::GetCursor.
-      return 0;
+      SetCursor(current_cursor_);
+      return 1;
     default:
       // Use the default value, IDC_ARROW.
       break;
   }
-  SetCursor(LoadCursor(NULL, cursor));
-  return 0;
+  ::SetCursor(LoadCursor(NULL, cursor));
+  return 1;
 }
 
 void HWNDMessageHandler::OnSetFocus(HWND last_focused_window) {
@@ -2213,7 +2242,8 @@ void HWNDMessageHandler::OnWindowPosChanged(WINDOWPOS* window_pos) {
 }
 
 void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
-  for (size_t i = 0; i < touch_events.size(); ++i)
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  for (size_t i = 0; i < touch_events.size() && ref; ++i)
     delegate_->HandleTouchEvent(touch_events[i]);
 }
 

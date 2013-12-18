@@ -15,10 +15,7 @@ MockIMEEngineHandler::MockIMEEngineHandler()
       last_text_input_context_(ui::TEXT_INPUT_TYPE_NONE,
                                ui::TEXT_INPUT_MODE_DEFAULT),
       last_set_surrounding_cursor_pos_(0),
-      last_set_surrounding_anchor_pos_(0),
-      last_processed_keysym_(0),
-      last_processed_keycode_(0),
-      last_processed_state_(0) {
+      last_set_surrounding_anchor_pos_(0) {
 }
 
 MockIMEEngineHandler::~MockIMEEngineHandler() {
@@ -48,20 +45,14 @@ void MockIMEEngineHandler::Reset() {
 }
 
 void MockIMEEngineHandler::ProcessKeyEvent(
-    uint32 keysym,
-    uint32 keycode,
-    uint32 state,
+    const ui::KeyEvent& key_event,
     const KeyEventDoneCallback& callback) {
   ++process_key_event_call_count_;
-  last_processed_keysym_ = keysym;
-  last_processed_keycode_ = keycode;
-  last_processed_state_ = state;
+  last_processed_key_event_.reset(new ui::KeyEvent(key_event));
   last_passed_callback_ = callback;
 }
 
-void MockIMEEngineHandler::CandidateClicked(uint32 index,
-                                            ibus::IBusMouseButton button,
-                                            uint32 state) {
+void MockIMEEngineHandler::CandidateClicked(uint32 index) {
 }
 
 void MockIMEEngineHandler::SetSurroundingText(const std::string& text,

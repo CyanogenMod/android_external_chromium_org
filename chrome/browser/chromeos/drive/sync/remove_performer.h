@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -25,8 +25,13 @@ namespace drive {
 class JobScheduler;
 class ResourceEntry;
 
+namespace file_system {
+class OperationObserver;
+}  // namespace file_system
+
 namespace internal {
 
+class EntryRevertPerformer;
 class ResourceMetadata;
 
 // This class encapsulates the drive Remove function.  It is responsible for
@@ -35,6 +40,7 @@ class ResourceMetadata;
 class RemovePerformer {
  public:
   RemovePerformer(base::SequencedTaskRunner* blocking_task_runner,
+                  file_system::OperationObserver* observer,
                   JobScheduler* scheduler,
                   ResourceMetadata* metadata);
   ~RemovePerformer();
@@ -83,6 +89,7 @@ class RemovePerformer {
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   JobScheduler* scheduler_;
   ResourceMetadata* metadata_;
+  scoped_ptr<EntryRevertPerformer> entry_revert_performer_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.

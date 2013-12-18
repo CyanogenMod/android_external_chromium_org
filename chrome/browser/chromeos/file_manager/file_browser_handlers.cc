@@ -79,7 +79,7 @@ const FileBrowserHandler* FindFileBrowserHandlerForActionId(
 }
 
 std::string EscapedUtf8ToLower(const std::string& str) {
-  string16 utf16 = UTF8ToUTF16(
+  base::string16 utf16 = UTF8ToUTF16(
       net::UnescapeURLComponent(str, net::UnescapeRule::NORMAL));
   return net::EscapeUrlEncodedData(
       UTF16ToUTF8(base::i18n::ToLower(utf16)),
@@ -162,7 +162,6 @@ class FileBrowserHandlerExecutor {
  public:
   FileBrowserHandlerExecutor(Profile* profile,
                              const Extension* extension,
-                             int32 tab_id,
                              const std::string& action_id);
 
   // Executes the task for each file. |done| will be run with the result.
@@ -208,7 +207,6 @@ class FileBrowserHandlerExecutor {
 
   Profile* profile_;
   scoped_refptr<const Extension> extension_;
-  int32 tab_id_;
   const std::string action_id_;
   file_tasks::FileTaskFinishedCallback done_;
   base::WeakPtrFactory<FileBrowserHandlerExecutor> weak_ptr_factory_;
@@ -252,8 +250,8 @@ FileBrowserHandlerExecutor::SetupFileAccessPermissions(
     // found on the url.path().
     if (!is_drive_file) {
       if (!base::PathExists(local_path) ||
-          file_util::IsLink(local_path) ||
-          !file_util::GetFileInfo(local_path, &file_info)) {
+          base::IsLink(local_path) ||
+          !base::GetFileInfo(local_path, &file_info)) {
         continue;
       }
     }
@@ -277,11 +275,9 @@ FileBrowserHandlerExecutor::SetupFileAccessPermissions(
 FileBrowserHandlerExecutor::FileBrowserHandlerExecutor(
     Profile* profile,
     const Extension* extension,
-    int32 tab_id,
     const std::string& action_id)
     : profile_(profile),
       extension_(extension),
-      tab_id_(tab_id),
       action_id_(action_id),
       weak_ptr_factory_(this) {
 }
@@ -404,8 +400,6 @@ void FileBrowserHandlerExecutor::SetupPermissionsAndDispatchEvent(
     file_def->SetBoolean("fileIsDirectory", iter->is_directory);
   }
 
-  details->SetInteger("tab_id", tab_id_);
-
   scoped_ptr<extensions::Event> event(new extensions::Event(
       "fileBrowserHandler.onExecute", event_args.Pass()));
   event->restrict_to_browser_context = profile_;
@@ -472,7 +466,6 @@ bool OpenFilesWithBrowser(Profile* profile,
 bool ExecuteFileBrowserHandler(
     Profile* profile,
     const Extension* extension,
-    int32 tab_id,
     const std::string& action_id,
     const std::vector<FileSystemURL>& file_urls,
     const file_tasks::FileTaskFinishedCallback& done) {
@@ -488,7 +481,7 @@ bool ExecuteFileBrowserHandler(
 
   // The executor object will be self deleted on completion.
   (new FileBrowserHandlerExecutor(
-      profile, extension, tab_id, action_id))->Execute(file_urls, done);
+      profile, extension, action_id))->Execute(file_urls, done);
   return true;
 }
 
@@ -520,10 +513,16 @@ FileBrowserHandlerList FindFileBrowserHandlers(
       // For all additional files, find intersection between the accumulated and
       // file specific set.
       FileBrowserHandlerList intersection;
-      std::set_intersection(common_handlers.begin(), common_handlers.end(),
-                            handlers.begin(), handlers.end(),
-                            std::back_inserter(intersection));
-      common_handlers = intersection;
+      std::set<const FileBrowserHandler*> common_handler_set(
+          common_handlers.begin(), common_handlers.end());
+
+      for (FileBrowserHandlerList::const_iterator itr = handlers.begin();
+           itr != handlers.end(); ++itr) {
+        if (ContainsKey(common_handler_set, *itr))
+          intersection.push_back(*itr);
+      }
+
+      std::swap(common_handlers, intersection);
       if (common_handlers.empty())
         return FileBrowserHandlerList();
     }

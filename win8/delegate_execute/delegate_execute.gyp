@@ -42,6 +42,7 @@
         '../../base/base.gyp:base',
         '../../breakpad/breakpad.gyp:breakpad_handler',
         '../../chrome/chrome.gyp:installer_util',
+        '../../content/content.gyp:content_common',
         '../../google_update/google_update.gyp:google_update',
         '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/ui.gyp:ui',
@@ -70,6 +71,13 @@
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
         },
       },
+      'conditions': [
+        ['use_aura==1', {
+          'dependencies': [
+            '../win8.gyp:metro_viewer_constants',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'delegate_execute_unittests',

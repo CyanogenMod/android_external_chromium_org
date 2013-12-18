@@ -30,6 +30,7 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
+#include "base/mac/scoped_cftyperef.h"
 #include "content/common/mac/font_loader.h"
 #endif
 
@@ -156,20 +157,20 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
 #if defined(OS_WIN)
   void OnPreCacheFontCharacters(const LOGFONT& log_font,
-                                const string16& characters);
+                                const base::string16& characters);
 #endif
 
   void OnGetPlugins(bool refresh, IPC::Message* reply_msg);
   void GetPluginsCallback(IPC::Message* reply_msg,
                           const std::vector<WebPluginInfo>& plugins);
-  void OnGetPluginInfo(int routing_id,
+  void OnGetPluginInfo(int render_frame_id,
                        const GURL& url,
                        const GURL& policy_url,
                        const std::string& mime_type,
                        bool* found,
                        WebPluginInfo* info,
                        std::string* actual_mime_type);
-  void OnOpenChannelToPlugin(int routing_id,
+  void OnOpenChannelToPlugin(int render_frame_id,
                              const GURL& url,
                              const GURL& policy_url,
                              const std::string& mime_type,
@@ -190,7 +191,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnDownloadUrl(const IPC::Message& message,
                      const GURL& url,
                      const Referrer& referrer,
-                     const string16& suggested_name);
+                     const base::string16& suggested_name);
   void OnCheckNotificationPermission(const GURL& source_origin,
                                      int* permission_level);
 
@@ -259,7 +260,9 @@ class RenderMessageFilter : public BrowserMessageFilter {
                             uint32_t data_size);
 #endif
 
-  void OnAllocateGpuMemoryBuffer(uint32 buffer_size,
+  void OnAllocateGpuMemoryBuffer(uint32 width,
+                                 uint32 height,
+                                 uint32 internalformat,
                                  gfx::GpuMemoryBufferHandle* handle);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
@@ -301,6 +304,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   media::AudioManager* audio_manager_;
   MediaInternals* media_internals_;
+
+#if defined(OS_MACOSX)
+  base::ScopedCFTypeRef<CFTypeRef> last_io_surface_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
 };

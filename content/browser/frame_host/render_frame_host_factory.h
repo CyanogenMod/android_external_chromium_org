@@ -12,6 +12,8 @@
 namespace content {
 
 class FrameTree;
+class FrameTreeNode;
+class RenderFrameHostDelegate;
 class RenderFrameHostImpl;
 class RenderViewHostImpl;
 
@@ -24,7 +26,9 @@ class CONTENT_EXPORT RenderFrameHostFactory {
   // or a regular RenderFrameHostImpl if no factory is registered.
   static scoped_ptr<RenderFrameHostImpl> Create(
       RenderViewHostImpl* render_view_host,
+      RenderFrameHostDelegate* delegate,
       FrameTree* frame_tree,
+      FrameTreeNode* frame_tree_node,
       int routing_id,
       bool is_swapped_out);
 
@@ -39,7 +43,9 @@ class CONTENT_EXPORT RenderFrameHostFactory {
   // function to create an alternate kind of RenderFrameHostImpl for testing.
   virtual scoped_ptr<RenderFrameHostImpl> CreateRenderFrameHost(
       RenderViewHostImpl* render_view_host,
+      RenderFrameHostDelegate* delegate,
       FrameTree* frame_tree,
+      FrameTreeNode* frame_tree_node,
       int routing_id,
       bool is_swapped_out) = 0;
 

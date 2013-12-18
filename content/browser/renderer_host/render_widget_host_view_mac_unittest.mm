@@ -9,7 +9,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -18,6 +17,7 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/test_render_view_host.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/test/cocoa_test_event_utils.h"
@@ -83,6 +83,12 @@ typedef NSUInteger NSEventPhase;
 - (void)gotUnhandledWheelEvent {
   unhandledWheelEventReceived_ = true;
 }
+- (void)touchesBeganWithEvent:(NSEvent*)event{}
+- (void)touchesMovedWithEvent:(NSEvent*)event{}
+- (void)touchesCancelledWithEvent:(NSEvent*)event{}
+- (void)touchesEndedWithEvent:(NSEvent*)event{}
+- (void)beginGestureWithEvent:(NSEvent*)event{}
+- (void)endGestureWithEvent:(NSEvent*)event{}
 
 @end
 
@@ -318,7 +324,7 @@ TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
 }
 
 TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
-  const string16 kDummyString = UTF8ToUTF16("hogehoge");
+  const base::string16 kDummyString = UTF8ToUTF16("hogehoge");
   const size_t kDummyOffset = 0;
 
   gfx::Rect caret_rect(10, 11, 0, 10);

@@ -16,16 +16,16 @@ class InfoBarService;
 class GoogleApiKeysInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   // If Google API keys are missing, creates a missing Google API Keys infobar
-  // delegate and adds it to |infobar_service|.
+  // and delegate and adds the infobar to |infobar_service|.
   static void Create(InfoBarService* infobar_service);
 
  private:
-  explicit GoogleApiKeysInfoBarDelegate(InfoBarService* infobar_service);
+  GoogleApiKeysInfoBarDelegate();
   virtual ~GoogleApiKeysInfoBarDelegate();
 
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(GoogleApiKeysInfoBarDelegate);

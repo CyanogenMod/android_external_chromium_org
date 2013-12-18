@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "extensions/common/constants.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handler.h"
@@ -44,11 +44,11 @@ class AppLaunchInfo : public Extension::ManifestData {
   // Get the fully resolved absolute launch URL.
   static GURL GetFullLaunchURL(const Extension* extension);
 
-  bool Parse(Extension* extension, string16* error);
+  bool Parse(Extension* extension, base::string16* error);
 
  private:
-  bool LoadLaunchURL(Extension* extension, string16* error);
-  bool LoadLaunchContainer(Extension* extension, string16* error);
+  bool LoadLaunchURL(Extension* extension, base::string16* error);
+  bool LoadLaunchContainer(Extension* extension, base::string16* error);
   void OverrideLaunchURL(Extension* extension, GURL override_url);
 
   std::string launch_local_path_;
@@ -69,7 +69,7 @@ class AppLaunchManifestHandler : public ManifestHandler {
   AppLaunchManifestHandler();
   virtual ~AppLaunchManifestHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
   virtual bool AlwaysParseForType(Manifest::Type type) const OVERRIDE;
 
  private:

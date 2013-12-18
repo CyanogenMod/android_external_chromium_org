@@ -210,12 +210,12 @@ int GetDetachY(TabStrip* tab_strip) {
       tab_strip->height() + 1;
 }
 
-bool GetTrackedByWorkspace(Browser* browser) {
+bool GetIsDragged(Browser* browser) {
 #if !defined(USE_ASH) || defined(OS_WIN)  // TODO(win_ash)
-  return true;
+  return false;
 #else
   return ash::wm::GetWindowState(browser->window()->GetNativeWindow())->
-      tracked_by_workspace();
+      is_dragged();
 #endif
 }
 
@@ -619,7 +619,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   ASSERT_TRUE(tab_strip2->IsDragSessionActive());
   ASSERT_FALSE(tab_strip->IsDragSessionActive());
   ASSERT_TRUE(TabDragController::IsActive());
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
+  EXPECT_FALSE(GetIsDragged(browser()));
 
   // Release the mouse, stopping the drag session.
   ASSERT_TRUE(ReleaseInput());
@@ -628,7 +628,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   ASSERT_FALSE(TabDragController::IsActive());
   EXPECT_EQ("100 0", IDString(browser2->tab_strip_model()));
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
-  EXPECT_TRUE(GetTrackedByWorkspace(browser2));
+  EXPECT_FALSE(GetIsDragged(browser2));
 
   // Both windows should not be maximized
   EXPECT_FALSE(browser()->window()->IsMaximized());
@@ -698,8 +698,8 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   EXPECT_EQ(initial_bounds.ToString(),
             browser()->window()->GetBounds().ToString());
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
-  EXPECT_TRUE(GetTrackedByWorkspace(new_browser));
+  EXPECT_FALSE(GetIsDragged(browser()));
+  EXPECT_FALSE(GetIsDragged(new_browser));
   // After this both windows should still be manageable.
   EXPECT_TRUE(IsWindowPositionManaged(browser()->window()->GetNativeWindow()));
   EXPECT_TRUE(IsWindowPositionManaged(
@@ -756,8 +756,8 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   // The bounds of the initial window should not have changed.
   EXPECT_TRUE(browser()->window()->IsMaximized());
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
-  EXPECT_TRUE(GetTrackedByWorkspace(new_browser));
+  EXPECT_FALSE(GetIsDragged(browser()));
+  EXPECT_FALSE(GetIsDragged(new_browser));
   // After this both windows should still be manageable.
   EXPECT_TRUE(IsWindowPositionManaged(browser()->window()->GetNativeWindow()));
   EXPECT_TRUE(IsWindowPositionManaged(
@@ -790,7 +790,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   ASSERT_FALSE(TabDragController::IsActive());
 
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
+  EXPECT_FALSE(GetIsDragged(browser()));
 }
 
 // Deletes a tab being dragged while still attached.
@@ -820,7 +820,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
 
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
+  EXPECT_FALSE(GetIsDragged(browser()));
 }
 
 namespace {
@@ -855,7 +855,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
 
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
+  EXPECT_FALSE(GetIsDragged(browser()));
 }
 
 namespace {
@@ -898,7 +898,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
 
   EXPECT_EQ("0", IDString(new_browser->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(new_browser));
+  EXPECT_FALSE(GetIsDragged(new_browser));
 
   // Remaining browser window should not be maximized
   EXPECT_FALSE(new_browser->window()->IsMaximized());
@@ -986,7 +986,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest, DragAll) {
 
   EXPECT_EQ("0 1", IDString(browser()->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
+  EXPECT_FALSE(GetIsDragged(browser()));
 
   // Remaining browser window should not be maximized
   EXPECT_FALSE(browser()->window()->IsMaximized());
@@ -1051,7 +1051,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   ASSERT_FALSE(TabDragController::IsActive());
   EXPECT_EQ("100 0 1", IDString(browser2->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser2));
+  EXPECT_FALSE(GetIsDragged(browser2));
 
   // Remaining browser window should not be maximized
   EXPECT_FALSE(browser2->window()->IsMaximized());
@@ -1123,7 +1123,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   // browser() will have been destroyed, but browser2 should remain.
   ASSERT_EQ(1u, native_browser_list->size());
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser2));
+  EXPECT_FALSE(GetIsDragged(browser2));
 
   // Remaining browser window should not be maximized
   EXPECT_FALSE(browser2->window()->IsMaximized());
@@ -1169,8 +1169,8 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   EXPECT_EQ("0 100", IDString(browser2->tab_strip_model()));
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
-  EXPECT_TRUE(GetTrackedByWorkspace(browser2));
+  EXPECT_FALSE(GetIsDragged(browser()));
+  EXPECT_FALSE(GetIsDragged(browser2));
 
   // Both windows should not be maximized
   EXPECT_FALSE(browser()->window()->IsMaximized());
@@ -1212,7 +1212,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   ASSERT_FALSE(TabDragController::IsActive());
   EXPECT_EQ("100 0", IDString(browser2->tab_strip_model()));
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser2));
+  EXPECT_FALSE(GetIsDragged(browser2));
 
   // Remaining browser window should not be maximized
   EXPECT_FALSE(browser2->window()->IsMaximized());
@@ -1263,7 +1263,7 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   ASSERT_FALSE(TabDragController::IsActive());
   ASSERT_EQ(2u, native_browser_list->size());
   for (chrome::BrowserIterator it; !it.done(); it.Next()) {
-    EXPECT_TRUE(GetTrackedByWorkspace(*it));
+    EXPECT_FALSE(GetIsDragged(*it));
     // Should not be maximized
     EXPECT_FALSE(it->window()->IsMaximized());
   }
@@ -1325,8 +1325,8 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   EXPECT_TRUE(browser()->window()->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(new_browser->window()->GetNativeWindow()->IsVisible());
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
-  EXPECT_TRUE(GetTrackedByWorkspace(new_browser));
+  EXPECT_FALSE(GetIsDragged(browser()));
+  EXPECT_FALSE(GetIsDragged(new_browser));
 
   // The source window should be maximized.
   EXPECT_TRUE(browser()->window()->IsMaximized());
@@ -1697,6 +1697,11 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserInSeparateDisplayTabDragControllerTest,
   ASSERT_FALSE(TabDragController::IsActive());
   EXPECT_EQ("0 100", IDString(browser2->tab_strip_model()));
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
+
+  // Move the mouse off of browser2's top chrome.
+  aura::Window* primary_root = roots[0];
+  ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(
+                  primary_root->GetBoundsInScreen().CenterPoint()));
 
   // The first browser window should not be in immersive fullscreen.
   // browser2 should still be in immersive fullscreen, but the top chrome should
@@ -2143,22 +2148,25 @@ IN_PROC_BROWSER_TEST_P(DetachToDockedTabDragControllerTest,
   // The bounds of the initial window should not have changed.
   EXPECT_TRUE(browser()->window()->IsMaximized());
 
-  EXPECT_TRUE(GetTrackedByWorkspace(browser()));
-  EXPECT_TRUE(GetTrackedByWorkspace(new_browser));
+  EXPECT_FALSE(GetIsDragged(browser()));
+  EXPECT_FALSE(GetIsDragged(new_browser));
   // After this both windows should still be manageable.
   EXPECT_TRUE(IsWindowPositionManaged(browser()->window()->GetNativeWindow()));
   EXPECT_TRUE(IsWindowPositionManaged(
       new_browser->window()->GetNativeWindow()));
 
-  // The new window should be docked and not maximized if docking is allowed.
   ash::wm::WindowState* window_state =
       ash::wm::GetWindowState(new_browser->window()->GetNativeWindow());
+  // The new window should not be maximized because it gets docked or snapped.
+  EXPECT_FALSE(new_browser->window()->IsMaximized());
   if (docked_windows_enabled()) {
-    EXPECT_FALSE(new_browser->window()->IsMaximized());
+    // The new window should be docked and not snapped if docking is allowed.
     EXPECT_TRUE(window_state->IsDocked());
+    EXPECT_FALSE(window_state->IsSnapped());
   } else {
-    EXPECT_TRUE(new_browser->window()->IsMaximized());
+    // The new window should be snapped and not docked if docking is disabled.
     EXPECT_FALSE(window_state->IsDocked());
+    EXPECT_TRUE(window_state->IsSnapped());
   }
 }
 

@@ -425,34 +425,6 @@ CommandHandler.COMMANDS_['format'] = {
 };
 
 /**
- * Imports photos from external drive.
- * @type {Command}
- */
-CommandHandler.COMMANDS_['import-photos'] = {
-  /**
-   * @param {Event} event Command event.
-   * @param {NavigationList} navigationList Target navigation list.
-   */
-  execute: function(event, fileManager) {
-    var navigationList = fileManager.navigationList;
-    var root = CommandUtil.getCommandEntry(navigationList);
-    if (!root)
-      return;
-
-    // TODO(mtomasz): Implement launching Photo Importer.
-  },
-  /**
-   * @param {Event} event Command event.
-   * @param {NavigationList} navigationList Target navigation list.
-   */
-  canExecute: function(event, fileManager) {
-    var navigationList = fileManager.navigationList;
-    var rootType = CommandUtil.getCommandRootType(navigationList);
-    event.canExecute = (rootType != RootType.DRIVE);
-  }
-};
-
-/**
  * Initiates new folder creation.
  * @type {Command}
  */
@@ -533,10 +505,12 @@ CommandHandler.COMMANDS_['rename'] = {
     fileManager.initiateRename();
   },
   canExecute: function(event, fileManager) {
+    var allowRenamingWhileOffline =
+        fileManager.directoryModel.getCurrentRootType() === RootType.DRIVE;
     var selection = fileManager.getSelection();
     event.canExecute =
         !fileManager.isRenamingInProgress() &&
-        !fileManager.isOnReadonlyDirectory() &&
+        (!fileManager.isOnReadonlyDirectory() || allowRenamingWhileOffline) &&
         selection &&
         selection.totalCount == 1;
   }
@@ -549,9 +523,9 @@ CommandHandler.COMMANDS_['rename'] = {
 CommandHandler.COMMANDS_['volume-help'] = {
   execute: function(event, fileManager) {
     if (fileManager.isOnDrive())
-      util.visitURL(urlConstants.GOOGLE_DRIVE_HELP);
+      util.visitURL(str('GOOGLE_DRIVE_HELP_URL'));
     else
-      util.visitURL(urlConstants.FILES_APP_HELP);
+      util.visitURL(str('FILES_APP_HELP_URL'));
   },
   canExecute: CommandUtil.canExecuteAlways
 };
@@ -562,7 +536,7 @@ CommandHandler.COMMANDS_['volume-help'] = {
  */
 CommandHandler.COMMANDS_['drive-buy-more-space'] = {
   execute: function(event, fileManager) {
-    util.visitURL(urlConstants.GOOGLE_DRIVE_BUY_STORAGE);
+    util.visitURL(str('GOOGLE_DRIVE_BUY_STORAGE_URL'));
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -573,7 +547,7 @@ CommandHandler.COMMANDS_['drive-buy-more-space'] = {
  */
 CommandHandler.COMMANDS_['drive-go-to-drive'] = {
   execute: function(event, fileManager) {
-    util.visitURL(urlConstants.GOOGLE_DRIVE_ROOT);
+    util.visitURL(str('GOOGLE_DRIVE_ROOT_URL'));
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -769,13 +743,6 @@ CommandHandler.COMMANDS_['create-folder-shortcut'] = {
    * @param {FileManager} fileManager The file manager instance.
    */
   canExecute: function(event, fileManager) {
-    var target = event.target;
-    if (!(target instanceof NavigationListItem) &&
-        !(target instanceof DirectoryItem)) {
-      event.command.setHidden(true);
-      return;
-    }
-
     var entry = CommandUtil.getCommandEntry(event.target);
     var folderShortcutExists = entry &&
                                fileManager.folderShortcutExists(entry.fullPath);
@@ -817,14 +784,7 @@ CommandHandler.COMMANDS_['remove-folder-shortcut'] = {
    * @param {FileManager} fileManager The file manager instance.
    */
   canExecute: function(event, fileManager) {
-    var target = event.target;
-    if (!target instanceof NavigationListItem &&
-        !target instanceof DirectoryItem) {
-      event.command.setHidden(true);
-      return;
-    }
-
-    var entry = CommandUtil.getCommandEntry(target);
+    var entry = CommandUtil.getCommandEntry(event.target);
     var path = entry && entry.fullPath;
 
     var eligible = path && PathUtil.isEligibleForFolderShortcut(path);

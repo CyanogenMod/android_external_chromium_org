@@ -8,11 +8,7 @@
 
 namespace gin {
 
-WrapperInfo internal::CallbackHolderBase::kWrapperInfo = { kEmbedderNativeGin };
-
-WrapperInfo* internal::CallbackHolderBase::GetWrapperInfo() {
-  return &kWrapperInfo;
-}
+INIT_WRAPPABLE(internal::CallbackHolderBase);
 
 void InitFunctionTemplates(PerIsolateData* isolate_data) {
   if (!isolate_data->GetObjectTemplate(
@@ -20,7 +16,8 @@ void InitFunctionTemplates(PerIsolateData* isolate_data) {
     return;
   }
 
-  v8::Handle<v8::ObjectTemplate> templ(v8::ObjectTemplate::New());
+  v8::Handle<v8::ObjectTemplate> templ(
+      v8::ObjectTemplate::New(isolate_data->isolate()));
   templ->SetInternalFieldCount(kNumberOfInternalFields);
   isolate_data->SetObjectTemplate(&internal::CallbackHolderBase::kWrapperInfo,
                                   templ);

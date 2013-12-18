@@ -85,9 +85,7 @@ class DisplayController;
 class FirstRunHelper;
 class HighContrastController;
 class Launcher;
-class LauncherDelegate;
-class LauncherItemDelegate;
-class LauncherItemDelegateManager;
+class ShelfDelegate;
 class LockStateController;
 class MagnificationController;
 class MediaDelegate;
@@ -99,6 +97,7 @@ class PowerButtonController;
 class RootWindowHostFactory;
 class ScreenAsh;
 class SessionStateDelegate;
+class ShelfItemDelegateManager;
 class ShelfModel;
 class ShellDelegate;
 class ShellObserver;
@@ -137,6 +136,7 @@ class ResolutionNotificationController;
 class RootWindowController;
 class ScopedTargetRootWindow;
 class ScreenPositionController;
+class ShelfWindowWatcher;
 class SlowAnimationEventFilter;
 class StatusAreaWidget;
 class SystemGestureEventFilter;
@@ -408,8 +408,8 @@ class ASH_EXPORT Shell
     return activation_client_;
   }
 
-  LauncherItemDelegateManager* launcher_item_delegate_manager() {
-    return launcher_item_delegate_manager_.get();
+  ShelfItemDelegateManager* shelf_item_delegate_manager() {
+    return shelf_item_delegate_manager_.get();
   }
 
   ScreenAsh* screen() { return screen_; }
@@ -512,7 +512,7 @@ class ASH_EXPORT Shell
   }
 
   // Returns the launcher delegate, creating if necesary.
-  LauncherDelegate* GetLauncherDelegate();
+  ShelfDelegate* GetShelfDelegate();
 
   void SetTouchHudProjectionEnabled(bool enabled);
 
@@ -559,6 +559,8 @@ class ASH_EXPORT Shell
   // Overridden from ui::EventTarget:
   virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
   virtual EventTarget* GetParentTarget() OVERRIDE;
+  virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
+  virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
   virtual void OnEvent(ui::Event* event) OVERRIDE;
 
   // Overridden from aura::client::ActivationChangeObserver:
@@ -598,8 +600,9 @@ class ASH_EXPORT Shell
   scoped_ptr<AccessibilityDelegate> accessibility_delegate_;
   scoped_ptr<NewWindowDelegate> new_window_delegate_;
   scoped_ptr<MediaDelegate> media_delegate_;
-  scoped_ptr<LauncherDelegate> launcher_delegate_;
-  scoped_ptr<LauncherItemDelegateManager> launcher_item_delegate_manager_;
+  scoped_ptr<ShelfDelegate> shelf_delegate_;
+  scoped_ptr<ShelfItemDelegateManager> shelf_item_delegate_manager_;
+  scoped_ptr<internal::ShelfWindowWatcher> shelf_window_watcher_;
 
   scoped_ptr<ShelfModel> shelf_model_;
   scoped_ptr<WindowPositioner> window_positioner_;

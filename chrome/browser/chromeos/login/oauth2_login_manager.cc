@@ -4,6 +4,8 @@
 
 #include "chrome/browser/chromeos/login/oauth2_login_manager.h"
 
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
@@ -14,22 +16,33 @@
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/chromeos_switches.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace chromeos {
 
+namespace {
+
 static const char kServiceScopeGetUserInfo[] =
     "https://www.googleapis.com/auth/userinfo.email";
 static const int kMaxRetries = 5;
 
+}  // namespace
+
 OAuth2LoginManager::OAuth2LoginManager(Profile* user_profile)
     : user_profile_(user_profile),
       restore_strategy_(RESTORE_FROM_COOKIE_JAR),
-      state_(SESSION_RESTORE_NOT_STARTED),
-      loading_reported_(false) {
+      state_(SESSION_RESTORE_NOT_STARTED) {
   GetTokenService()->AddObserver(this);
+  if (CommandLine::ForCurrentProcess()->
+          HasSwitch(chromeos::switches::kOobeSkipPostLogin)) {
+    // For telemetry we should mark session restore completed to avoid
+    // warnings from MergeSessionThrottle.
+    SetSessionRestoreState(SESSION_RESTORE_DONE);
+  }
 }
 
 OAuth2LoginManager::~OAuth2LoginManager() {
@@ -70,12 +83,24 @@ void OAuth2LoginManager::ContinueSessionRestore() {
   if (restore_strategy_ == RESTORE_FROM_PASSED_OAUTH2_REFRESH_TOKEN) {
     DCHECK(!refresh_token_.empty());
     restore_strategy_ = RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN;
-    GetAccountIdOfRefreshToken(refresh_token_);
+    StoreOAuth2Token();
     return;
   }
 
   DCHECK(restore_strategy_ == RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN);
-  GetTokenService()->LoadCredentials();
+  RestoreSessionFromSavedTokens();
+}
+
+void OAuth2LoginManager::RestoreSessionFromSavedTokens() {
+  ProfileOAuth2TokenService* token_service = GetTokenService();
+  if (token_service->RefreshTokenIsAvailable(
+          token_service->GetPrimaryAccountId())) {
+    LOG(WARNING) << "OAuth2 refresh token is already loaded.";
+    RestoreSessionCookies();
+  } else {
+    LOG(WARNING) << "Loading OAuth2 refresh token from database.";
+    token_service->LoadCredentials();
+  }
 }
 
 void OAuth2LoginManager::Stop() {
@@ -90,24 +115,40 @@ bool OAuth2LoginManager::ShouldBlockTabLoading() {
 
 void OAuth2LoginManager::OnRefreshTokenAvailable(
     const std::string& account_id) {
+  LOG(WARNING) << "OnRefreshTokenAvailable";
+
   if (state_ == SESSION_RESTORE_NOT_STARTED)
     return;
+
   // TODO(fgorski): Once ProfileOAuth2TokenService supports multi-login, make
   // sure to restore session cookies in the context of the correct account_id.
-  VLOG(1) << "OnRefreshTokenAvailable";
+
   // Do not validate tokens for supervised users, as they don't actually have
   // oauth2 token.
   if (UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
     LOG(WARNING) << "Logged in as managed user, skip token validation.";
     return;
   }
-  RestoreSessionCookies();
+  // Do only restore session cookies if called for the primary user.
+  if (GetTokenService()->GetPrimaryAccountId() == account_id)
+    RestoreSessionCookies();
 }
 
 ProfileOAuth2TokenService* OAuth2LoginManager::GetTokenService() {
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(user_profile_);
   return token_service;
+}
+
+void OAuth2LoginManager::StoreOAuth2Token() {
+  ProfileOAuth2TokenService* token_service = GetTokenService();
+  std::string primary_account_id = token_service->GetPrimaryAccountId();
+  if (primary_account_id.empty()) {
+    GetAccountIdOfRefreshToken(refresh_token_);
+    return;
+  }
+
+  OnGetUserEmailResponse(primary_account_id);
 }
 
 void OAuth2LoginManager::GetAccountIdOfRefreshToken(
@@ -134,7 +175,8 @@ void OAuth2LoginManager::OnGetUserEmailResponse(
     const std::string& user_email)  {
   DCHECK(!refresh_token_.empty());
   account_id_fetcher_.reset();
-  GetTokenService()->UpdateCredentials(user_email, refresh_token_);
+  std::string canonicalized = gaia::CanonicalizeEmail(user_email);
+  GetTokenService()->UpdateCredentials(canonicalized, refresh_token_);
 
   FOR_EACH_OBSERVER(Observer, observer_list_,
                     OnNewRefreshTokenAvaiable(user_profile_));
@@ -177,7 +219,7 @@ void OAuth2LoginManager::OnOAuth2TokensAvailable(
   VLOG(1) << "OAuth2 tokens fetched";
   DCHECK(refresh_token_.empty());
   refresh_token_.assign(oauth2_tokens.refresh_token);
-  GetAccountIdOfRefreshToken(refresh_token_);
+  StoreOAuth2Token();
 }
 
 void OAuth2LoginManager::OnOAuth2TokensFetchFailed() {
@@ -204,25 +246,6 @@ void OAuth2LoginManager::Shutdown() {
   oauth2_token_fetcher_.reset();
 }
 
-void OAuth2LoginManager::OnOAuthLoginSuccess(
-    const GaiaAuthConsumer::ClientLoginResult& gaia_credentials) {
-  VLOG(1) << "OAuth2 refresh token successfully exchanged for GAIA token.";
-
-  FOR_EACH_OBSERVER(Observer, observer_list_,
-                    OnSessionAuthenticated(user_profile_));
-}
-
-void OAuth2LoginManager::OnOAuthLoginFailure(bool connection_error) {
-  LOG(ERROR) << "OAuth2 refresh token verification failed!"
-             << " connection_error: " << connection_error;
-  UMA_HISTOGRAM_ENUMERATION("OAuth2Login.SessionRestore",
-                            SESSION_RESTORE_OAUTHLOGIN_FAILED,
-                            SESSION_RESTORE_COUNT);
-  SetSessionRestoreState(connection_error ?
-      OAuth2LoginManager::SESSION_RESTORE_CONNECTION_FAILED :
-      OAuth2LoginManager::SESSION_RESTORE_FAILED);
-}
-
 void OAuth2LoginManager::OnSessionMergeSuccess() {
   VLOG(1) << "OAuth2 refresh and/or GAIA token verification succeeded.";
   UMA_HISTOGRAM_ENUMERATION("OAuth2Login.SessionRestore",
@@ -241,6 +264,51 @@ void OAuth2LoginManager::OnSessionMergeFailure(bool connection_error) {
       OAuth2LoginManager::SESSION_RESTORE_CONNECTION_FAILED :
       OAuth2LoginManager::SESSION_RESTORE_FAILED);
 }
+
+void OAuth2LoginManager::OnListAccountsSuccess(const std::string& data) {
+  PostMergeVerificationOutcome outcome = POST_MERGE_SUCCESS;
+  // Let's analyze which accounts we see logged in here:
+  std::vector<std::string> accounts = gaia::ParseListAccountsData(data);
+  std::string user_email = gaia::CanonicalizeEmail(
+      GetTokenService()->GetPrimaryAccountId());
+  if (!accounts.empty()) {
+    bool found = false;
+    bool first = true;
+    for (std::vector<std::string>::const_iterator iter = accounts.begin();
+         iter != accounts.end(); ++iter) {
+      if (gaia::CanonicalizeEmail(*iter) == user_email) {
+        found = true;
+        break;
+      }
+
+      first = false;
+    }
+
+    if (!found)
+      outcome = POST_MERGE_MISSING_PRIMARY_ACCOUNT;
+    else if (!first)
+      outcome = POST_MERGE_PRIMARY_NOT_FIRST_ACCOUNT;
+
+  } else {
+    outcome = POST_MERGE_NO_ACCOUNTS;
+  }
+
+  RecordPostMergeOutcome(outcome);
+}
+
+void OAuth2LoginManager::OnListAccountsFailure(bool connection_error) {
+  RecordPostMergeOutcome(connection_error ? POST_MERGE_CONNECTION_FAILED :
+                                            POST_MERGE_VERIFICATION_FAILED);
+}
+
+// static
+void OAuth2LoginManager::RecordPostMergeOutcome(
+    PostMergeVerificationOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION("OAuth2Login.PostMergeVerification",
+                            outcome,
+                            POST_MERGE_COUNT);
+}
+
 
 void OAuth2LoginManager::SetSessionRestoreState(
     OAuth2LoginManager::SessionRestoreState state) {

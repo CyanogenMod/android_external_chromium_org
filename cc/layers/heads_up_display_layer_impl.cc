@@ -86,7 +86,7 @@ bool HeadsUpDisplayLayerImpl::WillDraw(DrawMode draw_mode,
     return false;
 
   if (!hud_resource_)
-    hud_resource_ = ScopedResource::create(resource_provider);
+    hud_resource_ = ScopedResource::Create(resource_provider);
 
   // TODO(danakj): The HUD could swap between two textures instead of creating a
   // texture every frame in ubercompositor.
@@ -651,6 +651,12 @@ void HeadsUpDisplayLayerImpl::DrawDebugRects(
         fill_color = DebugColors::NonFastScrollableRectFillColor();
         stroke_width = DebugColors::NonFastScrollableRectBorderWidth();
         label_text = "repaints on scroll";
+        break;
+      case ANIMATION_BOUNDS_RECT_TYPE:
+        stroke_color = DebugColors::LayerAnimationBoundsBorderColor();
+        fill_color = DebugColors::LayerAnimationBoundsFillColor();
+        stroke_width = DebugColors::LayerAnimationBoundsBorderWidth();
+        label_text = "animation bounds";
         break;
     }
 

@@ -70,12 +70,12 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
 
   // Overridden from internal::ActionableView.
   virtual bool PerformAction(const ui::Event& event) OVERRIDE;
+  virtual gfx::Rect GetFocusBounds() OVERRIDE;
 
   // Overridden from internal::BackgroundAnimatorDelegate.
   virtual void UpdateBackground(int alpha) OVERRIDE;
@@ -108,9 +108,8 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
 
   // Sets whether the tray paints a background. Default is true, but is set to
   // false if a window overlaps the shelf.
-  void SetPaintsBackground(
-      bool value,
-      internal::BackgroundAnimator::ChangeType change_type);
+  void SetPaintsBackground(bool value,
+                           BackgroundAnimatorChangeType change_type);
 
   // Initializes animations for the bubble.
   void InitializeBubbleAnimations(views::Widget* bubble_widget);

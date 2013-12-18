@@ -465,6 +465,8 @@ extern const char kStabilityLaunchCount[];
 extern const char kStabilityCrashCount[];
 extern const char kStabilityIncompleteSessionEndCount[];
 extern const char kStabilityPageLoadCount[];
+extern const char kStabilitySavedSystemProfile[];
+extern const char kStabilitySavedSystemProfileHash[];
 extern const char kStabilityRendererCrashCount[];
 extern const char kStabilityExtensionRendererCrashCount[];
 extern const char kStabilityLaunchTimeSec[];
@@ -635,6 +637,7 @@ extern const char kSyncTypedUrls[];
 extern const char kSyncManaged[];
 extern const char kSyncSuppressStart[];
 extern const char kGoogleServicesLastUsername[];
+extern const char kGoogleServicesUserAccountId[];
 extern const char kGoogleServicesUsername[];
 extern const char kGoogleServicesUsernamePattern[];
 extern const char kGoogleServicesPasswordHash[];
@@ -671,6 +674,7 @@ extern const char kGoogleGeolocationAccessEnabled[];
 
 extern const char kDefaultAudioCaptureDevice[];
 extern const char kDefaultVideoCaptureDevice[];
+extern const char kMediaDeviceIdSalt[];
 
 extern const char kRemoteAccessHostFirewallTraversal[];
 extern const char kRemoteAccessHostRequireTwoFactor[];
@@ -804,6 +808,10 @@ extern const char kDailyHttpOriginalContentLength[];
 extern const char kDailyHttpReceivedContentLength[];
 extern const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[];
 extern const char kDailyContentLengthWithDataReductionProxyEnabled[];
+extern const char kDailyContentLengthHttpsWithDataReductionProxyEnabled[];
+extern const char kDailyContentLengthShortBypassWithDataReductionProxyEnabled[];
+extern const char kDailyContentLengthLongBypassWithDataReductionProxyEnabled[];
+extern const char kDailyContentLengthUnknownWithDataReductionProxyEnabled[];
 extern const char kDailyOriginalContentLengthViaDataReductionProxy[];
 extern const char kDailyContentLengthViaDataReductionProxy[];
 extern const char kDailyHttpContentLengthLastUpdateDate[];
@@ -932,6 +940,11 @@ extern const char kNetworkTimeMapping[];
 
 #if defined(OS_ANDROID)
 extern const char kPartnerBookmarkMappings[];
+#endif
+
+#if defined(OS_WIN)
+extern const char kOsPasswordBlank[];
+extern const char kOsPasswordLastChanged[];
 #endif
 
 }  // namespace prefs

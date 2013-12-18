@@ -30,9 +30,6 @@
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/keyboard_uma_event_filter.h"
-#include "ash/launcher/launcher_delegate.h"
-#include "ash/launcher/launcher_item_delegate.h"
-#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/media_delegate.h"
@@ -41,9 +38,13 @@
 #include "ash/screen_ash.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/app_list_shelf_item_delegate.h"
+#include "ash/shelf/shelf_delegate.h"
+#include "ash/shelf/shelf_item_delegate.h"
+#include "ash/shelf/shelf_item_delegate_manager.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_widget.h"
+#include "ash/shelf/shelf_window_watcher.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
 #include "ash/shell_window_ids.h"
@@ -91,6 +92,7 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/events/event_target_iterator.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
@@ -496,29 +498,29 @@ SystemTray* Shell::GetPrimarySystemTray() {
   return GetPrimaryRootWindowController()->GetSystemTray();
 }
 
-LauncherDelegate* Shell::GetLauncherDelegate() {
-  if (!launcher_delegate_) {
+ShelfDelegate* Shell::GetShelfDelegate() {
+  if (!shelf_delegate_) {
     shelf_model_.reset(new ShelfModel);
-    // Creates LauncherItemDelegateManager before LauncherDelegate.
-    launcher_item_delegate_manager_.reset(
-        new LauncherItemDelegateManager(shelf_model_.get()));
+    // Creates ShelfItemDelegateManager before ShelfDelegate.
+    shelf_item_delegate_manager_.reset(
+        new ShelfItemDelegateManager(shelf_model_.get()));
 
-    launcher_delegate_.reset(
-        delegate_->CreateLauncherDelegate(shelf_model_.get()));
-    scoped_ptr<LauncherItemDelegate> controller(
+    shelf_delegate_.reset(delegate_->CreateShelfDelegate(shelf_model_.get()));
+    scoped_ptr<ShelfItemDelegate> controller(
         new internal::AppListShelfItemDelegate);
 
     // Finding the shelf model's location of the app list and setting its
-    // LauncherItemDelegate.
+    // ShelfItemDelegate.
     int app_list_index = shelf_model_->GetItemIndexForType(TYPE_APP_LIST);
     DCHECK_GE(app_list_index, 0);
     LauncherID app_list_id = shelf_model_->items()[app_list_index].id;
     DCHECK(app_list_id);
-    launcher_item_delegate_manager_->SetLauncherItemDelegate(
-        app_list_id,
-        controller.Pass());
+    shelf_item_delegate_manager_->SetShelfItemDelegate(app_list_id,
+                                                       controller.Pass());
+    shelf_window_watcher_.reset(
+        new internal::ShelfWindowWatcher(shelf_model_.get()));
   }
-  return launcher_delegate_.get();
+  return shelf_delegate_.get();
 }
 
 void Shell::SetTouchHudProjectionEnabled(bool enabled) {
@@ -629,42 +631,57 @@ Shell::~Shell() {
   // Drag-and-drop must be canceled prior to close all windows.
   drag_drop_controller_.reset();
 
+  // Controllers who have WindowObserver added must be deleted
+  // before |display_controller_| is deleted.
+
+#if defined(OS_CHROMEOS)
+  // VideoActivityNotifier must be deleted before |video_detector_| is
+  // deleted because it's observing video activity through
+  // VideoDetectorObserver interface.
+  video_activity_notifier_.reset();
+#endif  // defined(OS_CHROMEOS)
+  video_detector_.reset();
+
+  shadow_controller_.reset();
+  resize_shadow_controller_.reset();
+
+  window_cycle_controller_.reset();
+  mru_window_tracker_.reset();
+
+  // |shelf_window_watcher_| has a weak pointer to |shelf_Model_|
+  // and has window observers.
+  shelf_window_watcher_.reset();
+
   // Destroy all child windows including widgets.
   display_controller_->CloseChildWindows();
   display_controller_->CloseNonDesktopDisplay();
 
+  // Chrome implementation of shelf delegate depends on FocusClient,
+  // so must be deleted before |focus_client_|.
+  shelf_delegate_.reset();
+  focus_client_.reset();
+
   // Destroy SystemTrayNotifier after destroying SystemTray as TrayItems
   // needs to remove observers from it.
   system_tray_notifier_.reset();
-
-#if defined(OS_CHROMEOS)
-  // Destroy VideoActivityNotifier before destroying VideoDetector.
-  video_activity_notifier_.reset();
-#endif  // defined(OS_CHROMEOS)
 
   // These need a valid Shell instance to clean up properly, so explicitly
   // delete them before invalidating the instance.
   // Alphabetical. TODO(oshima): sort.
   magnification_controller_.reset();
   partial_magnification_controller_.reset();
-  resize_shadow_controller_.reset();
-  shadow_controller_.reset();
   tooltip_controller_.reset();
   event_client_.reset();
-  window_cycle_controller_.reset();
   nested_dispatcher_controller_.reset();
   user_action_client_.reset();
   visibility_controller_.reset();
-  launcher_delegate_.reset();
-  // |launcher_item_delegate_manager_| observes |shelf_model_|. It must be
+  // |shelf_item_delegate_manager_| observes |shelf_model_|. It must be
   // destroyed before |shelf_model_| is destroyed.
-  launcher_item_delegate_manager_.reset();
+  shelf_item_delegate_manager_.reset();
   shelf_model_.reset();
-  video_detector_.reset();
 
   power_button_controller_.reset();
   lock_state_controller_.reset();
-  mru_window_tracker_.reset();
 
   resolution_notification_controller_.reset();
   desktop_background_controller_.reset();
@@ -994,6 +1011,15 @@ bool Shell::CanAcceptEvent(const ui::Event& event) {
 
 ui::EventTarget* Shell::GetParentTarget() {
   return aura::Env::GetInstance();
+}
+
+scoped_ptr<ui::EventTargetIterator> Shell::GetChildIterator() const {
+  return scoped_ptr<ui::EventTargetIterator>();
+}
+
+ui::EventTargeter* Shell::GetEventTargeter() {
+  NOTREACHED();
+  return NULL;
 }
 
 void Shell::OnEvent(ui::Event* event) {

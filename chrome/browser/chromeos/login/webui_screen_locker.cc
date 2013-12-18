@@ -98,6 +98,12 @@ void WebUIScreenLocker::SetInputEnabled(bool enabled) {
   login_display_->SetUIEnabled(enabled);
 }
 
+void WebUIScreenLocker::ShowBannerMessage(const std::string& message) {
+  if (!webui_ready_)
+    return;
+  login_display_->ShowBannerMessage(message);
+}
+
 void WebUIScreenLocker::ShowErrorMessage(
     int error_msg_id,
     HelpAppLauncher::HelpTopic help_topic_id) {
@@ -192,7 +198,7 @@ void WebUIScreenLocker::CompleteLogin(const UserContext& user_context) {
   NOTREACHED();
 }
 
-string16 WebUIScreenLocker::GetConnectedNetworkName() {
+base::string16 WebUIScreenLocker::GetConnectedNetworkName() {
   return network_state_helper_->GetCurrentNetworkName();
 }
 

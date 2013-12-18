@@ -107,7 +107,7 @@
 
   // Set the text and link.
   NSString* message = base::SysUTF16ToNSString(delegate->GetMessageText());
-  string16 link = delegate->GetLinkText();
+  base::string16 link = delegate->GetLinkText();
   if (!link.empty()) {
     // Add spacing between the label and the link.
     message = [message stringByAppendingString:@"   "];
@@ -137,10 +137,13 @@
 
 @end
 
-InfoBar* ConfirmInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  scoped_ptr<InfoBarCocoa> infobar(new InfoBarCocoa(owner, this));
+// static
+scoped_ptr<InfoBar> ConfirmInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<ConfirmInfoBarDelegate> delegate) {
+  scoped_ptr<InfoBarCocoa> infobar(
+      new InfoBarCocoa(delegate.PassAs<InfoBarDelegate>()));
   base::scoped_nsobject<ConfirmInfoBarController> controller(
       [[ConfirmInfoBarController alloc] initWithInfoBar:infobar.get()]);
   infobar->set_controller(controller);
-  return infobar.release();
+  return infobar.PassAs<InfoBar>();
 }

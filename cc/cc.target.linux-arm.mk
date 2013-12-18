@@ -42,8 +42,11 @@ LOCAL_SRC_FILES := \
 	cc/animation/transform_operation.cc \
 	cc/animation/transform_operations.cc \
 	cc/base/invalidation_region.cc \
+	cc/base/latency_info_swap_promise.cc \
+	cc/base/latency_info_swap_promise_monitor.cc \
 	cc/base/math_util.cc \
 	cc/base/region.cc \
+	cc/base/swap_promise_monitor.cc \
 	cc/base/switches.cc \
 	cc/base/tiling_data.cc \
 	cc/debug/benchmark_instrumentation.cc \
@@ -187,6 +190,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/texture_mailbox.cc \
 	cc/resources/texture_mailbox_deleter.cc \
 	cc/resources/tile.cc \
+	cc/resources/tile_bundle.cc \
 	cc/resources/tile_manager.cc \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
@@ -253,6 +257,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -262,9 +267,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
@@ -301,6 +308,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -369,6 +377,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -378,9 +387,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
@@ -418,6 +429,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \

@@ -24,43 +24,27 @@ class NoSupportedActionError(page_measurement.MeasurementFailure):
         'None of the actions is supported by smoothness measurement')
 
 
-def GetTimelineMarkerNamesFromAction(compound_action):
-  timeline_marker_names = []
-  if not isinstance(compound_action, list):
-    compound_action = [compound_action]
-  for action in compound_action:
-    if action.GetTimelineMarkerName():
-      timeline_marker_names.append(action.GetTimelineMarkerName())
-  if not timeline_marker_names:
-    raise NoSupportedActionError()
-  return timeline_marker_names
-
-
 class SmoothnessMetric(Metric):
-  def __init__(self, compound_action):
+  def __init__(self):
     super(SmoothnessMetric, self).__init__()
     self._stats = None
-    self._compound_action = compound_action
+    self._timeline_marker_names = []
+
+  def AddTimelineMarkerNameToIncludeInMetric(self, timeline_marker_name):
+    self._timeline_marker_names.append(timeline_marker_name)
 
   def Start(self, page, tab):
-    # TODO(ermst): Remove "webkit" category after Blink r157377 is picked up by
-    # the reference builds.
-    tab.browser.StartTracing('webkit,webkit.console,benchmark', 60)
+    tab.browser.StartTracing('webkit.console,benchmark', 60)
     tab.ExecuteJavaScript('console.time("' + TIMELINE_MARKER + '")')
 
   def Stop(self, page, tab):
     tab.ExecuteJavaScript('console.timeEnd("' + TIMELINE_MARKER + '")')
     timeline_model = tab.browser.StopTracing().AsTimelineModel()
-    smoothness_marker = timeline_model.FindTimelineMarkers(TIMELINE_MARKER)
-    timeline_marker_names = GetTimelineMarkerNamesFromAction(
-        self._compound_action)
     try:
       timeline_markers = timeline_model.FindTimelineMarkers(
-          timeline_marker_names)
-    except MarkerMismatchError:
-      # TODO(ernstm): re-raise exception as MeasurementFailure when the
-      # reference build was updated.
-      timeline_markers = smoothness_marker
+          self._timeline_marker_names)
+    except MarkerMismatchError as e:
+      raise page_measurement.MeasurementFailure(str(e))
     except MarkerOverlapError as e:
       raise page_measurement.MeasurementFailure(str(e))
 
@@ -91,6 +75,6 @@ class SmoothnessMetric(Metric):
     results.Add('jank', '', round(jank, 4))
 
     # Are we hitting 60 fps for 95 percent of all frames?
-    # We use 17ms as a slightly looser threshold, instead of 1000.0/60.0.
+    # We use 19ms as a somewhat looser threshold, instead of 1000.0/60.0.
     percentile_95 = statistics.Percentile(self._stats.frame_times, 95.0)
-    results.Add('mostly_smooth', '', 1.0 if percentile_95 < 17.0 else 0.0)
+    results.Add('mostly_smooth', '', 1.0 if percentile_95 < 19.0 else 0.0)

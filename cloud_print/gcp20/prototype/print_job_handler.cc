@@ -216,7 +216,7 @@ bool PrintJobHandler::SavePrintJob(const std::string& content,
   base::FilePath directory(kJobsPath);
 
   if (!base::DirectoryExists(directory) &&
-      !file_util::CreateDirectory(directory)) {
+      !base::CreateDirectory(directory)) {
     return false;
   }
 
@@ -230,7 +230,7 @@ bool PrintJobHandler::SavePrintJob(const std::string& content,
                    create_time_exploded.hour,
                    create_time_exploded.minute,
                    create_time_exploded.second);
-  if (!file_util::CreateTemporaryDirInDir(directory, job_prefix, &directory)) {
+  if (!base::CreateTemporaryDirInDir(directory, job_prefix, &directory)) {
     LOG(WARNING) << "Cannot create directory for " << job_prefix;
     return false;
   }
@@ -251,7 +251,7 @@ bool PrintJobHandler::SavePrintJob(const std::string& content,
     return false;
   }
 
-  LOG(INFO) << "Job saved at " << directory.value();
+  VLOG(0) << "Job saved at " << directory.value();
   return true;
 }
 

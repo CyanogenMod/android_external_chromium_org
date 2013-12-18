@@ -35,11 +35,9 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   params.speech_input_enabled = data.isSpeechInputEnabled;
   params.spellcheck_enabled = data.isSpellCheckingEnabled;
   params.is_editable = data.isEditable;
-#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
   params.writing_direction_default = data.writingDirectionDefault;
   params.writing_direction_left_to_right = data.writingDirectionLeftToRight;
   params.writing_direction_right_to_left = data.writingDirectionRightToLeft;
-#endif  // OS_MACOSX || defined(TOOLKIT_GTK)
   params.edit_flags = data.editFlags;
   params.frame_charset = data.frameEncoding.utf8();
   params.referrer_policy = data.referrerPolicy;
@@ -76,10 +74,10 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   // Deserialize the SSL info.
   if (!data.securityInfo.isEmpty()) {
     DeserializeSecurityInfo(data.securityInfo,
-                            &params.security_info.cert_id,
-                            &params.security_info.cert_status,
-                            &params.security_info.security_bits,
-                            &params.security_info.connection_status);
+        &params.security_info.cert_id, &params.security_info.cert_status,
+        &params.security_info.security_bits,
+        &params.security_info.connection_status,
+        &params.security_info.signed_certificate_timestamp_ids);
   }
 
   return params;

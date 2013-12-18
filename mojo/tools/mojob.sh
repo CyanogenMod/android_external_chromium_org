@@ -50,9 +50,8 @@ do_unittests() {
   "out/$1/mojo_system_unittests" || exit 1
   "out/$1/mojo_public_unittests" || exit 1
   "out/$1/mojo_bindings_unittests" || exit 1
-  "out/$1/mojo_js_bindings_unittests" || exit 1
+  "out/$1/mojo_js_unittests" || exit 1
   "out/$1/mojo_common_unittests" || exit 1
-  "out/$1/mojo_shell_unittests" || exit 1
 }
 
 do_perftests() {
@@ -133,8 +132,8 @@ for arg in "$@"; do
       do_gyp
       ;;
     sync)
-      # Note: sync only, no gyp-ing.
-      gclient sync --nohooks
+      # Note: sync only (with hooks, but no gyp-ing).
+      GYP_CHROMIUM_NO_ACTION=1 gclient sync
       ;;
     show-bash-alias)
       # You want to type something like:

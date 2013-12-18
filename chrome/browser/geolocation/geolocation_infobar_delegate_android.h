@@ -13,7 +13,6 @@ class GoogleLocationSettingsHelper;
 class GeolocationInfoBarDelegateAndroid : public GeolocationInfoBarDelegate {
  public:
   GeolocationInfoBarDelegateAndroid(
-      InfoBarService* infobar_service,
       PermissionQueueController* controller,
       const PermissionRequestID& id,
       const GURL& requesting_frame_url,
@@ -24,7 +23,7 @@ class GeolocationInfoBarDelegateAndroid : public GeolocationInfoBarDelegate {
   virtual ~GeolocationInfoBarDelegateAndroid();
 
   // ConfirmInfoBarDelegate:
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   scoped_ptr<GoogleLocationSettingsHelper> google_location_settings_helper_;

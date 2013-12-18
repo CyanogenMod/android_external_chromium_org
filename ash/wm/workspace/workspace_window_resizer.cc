@@ -74,7 +74,7 @@ scoped_ptr<WindowResizer> CreateWindowResizer(
     // is set by tab dragging code.
     if (!window_state->IsNormalShowState() &&
         (window_component != HTCAPTION ||
-         window_state->tracked_by_workspace())) {
+         !window_state->is_dragged())) {
       return scoped_ptr<WindowResizer>();
     }
     window_resizer = internal::WorkspaceWindowResizer::Create(
@@ -436,6 +436,7 @@ void WorkspaceWindowResizer::CompleteDrag(int event_flags) {
   if (!did_move_or_resize_ || details_.window_component != HTCAPTION)
     return;
 
+  bool snapped = false;
   // When the window is not in the normal show state, we do not snap the window.
   // This happens when the user minimizes or maximizes the window by keyboard
   // shortcut while dragging it. If the window is the result of dragging a tab
@@ -458,8 +459,11 @@ void WorkspaceWindowResizer::CompleteDrag(int event_flags) {
     if (window_state()->CanResize() &&
         !dock_layout_->is_dragged_window_docked()) {
       snap_sizer_->SnapWindowToTargetBounds();
+      snapped = true;
     }
   }
+  if (window_state()->IsSnapped() && !snapped)
+    window_state()->Restore();
 }
 
 void WorkspaceWindowResizer::RevertDrag() {
@@ -749,9 +753,9 @@ bool WorkspaceWindowResizer::UpdateMagnetismWindow(const gfx::Rect& bounds,
     magnetism_window_ = NULL;
   }
 
-  // Avoid magnetically snapping to popups, menus, tooltips, controls and
-  // windows that are not tracked by workspace.
-  if (!window_state()->CanResize() || !window_state()->tracked_by_workspace())
+  // Avoid magnetically snapping windows that are not resizable.
+  // TODO(oshima): change this to window.type() == TYPE_NORMAL.
+  if (!window_state()->CanResize())
     return false;
 
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();

@@ -17,10 +17,19 @@
  *     |'unknown') (as defined in chromeos/disks/disk_mount_manager.cc).
  *     Can be null.
  * @param {boolean} isReadOnly True if the volume is read only.
+ * @param {!{displayName:string, isCurrentProfile:boolean}} profile Profile
+ *     information.
  * @constructor
  */
 function VolumeInfo(
-    volumeType, mountPath, volumeId, root, error, deviceType, isReadOnly) {
+    volumeType,
+    mountPath,
+    volumeId,
+    root,
+    error,
+    deviceType,
+    isReadOnly,
+    profile) {
   this.volumeType = volumeType;
   // TODO(hidehiko): This should include FileSystem instance.
   this.mountPath = mountPath;
@@ -33,10 +42,20 @@ function VolumeInfo(
   this.error = error;
   this.deviceType = deviceType;
   this.isReadOnly = isReadOnly;
+  this.profile = Object.freeze(profile);
 
   // VolumeInfo is immutable.
   Object.freeze(this);
 }
+
+/**
+ * Obtains a URL of the display root directory that users can see as a root.
+ * @return {string} URL of root entry.
+ */
+VolumeInfo.prototype.getDisplayRootDirectoryURL = function() {
+  return this.root.toURL() +
+      (this.volumeType === util.VolumeType.DRIVE ? '/root' : '');
+};
 
 /**
  * Utilities for volume manager implementation.
@@ -117,7 +136,8 @@ volumeManagerUtil.createVolumeInfo = function(volumeMetadata, callback) {
             entry,
             volumeMetadata.mountCondition,
             volumeMetadata.deviceType,
-            volumeMetadata.isReadOnly));
+            volumeMetadata.isReadOnly,
+            volumeMetadata.profile));
       },
       function(fileError) {
         console.error('Root entry is not found: ' +
@@ -130,7 +150,8 @@ volumeManagerUtil.createVolumeInfo = function(volumeMetadata, callback) {
             null,  // Root entry is not found.
             volumeMetadata.mountCondition,
             volumeMetadata.deviceType,
-            volumeMetadata.isReadOnly));
+            volumeMetadata.isReadOnly,
+            volumeMetadata.profile));
       });
 };
 
@@ -312,7 +333,7 @@ function VolumeManager() {
   // TODO(hidehiko): Remove them after the migration.
   this.driveConnectionState_ = {
     type: util.DriveConnectionType.OFFLINE,
-    reasons: [util.DriveConnectionReason.NO_SERVICE]
+    reason: util.DriveConnectionReason.NO_SERVICE
   };
 
   chrome.fileBrowserPrivate.onDriveConnectionStatusChanged.addListener(
@@ -465,8 +486,9 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
     if (event.status === 'success' && !requested && volumeInfo) {
       console.warn('Mounted volume without a request: ', mountPath);
       var e = new Event('externally-unmounted');
+      // TODO(mtomasz): The mountPath field is deprecated. Remove it.
       e.mountPath = mountPath;
-      e.volumeType = volumeInfo.volumeType;
+      e.volumeInfo = volumeInfo;
       this.dispatchEvent(e);
     }
     this.finishRequest_(requestKey, status);
@@ -525,13 +547,14 @@ VolumeManager.prototype.unmount = function(mountPath,
 };
 
 /**
- * Resolve the path to its entry.
+ * Resolves the absolute path to its entry. Shouldn't be used outside of the
+ * Files app's initialization.
  * @param {string} path The path to be resolved.
  * @param {function(Entry)} successCallback Called with the resolved entry on
  *     success.
  * @param {function(FileError)} errorCallback Called on error.
  */
-VolumeManager.prototype.resolvePath = function(
+VolumeManager.prototype.resolveAbsolutePath = function(
     path, successCallback, errorCallback) {
   // Make sure the path is in the mounted volume.
   var volumeInfo = this.getVolumeInfo(path);
@@ -547,21 +570,63 @@ VolumeManager.prototype.resolvePath = function(
 /**
  * Obtains the information of the volume that containing an entry pointed by the
  * specified path.
- * @param {string} path Path pointing an entry on a volume.
+ * TODO(hirono): Stop to use path to get a volume info.
+ *
+ * @param {string|Entry} target Path or Entry pointing anywhere on a volume.
  * @return {VolumeInfo} The data about the volume.
  */
-VolumeManager.prototype.getVolumeInfo = function(path) {
-  return this.volumeInfoList.findByPath(path);
+VolumeManager.prototype.getVolumeInfo = function(target) {
+  if (typeof target === 'string')
+    return this.volumeInfoList.findByPath(target);
+  else if (util.isFakeEntry(target))
+    return this.getCurrentProfileVolumeInfo(util.VolumeType.DRIVE);
+  else
+    return this.volumeInfoList.findByPath(target.fullPath);
+};
+
+/**
+ * Obtains a volume information from a file entry URL.
+ * TODO(hirono): Check a file system to find a volume.
+ *
+ * @param {string} url URL of entry.
+ * @return {VolumeInfo} Volume info.
+ */
+VolumeManager.prototype.getVolumeInfoByURL = function(url) {
+  return this.getVolumeInfo(util.extractFilePath(url));
+};
+
+/**
+ * Obtains a volume infomration of the current profile.
+ *
+ * @param {util.VolumeType} volumeType Volume type.
+ * @return {VolumeInfo} Volume info.
+ */
+VolumeManager.prototype.getCurrentProfileVolumeInfo = function(volumeType) {
+  for (var i = 0; i < this.volumeInfoList.length; i++) {
+    var volumeInfo = this.volumeInfoList.item(i);
+    if (volumeInfo.profile.isCurrentProfile &&
+        volumeInfo.volumeType === volumeType)
+      return volumeInfo;
+  }
+  return null;
 };
 
 /**
  * Obtains location information from an entry.
  *
- * @param {Entry} entry File or directory entry.
+ * @param {Entry|Object} entry File or directory entry. It can be a fake entry.
  * @return {EntryLocation} Location information.
  */
 VolumeManager.prototype.getLocationInfo = function(entry) {
-  return this.getLocationInfoByPath(entry.fullPath);
+  if (util.isFakeEntry(entry)) {
+    return new EntryLocation(
+        // TODO(hirono): Specify currect volume.
+        this.getCurrentProfileVolumeInfo(RootType.DRIVE),
+        entry.rootType,
+        true /* the entry points a root directory. */);
+  } else {
+    return this.getLocationInfoByPath(entry.fullPath);
+  }
 };
 
 /**
@@ -572,12 +637,8 @@ VolumeManager.prototype.getLocationInfo = function(entry) {
  * @return {EntryLocation} Location information.
  */
 VolumeManager.prototype.getLocationInfoByPath = function(path) {
-  for (var i = 0; i < this.volumeInfoList.length; i++) {
-    var volumeInfo = this.volumeInfoList.item(i);
-    if ((path + '/').indexOf(volumeInfo.mountPath + '/') === 0)
-      return PathUtil.getLocationInfo(volumeInfo, path);
-  }
-  return null;
+  var volumeInfo = this.volumeInfoList.findByPath(path);
+  return volumeInfo && PathUtil.getLocationInfo(volumeInfo, path);
 };
 
 /**

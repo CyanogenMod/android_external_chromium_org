@@ -30,8 +30,6 @@
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_switches.h"
@@ -39,6 +37,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/common/extension.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 
@@ -204,8 +204,11 @@ class LocalTestVolume {
     mount_points->RevokeFileSystem(kDownloads);
 
     return mount_points->RegisterFileSystem(
-        kDownloads, fileapi::kFileSystemTypeNativeLocal, local_path_) &&
-        file_util::CreateDirectory(local_path_);
+        kDownloads,
+        fileapi::kFileSystemTypeNativeLocal,
+        fileapi::FileSystemMountOption(),
+        local_path_) &&
+        base::CreateDirectory(local_path_);
   }
 
   void CreateEntry(const TestEntryInfo& entry) {
@@ -224,7 +227,7 @@ class LocalTestVolume {
         break;
       }
       case DIRECTORY:
-        ASSERT_TRUE(file_util::CreateDirectory(target_path)) <<
+        ASSERT_TRUE(base::CreateDirectory(target_path)) <<
             "Failed to create a directory: " << target_path.value();
         break;
     }
@@ -236,7 +239,8 @@ class LocalTestVolume {
   // TestEntryInfo. Returns true on success.
   bool UpdateModifiedTime(const TestEntryInfo& entry) {
     const base::FilePath path = local_path_.AppendASCII(entry.target_path);
-    if (!file_util::SetLastModifiedTime(path, entry.last_modified_time))
+    if (!base::TouchFile(path, entry.last_modified_time,
+                         entry.last_modified_time))
       return false;
 
     // Update the modified time of parent directories because it may be also

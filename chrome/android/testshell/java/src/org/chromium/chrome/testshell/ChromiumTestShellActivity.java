@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,6 +31,7 @@ import org.chromium.content.browser.ContentVideoViewClient;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.DeviceUtils;
+import org.chromium.content.common.ProcessInitException;
 import org.chromium.printing.PrintingController;
 import org.chromium.sync.signin.ChromeSigninController;
 import org.chromium.ui.base.ActivityWindowAndroid;
@@ -75,7 +76,13 @@ public class ChromiumTestShellActivity extends Activity implements AppMenuProper
                         finish();
                     }
                 };
-        BrowserStartupController.get(this).startBrowserProcessesAsync(callback);
+        try {
+            BrowserStartupController.get(this).startBrowserProcessesAsync(callback);
+        }
+        catch (ProcessInitException e) {
+            Log.e(TAG, "Unable to load native library.", e);
+            System.exit(-1);
+        }
     }
 
     private void finishInitialization(final Bundle savedInstanceState) {
@@ -93,6 +100,7 @@ public class ChromiumTestShellActivity extends Activity implements AppMenuProper
         TestShellToolbar mToolbar = (TestShellToolbar) findViewById(R.id.toolbar);
         mAppMenuHandler = new AppMenuHandler(this, this, R.menu.main_menu);
         mToolbar.setMenuHandler(mAppMenuHandler);
+
         mDevToolsServer = new DevToolsServer("chromium_testshell");
         mDevToolsServer.setRemoteDebuggingEnabled(true);
 
@@ -116,7 +124,7 @@ public class ChromiumTestShellActivity extends Activity implements AppMenuProper
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         // TODO(dtrainor): Save/restore the tab state.
-        mWindow.saveInstanceState(outState);
+        if (mWindow != null) mWindow.saveInstanceState(outState);
     }
 
     @Override

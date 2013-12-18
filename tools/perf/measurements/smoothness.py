@@ -4,7 +4,6 @@
 
 from metrics import smoothness
 from metrics import timeline
-from telemetry.page import page_test
 from telemetry.page import page_measurement
 
 
@@ -33,13 +32,11 @@ class Smoothness(page_measurement.PageMeasurement):
   def CanRunForPage(self, page):
     return hasattr(page, 'smoothness')
 
-  def WillRunAction(self, page, tab, action):
+  def WillRunActions(self, page, tab):
     if self.options.metric == 'smoothness':
-      compound_action = page_test.GetCompoundActionFromPage(
-          page, self._action_name_to_run)
-      self._metric = smoothness.SmoothnessMetric(compound_action)
+      self._metric = smoothness.SmoothnessMetric()
     elif self.options.metric == 'timeline':
-      self._metric = timeline.TimelineMetric(timeline.TRACING_MODE)
+      self._metric = timeline.ThreadTimesTimelineMetric()
 
     self._metric.Start(page, tab)
 
@@ -47,6 +44,11 @@ class Smoothness(page_measurement.PageMeasurement):
       tab.browser.platform.StartRawDisplayFrameRateMeasurement()
 
   def DidRunAction(self, page, tab, action):
+    timeline_marker_name = action.GetTimelineMarkerName()
+    if self.options.metric == 'smoothness' and timeline_marker_name:
+      self._metric.AddTimelineMarkerNameToIncludeInMetric(timeline_marker_name)
+
+  def DidRunActions(self, page, tab):
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StopRawDisplayFrameRateMeasurement()
     self._metric.Stop(page, tab)

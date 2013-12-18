@@ -74,6 +74,8 @@ class ThreadProxy : public Proxy,
   virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
+  // Please call these 2 functions through
+  // LayerTreeHostImpl's SetNeedsRedraw() and SetNeedsRedrawRect().
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
@@ -157,7 +159,7 @@ class ThreadProxy : public Proxy,
   void StartCommitOnImplThread(
       CompletionEvent* completion,
       ResourceUpdateQueue* queue,
-      scoped_refptr<cc::ContextProvider> offscreen_context_provider);
+      scoped_refptr<ContextProvider> offscreen_context_provider);
   void BeginMainFrameAbortedOnImplThread(bool did_handle);
   void RequestReadbackOnImplThread(ReadbackRequest* request);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
@@ -286,6 +288,8 @@ class ThreadProxy : public Proxy,
   base::WeakPtr<ThreadProxy> main_thread_weak_ptr_;
   base::WeakPtrFactory<ThreadProxy> weak_factory_on_impl_thread_;
   base::WeakPtrFactory<ThreadProxy> weak_factory_;
+
+  const int layer_tree_host_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadProxy);
 };

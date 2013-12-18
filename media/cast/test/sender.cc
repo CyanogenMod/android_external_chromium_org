@@ -21,6 +21,9 @@
 #include "media/cast/test/video_utility.h"
 #include "ui/gfx/size.h"
 
+namespace media {
+namespace cast {
+// Settings chosen to match default receiver settings.
 #define DEFAULT_SEND_PORT "2344"
 #define DEFAULT_RECEIVE_PORT "2346"
 #define DEFAULT_SEND_IP "127.0.0.1"
@@ -38,9 +41,6 @@
 #define DEFAULT_VIDEO_CODEC_MAX_BITRATE "4000"
 #define DEFAULT_VIDEO_CODEC_MIN_BITRATE "1000"
 
-namespace media {
-namespace cast {
-
 namespace {
 static const int kAudioChannels = 2;
 static const int kAudioSamplingFrequency = 48000;
@@ -49,6 +49,12 @@ static const int kSoundFrequency = 1234;  // Frequency of sinusoid wave.
 // a normal video is 30 fps hence the 33 ms between frames.
 static const float kSoundVolume = 0.5f;
 static const int kFrameTimerMs = 33;
+
+// Dummy callback function that does nothing except to accept ownership of
+// |audio_bus| for destruction. This guarantees that the audio_bus is valid for
+// the entire duration of the encode/send process (not equivalent to DoNothing).
+void OwnThatAudioBus(scoped_ptr<AudioBus> audio_bus) {
+}
 } // namespace
 
 void GetPorts(int* tx_port, int* rx_port) {
@@ -187,14 +193,16 @@ VideoSenderConfig GetVideoSenderConfig() {
 
 class SendProcess {
  public:
-  SendProcess(scoped_refptr<CastEnvironment> cast_environment,
-               const VideoSenderConfig& video_config,
-               FrameInput* frame_input)
-      : video_config_(video_config),
+  SendProcess(scoped_refptr<base::TaskRunner> thread_proxy,
+              base::TickClock* clock,
+              const VideoSenderConfig& video_config,
+              FrameInput* frame_input)
+      : test_app_thread_proxy_(thread_proxy),
+        video_config_(video_config),
         audio_diff_(kFrameTimerMs),
         frame_input_(frame_input),
         synthetic_count_(0),
-        clock_(cast_environment->Clock()),
+        clock_(clock),
         start_time_(),
         send_time_(),
         weak_factory_(this) {
@@ -217,10 +225,6 @@ class SendProcess {
       fclose(video_file_);
   }
 
-  void ReleaseVideoFrame(const scoped_refptr<media::VideoFrame>&) {
-    SendFrame();
-  }
-
   void SendFrame() {
     // Make sure that we don't drift.
     int num_10ms_blocks = audio_diff_ / 10;
@@ -231,7 +235,7 @@ class SendProcess {
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
     AudioBus* const audio_bus_ptr = audio_bus.get();
     frame_input_->InsertAudio(audio_bus_ptr, clock_->NowTicks(),
-        base::Bind(base::DoNothing));
+        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
 
     gfx::Size size(video_config_.width, video_config_.height);
     // TODO(mikhal): Use the provided timestamp.
@@ -256,18 +260,28 @@ class SendProcess {
         base::TimeDelta::FromMilliseconds(kFrameTimerMs);
     base::TimeDelta elapsed_time = now - send_time_;
     if (elapsed_time < video_frame_time) {
-      base::PlatformThread::Sleep(video_frame_time - elapsed_time);
-      VLOG(1) << "Sleep" <<
+      VLOG(1) << "Wait" <<
           (video_frame_time - elapsed_time).InMilliseconds();
+     test_app_thread_proxy_->PostDelayedTask(FROM_HERE,
+        base::Bind(&SendProcess::SendVideoFrameOnTime, base::Unretained(this),
+                   video_frame),
+        video_frame_time - elapsed_time);
+    } else {
+      test_app_thread_proxy_->PostTask(FROM_HERE,
+      base::Bind(&SendProcess::SendVideoFrameOnTime, base::Unretained(this),
+                 video_frame));
     }
+  }
 
+  void SendVideoFrameOnTime(scoped_refptr<media::VideoFrame> video_frame) {
     send_time_ = clock_->NowTicks();
-    frame_input_->InsertRawVideoFrame(video_frame, send_time_,
-        base::Bind(&SendProcess::ReleaseVideoFrame, weak_factory_.GetWeakPtr(),
-        video_frame));
+    frame_input_->InsertRawVideoFrame(video_frame, send_time_);
+    test_app_thread_proxy_->PostTask(FROM_HERE,
+          base::Bind(&SendProcess::SendFrame, base::Unretained(this)));
   }
 
  private:
+  scoped_refptr<base::TaskRunner> test_app_thread_proxy_;
   const VideoSenderConfig video_config_;
   int audio_diff_;
   const scoped_refptr<FrameInput> frame_input_;
@@ -287,9 +301,11 @@ class SendProcess {
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
   VLOG(1) << "Cast Sender";
+  base::Thread test_thread("Cast sender test app thread");
   base::Thread main_thread("Cast main send thread");
   base::Thread audio_thread("Cast audio encoder thread");
   base::Thread video_thread("Cast video encoder thread");
+  test_thread.Start();
   main_thread.Start();
   audio_thread.Start();
   video_thread.Start();
@@ -337,7 +353,10 @@ int main(int argc, char** argv) {
 
   media::cast::FrameInput* frame_input = cast_sender->frame_input();
   scoped_ptr<media::cast::SendProcess> send_process(new
-      media::cast::SendProcess(cast_environment, video_config, frame_input));
+      media::cast::SendProcess(test_thread.message_loop_proxy(),
+                               cast_environment->Clock(),
+                               video_config,
+                               frame_input));
 
   send_process->SendFrame();
   io_message_loop.Run();

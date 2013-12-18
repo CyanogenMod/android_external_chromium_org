@@ -97,6 +97,7 @@ using blink::WebScreenInfo;
 using blink::WebSize;
 using blink::WebTextDirection;
 using blink::WebTouchEvent;
+using blink::WebTouchPoint;
 using blink::WebVector;
 using blink::WebWidget;
 
@@ -164,6 +165,7 @@ class RenderWidget::ScreenMetricsEmulator {
   virtual ~ScreenMetricsEmulator();
 
   float scale() { return scale_; }
+  gfx::Point offset() { return offset_; }
   gfx::Rect widget_rect() const { return widget_rect_; }
   gfx::Rect original_screen_rect() const { return original_view_screen_rect_; }
 
@@ -354,6 +356,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       has_focus_(false),
       handling_input_event_(false),
       handling_ime_event_(false),
+      handling_touchstart_event_(false),
       closing_(false),
       is_swapped_out_(swapped_out),
       input_method_is_active_(false),
@@ -535,8 +538,9 @@ void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
     ScreenMetricsEmulator* emulator) {
   popup_origin_scale_for_emulation_ = emulator->scale();
   popup_view_origin_for_emulation_ = emulator->widget_rect().origin();
-  popup_screen_origin_for_emulation_ =
-      emulator->original_screen_rect().origin();
+  popup_screen_origin_for_emulation_ = gfx::Point(
+      emulator->original_screen_rect().origin().x() + emulator->offset().x(),
+      emulator->original_screen_rect().origin().y() + emulator->offset().y());
 }
 
 void RenderWidget::SetScreenMetricsEmulationParameters(
@@ -549,7 +553,8 @@ void RenderWidget::SetScreenMetricsEmulationParameters(
 
 void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
     ExternalPopupMenu* popup, ScreenMetricsEmulator* emulator) {
-  popup->SetOriginScaleForEmulation(emulator->scale());
+  popup->SetOriginScaleAndOffsetForEmulation(
+      emulator->scale(), emulator->offset());
 }
 
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
@@ -588,6 +593,10 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateRect_ACK, OnUpdateRectAck)
     IPC_MESSAGE_HANDLER(ViewMsg_SwapBuffers_ACK, OnSwapBuffersComplete)
     IPC_MESSAGE_HANDLER(ViewMsg_SetInputMethodActive, OnSetInputMethodActive)
+    IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowShown, OnCandidateWindowShown)
+    IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowUpdated,
+                        OnCandidateWindowUpdated)
+    IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowHidden, OnCandidateWindowHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_ImeSetComposition, OnImeSetComposition)
     IPC_MESSAGE_HANDLER(ViewMsg_ImeConfirmComposition, OnImeConfirmComposition)
     IPC_MESSAGE_HANDLER(ViewMsg_PaintAtSize, OnPaintAtSize)
@@ -887,11 +896,6 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   attributes.stencil = false;
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(cc::switches::kForceDirectLayerDrawing)) {
-    attributes.stencil = true;
-    attributes.depth = true;
-  }
-
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
   if (!fallback) {
     context_provider = ContextProviderCommandBuffer::Create(
@@ -1034,7 +1038,7 @@ void RenderWidget::OnSwapBuffersComplete() {
 }
 
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
-                                      const ui::LatencyInfo& latency_info,
+                                      ui::LatencyInfo latency_info,
                                       bool is_keyboard_shortcut) {
   handling_input_event_ = true;
   if (!input_event) {
@@ -1051,10 +1055,14 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   TRACE_EVENT1("renderer", "RenderWidget::OnHandleInputEvent",
                "event", event_name);
 
-  if (compositor_)
-    compositor_->SetLatencyInfo(latency_info);
-  else
+  scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
+
+  if (compositor_) {
+    latency_info_swap_promise_monitor =
+        compositor_->CreateLatencyInfoSwapPromiseMonitor(&latency_info).Pass();
+  } else {
     latency_info_.MergeWith(latency_info);
+  }
 
   base::TimeDelta now = base::TimeDelta::FromInternalValue(
       base::TimeTicks::Now().ToInternalValue());
@@ -1097,12 +1105,17 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
       input_event->type == WebInputEvent::GestureLongPress)
     resetInputMethod();
 
+  if (input_event->type == WebInputEvent::TouchStart)
+      handling_touchstart_event_ = true;
+
   bool processed = prevent_default;
   if (input_event->type != WebInputEvent::Char || !suppress_next_char_events_) {
     suppress_next_char_events_ = false;
     if (!processed && webwidget_)
       processed = webwidget_->handleInputEvent(*input_event);
   }
+
+  handling_touchstart_event_ = false;
 
   // If this RawKeyDown event corresponds to a browser keyboard shortcut and
   // it's not processed by webkit, then we need to suppress the upcoming Char
@@ -1115,9 +1128,17 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   if (!processed &&  input_event->type == WebInputEvent::TouchStart) {
     const WebTouchEvent& touch_event =
         *static_cast<const WebTouchEvent*>(input_event);
-    ack_result = HasTouchEventHandlersAt(touch_event.touches[0].position) ?
-        INPUT_EVENT_ACK_STATE_NOT_CONSUMED :
-        INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+    // Hit-test for all the pressed touch points. If there is a touch-handler
+    // for any of the touch points, then the renderer should continue to receive
+    // touch events.
+    ack_result = INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+    for (size_t i = 0; i < touch_event.touchesLength; ++i) {
+      if (touch_event.touches[i].state == WebTouchPoint::StatePressed &&
+          HasTouchEventHandlersAt(touch_event.touches[i].position)) {
+        ack_result = INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+        break;
+      }
+    }
   }
 
   IPC::Message* response =
@@ -2079,8 +2100,20 @@ void RenderWidget::OnSetInputMethodActive(bool is_active) {
   input_method_is_active_ = is_active;
 }
 
+void RenderWidget::OnCandidateWindowShown() {
+  webwidget_->didShowCandidateWindow();
+}
+
+void RenderWidget::OnCandidateWindowUpdated() {
+  webwidget_->didUpdateCandidateWindow();
+}
+
+void RenderWidget::OnCandidateWindowHidden() {
+  webwidget_->didHideCandidateWindow();
+}
+
 void RenderWidget::OnImeSetComposition(
-    const string16& text,
+    const base::string16& text,
     const std::vector<WebCompositionUnderline>& underlines,
     int selection_start, int selection_end) {
   if (!ShouldHandleImeEvent())
@@ -2099,7 +2132,7 @@ void RenderWidget::OnImeSetComposition(
 #endif
 }
 
-void RenderWidget::OnImeConfirmComposition(const string16& text,
+void RenderWidget::OnImeConfirmComposition(const base::string16& text,
                                            const gfx::Range& replacement_range,
                                            bool keep_selection) {
   if (!ShouldHandleImeEvent())
@@ -2755,6 +2788,28 @@ void RenderWidget::hasTouchEventHandlers(bool has_handlers) {
   Send(new ViewHostMsg_HasTouchEventHandlers(routing_id_, has_handlers));
 }
 
+void RenderWidget::setTouchAction(
+    blink::WebTouchAction web_touch_action) {
+
+  // Ignore setTouchAction calls that result from synthetic touch events (eg.
+  // when blink is emulating touch with mouse).
+  if (!handling_touchstart_event_)
+    return;
+
+  content::TouchAction content_touch_action;
+  switch(web_touch_action) {
+    case blink::WebTouchActionNone:
+      content_touch_action = content::TOUCH_ACTION_NONE;
+      break;
+    case blink::WebTouchActionAuto:
+      content_touch_action = content::TOUCH_ACTION_AUTO;
+      break;
+    default:
+      NOTREACHED();
+  }
+  Send(new InputHostMsg_SetTouchAction(routing_id_, content_touch_action));
+}
+
 bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
   return true;
 }
@@ -2800,20 +2855,11 @@ RenderWidget::CreateGraphicsContext3D(
       max_transfer_buffer_usage_mb * kBytesPerMegabyte;
 #endif
 
-  bool use_echo_for_swap_ack = true;
-  if (!is_threaded_compositing_enabled_) {
-#if (defined(OS_MACOSX) || defined(OS_WIN)) && !defined(USE_AURA)
-    // ViewMsg_SwapBuffers_ACK is used instead for single-threaded path.
-    use_echo_for_swap_ack = false;
-#endif
-  }
-
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
           surface_id(),
           GetURLForGraphicsContext3D(),
           gpu_channel_host.get(),
-          use_echo_for_swap_ack,
           attributes,
           false /* bind generates resources */,
           limits));

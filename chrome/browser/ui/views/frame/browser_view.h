@@ -328,12 +328,13 @@ class BrowserView : public BrowserWindow,
   virtual void ShowBookmarkPrompt() OVERRIDE;
   virtual void ShowTranslateBubble(
       content::WebContents* contents,
-      TranslateBubbleModel::ViewState view_state) OVERRIDE;
+      TranslateBubbleModel::ViewState view_state,
+      TranslateErrors::Type error_type) OVERRIDE;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
-      const string16& email,
-      const string16& error_message,
+      const base::string16& email,
+      const base::string16& error_message,
       const StartSyncCallback& start_sync_callback) OVERRIDE;
 #endif
   // TODO(beng): Not an override, move somewhere else.
@@ -396,8 +397,8 @@ class BrowserView : public BrowserWindow,
   virtual bool CanResize() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;
   virtual bool CanActivate() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual string16 GetAccessibleWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetAccessibleWindowTitle() const OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual bool ShouldShowWindowTitle() const OVERRIDE;
   virtual gfx::ImageSkia GetWindowAppIcon() OVERRIDE;

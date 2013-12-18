@@ -141,8 +141,7 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     DCHECK(!options.open_existing);
     // Q: Why not use the shm_open() etc. APIs?
     // A: Because they're limited to 4mb on OS X.  FFFFFFFUUUUUUUUUUU
-    fp.reset(
-        file_util::CreateAndOpenTemporaryShmemFile(&path, options.executable));
+    fp.reset(base::CreateAndOpenTemporaryShmemFile(&path, options.executable));
 
     if (fp) {
       // Also open as readonly so that we can ShareReadOnlyToProcess.
@@ -265,7 +264,7 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
   read_only_ = read_only;
 
   const char *mode = read_only ? "r" : "r+";
-  ScopedFILE fp(file_util::OpenFile(path, mode));
+  ScopedFILE fp(base::OpenFile(path, mode));
   int readonly_fd_storage = -1;
   ScopedFD readonly_fd(&readonly_fd_storage);
   *readonly_fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
@@ -399,7 +398,7 @@ bool SharedMemory::FilePathForMemoryName(const std::string& mem_name,
   DCHECK_EQ(std::string::npos, mem_name.find('\0'));
 
   FilePath temp_dir;
-  if (!file_util::GetShmemTempDir(&temp_dir, false))
+  if (!GetShmemTempDir(false, &temp_dir))
     return false;
 
 #if !defined(OS_MACOSX)

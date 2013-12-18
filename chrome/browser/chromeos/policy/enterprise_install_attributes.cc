@@ -11,7 +11,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/policy/proto/chromeos/install_attributes.pb.h"
+#include "chrome/browser/chromeos/policy/proto/install_attributes.pb.h"
 #include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -107,7 +107,7 @@ void EnterpriseInstallAttributes::ReadCacheFile(
   device_locked_ = true;
 
   char buf[16384];
-  int len = file_util::ReadFile(cache_file, buf, sizeof(buf));
+  int len = base::ReadFile(cache_file, buf, sizeof(buf));
   if (len == -1 || len >= static_cast<int>(sizeof(buf))) {
     PLOG(ERROR) << "Failed to read " << cache_file.value();
     return;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,8 @@ import android.content.Context;
 import android.text.TextUtils;
 
 import org.chromium.chrome.browser.TabBase;
+import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
+import org.chromium.chrome.browser.contextmenu.ContextMenuPopulator;
 import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.LoadUrlParams;
@@ -115,16 +117,25 @@ public class TestShellTab extends TabBase {
 
     @Override
     protected AutoLoginProcessor createAutoLoginProcessor() {
-       return new AutoLoginProcessor() {
-           @Override
-           public void processAutoLoginResult(String accountName,
-                   String authToken, boolean success, String result) {
-               getInfoBarContainer().processAutoLogin(accountName, authToken,
-                       success, result);
-           }
-       };
+        return new AutoLoginProcessor() {
+            @Override
+            public void processAutoLoginResult(String accountName,
+                    String authToken, boolean success, String result) {
+                getInfoBarContainer().processAutoLogin(accountName, authToken,
+                        success, result);
+            }
+        };
     }
 
+    @Override
+    protected ContextMenuPopulator createContextMenuPopulator() {
+        return new ChromeContextMenuPopulator(new TabBaseChromeContextMenuItemDelegate() {
+            @Override
+            public void onOpenImageUrl(String url) {
+                loadUrlWithSanitization(url);
+            }
+        });
+    }
 
     private class TestShellTabBaseChromeWebContentsDelegateAndroid
             extends TabBaseChromeWebContentsDelegateAndroid {

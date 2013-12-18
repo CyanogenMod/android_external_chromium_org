@@ -13,7 +13,6 @@
 #include <limits>
 
 #include "base/logging.h"
-#include "base/posix/eintr_wrapper.h"
 #include "sandbox/linux/seccomp-bpf/codegen.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
@@ -66,7 +65,7 @@ bool IsDefaultSignalAction(const struct sigaction& sa) {
 
 }  // namespace
 
-namespace playground2 {
+namespace sandbox {
 
 Trap::Trap()
     : trap_array_(NULL),
@@ -352,4 +351,4 @@ ErrorCode Trap::ErrorCodeFromTrapId(uint16_t id) {
 
 Trap* Trap::global_trap_;
 
-}  // namespace playground2
+}  // namespace sandbox

@@ -66,10 +66,8 @@ static base::LazyInstance<PluginContainerMap> g_plugin_container_map =
 
 }  // namespace
 
-BrowserPlugin::BrowserPlugin(
-    RenderViewImpl* render_view,
-    blink::WebFrame* frame,
-    const WebPluginParams& params)
+BrowserPlugin::BrowserPlugin(RenderViewImpl* render_view,
+                             blink::WebFrame* frame)
     : guest_instance_id_(browser_plugin::kInstanceIDNone),
       attached_(false),
       render_view_(render_view->AsWeakPtr()),
@@ -86,7 +84,6 @@ BrowserPlugin::BrowserPlugin(
       content_window_routing_id_(MSG_ROUTING_NONE),
       plugin_focused_(false),
       visible_(true),
-      opaque_(true),
       before_first_navigation_(true),
       mouse_locked_(false),
       browser_plugin_manager_(render_view->GetBrowserPluginManager()),
@@ -123,6 +120,8 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_BuffersSwapped, OnBuffersSwapped)
     IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginMsg_CompositorFrameSwapped,
                                 OnCompositorFrameSwapped(message))
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_CopyFromCompositingSurface,
+                        OnCopyFromCompositingSurface)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestContentWindowReady,
                         OnGuestContentWindowReady)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestGone, OnGuestGone)
@@ -180,6 +179,10 @@ bool BrowserPlugin::HasDOMAttribute(const std::string& attribute_name) const {
 
 std::string BrowserPlugin::GetNameAttribute() const {
   return GetDOMAttributeValue(browser_plugin::kAttributeName);
+}
+
+bool BrowserPlugin::GetAllowTransparencyAttribute() const {
+  return HasDOMAttribute(browser_plugin::kAttributeAllowTransparency);
 }
 
 std::string BrowserPlugin::GetSrcAttribute() const {
@@ -257,6 +260,21 @@ void BrowserPlugin::ParseNameAttribute() {
       new BrowserPluginHostMsg_SetName(render_view_routing_id_,
                                        guest_instance_id_,
                                        GetNameAttribute()));
+}
+
+void BrowserPlugin::ParseAllowTransparencyAttribute() {
+  if (!HasGuestInstanceID())
+    return;
+
+  bool opaque = !GetAllowTransparencyAttribute();
+
+  if (compositing_helper_)
+    compositing_helper_->SetContentsOpaque(opaque);
+
+  browser_plugin_manager()->Send(new BrowserPluginHostMsg_SetContentsOpaque(
+        render_view_routing_id_,
+        guest_instance_id_,
+        opaque));
 }
 
 bool BrowserPlugin::ParseSrcAttribute(std::string* error_message) {
@@ -372,7 +390,7 @@ void BrowserPlugin::Attach(scoped_ptr<base::DictionaryValue> extra_params) {
   BrowserPluginHostMsg_Attach_Params attach_params;
   attach_params.focused = ShouldGuestBeFocused();
   attach_params.visible = visible_;
-  attach_params.opaque = opaque_;
+  attach_params.opaque = !GetAllowTransparencyAttribute();
   attach_params.name = GetNameAttribute();
   attach_params.storage_partition_id = storage_partition_id_;
   attach_params.persist_storage = persist_storage_;
@@ -391,23 +409,6 @@ void BrowserPlugin::Attach(scoped_ptr<base::DictionaryValue> extra_params) {
 void BrowserPlugin::DidCommitCompositorFrame() {
   if (compositing_helper_.get())
     compositing_helper_->DidCommitCompositorFrame();
-}
-
-void BrowserPlugin::SetContentsOpaque(bool opaque) {
-  if (opaque_ == opaque)
-    return;
-
-  opaque_ = opaque;
-  if (!HasGuestInstanceID())
-    return;
-
-  if (compositing_helper_)
-    compositing_helper_->SetContentsOpaque(opaque_);
-
-  browser_plugin_manager()->Send(new BrowserPluginHostMsg_SetContentsOpaque(
-        render_view_routing_id_,
-        guest_instance_id_,
-        opaque_));
 }
 
 void BrowserPlugin::OnAdvanceFocus(int guest_instance_id, bool reverse) {
@@ -455,6 +456,23 @@ void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
                                                 param.c /* route_id */,
                                                 param.d /* output_surface_id */,
                                                 param.e /* host_id */);
+}
+
+void BrowserPlugin::OnCopyFromCompositingSurface(int guest_instance_id,
+                                                 int request_id,
+                                                 gfx::Rect source_rect,
+                                                 gfx::Size dest_size) {
+  if (!compositing_enabled_) {
+    browser_plugin_manager()->Send(
+        new BrowserPluginHostMsg_CopyFromCompositingSurfaceAck(
+            render_view_routing_id_,
+            guest_instance_id_,
+            request_id,
+            SkBitmap()));
+    return;
+  }
+  compositing_helper_->CopyFromCompositingSurface(request_id, source_rect,
+                                                  dest_size);
 }
 
 void BrowserPlugin::OnGuestContentWindowReady(int guest_instance_id,
@@ -837,9 +855,13 @@ void BrowserPlugin::TriggerEvent(const std::string& event_name,
   // more appropriate (and stable) event to the consumers as part of the API.
   event.initCustomEvent(
       blink::WebString::fromUTF8(GetInternalEventName(event_name.c_str())),
-      false, false,
+      false,
+      false,
       blink::WebSerializedScriptValue::serialize(
-          v8::String::New(json_string.c_str(), json_string.size())));
+          v8::String::NewFromUtf8(context->GetIsolate(),
+                                  json_string.c_str(),
+                                  v8::String::kNormalString,
+                                  json_string.size())));
   container()->element().dispatchEvent(event);
 }
 
@@ -918,7 +940,7 @@ void BrowserPlugin::EnableCompositing(bool enable) {
     }
   }
   compositing_helper_->EnableCompositing(enable);
-  compositing_helper_->SetContentsOpaque(opaque_);
+  compositing_helper_->SetContentsOpaque(!GetAllowTransparencyAttribute());
 }
 
 void BrowserPlugin::destroy() {
@@ -1030,6 +1052,7 @@ bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     case BrowserPluginMsg_Attach_ACK::ID:
     case BrowserPluginMsg_BuffersSwapped::ID:
     case BrowserPluginMsg_CompositorFrameSwapped::ID:
+    case BrowserPluginMsg_CopyFromCompositingSurface::ID:
     case BrowserPluginMsg_GuestContentWindowReady::ID:
     case BrowserPluginMsg_GuestGone::ID:
     case BrowserPluginMsg_SetCursor::ID:

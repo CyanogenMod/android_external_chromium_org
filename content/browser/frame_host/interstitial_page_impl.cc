@@ -14,9 +14,9 @@
 #include "base/threading/thread.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
+#include "content/browser/frame_host/interstitial_page_navigator_impl.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
-#include "content/browser/frame_host/navigator.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
@@ -161,7 +161,8 @@ InterstitialPageImpl::InterstitialPageImpl(
       // While we get the code to a point to do this, pass NULL for it.
       // TODO(creis): We will also need to pass delegates for the RVHM as we
       // start to use it.
-      frame_tree_(new Navigator(NULL, this), NULL, NULL, NULL),
+      frame_tree_(new InterstitialPageNavigatorImpl(this, controller_),
+                  NULL, NULL, NULL, NULL),
       original_child_id_(web_contents->GetRenderProcessHost()->GetID()),
       original_rvh_id_(web_contents->GetRenderViewHost()->GetRoutingID()),
       should_revert_web_contents_title_(false),
@@ -431,7 +432,7 @@ void InterstitialPageImpl::DidNavigate(
 void InterstitialPageImpl::UpdateTitle(
     RenderViewHost* render_view_host,
     int32 page_id,
-    const string16& title,
+    const base::string16& title,
     base::i18n::TextDirection title_direction) {
   if (!enabled())
     return;
@@ -526,6 +527,7 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   return RenderViewHostFactory::Create(site_instance.get(),
                                        this,
                                        this,
+                                       this,
                                        MSG_ROUTING_NONE,
                                        MSG_ROUTING_NONE,
                                        false,
@@ -545,7 +547,7 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
 
   int32 max_page_id = web_contents()->
       GetMaxPageIDForSiteInstance(render_view_host_->GetSiteInstance());
-  render_view_host_->CreateRenderView(string16(),
+  render_view_host_->CreateRenderView(base::string16(),
                                       MSG_ROUTING_NONE,
                                       max_page_id);
   controller_->delegate()->RenderViewForInterstitialPageCreated(
@@ -697,6 +699,7 @@ gfx::Rect InterstitialPageImpl::GetRootWindowResizerRect() const {
 }
 
 void InterstitialPageImpl::CreateNewWindow(
+    int render_process_id,
     int route_id,
     int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
@@ -704,12 +707,14 @@ void InterstitialPageImpl::CreateNewWindow(
   NOTREACHED() << "InterstitialPage does not support showing popups yet.";
 }
 
-void InterstitialPageImpl::CreateNewWidget(int route_id,
+void InterstitialPageImpl::CreateNewWidget(int render_process_id,
+                                           int route_id,
                                            blink::WebPopupType popup_type) {
   NOTREACHED() << "InterstitialPage does not support showing drop-downs yet.";
 }
 
-void InterstitialPageImpl::CreateNewFullscreenWidget(int route_id) {
+void InterstitialPageImpl::CreateNewFullscreenWidget(int render_process_id,
+                                                     int route_id) {
   NOTREACHED()
       << "InterstitialPage does not support showing full screen popups.";
 }

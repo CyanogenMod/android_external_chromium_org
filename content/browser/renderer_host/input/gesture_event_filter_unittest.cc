@@ -10,8 +10,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "content/browser/renderer_host/input/gesture_event_filter.h"
-#include "content/browser/renderer_host/input/synthetic_web_input_event_builders.h"
 #include "content/browser/renderer_host/input/touchpad_tap_suppression_controller.h"
+#include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -142,7 +142,7 @@ class GestureEventFilterTest : public testing::Test,
   }
 
   void set_debounce_interval_time_ms(int ms) {
-    filter()->debounce_interval_time_ms_ = ms;
+    filter()->set_debounce_interval_time_ms_for_testing(ms);
   }
 
   void set_synchronous_ack(InputEventAckState ack_result) {

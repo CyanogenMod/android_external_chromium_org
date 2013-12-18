@@ -33,6 +33,7 @@
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util.h"
@@ -139,9 +140,9 @@ LaunchMode GetLaunchShortcutKind() {
   if (si.dwFlags & 0x800) {
     if (!si.lpTitle)
       return LM_SHORTCUT_NONAME;
-    string16 shortcut(si.lpTitle);
+    base::string16 shortcut(si.lpTitle);
     // The windows quick launch path is not localized.
-    if (shortcut.find(L"\\Quick Launch\\") != string16::npos) {
+    if (shortcut.find(L"\\Quick Launch\\") != base::string16::npos) {
       if (base::win::GetVersion() >= base::win::VERSION_WIN7)
         return LM_SHORTCUT_TASKBAR;
       else
@@ -192,23 +193,22 @@ bool GetAppLaunchContainer(
   ExtensionService* extensions_service = profile->GetExtensionService();
   const Extension* extension =
       extensions_service->GetExtensionById(app_id, false);
-      LOG(ERROR) << app_id;
   // The extension with id |app_id| may have been uninstalled.
   if (!extension)
     return false;
-LOG(ERROR) << app_id;
+
   // Don't launch platform apps in incognito mode.
   if (profile->IsOffTheRecord() && extension->is_platform_app())
     return false;
-LOG(ERROR) << app_id;
+
   // Look at preferences to find the right launch container. If no
   // preference is set, launch as a window.
-  extensions::LaunchContainer launch_container =
-      extensions_service->extension_prefs()->GetLaunchContainer(extension);
+  extensions::LaunchContainer launch_container = extensions::GetLaunchContainer(
+      extensions_service->extension_prefs(), extension);
 
-  if (!extensions_service->extension_prefs()->HasPreferredLaunchContainer(
-          extension))
-    launch_container = extensions::LAUNCH_WINDOW;
+  if (!extensions::HasPreferredLaunchContainer(
+          extensions_service->extension_prefs(), extension))
+    launch_container = extensions::LAUNCH_CONTAINER_WINDOW;
 
   *out_extension = extension;
   *out_launch_container = launch_container;
@@ -370,7 +370,7 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
     if (extension) {
       RecordCmdLineAppHistogram(extensions::Manifest::TYPE_PLATFORM_APP);
       AppLaunchParams params(profile, extension,
-                             extensions::LAUNCH_NONE, NEW_WINDOW);
+                             extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW);
       params.command_line = &command_line_;
       params.current_directory = cur_dir_;
       OpenApplicationWithReenablePrompt(params);
@@ -417,14 +417,6 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
   if (process_startup)
     ShellIntegration::MigrateChromiumShortcuts();
 #endif  // defined(OS_WIN)
-
-#if defined(ENABLE_EXTENSIONS)
-  // If we deferred creation of background extension hosts, we want to create
-  // them now that the session (if any) has been restored.
-  extensions::ProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(profile)->process_manager();
-  process_manager->DeferBackgroundHostCreation(false);
-#endif
 
   return true;
 }
@@ -481,13 +473,14 @@ bool StartupBrowserCreatorImpl::OpenApplicationTab(Profile* profile) {
     return false;
 
   // If the user doesn't want to open a tab, fail.
-  if (launch_container != extensions::LAUNCH_TAB)
+  if (launch_container != extensions::LAUNCH_CONTAINER_TAB)
     return false;
 
   RecordCmdLineAppHistogram(extension->GetType());
 
   WebContents* app_tab = OpenApplication(AppLaunchParams(
-      profile, extension, extensions::LAUNCH_TAB, NEW_FOREGROUND_TAB));
+      profile, extension, extensions::LAUNCH_CONTAINER_TAB,
+      NEW_FOREGROUND_TAB));
   return (app_tab != NULL);
 }
 
@@ -516,7 +509,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     // and avoid calling GetAppLaunchContainer() both here and in
     // OpenApplicationTab().
 
-    if (launch_container == extensions::LAUNCH_TAB)
+    if (launch_container == extensions::LAUNCH_CONTAINER_TAB)
       return false;
 
     RecordCmdLineAppHistogram(extension->GetType());

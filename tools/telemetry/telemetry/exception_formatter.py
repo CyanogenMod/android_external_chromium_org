@@ -45,8 +45,12 @@ def PrintFormattedException(exception_class, exception, tb):
       exception_class, exception, tb)
   extracted_tb = traceback.extract_tb(tb)
   traceback_header = formatted_exception[0].strip()
-  exception = formatted_exception[-1].strip()
-  local_variables = _GetFinalFrame(tb).tb_frame.f_locals
+  exception = ''.join([l[2:] if l[:2] == '  ' else l for l in
+                       traceback.format_exception_only(exception_class,
+                                                       exception)])
+  local_variables = [(variable, value) for variable, value in
+                     _GetFinalFrame(tb).tb_frame.f_locals.iteritems()
+                     if variable != 'self']
 
   # Format the traceback.
   print >> sys.stderr
@@ -62,12 +66,10 @@ def PrintFormattedException(exception_class, exception, tb):
   if local_variables:
     print >> sys.stderr
     print >> sys.stderr, 'Locals:'
-    longest_variable = max([len(v) for v in local_variables.keys()])
-    for variable, value in sorted(local_variables.iteritems()):
-      if variable == 'self':
-        continue
+    longest_variable = max([len(v) for v, _ in local_variables])
+    for variable, value in sorted(local_variables):
       value = repr(value)
-      possibly_truncated_value = _AbbreviateMiddle(value, ' ... ', 128)
+      possibly_truncated_value = _AbbreviateMiddle(value, ' ... ', 1024)
       truncation_indication = ''
       if len(possibly_truncated_value) != len(value):
         truncation_indication = ' (truncated)'

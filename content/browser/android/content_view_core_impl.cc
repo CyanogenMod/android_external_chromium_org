@@ -68,12 +68,15 @@ using blink::WebGestureEvent;
 using blink::WebInputEvent;
 
 // Describes the type and enabled state of a select popup item.
-// Keep in sync with the value defined in SelectPopupDialog.java
-enum PopupItemType {
-  POPUP_ITEM_TYPE_GROUP = 0,
-  POPUP_ITEM_TYPE_DISABLED,
-  POPUP_ITEM_TYPE_ENABLED
+namespace {
+
+enum {
+#define DEFINE_POPUP_ITEM_TYPE(name, value) POPUP_ITEM_TYPE_##name = value,
+#include "content/browser/android/popup_item_type_list.h"
+#undef DEFINE_POPUP_ITEM_TYPE
 };
+
+} //namespace
 
 namespace content {
 
@@ -204,6 +207,11 @@ ContentViewCoreImpl::~ContentViewCoreImpl() {
   // Make sure nobody calls back into this object while we are tearing things
   // down.
   notification_registrar_.RemoveAll();
+}
+
+base::android::ScopedJavaLocalRef<jobject>
+ContentViewCoreImpl::GetWebContentsAndroid(JNIEnv* env, jobject obj) {
+  return web_contents_->GetJavaWebContents();
 }
 
 void ContentViewCoreImpl::OnJavaContentViewCoreDestroyed(JNIEnv* env,
@@ -389,7 +397,7 @@ void ContentViewCoreImpl::UpdateFrameInfo(
       overdraw_bottom_height);
 }
 
-void ContentViewCoreImpl::SetTitle(const string16& title) {
+void ContentViewCoreImpl::SetTitle(const base::string16& title) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -438,7 +446,7 @@ void ContentViewCoreImpl::ShowSelectPopupMenu(
 
   ScopedJavaLocalRef<jintArray> enabled_array(env,
                                               env->NewIntArray(items.size()));
-  std::vector<string16> labels;
+  std::vector<base::string16> labels;
   labels.reserve(items.size());
   for (size_t i = 0; i < items.size(); ++i) {
     labels.push_back(items[i].label);
@@ -1121,37 +1129,6 @@ void ContentViewCoreImpl::MoveCaret(JNIEnv* env, jobject obj,
   }
 }
 
-jboolean ContentViewCoreImpl::CanGoBack(JNIEnv* env, jobject obj) {
-  return web_contents_->GetController().CanGoBack();
-}
-
-jboolean ContentViewCoreImpl::CanGoForward(JNIEnv* env, jobject obj) {
-  return web_contents_->GetController().CanGoForward();
-}
-
-jboolean ContentViewCoreImpl::CanGoToOffset(JNIEnv* env, jobject obj,
-                                            jint offset) {
-  return web_contents_->GetController().CanGoToOffset(offset);
-}
-
-void ContentViewCoreImpl::GoBack(JNIEnv* env, jobject obj) {
-  web_contents_->GetController().GoBack();
-}
-
-void ContentViewCoreImpl::GoForward(JNIEnv* env, jobject obj) {
-  web_contents_->GetController().GoForward();
-}
-
-void ContentViewCoreImpl::GoToOffset(JNIEnv* env, jobject obj, jint offset) {
-  web_contents_->GetController().GoToOffset(offset);
-}
-
-void ContentViewCoreImpl::GoToNavigationIndex(JNIEnv* env,
-                                              jobject obj,
-                                              jint index) {
-  web_contents_->GetController().GoToIndex(index);
-}
-
 void ContentViewCoreImpl::LoadIfNecessary(JNIEnv* env, jobject obj) {
   web_contents_->GetController().LoadIfNecessary();
 }
@@ -1487,7 +1464,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
 
   if (!callback) {
     // No callback requested.
-    rvh->ExecuteJavascriptInWebFrame(string16(),  // frame_xpath
+    rvh->ExecuteJavascriptInWebFrame(base::string16(),  // frame_xpath
                                      ConvertJavaStringToUTF16(env, script));
     return;
   }
@@ -1500,7 +1477,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
       base::Bind(&JavaScriptResultCallback, j_callback);
 
   rvh->ExecuteJavascriptInWebFrameCallbackResult(
-      string16(),  // frame_xpath
+      base::string16(),  // frame_xpath
       ConvertJavaStringToUTF16(env, script),
       c_callback);
 }

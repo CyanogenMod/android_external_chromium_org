@@ -11,10 +11,10 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -142,7 +142,7 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
       {"drive/root", kRootId, util::kDriveGrandRootLocalId, DIRECTORY},
       {"drive/root/File 1.txt",
           "file:2_file_resource_id", kRootId, FILE},
-      {"drive/root/Slash \xE2\x88\x95 in file 1.txt",
+      {"drive/root/Slash _ in file 1.txt",
           "file:slash_file_resource_id", kRootId, FILE},
       {"drive/root/Document 1 excludeDir-test.gdoc",
           "document:5_document_resource_id", kRootId, FILE},
@@ -156,9 +156,9 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
           "folder:1_folder_resource_id", FILE},
       {"drive/root/Directory 2 excludeDir-test",
           "folder:sub_dir_folder_2_self_link", kRootId, DIRECTORY},
-      {"drive/root/Slash \xE2\x88\x95 in directory",
+      {"drive/root/Slash _ in directory",
           "folder:slash_dir_folder_resource_id", kRootId, DIRECTORY},
-      {"drive/root/Slash \xE2\x88\x95 in directory/Slash SubDir File.txt",
+      {"drive/root/Slash _ in directory/Slash SubDir File.txt",
           "file:slash_subdir_file",
           "folder:slash_dir_folder_resource_id", FILE},
       // Deeper

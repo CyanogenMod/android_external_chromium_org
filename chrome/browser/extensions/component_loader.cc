@@ -23,6 +23,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/plugin_service.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/manifest_constants.h"
@@ -497,6 +498,11 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
           base::FilePath(FILE_PATH_LITERAL("chromeos/wallpaper_manager")));
     }
 
+    if (!command_line->HasSwitch(chromeos::switches::kDisableFirstRunUI)) {
+      Add(IDR_FIRST_RUN_DIALOG_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("chromeos/first_run/app")));
+    }
+
     Add(IDR_NETWORK_CONFIGURATION_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("chromeos/network_configuration")));
 
@@ -555,6 +561,17 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   AddNetworkSpeechSynthesisExtension();
 #endif
 #endif  // defined(GOOGLE_CHROME_BUILD)
+
+#if defined(ENABLE_PLUGINS)
+  base::FilePath pdf_path;
+  content::PluginService* plugin_service =
+      content::PluginService::GetInstance();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kOutOfProcessPdf) &&
+      PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_path) &&
+      plugin_service->GetRegisteredPpapiPluginInfo(pdf_path)) {
+    Add(IDR_PDF_MANIFEST, base::FilePath(FILE_PATH_LITERAL("pdf")));
+  }
+#endif
 }
 
 void ComponentLoader::UnloadComponent(ComponentExtensionInfo* component) {

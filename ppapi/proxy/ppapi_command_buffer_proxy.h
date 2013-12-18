@@ -21,9 +21,8 @@ namespace proxy {
 
 class ProxyChannel;
 
-class PPAPI_PROXY_EXPORT PpapiCommandBufferProxy
-    : public gpu::CommandBuffer,
-      public gpu::GpuControl {
+class PPAPI_PROXY_EXPORT PpapiCommandBufferProxy : public gpu::CommandBuffer,
+                                                   public gpu::GpuControl {
  public:
   PpapiCommandBufferProxy(const HostResource& resource,
                           ProxyChannel* channel);
@@ -47,7 +46,7 @@ class PPAPI_PROXY_EXPORT PpapiCommandBufferProxy
       OVERRIDE;
 
   // gpu::GpuControl implementation:
-  virtual bool SupportsGpuMemoryBuffer() OVERRIDE;
+  virtual gpu::Capabilities GetCapabilities() OVERRIDE;
   virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
       size_t width,
       size_t height,
@@ -61,8 +60,10 @@ class PPAPI_PROXY_EXPORT PpapiCommandBufferProxy
                                const base::Closure& callback) OVERRIDE;
   virtual void SignalQuery(uint32 query,
                            const base::Closure& callback) OVERRIDE;
+  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
       OVERRIDE;
+  virtual void Echo(const base::Closure& callback) OVERRIDE;
 
  private:
   bool Send(IPC::Message* msg);

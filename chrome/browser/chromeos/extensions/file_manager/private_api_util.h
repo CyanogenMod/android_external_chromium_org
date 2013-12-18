@@ -8,7 +8,7 @@
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_UTIL_H_
 
 #include "base/callback_forward.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 #include "url/gurl.h"
 
 class ExtensionFunctionDispatcher;
@@ -47,10 +47,6 @@ void VolumeInfoToVolumeMetadata(
 // Returns the WebContents of the tab associated with the dispatcher. Returns
 // NULL on error.
 content::WebContents* GetWebContents(ExtensionFunctionDispatcher* dispatcher);
-
-// Returns the ID of the tab associated with the dispatcher. Returns 0 on
-// error.
-int32 GetTabId(ExtensionFunctionDispatcher* dispatcher);
 
 // Returns the local FilePath associated with |url|. If the file isn't of the
 // type FileSystemBackend handles, returns an empty

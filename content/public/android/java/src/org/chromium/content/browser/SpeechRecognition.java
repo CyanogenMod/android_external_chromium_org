@@ -19,7 +19,6 @@ import android.speech.SpeechRecognizer;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
-import org.chromium.content.browser.SpeechRecognitionError;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -254,14 +253,14 @@ public class SpeechRecognition {
     }
 
     @CalledByNative
-    private void startRecognition(String language, boolean continuous, boolean interim_results) {
+    private void startRecognition(String language, boolean continuous, boolean interimResults) {
         if (mRecognizer == null)
             return;
 
         mContinuous = continuous;
         mIntent.putExtra("android.speech.extra.DICTATION_MODE", continuous);
         mIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
-        mIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, interim_results);
+        mIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, interimResults);
         mRecognizer.startListening(mIntent);
     }
 

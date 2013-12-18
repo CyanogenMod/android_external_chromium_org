@@ -418,6 +418,8 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
       weak_factory_(this),
       fullscreen_parent_host_view_(NULL),
       pending_swap_buffers_acks_weak_factory_(this),
+      underlay_view_has_drawn_(false),
+      overlay_view_weak_factory_(this),
       next_swap_ack_time_(base::Time::Now()),
       software_frame_weak_ptr_factory_(this) {
   software_frame_manager_.reset(new SoftwareFrameManager(
@@ -1019,7 +1021,8 @@ void RenderWidgetHostViewMac::Destroy() {
 // Called from the renderer to tell us what the tooltip text should be. It
 // calls us frequently so we need to cache the value to prevent doing a lot
 // of repeat work.
-void RenderWidgetHostViewMac::SetTooltipText(const string16& tooltip_text) {
+void RenderWidgetHostViewMac::SetTooltipText(
+    const base::string16& tooltip_text) {
   if (tooltip_text != tooltip_text_ && [[cocoa_view_ window] isKeyWindow]) {
     tooltip_text_ = tooltip_text;
 
@@ -1027,7 +1030,7 @@ void RenderWidgetHostViewMac::SetTooltipText(const string16& tooltip_text) {
     // Windows; we're just trying to be polite. Don't persist the trimmed
     // string, as then the comparison above will always fail and we'll try to
     // set it again every single time the mouse moves.
-    string16 display_text = tooltip_text_;
+    base::string16 display_text = tooltip_text_;
     if (tooltip_text_.length() > kMaxTooltipLength)
       display_text = tooltip_text_.substr(0, kMaxTooltipLength);
 
@@ -1060,7 +1063,7 @@ void RenderWidgetHostViewMac::StopSpeaking() {
 // RenderWidgetHostViewCocoa uses the stored selection text,
 // which implements NSServicesRequests protocol.
 //
-void RenderWidgetHostViewMac::SelectionChanged(const string16& text,
+void RenderWidgetHostViewMac::SelectionChanged(const base::string16& text,
                                                size_t offset,
                                                const gfx::Range& range) {
   if (range.is_empty() || text.empty()) {
@@ -1245,7 +1248,7 @@ bool RenderWidgetHostViewMac::PostProcessEventForPluginIme(
 }
 
 void RenderWidgetHostViewMac::PluginImeCompositionCompleted(
-    const string16& text, int plugin_id) {
+    const base::string16& text, int plugin_id) {
   if (render_widget_host_) {
     render_widget_host_->Send(new ViewMsg_PluginImeCompositionCompleted(
         render_widget_host_->GetRoutingID(), text, plugin_id));
@@ -1418,6 +1421,14 @@ bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
         forParameter:NSOpenGLCPSurfaceOrder];
   }
 
+  // Instead of drawing, request that underlay view redraws.
+  if (underlay_view_ &&
+      underlay_view_->compositing_iosurface_ &&
+      underlay_view_has_drawn_) {
+    [underlay_view_->cocoa_view() setNeedsDisplay:YES];
+    return true;
+  }
+
   CGLError cgl_error = CGLSetCurrentContext(
       compositing_iosurface_context_->cgl_context());
   if (cgl_error != kCGLNoError) {
@@ -1426,12 +1437,35 @@ bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
   }
 
   [compositing_iosurface_context_->nsgl_context() setView:cocoa_view_];
-  return compositing_iosurface_->DrawIOSurface(
+  bool has_overlay = overlay_view_ && overlay_view_->compositing_iosurface_;
+
+  gfx::Rect view_rect(NSRectToCGRect([cocoa_view_ frame]));
+  if (!compositing_iosurface_->DrawIOSurface(
       compositing_iosurface_context_,
-      gfx::Rect(NSRectToCGRect([cocoa_view_ frame])),
+      view_rect,
       scale_factor(),
       frame_subscriber(),
-      true);
+      !has_overlay)) {
+    return false;
+  }
+
+  if (has_overlay) {
+    overlay_view_->underlay_view_has_drawn_ = true;
+    gfx::Rect overlay_view_rect(
+        NSRectToCGRect([overlay_view_->cocoa_view() frame]));
+    overlay_view_rect.set_x(overlay_view_offset_.x());
+    overlay_view_rect.set_y(view_rect.height() -
+                            overlay_view_rect.height() -
+                            overlay_view_offset_.y());
+    return overlay_view_->compositing_iosurface_->DrawIOSurface(
+        compositing_iosurface_context_,
+        overlay_view_rect,
+        overlay_view_->scale_factor(),
+        overlay_view_->frame_subscriber(),
+        true);
+  }
+
+  return true;
 }
 
 void RenderWidgetHostViewMac::GotAcceleratedCompositingError() {
@@ -1446,6 +1480,29 @@ void RenderWidgetHostViewMac::GotAcceleratedCompositingError() {
   // TODO(ccameron): It may be a good idea to request that the renderer recreate
   // its GL context as well, and fall back to software if this happens
   // repeatedly.
+}
+
+void RenderWidgetHostViewMac::SetOverlayView(
+    RenderWidgetHostViewMac* overlay, const gfx::Point& offset) {
+  if (overlay_view_)
+    overlay_view_->underlay_view_.reset();
+
+  overlay_view_ = overlay->overlay_view_weak_factory_.GetWeakPtr();
+  overlay_view_offset_ = offset;
+  overlay_view_->underlay_view_ = overlay_view_weak_factory_.GetWeakPtr();
+  overlay_view_->underlay_view_has_drawn_ = false;
+
+  [cocoa_view_ setNeedsDisplay:YES];
+  [[cocoa_view_ window] disableScreenUpdatesUntilFlush];
+}
+
+void RenderWidgetHostViewMac::RemoveOverlayView() {
+  if (overlay_view_) {
+    overlay_view_->underlay_view_.reset();
+    overlay_view_.reset();
+  }
+  [cocoa_view_ setNeedsDisplay:YES];
+  [[cocoa_view_ window] disableScreenUpdatesUntilFlush];
 }
 
 void RenderWidgetHostViewMac::GetVSyncParameters(
@@ -1745,7 +1802,7 @@ bool RenderWidgetHostViewMac::LockMouse() {
   [NSCursor hide];
 
   // Clear the tooltip window.
-  SetTooltipText(string16());
+  SetTooltipText(base::string16());
 
   return true;
 }
@@ -1956,7 +2013,6 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 // RenderWidgetHostViewCocoa ---------------------------------------------------
 
 @implementation RenderWidgetHostViewCocoa
-
 @synthesize selectedRange = selectedRange_;
 @synthesize suppressNextEscapeKeyUp = suppressNextEscapeKeyUp_;
 @synthesize markedRange = markedRange_;
@@ -1965,6 +2021,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 - (id)initWithRenderWidgetHostViewMac:(RenderWidgetHostViewMac*)r {
   self = [super initWithFrame:NSZeroRect];
   if (self) {
+    self.acceptsTouchEvents = YES;
     editCommand_helper_.reset(new RenderWidgetHostViewMacEditCommandHelper);
     editCommand_helper_->AddEditingSelectorsToClass([self class]);
 
@@ -2018,8 +2075,8 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 }
 
 - (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right {
-  if (delegate_ && [delegate_ respondsToSelector:
-      @selector(scrollOffsetPinnedToLeft:toRight:)]) {
+  if (delegate_ && [delegate_
+      respondsToSelector:@selector(scrollOffsetPinnedToLeft:toRight:)]) {
     [delegate_ scrollOffsetPinnedToLeft:left toRight:right];
   }
 }
@@ -2098,10 +2155,16 @@ void RenderWidgetHostViewMac::FrameSwapped() {
       // The cursor is over a nonWebContentView - ignore this mouse event.
       return YES;
     }
-    if ([view isKindOfClass:[self class]] && ![view isEqual:self]) {
+    if ([view isKindOfClass:[self class]] && ![view isEqual:self] &&
+        !hasOpenMouseDown_) {
       // The cursor is over an overlapping render widget. This check is done by
       // both views so the one that's returned by -hitTest: will end up
       // processing the event.
+      // Note that while dragging, we only get events for the render view where
+      // drag started, even if mouse is  actually over another view or outside
+      // the window. Cocoa does this for us. We should handle these events and
+      // not ignore (since there is no other render view to handle them). Thus
+      // the |!hasOpenMouseDown_| check above.
       return YES;
     }
     view = [view superview];
@@ -2393,7 +2456,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
   } else if (oldHasMarkedText && !hasMarkedText_ && !textInserted) {
     if (unmarkTextCalled_) {
       widgetHost->ImeConfirmComposition(
-          string16(), gfx::Range::InvalidRange(), false);
+          base::string16(), gfx::Range::InvalidRange(), false);
     } else {
       widgetHost->ImeCancelComposition();
     }
@@ -2479,6 +2542,47 @@ void RenderWidgetHostViewMac::FrameSwapped() {
   }
 }
 
+- (void)beginGestureWithEvent:(NSEvent*)event {
+  [delegate_ beginGestureWithEvent:event];
+}
+- (void)endGestureWithEvent:(NSEvent*)event {
+  [delegate_ endGestureWithEvent:event];
+}
+- (void)touchesMovedWithEvent:(NSEvent*)event {
+  [delegate_ touchesMovedWithEvent:event];
+}
+- (void)touchesBeganWithEvent:(NSEvent*)event {
+  [delegate_ touchesBeganWithEvent:event];
+}
+- (void)touchesCancelledWithEvent:(NSEvent*)event {
+  [delegate_ touchesCancelledWithEvent:event];
+}
+- (void)touchesEndedWithEvent:(NSEvent*)event {
+  [delegate_ touchesEndedWithEvent:event];
+}
+
+// This method handles 2 different types of hardware events.
+// (Apple does not distinguish between them).
+//  a. Scrolling the middle wheel of a mouse.
+//  b. Swiping on the track pad.
+//
+// This method is responsible for 2 types of behavior:
+//  a. Scrolling the content of window.
+//  b. Navigating forwards/backwards in history.
+//
+// This is a brief description of the logic:
+//  1. If the content can be scrolled, scroll the content.
+//     (This requires a roundtrip to blink to determine whether the content
+//      can be scrolled.)
+//     Once this logic is triggered, the navigate logic cannot be triggered
+//     until the gesture finishes.
+//  2. If the user is making a horizontal swipe, start the navigate
+//     forward/backwards UI.
+//     Once this logic is triggered, the user can either cancel or complete
+//     the gesture. If the user completes the gesture, all remaining touches
+//     are swallowed, and not allowed to scroll the content. If the user
+//     cancels the gesture, all remaining touches are forwarded to the content
+//     scroll logic. The user cannot trigger the navigation logic again.
 - (void)scrollWheel:(NSEvent*)event {
   if (delegate_ && [delegate_ respondsToSelector:@selector(handleEvent:)]) {
     BOOL handled = [delegate_ handleEvent:event];
@@ -2493,13 +2597,14 @@ void RenderWidgetHostViewMac::FrameSwapped() {
   if (base::mac::IsOSLionOrLater() && [event phase] == NSEventPhaseBegan &&
       !endWheelMonitor_) {
     endWheelMonitor_ =
-        [NSEvent addLocalMonitorForEventsMatchingMask:NSScrollWheelMask
-            handler:^(NSEvent* blockEvent) {
-              [self shortCircuitScrollWheelEvent:blockEvent];
-              return blockEvent;
-            }];
+      [NSEvent addLocalMonitorForEventsMatchingMask:NSScrollWheelMask
+      handler:^(NSEvent* blockEvent) {
+          [self shortCircuitScrollWheelEvent:blockEvent];
+          return blockEvent;
+      }];
   }
 
+  // This is responsible for content scrolling!
   if (renderWidgetHostView_->render_widget_host_) {
     const WebMouseWheelEvent& webEvent =
         WebInputEventFactory::mouseWheelEvent(event, self);
@@ -2931,8 +3036,9 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 }
 
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
-  if (delegate_ && [delegate_ respondsToSelector:
-      @selector(validateUserInterfaceItem:isValidItem:)]) {
+  if (delegate_ &&
+      [delegate_ respondsToSelector:@selector(validateUserInterfaceItem:
+                                                            isValidItem:)]) {
     BOOL valid;
     BOOL known = [delegate_ validateUserInterfaceItem:item
                                           isValidItem:&valid];
@@ -3506,7 +3612,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   // called in keyEvent: method.
   if (!handlingKeyDown_) {
     renderWidgetHostView_->render_widget_host_->ImeConfirmComposition(
-        string16(), gfx::Range::InvalidRange(), false);
+        base::string16(), gfx::Range::InvalidRange(), false);
   } else {
     unmarkTextCalled_ = YES;
   }
@@ -3744,7 +3850,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 
   if (renderWidgetHostView_->render_widget_host_)
     renderWidgetHostView_->render_widget_host_->ImeConfirmComposition(
-        string16(), gfx::Range::InvalidRange(), false);
+        base::string16(), gfx::Range::InvalidRange(), false);
 
   [self cancelComposition];
 }
@@ -3757,7 +3863,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   if (!active) {
     [[ComplexTextInputPanel sharedComplexTextInputPanel] cancelComposition];
     renderWidgetHostView_->PluginImeCompositionCompleted(
-        string16(), focusedPluginIdentifier_);
+        base::string16(), focusedPluginIdentifier_);
   }
 }
 
@@ -3792,7 +3898,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   if (pluginImeActive_ &&
       ![[ComplexTextInputPanel sharedComplexTextInputPanel] inComposition]) {
     renderWidgetHostView_->PluginImeCompositionCompleted(
-        string16(), focusedPluginIdentifier_);
+        base::string16(), focusedPluginIdentifier_);
     pluginImeActive_ = NO;
   }
 }

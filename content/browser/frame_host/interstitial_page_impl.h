@@ -10,6 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/navigator_delegate.h"
+#include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/public/browser/interstitial_page.h"
@@ -22,7 +23,6 @@
 namespace content {
 class NavigationEntry;
 class NavigationControllerImpl;
-class Navigator;
 class RenderViewHostImpl;
 class RenderWidgetHostView;
 class WebContentsView;
@@ -38,6 +38,7 @@ class CONTENT_EXPORT InterstitialPageImpl
     : public NON_EXPORTED_BASE(InterstitialPage),
       public NotificationObserver,
       public WebContentsObserver,
+      public NON_EXPORTED_BASE(RenderFrameHostDelegate),
       public RenderViewHostDelegate,
       public RenderWidgetHostDelegate,
       public NON_EXPORTED_BASE(NavigatorDelegate) {
@@ -101,6 +102,8 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
 
+  // RenderFrameHostDelegate implementation:
+
   // RenderViewHostDelegate implementation:
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
@@ -112,20 +115,23 @@ class CONTENT_EXPORT InterstitialPageImpl
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
   virtual void UpdateTitle(RenderViewHost* render_view_host,
                            int32 page_id,
-                           const string16& title,
+                           const base::string16& title,
                            base::i18n::TextDirection title_direction) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
   virtual WebPreferences GetWebkitPrefs() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void CreateNewWindow(
+      int render_process_id,
       int route_id,
       int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) OVERRIDE;
-  virtual void CreateNewWidget(int route_id,
+  virtual void CreateNewWidget(int render_process_id,
+                               int route_id,
                                blink::WebPopupType popup_type) OVERRIDE;
-  virtual void CreateNewFullscreenWidget(int route_id) OVERRIDE;
+  virtual void CreateNewFullscreenWidget(int render_process_id,
+                                         int route_id) OVERRIDE;
   virtual void ShowCreatedWindow(int route_id,
                                  WindowOpenDisposition disposition,
                                  const gfx::Rect& initial_pos,
@@ -246,7 +252,7 @@ class CONTENT_EXPORT InterstitialPageImpl
 
   // The original title of the contents that should be reverted to when the
   // interstitial is hidden.
-  string16 original_web_contents_title_;
+  base::string16 original_web_contents_title_;
 
   // Our RenderViewHostViewDelegate, necessary for accelerators to work.
   scoped_ptr<InterstitialPageRVHDelegateView> rvh_delegate_view_;

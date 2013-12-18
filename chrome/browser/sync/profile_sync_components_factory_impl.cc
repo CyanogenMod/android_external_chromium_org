@@ -6,7 +6,9 @@
 #include "build/build_config.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
@@ -57,16 +59,15 @@
 #include "chrome/browser/themes/theme_syncable_service.h"
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/autofill_profile_syncable_service.h"
+#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
-#include "components/dom_distiller/content/dom_distiller_service_factory.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/syncable_service.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
@@ -121,7 +122,8 @@ ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
       extension_system_(
           extensions::ExtensionSystemFactory::GetForProfile(profile)),
       web_data_service_(
-          autofill::AutofillWebDataService::FromBrowserContext(profile_)) {
+          WebDataServiceFactory::GetAutofillWebDataForProfile(
+              profile_, Profile::EXPLICIT_ACCESS)) {
 }
 
 ProfileSyncComponentsFactoryImpl::~ProfileSyncComponentsFactoryImpl() {
@@ -208,22 +210,20 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
         new PasswordDataTypeController(this, profile_, pss));
   }
   // Article sync is disabled by default.  Register only if explicitly enabled.
-  if (command_line_->HasSwitch(switches::kEnableSyncArticles)) {
+  if (IsEnableSyncArticlesSet()) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(syncer::ARTICLES, this, profile_, pss));
   }
 
 #if defined(ENABLE_MANAGED_USERS)
-  if (ManagedUserService::AreManagedUsersEnabled()) {
-    if (profile_->IsManaged()) {
-      pss->RegisterDataTypeController(
-          new UIDataTypeController(
-              syncer::MANAGED_USER_SETTINGS, this, profile_, pss));
-    } else {
-      pss->RegisterDataTypeController(
-          new UIDataTypeController(
-              syncer::MANAGED_USERS, this, profile_, pss));
-    }
+  if (profile_->IsManaged()) {
+    pss->RegisterDataTypeController(
+        new UIDataTypeController(
+            syncer::MANAGED_USER_SETTINGS, this, profile_, pss));
+  } else {
+    pss->RegisterDataTypeController(
+        new UIDataTypeController(
+            syncer::MANAGED_USERS, this, profile_, pss));
   }
 #endif
 }

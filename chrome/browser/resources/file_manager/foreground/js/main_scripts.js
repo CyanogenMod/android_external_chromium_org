@@ -79,7 +79,6 @@
 //<include src="ui/file_manager_dialog_base.js"/>
 //
 //<include src="app_installer.js"/>
-//<include src="butter_bar.js"/>
 //<include src="cws_container_client.js"/>
 //<include src="directory_contents.js"/>
 //<include src="directory_model.js"/>
@@ -111,7 +110,6 @@
 //<include src="ui/preview_panel.js"/>
 //<include src="ui/progress_center_panel.js"/>
 //<include src="ui/search_box.js"/>
-//<include src="url_constants.js"/>
 //<include src="volume_manager_wrapper.js"/>
 //<include src="media/media_util.js"/>
 //<include src="metadata/metadata_cache.js"/>

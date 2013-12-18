@@ -30,6 +30,14 @@
 #include "net/test/python_utils.h"
 #include "testing/perf/perf_test.h"
 
+// Temporarily disabled on Linux.
+// http://crbug.com/281268.
+#if defined(OS_LINUX)
+#define MAYBE_WebrtcVideoQualityBrowserTest DISABLED_WebrtcVideoQualityBrowserTest
+#else
+#define MAYBE_WebrtcVideoQualityBrowserTest WebrtcVideoQualityBrowserTest
+#endif
+
 static const base::FilePath::CharType kFrameAnalyzerExecutable[] =
 #if defined(OS_WIN)
     FILE_PATH_LITERAL("frame_analyzer.exe");
@@ -92,14 +100,15 @@ static const char kPyWebSocketPortNumber[] = "12221";
 // frame_analyzer. Both tools can be found under third_party/webrtc/tools. The
 // test also runs a stand alone Python implementation of a WebSocket server
 // (pywebsocket) and a barcode_decoder script.
-class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
+class MAYBE_WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
  public:
-  WebrtcVideoQualityBrowserTest()
+  MAYBE_WebrtcVideoQualityBrowserTest()
       : pywebsocket_server_(0),
         environment_(base::Environment::Create()) {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
+    DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
@@ -166,15 +175,6 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
 
   bool ShutdownPyWebSocketServer() {
     return base::KillProcess(pywebsocket_server_, 0, false);
-  }
-
-  // Ensures we didn't get any errors asynchronously (e.g. while no javascript
-  // call from this test was outstanding).
-  // TODO(phoglund): this becomes obsolete when we switch to communicating with
-  // the DOM message queue.
-  void AssertNoAsynchronousErrors(content::WebContents* tab_contents) {
-    EXPECT_EQ("ok-no-errors",
-              ExecuteJavascript("getAnyTestFailures()", tab_contents));
   }
 
   void EstablishCall(content::WebContents* from_tab,
@@ -323,8 +323,12 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
   scoped_ptr<base::Environment> environment_;
 };
 
-IN_PROC_BROWSER_TEST_F(WebrtcVideoQualityBrowserTest,
+IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcVideoQualityBrowserTest,
                        MANUAL_TestVGAVideoQuality) {
+  ASSERT_GE(TestTimeouts::action_max_timeout().InSeconds(), 150) <<
+      "This is a long-running test; you must specify "
+      "--ui-test-action-max-timeout to have a value of at least 150000.";
+
   ASSERT_TRUE(HasAllRequiredResources());
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(StartPyWebSocketServer());
@@ -348,9 +352,6 @@ IN_PROC_BROWSER_TEST_F(WebrtcVideoQualityBrowserTest,
 
   EstablishCall(left_tab, right_tab);
 
-  AssertNoAsynchronousErrors(left_tab);
-  AssertNoAsynchronousErrors(right_tab);
-
   // Poll slower here to avoid flooding the log with messages: capturing and
   // sending frames take quite a bit of time.
   int polling_interval_msec = 1000;
@@ -362,9 +363,6 @@ IN_PROC_BROWSER_TEST_F(WebrtcVideoQualityBrowserTest,
   HangUp(left_tab);
   WaitUntilHangupVerified(left_tab);
   WaitUntilHangupVerified(right_tab);
-
-  AssertNoAsynchronousErrors(left_tab);
-  AssertNoAsynchronousErrors(right_tab);
 
   EXPECT_TRUE(PollingWaitUntil(
       "haveMoreFramesToSend()", "no-more-frames", right_tab,

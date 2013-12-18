@@ -10,10 +10,10 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
-#include "chrome/browser/google_apis/drive_common_callbacks.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_task.h"
+#include "google_apis/drive/drive_common_callbacks.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace drive {
 class DriveServiceInterface;
@@ -29,6 +29,7 @@ namespace sync_file_system {
 namespace drive_backend {
 
 class MetadataDatabase;
+class SyncEngineContext;
 
 // This class performs initializion sequence of SyncEngine.
 //
@@ -59,7 +60,8 @@ class MetadataDatabase;
 //
 class SyncEngineInitializer : public SyncTask {
  public:
-  SyncEngineInitializer(base::SequencedTaskRunner* task_runner,
+  SyncEngineInitializer(SyncEngineContext* sync_context,
+                        base::SequencedTaskRunner* task_runner,
                         drive::DriveServiceInterface* drive_service,
                         const base::FilePath& database_path);
   virtual ~SyncEngineInitializer();
@@ -98,6 +100,8 @@ class SyncEngineInitializer : public SyncTask {
   void PopulateDatabase(const SyncStatusCallback& callback);
   void DidPopulateDatabase(const SyncStatusCallback& callback,
                            SyncStatusCode status);
+
+  SyncEngineContext* sync_context_;  // Not owned.
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   drive::DriveServiceInterface* drive_service_;

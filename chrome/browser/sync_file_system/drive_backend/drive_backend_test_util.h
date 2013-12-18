@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_DRIVE_BACKEND_TEST_UTIL_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace google_apis {
 class FileResource;
@@ -32,11 +32,6 @@ void ExpectEquivalentMetadata(const FileMetadata& left,
                               const FileMetadata& right);
 void ExpectEquivalentTrackers(const FileTracker& left,
                               const FileTracker& right);
-void ExpectEquivalentResourceAndMetadata(
-    const google_apis::FileResource& resource,
-    const FileMetadata& metadata);
-void ExpectEquivalentMetadataAndTracker(const FileMetadata& metadata,
-                                        const FileTracker& tracker);
 
 }  // namespace test_util
 }  // namespace drive_backend

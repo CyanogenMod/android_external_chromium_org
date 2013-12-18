@@ -49,7 +49,8 @@ struct WebURLError;
 }
 
 namespace content {
-
+class DocumentState;
+class RenderFrame;
 class RenderView;
 class SynchronousCompositor;
 struct KeySystemInfo;
@@ -62,6 +63,9 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Notifies us that the RenderThread has been created.
   virtual void RenderThreadStarted() {}
+
+  // Notifies that a new RenderFrame has been created.
+  virtual void RenderFrameCreated(RenderFrame* render_frame) {}
 
   // Notifies that a new RenderView has been created.
   virtual void RenderViewCreated(RenderView* render_view) {}
@@ -83,7 +87,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // |plugin| will contain the created plugin, although it could be NULL. If it
   // returns false, the content layer will create the plugin.
   virtual bool OverrideCreatePlugin(
-      RenderView* render_view,
+      RenderFrame* render_frame,
       blink::WebFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin);
@@ -91,7 +95,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Creates a replacement plug-in that is shown when the plug-in at |file_path|
   // couldn't be loaded. This allows the embedder to show a custom placeholder.
   virtual blink::WebPlugin* CreatePluginReplacement(
-      RenderView* render_view,
+      RenderFrame* render_frame,
       const base::FilePath& plugin_path);
 
   // Returns true if the embedder has an error page to show for the given http
@@ -119,12 +123,12 @@ class CONTENT_EXPORT ContentRendererClient {
       const blink::WebURLError& error,
       const std::string& accept_languages,
       std::string* error_html,
-      string16* error_description) {}
+      base::string16* error_description) {}
 
   // Allows the embedder to control when media resources are loaded. Embedders
   // can run |closure| immediately if they don't wish to defer media resource
   // loading.
-  virtual void DeferMediaLoad(RenderView* render_view,
+  virtual void DeferMediaLoad(RenderFrame* render_frame,
                               const base::Closure& closure);
 
   // Allows the embedder to override creating a WebMediaStreamCenter. If it
@@ -168,13 +172,22 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if a popup window should be allowed.
   virtual bool AllowPopup();
 
+#ifdef OS_ANDROID
+  // TODO(sgurun) This callback is deprecated and will be removed as soon
+  // as android webview completes implementation of a resource throttle based
+  // shouldoverrideurl implementation. See crbug.com/325351
+  //
   // Returns true if the navigation was handled by the embedder and should be
-  // ignored by WebKit. This method is used by CEF.
-  virtual bool HandleNavigation(blink::WebFrame* frame,
+  // ignored by WebKit. This method is used by CEF and android_webview.
+  virtual bool HandleNavigation(RenderView* view,
+                                DocumentState* document_state,
+                                int opener_id,
+                                blink::WebFrame* frame,
                                 const blink::WebURLRequest& request,
                                 blink::WebNavigationType type,
                                 blink::WebNavigationPolicy default_policy,
                                 bool is_redirect);
+#endif
 
   // Returns true if we should fork a new process for the given navigation.
   // If |send_referrer| is set to false (which is the default), no referrer
@@ -214,7 +227,7 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual bool IsLinkVisited(unsigned long long link_hash);
   virtual blink::WebPrescientNetworking* GetPrescientNetworking();
   virtual bool ShouldOverridePageVisibilityState(
-      const RenderView* render_view,
+      const RenderFrame* render_frame,
       blink::WebPageVisibilityState* override_state);
 
   // Return true if the GetCookie request will be handled by the embedder.

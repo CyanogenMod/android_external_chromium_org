@@ -193,11 +193,11 @@ void SQLiteServerBoundCertStore::Backend::LoadOnDBThread(
   // Ensure the parent directory for storing certs is created before reading
   // from it.
   const base::FilePath dir = path_.DirName();
-  if (!base::PathExists(dir) && !file_util::CreateDirectory(dir))
+  if (!base::PathExists(dir) && !base::CreateDirectory(dir))
     return;
 
   int64 db_size = 0;
-  if (file_util::GetFileSize(path_, &db_size))
+  if (base::GetFileSize(path_, &db_size))
     UMA_HISTOGRAM_COUNTS("DomainBoundCerts.DBSizeInKB", db_size / 1024 );
 
   db_.reset(new sql::Connection);

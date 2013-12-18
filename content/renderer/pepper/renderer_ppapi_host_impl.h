@@ -78,6 +78,8 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
   virtual bool IsValidInstance(PP_Instance instance) const OVERRIDE;
   virtual PepperPluginInstance* GetPluginInstance(
       PP_Instance instance) const OVERRIDE;
+  virtual RenderFrame* GetRenderFrameForInstance(
+      PP_Instance instance) const OVERRIDE;
   virtual RenderView* GetRenderViewForInstance(
       PP_Instance instance) const OVERRIDE;
   virtual blink::WebPluginContainer* GetContainerForInstance(
@@ -85,7 +87,7 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
   virtual base::ProcessId GetPluginPID() const OVERRIDE;
   virtual bool HasUserGesture(PP_Instance instance) const OVERRIDE;
   virtual int GetRoutingIDForWidget(PP_Instance instance) const OVERRIDE;
-  virtual gfx::Point PluginPointToRenderView(
+  virtual gfx::Point PluginPointToRenderFrame(
       PP_Instance instance,
       const gfx::Point& pt) const OVERRIDE;
   virtual IPC::PlatformFileForTransit ShareHandleWithRemote(

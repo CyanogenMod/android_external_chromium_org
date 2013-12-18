@@ -8,11 +8,12 @@
 #include <string>
 #include <vector>
 
+#include "base/strings/string_piece.h"
 #include "v8/include/v8.h"
 
 namespace gin {
 
-template<typename T>
+template<typename T, typename Enable = void>
 struct Converter {};
 
 template<>
@@ -72,6 +73,13 @@ struct Converter<double> {
 };
 
 template<>
+struct Converter<base::StringPiece> {
+  static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate,
+                                    const base::StringPiece& val);
+  // No conversion out is possible because StringPiece does not contain storage.
+};
+
+template<>
 struct Converter<std::string> {
   static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate,
                                     const std::string& val);
@@ -127,7 +135,8 @@ template<typename T>
 struct Converter<std::vector<T> > {
   static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate,
                                     const std::vector<T>& val) {
-    v8::Handle<v8::Array> result(v8::Array::New(static_cast<int>(val.size())));
+    v8::Handle<v8::Array> result(
+        v8::Array::New(isolate, static_cast<int>(val.size())));
     for (size_t i = 0; i < val.size(); ++i) {
       result->Set(static_cast<int>(i), Converter<T>::ToV8(isolate, val[i]));
     }
@@ -163,12 +172,12 @@ v8::Handle<v8::Value> ConvertToV8(v8::Isolate* isolate,
 }
 
 inline v8::Handle<v8::String> StringToV8(v8::Isolate* isolate,
-                                         std::string input) {
+                                         const base::StringPiece& input) {
   return ConvertToV8(isolate, input).As<v8::String>();
 }
 
 v8::Handle<v8::String> StringToSymbol(v8::Isolate* isolate,
-                                      const std::string& val);
+                                      const base::StringPiece& val);
 
 template<typename T>
 bool ConvertFromV8(v8::Isolate* isolate, v8::Handle<v8::Value> input,

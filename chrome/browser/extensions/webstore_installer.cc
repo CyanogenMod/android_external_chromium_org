@@ -109,7 +109,7 @@ void GetDownloadFilePath(
   // Ensure the download directory exists. TODO(asargent) - make this use
   // common code from the downloads system.
   if (!base::DirectoryExists(directory)) {
-    if (!file_util::CreateDirectory(directory)) {
+    if (!base::CreateDirectory(directory)) {
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                               base::Bind(callback, base::FilePath()));
       return;
@@ -390,8 +390,9 @@ void WebstoreInstaller::Observe(int type,
         return;
 
       // TODO(rdevlin.cronin): Continue removing std::string errors and
-      // replacing with string16. See crbug.com/71980.
-      const string16* error = content::Details<const string16>(details).ptr();
+      // replacing with base::string16. See crbug.com/71980.
+      const base::string16* error =
+          content::Details<const base::string16>(details).ptr();
       const std::string utf8_error = UTF16ToUTF8(*error);
       if (download_url_ == crx_installer->original_download_url())
         ReportFailure(utf8_error, FAILURE_REASON_OTHER);

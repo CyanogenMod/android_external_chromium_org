@@ -237,7 +237,7 @@
         'browser/ui/views/tabs/tab_drag_controller_interactive_uitest.cc',
         'browser/ui/views/tabs/tab_drag_controller_interactive_uitest.h',
         'browser/ui/views/tabs/tab_drag_controller_interactive_uitest_win.cc',
-        'browser/ui/views/toolbar/button_dropdown_test.cc',
+        'browser/ui/views/toolbar/toolbar_button_test.cc',
         'test/base/interactive_test_utils.cc',
         'test/base/interactive_test_utils.h',
         'test/base/interactive_test_utils_aura.cc',
@@ -269,7 +269,7 @@
           # TODO(gbillock): aura linux does not support the automation for
           # SendMouseMoveNotifyWhenDone
           'sources!': [
-            'browser/ui/views/toolbar/button_dropdown_test.cc',
+            'browser/ui/views/toolbar/toolbar_button_test.cc',
           ],
         }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
@@ -1002,7 +1002,8 @@
         'browser/chromeos/file_manager/file_manager_browsertest.cc',
         'browser/chromeos/file_manager/file_manager_jstest.cc',
         'browser/chromeos/first_run/drive_first_run_browsertest.cc',
-        'browser/chromeos/input_method/input_method_engine_ibus_browserttests.cc',
+        'browser/chromeos/input_method/input_method_engine_browsertests.cc',
+        'browser/chromeos/input_method/mode_indicator_browsertest.cc',
         'browser/chromeos/kiosk_mode/mock_kiosk_mode_settings.cc',
         'browser/chromeos/kiosk_mode/mock_kiosk_mode_settings.h',
         'browser/chromeos/login/crash_restore_browsertest.cc',
@@ -1037,12 +1038,12 @@
         'browser/chromeos/login/test_login_utils.h',
         'browser/chromeos/login/user_adding_screen_browsertest.cc',
         'browser/chromeos/login/user_image_manager_browsertest.cc',
+        'browser/chromeos/login/user_image_manager_test_util.cc',
+        'browser/chromeos/login/user_image_manager_test_util.h',
         'browser/chromeos/login/wizard_controller_browsertest.cc',
         'browser/chromeos/login/wizard_in_process_browser_test.cc',
         'browser/chromeos/login/wizard_in_process_browser_test.h',
         'browser/chromeos/memory/oom_priority_manager_browsertest.cc',
-        'browser/chromeos/policy/cloud_external_data_manager_base_test_util.cc',
-        'browser/chromeos/policy/cloud_external_data_manager_base_test_util.h',
         'browser/chromeos/policy/device_local_account_browsertest.cc',
         'browser/chromeos/policy/device_policy_cros_browser_test.cc',
         'browser/chromeos/policy/device_policy_cros_browser_test.h',
@@ -1112,7 +1113,6 @@
         'browser/extensions/api/gcm/gcm_apitest.cc',
         'browser/extensions/api/history/history_apitest.cc',
         'browser/extensions/api/i18n/i18n_apitest.cc',
-        'browser/extensions/api/identity/experimental_identity_apitest.cc',
         'browser/extensions/api/identity/identity_apitest.cc',
         'browser/extensions/api/idle/idle_apitest.cc',
         'browser/extensions/api/idltest/idltest_apitest.cc',
@@ -1179,6 +1179,7 @@
         'browser/extensions/browsertest_util.cc',
         'browser/extensions/browsertest_util.h',
         'browser/extensions/browsertest_util_browsertest.cc',
+        'browser/extensions/cast_streaming_apitest.cc',
         'browser/extensions/chrome_app_api_browsertest.cc',
         'browser/extensions/content_script_apitest.cc',
         'browser/extensions/content_security_policy_apitest.cc',
@@ -1242,7 +1243,6 @@
         'browser/extensions/test_extension_dir.cc',
         'browser/extensions/test_extension_dir.h',
         'browser/extensions/web_contents_browsertest.cc',
-        'browser/extensions/webrtc_cast_apitest.cc',
         'browser/extensions/webstore_inline_installer_browsertest.cc',
         'browser/extensions/webstore_installer_test.cc',
         'browser/extensions/webstore_installer_test.h',
@@ -1300,7 +1300,6 @@
         'browser/net/websocket_browsertest.cc',
         'browser/notifications/login_state_notification_blocker_chromeos_browsertest.cc',
         'browser/notifications/message_center_notifications_browsertest.cc',
-        'browser/notifications/sync_notifier/chrome_notifier_delegate_browsertest.cc',
         'browser/notifications/sync_notifier/notification_bitmap_fetcher_browsertest.cc',
         'browser/notifications/sync_notifier/sync_notifier_test_utils.cc',
         'browser/notifications/sync_notifier/sync_notifier_test_utils.h',
@@ -1312,8 +1311,6 @@
         'browser/policy/cloud/device_management_service_browsertest.cc',
         'browser/policy/cloud/test_request_interceptor.cc',
         'browser/policy/cloud/test_request_interceptor.h',
-        'browser/policy/mock_policy_service.cc',
-        'browser/policy/mock_policy_service.h',
         'browser/policy/policy_browsertest.cc',
         'browser/policy/policy_prefs_browsertest.cc',
         'browser/prefs/pref_functional_browsertest.cc',
@@ -1411,6 +1408,7 @@
         'browser/ui/cocoa/extensions/extension_install_prompt_test_utils.h',
         'browser/ui/cocoa/extensions/extension_install_prompt_test_utils.mm',
         'browser/ui/cocoa/extensions/media_galleries_dialog_cocoa_browsertest.mm',
+        'browser/ui/cocoa/extensions/windowed_install_dialog_controller_browsertest.mm',
         'browser/ui/cocoa/find_bar/find_bar_browsertest.mm',
         'browser/ui/cocoa/location_bar/zoom_decoration_browsertest.mm',
         'browser/ui/cocoa/omnibox/omnibox_view_mac_browsertest.mm',
@@ -1667,7 +1665,17 @@
                 'test/data/nacl/nacl_test_data.gyp:*',
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
                 '../ppapi/ppapi_untrusted.gyp:ppapi_nacl_tests',
-                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_socket'
+                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_socket',
+              ],
+              'conditions': [
+                ['OS=="linux"', {
+                  'sources': [
+                    '../third_party/liblouis/nacl_wrapper/liblouis_wrapper_browsertest.cc',
+                  ],
+                  'dependencies': [
+                    '../third_party/liblouis/liblouis_untrusted.gyp:liblouis_test_data',
+                  ],
+                }],
               ],
             }],
             ['OS=="win" or OS=="linux"', {
@@ -1845,7 +1853,6 @@
             # for win aura builds.
             # TODO: enable these for win_ash browser tests.
             'browser/chromeos/system/tray_accessibility_browsertest.cc',
-            'browser/ui/ash/accelerator_commands_browsertest.cc',
             'browser/ui/ash/caps_lock_delegate_chromeos_browsertest.cc',
             'browser/ui/ash/launcher/chrome_launcher_controller_browsertest.cc',
             'browser/ui/ash/launcher/launcher_favicon_loader_browsertest.cc',

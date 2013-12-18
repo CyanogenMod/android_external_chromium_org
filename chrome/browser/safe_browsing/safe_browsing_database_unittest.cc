@@ -1152,7 +1152,7 @@ TEST_F(SafeBrowsingDatabaseTest, DISABLED_FileCorruptionHandling) {
 
   // Corrupt the file by corrupting the checksum, which is not checked
   // until the entire table is read in |UpdateFinished()|.
-  FILE* fp = file_util::OpenFile(database_filename_, "r+");
+  FILE* fp = base::OpenFile(database_filename_, "r+");
   ASSERT_TRUE(fp);
   ASSERT_NE(-1, fseek(fp, -8, SEEK_END));
   for (size_t i = 0; i < 8; ++i) {
@@ -1636,15 +1636,15 @@ TEST_F(SafeBrowsingDatabaseTest, EmptyUpdate) {
   // Get an older time to reset the lastmod time for detecting whether
   // the file has been updated.
   base::PlatformFileInfo before_info, after_info;
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &before_info));
+  ASSERT_TRUE(base::GetFileInfo(filename, &before_info));
   const base::Time old_last_modified =
       before_info.last_modified - base::TimeDelta::FromSeconds(10);
 
   // Inserting another chunk updates the database file.  The sleep is
   // needed because otherwise the entire test can finish w/in the
   // resolution of the lastmod time.
-  ASSERT_TRUE(file_util::SetLastModifiedTime(filename, old_last_modified));
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &before_info));
+  ASSERT_TRUE(base::TouchFile(filename, old_last_modified, old_last_modified));
+  ASSERT_TRUE(base::GetFileInfo(filename, &before_info));
   EXPECT_TRUE(database_->UpdateStarted(&lists));
   chunk.hosts.clear();
   InsertAddChunkHostPrefixUrl(&chunk, 2, "www.foo.com/",
@@ -1653,25 +1653,25 @@ TEST_F(SafeBrowsingDatabaseTest, EmptyUpdate) {
   chunks.push_back(chunk);
   database_->InsertChunks(safe_browsing_util::kMalwareList, chunks);
   database_->UpdateFinished(true);
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &after_info));
+  ASSERT_TRUE(base::GetFileInfo(filename, &after_info));
   EXPECT_LT(before_info.last_modified, after_info.last_modified);
 
   // Deleting a chunk updates the database file.
-  ASSERT_TRUE(file_util::SetLastModifiedTime(filename, old_last_modified));
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &before_info));
+  ASSERT_TRUE(base::TouchFile(filename, old_last_modified, old_last_modified));
+  ASSERT_TRUE(base::GetFileInfo(filename, &before_info));
   EXPECT_TRUE(database_->UpdateStarted(&lists));
   AddDelChunk(safe_browsing_util::kMalwareList, chunk.chunk_number);
   database_->UpdateFinished(true);
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &after_info));
+  ASSERT_TRUE(base::GetFileInfo(filename, &after_info));
   EXPECT_LT(before_info.last_modified, after_info.last_modified);
 
   // Simply calling |UpdateStarted()| then |UpdateFinished()| does not
   // update the database file.
-  ASSERT_TRUE(file_util::SetLastModifiedTime(filename, old_last_modified));
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &before_info));
+  ASSERT_TRUE(base::TouchFile(filename, old_last_modified, old_last_modified));
+  ASSERT_TRUE(base::GetFileInfo(filename, &before_info));
   EXPECT_TRUE(database_->UpdateStarted(&lists));
   database_->UpdateFinished(true);
-  ASSERT_TRUE(file_util::GetFileInfo(filename, &after_info));
+  ASSERT_TRUE(base::GetFileInfo(filename, &after_info));
   EXPECT_EQ(before_info.last_modified, after_info.last_modified);
 }
 

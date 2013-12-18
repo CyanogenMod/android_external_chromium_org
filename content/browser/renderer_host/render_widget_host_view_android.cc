@@ -14,6 +14,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
+#include "cc/base/latency_info_swap_promise.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_renderer_layer.h"
 #include "cc/layers/layer.h"
@@ -28,6 +29,7 @@
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/overscroll_glow.h"
+#include "content/browser/devtools/render_view_devtools_agent_host.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
@@ -40,11 +42,14 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/android/window_android.h"
 #include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/android/java_bitmap.h"
@@ -111,7 +116,10 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       texture_id_in_layer_(0),
       last_output_surface_id_(kUndefinedOutputSurfaceId),
       weak_ptr_factory_(this),
-      overscroll_effect_enabled_(true),
+      overscroll_effect_enabled_(
+          !CommandLine::ForCurrentProcess()->
+              HasSwitch(switches::kDisableOverscrollEdgeEffect)),
+      overscroll_effect_(OverscrollGlow::Create(overscroll_effect_enabled_)),
       flush_input_requested_(false),
       accelerated_surface_route_id_(0),
       using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
@@ -120,16 +128,6 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
   if (!UsingDelegatedRenderer()) {
     texture_layer_ = cc::TextureLayer::Create(NULL);
     layer_ = texture_layer_;
-  }
-
-  overscroll_effect_enabled_ = !CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableOverscrollEdgeEffect);
-  // Don't block the main thread with effect resource loading.
-  // Actual effect creation is deferred until an overscroll event is received.
-  if (overscroll_effect_enabled_) {
-    base::WorkerPool::PostTask(FROM_HERE,
-                               base::Bind(&OverscrollGlow::EnsureResources),
-                               true);
   }
 
   host_->SetView(this);
@@ -332,16 +330,15 @@ void RenderWidgetHostViewAndroid::Focus() {
   host_->Focus();
   host_->SetInputMethodActive(true);
   ResetClipping();
-  if (overscroll_effect_)
-    overscroll_effect_->SetEnabled(true);
+  if (overscroll_effect_enabled_)
+    overscroll_effect_->Enable();
 }
 
 void RenderWidgetHostViewAndroid::Blur() {
   host_->ExecuteEditCommand("Unselect", "");
   host_->SetInputMethodActive(false);
   host_->Blur();
-  if (overscroll_effect_)
-    overscroll_effect_->SetEnabled(false);
+  overscroll_effect_->Disable();
 }
 
 bool RenderWidgetHostViewAndroid::HasFocus() const {
@@ -523,11 +520,11 @@ void RenderWidgetHostViewAndroid::Destroy() {
 }
 
 void RenderWidgetHostViewAndroid::SetTooltipText(
-    const string16& tooltip_text) {
+    const base::string16& tooltip_text) {
   // Tooltips don't makes sense on Android.
 }
 
-void RenderWidgetHostViewAndroid::SelectionChanged(const string16& text,
+void RenderWidgetHostViewAndroid::SelectionChanged(const base::string16& text,
                                                    size_t offset,
                                                    const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
@@ -573,7 +570,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback) {
-  if (!IsSurfaceAvailableForCopy()) {
+  if (!using_synchronous_compositor_ && !IsSurfaceAvailableForCopy()) {
     callback.Run(false, SkBitmap());
     return;
   }
@@ -588,6 +585,11 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
   const gfx::Size& dst_size_in_pixel = ConvertViewSizeToPixel(this, dst_size);
   gfx::Rect src_subrect_in_pixel =
       ConvertRectToPixel(device_scale_factor, src_subrect);
+
+  if (using_synchronous_compositor_) {
+    SynchronousCopyContents(src_subrect_in_pixel, dst_size_in_pixel, callback);
+    return;
+  }
 
   scoped_ptr<cc::CopyOutputRequest> request;
   if (src_subrect_in_pixel.size() == dst_size_in_pixel) {
@@ -692,7 +694,7 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
       frame_provider_ = new cc::DelegatedFrameProvider(
           resource_collection_.get(), frame_data.Pass());
       delegated_renderer_layer_ =
-          cc::DelegatedRendererLayer::Create(NULL, frame_provider_);
+          cc::DelegatedRendererLayer::Create(frame_provider_);
       layer_ = delegated_renderer_layer_;
       if (are_layers_attached_)
         AttachLayers();
@@ -779,8 +781,11 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
   texture_size_in_layer_ = frame->gl_frame_data->size;
   ComputeContentsSize(frame->metadata);
 
-  if (layer_->layer_tree_host())
-    layer_->layer_tree_host()->SetLatencyInfo(frame->metadata.latency_info);
+  if (layer_->layer_tree_host()) {
+    scoped_ptr<cc::SwapPromise> swap_promise(
+        new cc::LatencyInfoSwapPromise(frame->metadata.latency_info));
+    layer_->layer_tree_host()->QueueSwapPromise(swap_promise.Pass());
+  }
 
   BuffersSwapped(frame->gl_frame_data->mailbox, output_surface_id, callback);
 }
@@ -791,6 +796,44 @@ void RenderWidgetHostViewAndroid::SynchronousFrameMetadata(
   // compositor flow.
   UpdateContentViewCoreFrameMetadata(frame_metadata);
   ComputeContentsSize(frame_metadata);
+
+  // DevTools ScreenCast support for Android WebView.
+  if (DevToolsAgentHost::HasFor(RenderViewHost::From(GetRenderWidgetHost()))) {
+    scoped_refptr<DevToolsAgentHost> dtah =
+        DevToolsAgentHost::GetOrCreateFor(
+            RenderViewHost::From(GetRenderWidgetHost()));
+    // Unblock the compositor.
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&RenderViewDevToolsAgentHost::SynchronousSwapCompositorFrame,
+                   static_cast<RenderViewDevToolsAgentHost*>(dtah.get()),
+                   frame_metadata));
+  }
+}
+
+void RenderWidgetHostViewAndroid::SynchronousCopyContents(
+    const gfx::Rect& src_subrect_in_pixel,
+    const gfx::Size& dst_size_in_pixel,
+    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+  SynchronousCompositor* compositor =
+      SynchronousCompositorImpl::FromID(host_->GetProcess()->GetID(),
+                                        host_->GetRoutingID());
+  if (!compositor) {
+    callback.Run(false, SkBitmap());
+    return;
+  }
+
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                   dst_size_in_pixel.width(),
+                   dst_size_in_pixel.height());
+  bitmap.allocPixels();
+  SkCanvas canvas(bitmap);
+  canvas.scale(
+      (float)dst_size_in_pixel.width() / (float)src_subrect_in_pixel.width(),
+      (float)dst_size_in_pixel.height() / (float)src_subrect_in_pixel.height());
+  compositor->DemandDrawSw(&canvas);
+  callback.Run(true, bitmap);
 }
 
 void RenderWidgetHostViewAndroid::UpdateContentViewCoreFrameMetadata(
@@ -856,6 +899,8 @@ void RenderWidgetHostViewAndroid::AttachLayers() {
     return;
 
   content_view_core_->AttachLayer(layer_);
+  if (overscroll_effect_enabled_)
+    overscroll_effect_->Enable();
 }
 
 void RenderWidgetHostViewAndroid::RemoveLayers() {
@@ -864,38 +909,16 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
   if (!layer_.get())
     return;
 
-  if (overscroll_effect_)
-    content_view_core_->RemoveLayer(overscroll_effect_->root_layer());
-
   content_view_core_->RemoveLayer(layer_);
+  overscroll_effect_->Disable();
 }
 
 bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
-  if (!overscroll_effect_)
-    return false;
-
-  bool overscroll_running = overscroll_effect_->Animate(frame_time);
-  if (!overscroll_running)
-    content_view_core_->RemoveLayer(overscroll_effect_->root_layer());
-
-  return overscroll_running;
-}
-
-void RenderWidgetHostViewAndroid::CreateOverscrollEffectIfNecessary() {
-  if (!overscroll_effect_enabled_ || overscroll_effect_)
-    return;
-
-  overscroll_effect_ = OverscrollGlow::Create(true, content_size_in_layer_);
-
-  // Prevent future creation attempts on failure.
-  if (!overscroll_effect_)
-    overscroll_effect_enabled_ = false;
+  return overscroll_effect_->Animate(frame_time);
 }
 
 void RenderWidgetHostViewAndroid::UpdateAnimationSize(
     const cc::CompositorFrameMetadata& frame_metadata) {
-  if (!overscroll_effect_)
-    return;
   // Disable edge effects for axes on which scrolling is impossible.
   gfx::SizeF ceiled_viewport_size =
       gfx::ToCeiledSize(frame_metadata.viewport_size);
@@ -904,19 +927,6 @@ void RenderWidgetHostViewAndroid::UpdateAnimationSize(
   overscroll_effect_->set_vertical_overscroll_enabled(
       ceiled_viewport_size.height() < frame_metadata.root_layer_size.height());
   overscroll_effect_->set_size(content_size_in_layer_);
-}
-
-void RenderWidgetHostViewAndroid::ScheduleAnimationIfNecessary() {
-  if (!content_view_core_ || !overscroll_effect_)
-    return;
-
-  if (overscroll_effect_->NeedsAnimate() && are_layers_attached_) {
-    if (!overscroll_effect_->root_layer()->parent())
-      content_view_core_->AttachLayer(overscroll_effect_->root_layer());
-    content_view_core_->SetNeedsAnimate();
-  } else {
-    content_view_core_->RemoveLayer(overscroll_effect_->root_layer());
-  }
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfacePostSubBuffer(
@@ -1143,8 +1153,8 @@ void RenderWidgetHostViewAndroid::SendMouseWheelEvent(
 void RenderWidgetHostViewAndroid::SendGestureEvent(
     const blink::WebGestureEvent& event) {
   // Sending a gesture that may trigger overscroll should resume the effect.
-  if (overscroll_effect_)
-    overscroll_effect_->SetEnabled(true);
+  if (overscroll_effect_enabled_)
+   overscroll_effect_->Enable();
 
   if (host_)
     host_->ForwardGestureEvent(event);
@@ -1212,14 +1222,15 @@ SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
 void RenderWidgetHostViewAndroid::OnOverscrolled(
     gfx::Vector2dF accumulated_overscroll,
     gfx::Vector2dF current_fling_velocity) {
-  CreateOverscrollEffectIfNecessary();
-  if (!overscroll_effect_)
+  if (!content_view_core_ || !are_layers_attached_)
     return;
 
-  overscroll_effect_->OnOverscrolled(base::TimeTicks::Now(),
-                                     accumulated_overscroll,
-                                     current_fling_velocity);
-  ScheduleAnimationIfNecessary();
+  if (overscroll_effect_->OnOverscrolled(content_view_core_->GetLayer(),
+                                         base::TimeTicks::Now(),
+                                         accumulated_overscroll,
+                                         current_fling_velocity)) {
+    content_view_core_->SetNeedsAnimate();
+  }
 }
 
 void RenderWidgetHostViewAndroid::SetContentViewCore(

@@ -182,7 +182,7 @@ class RPHReferenceManager : public content::NotificationObserver {
 
 }  // namespace
 
-MediaFileSystemInfo::MediaFileSystemInfo(const string16& fs_name,
+MediaFileSystemInfo::MediaFileSystemInfo(const base::string16& fs_name,
                                          const base::FilePath& fs_path,
                                          const std::string& filesystem_id,
                                          MediaGalleryPrefId pref_id,
@@ -572,8 +572,8 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
     CHECK(MediaStorageUtil::CanCreateFileSystem(device_id, path));
     std::string fs_name(extension_misc::kMediaFileSystemPathPart);
     const std::string fsid =
-        IsolatedContext::GetInstance()->RegisterFileSystemForVirtualPath(
-            fileapi::kFileSystemTypeDeviceMedia, fs_name, path);
+        IsolatedContext::GetInstance()->RegisterFileSystemForPath(
+            fileapi::kFileSystemTypeDeviceMedia, path, &fs_name);
     CHECK(!fsid.empty());
     content::BrowserThread::PostTask(
         content::BrowserThread::IO, FROM_HERE, base::Bind(

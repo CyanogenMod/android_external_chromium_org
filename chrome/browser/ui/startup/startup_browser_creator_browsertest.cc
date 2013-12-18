@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
@@ -35,6 +36,7 @@
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -49,8 +51,8 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
 #include "policy/policy_constants.h"
@@ -117,10 +119,10 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
   }
 
   void SetAppLaunchPref(const std::string& app_id,
-                        extensions::ExtensionPrefs::LaunchType launch_type) {
+                        extensions::LaunchType launch_type) {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
-    service->extension_prefs()->SetLaunchType(app_id, launch_type);
+    extensions::SetLaunchType(service->extension_prefs(), app_id, launch_type);
   }
 
   Browser* FindOneOtherBrowserForProfile(Profile* profile,
@@ -298,8 +300,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutWindowPref) {
   ASSERT_NO_FATAL_FAILURE(LoadApp("app_with_tab_container", &extension_app));
 
   // Set a pref indicating that the user wants to open this app in a window.
-  SetAppLaunchPref(extension_app->id(),
-                   extensions::ExtensionPrefs::LAUNCH_TYPE_WINDOW);
+  SetAppLaunchPref(extension_app->id(), extensions::LAUNCH_TYPE_WINDOW);
 
   CommandLine command_line(CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kAppId, extension_app->id());
@@ -330,8 +331,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutTabPref) {
   ASSERT_NO_FATAL_FAILURE(LoadApp("app_with_tab_container", &extension_app));
 
   // Set a pref indicating that the user wants to open this app in a window.
-  SetAppLaunchPref(extension_app->id(),
-                   extensions::ExtensionPrefs::LAUNCH_TYPE_REGULAR);
+  SetAppLaunchPref(extension_app->id(), extensions::LAUNCH_TYPE_REGULAR);
 
   CommandLine command_line(CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kAppId, extension_app->id());
@@ -970,7 +970,6 @@ class ManagedModeBrowserCreatorTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     InProcessBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableManagedUsers);
     command_line->AppendSwitchASCII(switches::kManagedUserId, "asdf");
   }
 };

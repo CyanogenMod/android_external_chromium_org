@@ -8,8 +8,8 @@
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -43,8 +43,12 @@ TEST_F(UpdateOperationTest, UpdateFileByLocalId_PersistentFile) {
 
   // Pin the file so it'll be store in "persistent" directory.
   FileError error = FILE_ERROR_FAILED;
-  cache()->PinOnUIThread(
-      local_id,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Pin,
+                 base::Unretained(cache()),
+                 local_id),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);

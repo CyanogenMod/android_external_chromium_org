@@ -42,6 +42,7 @@
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/widget/tooltip_manager.h"
@@ -925,7 +926,7 @@ void Tab::GetHitTestMask(HitTestSource source, gfx::Path* path) const {
   }
 }
 
-bool Tab::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
+bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
   // TODO(miu): Rectify inconsistent tooltip behavior.  http://crbug.com/310947
 
   if (data_.media_state != TAB_MEDIA_STATE_NONE) {
@@ -1512,7 +1513,7 @@ void Tab::PaintMediaIndicator(gfx::Canvas* canvas) {
 
 void Tab::PaintTitle(gfx::Canvas* canvas, SkColor title_color) {
   // Paint the Title.
-  string16 title = data().title;
+  base::string16 title = data().title;
   if (title.empty()) {
     title = data().loading ?
         l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE) :

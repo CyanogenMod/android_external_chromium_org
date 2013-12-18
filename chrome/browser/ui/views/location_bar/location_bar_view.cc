@@ -22,6 +22,7 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -33,7 +34,7 @@
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
-#include "chrome/browser/ui/passwords/manage_passwords_icon_controller.h"
+#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_prompt_view.h"
@@ -81,6 +82,8 @@
 #include "ui/views/border.h"
 #include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/widget/widget.h"
 
@@ -182,6 +185,7 @@ LocationBarView::LocationBarView(Browser* browser,
       script_bubble_icon_view_(NULL),
       translate_icon_view_(NULL),
       star_view_(NULL),
+      search_button_(NULL),
       is_popup_mode_(is_popup_mode),
       show_focus_rect_(false),
       template_url_service_(NULL),
@@ -274,7 +278,7 @@ void LocationBarView::Init() {
 
   // Initialize the inline autocomplete view which is visible only when IME is
   // turned on.  Use the same font with the omnibox and highlighted background.
-  ime_inline_autocomplete_view_ = new views::Label(string16(), font_list);
+  ime_inline_autocomplete_view_ = new views::Label(base::string16(), font_list);
   ime_inline_autocomplete_view_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   ime_inline_autocomplete_view_->SetAutoColorReadabilityEnabled(false);
   ime_inline_autocomplete_view_->set_background(
@@ -291,7 +295,7 @@ void LocationBarView::Init() {
       bubble_font_list, text_color, background_color, profile_);
   AddChildView(selected_keyword_view_);
 
-  suggested_text_view_ = new views::Label(string16(), font_list);
+  suggested_text_view_ = new views::Label(base::string16(), font_list);
   suggested_text_view_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   suggested_text_view_->SetAutoColorReadabilityEnabled(false);
   suggested_text_view_->SetEnabledColor(GetColor(
@@ -355,6 +359,39 @@ void LocationBarView::Init() {
   star_view_ = new StarView(command_updater());
   star_view_->SetVisible(false);
   AddChildView(star_view_);
+
+  search_button_ = new views::LabelButton(this, base::string16());
+  search_button_->set_triggerable_event_flags(
+      ui::EF_LEFT_MOUSE_BUTTON | ui::EF_MIDDLE_MOUSE_BUTTON);
+  search_button_->SetStyle(views::Button::STYLE_BUTTON);
+  search_button_->set_focusable(false);
+  search_button_->set_min_size(gfx::Size());
+  views::LabelButtonBorder* search_button_border =
+      static_cast<views::LabelButtonBorder*>(search_button_->border());
+  search_button_border->set_insets(gfx::Insets());
+  const int kSearchButtonNormalImages[] = IMAGE_GRID(IDR_OMNIBOX_SEARCH_BUTTON);
+  search_button_border->SetPainter(
+      false, views::Button::STATE_NORMAL,
+      views::Painter::CreateImageGridPainter(kSearchButtonNormalImages));
+  const int kSearchButtonHoveredImages[] =
+      IMAGE_GRID(IDR_OMNIBOX_SEARCH_BUTTON_HOVER);
+  search_button_border->SetPainter(
+      false, views::Button::STATE_HOVERED,
+      views::Painter::CreateImageGridPainter(kSearchButtonHoveredImages));
+  const int kSearchButtonPressedImages[] =
+      IMAGE_GRID(IDR_OMNIBOX_SEARCH_BUTTON_PRESSED);
+  search_button_border->SetPainter(
+      false, views::Button::STATE_PRESSED,
+      views::Painter::CreateImageGridPainter(kSearchButtonPressedImages));
+  search_button_border->SetPainter(false, views::Button::STATE_DISABLED, NULL);
+  search_button_border->SetPainter(true, views::Button::STATE_NORMAL, NULL);
+  search_button_border->SetPainter(true, views::Button::STATE_HOVERED, NULL);
+  search_button_border->SetPainter(true, views::Button::STATE_PRESSED, NULL);
+  search_button_border->SetPainter(true, views::Button::STATE_DISABLED, NULL);
+  const int kSearchButtonWidth = 56;
+  search_button_->set_min_size(gfx::Size(kSearchButtonWidth, 0));
+  search_button_->SetVisible(false);
+  AddChildView(search_button_);
 
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
@@ -605,12 +642,12 @@ gfx::Point LocationBarView::GetOmniboxViewOrigin() const {
   return origin;
 }
 
-void LocationBarView::SetImeInlineAutocompletion(const string16& text) {
+void LocationBarView::SetImeInlineAutocompletion(const base::string16& text) {
   ime_inline_autocomplete_view_->SetText(text);
   ime_inline_autocomplete_view_->SetVisible(!text.empty());
 }
 
-void LocationBarView::SetGrayTextAutocompletion(const string16& text) {
+void LocationBarView::SetGrayTextAutocompletion(const base::string16& text) {
   if (suggested_text_view_->text() != text) {
     suggested_text_view_->SetText(text);
     suggested_text_view_->SetVisible(!text.empty());
@@ -619,16 +656,25 @@ void LocationBarView::SetGrayTextAutocompletion(const string16& text) {
   }
 }
 
-string16 LocationBarView::GetGrayTextAutocompletion() const {
-  return HasValidSuggestText() ? suggested_text_view_->text() : string16();
+base::string16 LocationBarView::GetGrayTextAutocompletion() const {
+  return HasValidSuggestText() ? suggested_text_view_->text()
+                               : base::string16();
 }
 
 gfx::Size LocationBarView::GetPreferredSize() {
-  return background_border_painter_->GetMinimumSize();
+  gfx::Size background_min_size(background_border_painter_->GetMinimumSize());
+  if (!IsInitialized())
+    return background_min_size;
+  gfx::Size search_button_min_size(search_button_->GetMinimumSize());
+  gfx::Size min_size(background_min_size);
+  min_size.SetToMax(search_button_min_size);
+  min_size.set_width(
+      background_min_size.width() + search_button_min_size.width());
+  return min_size;
 }
 
 void LocationBarView::Layout() {
-  if (!omnibox_view_)
+  if (!IsInitialized())
     return;
 
   selected_keyword_view_->SetVisible(false);
@@ -644,7 +690,7 @@ void LocationBarView::Layout() {
   LocationBarLayout trailing_decorations(LocationBarLayout::RIGHT_EDGE,
                                          item_padding);
 
-  const string16 keyword(omnibox_view_->model()->keyword());
+  const base::string16 keyword(omnibox_view_->model()->keyword());
   const bool is_keyword_hint(omnibox_view_->model()->is_keyword_hint());
   const int bubble_location_y = vertical_edge_thickness() + kBubblePadding;
   // In some cases (e.g. fullscreen mode) we may have 0 height.  We still want
@@ -759,7 +805,16 @@ void LocationBarView::Layout() {
 
   // Perform layout.
   const int horizontal_edge_thickness = GetHorizontalEdgeThickness();
-  int full_width = width() - 2 * horizontal_edge_thickness;
+  int full_width = width() - horizontal_edge_thickness;
+  // The search button images are made to look as if they overlay the normal
+  // edge images, but to align things, the search button needs to be inset
+  // horizontally by 1 px.
+  const int kSearchButtonInset = 1;
+  const gfx::Size search_button_size(search_button_->GetPreferredSize());
+  const int search_button_reserved_width =
+      search_button_size.width() + kSearchButtonInset;
+  full_width -= search_button_->visible() ?
+      search_button_reserved_width : horizontal_edge_thickness;
   int entry_width = full_width;
   leading_decorations.LayoutPass1(&entry_width);
   trailing_decorations.LayoutPass1(&entry_width);
@@ -852,6 +907,21 @@ void LocationBarView::Layout() {
   }
 
   omnibox_view_->SetBoundsRect(location_bounds);
+
+  search_button_->SetBoundsRect(gfx::Rect(
+      gfx::Point(width() - search_button_reserved_width, 0),
+      search_button_size));
+}
+
+void LocationBarView::PaintChildren(gfx::Canvas* canvas) {
+  View::PaintChildren(canvas);
+
+  // For non-InstantExtendedAPI cases, if necessary, show focus rect. As we need
+  // the focus rect to appear on top of children we paint here rather than
+  // OnPaint().
+  // Note: |Canvas::DrawFocusRect| paints a dashed rect with gray color.
+  if (show_focus_rect_ && HasFocus())
+    canvas->DrawFocusRect(omnibox_view_->bounds());
 }
 
 void LocationBarView::OnPaint(gfx::Canvas* canvas) {
@@ -888,18 +958,6 @@ void LocationBarView::OnPaint(gfx::Canvas* canvas) {
 
   if (!is_popup_mode_)
     PaintPageActionBackgrounds(canvas);
-
-  // For non-InstantExtendedAPI cases, if necessary, show focus rect.
-  // Note: |Canvas::DrawFocusRect| paints a dashed rect with gray color.
-  if (show_focus_rect_ && HasFocus()) {
-    gfx::Rect r = omnibox_view_->bounds();
-    // TODO(jamescook): Is this still needed?
-    r.Inset(-1, 0);
-#if defined(OS_WIN)
-    r.Inset(0, -1);
-#endif
-    canvas->DrawFocusRect(r);
-  }
 }
 
 void LocationBarView::SetShowFocusRect(bool show) {
@@ -971,9 +1029,24 @@ void LocationBarView::Update(const WebContents* contents) {
 }
 
 void LocationBarView::OnChanged() {
-  location_icon_view_->SetImage(
-      GetThemeProvider()->GetImageSkiaNamed(omnibox_view_->GetIcon()));
+  int icon_id = omnibox_view_->GetIcon();
+  location_icon_view_->SetImage(GetThemeProvider()->GetImageSkiaNamed(icon_id));
   location_icon_view_->ShowTooltip(!GetOmniboxView()->IsEditingOrEmpty());
+
+  ToolbarModel* toolbar_model = GetToolbarModel();
+  chrome::DisplaySearchButtonConditions conditions =
+      chrome::GetDisplaySearchButtonConditions();
+  bool meets_conditions =
+      (conditions == chrome::DISPLAY_SEARCH_BUTTON_ALWAYS) ||
+      ((conditions != chrome::DISPLAY_SEARCH_BUTTON_NEVER) &&
+       (toolbar_model->WouldPerformSearchTermReplacement(true) ||
+        ((conditions == chrome::DISPLAY_SEARCH_BUTTON_FOR_STR_OR_IIP) &&
+         toolbar_model->input_in_progress())));
+  search_button_->SetVisible(!is_popup_mode_ && meets_conditions);
+  search_button_->SetImage(
+      views::Button::STATE_NORMAL,
+      *GetThemeProvider()->GetImageSkiaNamed((icon_id == IDR_OMNIBOX_SEARCH) ?
+          IDR_OMNIBOX_SEARCH_BUTTON_LOUPE : IDR_OMNIBOX_SEARCH_BUTTON_ARROW));
 
   Layout();
   SchedulePaint();
@@ -1003,16 +1076,20 @@ const char* LocationBarView::GetClassName() const {
   return kViewClassName;
 }
 
+bool LocationBarView::HasFocus() const {
+  return omnibox_view_->model()->has_focus();
+}
+
 void LocationBarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  if (!omnibox_view_)
+  if (!IsInitialized())
     return;
 
   state->role = ui::AccessibilityTypes::ROLE_LOCATION_BAR;
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_LOCATION);
   state->value = omnibox_view_->GetText();
 
-  string16::size_type entry_start;
-  string16::size_type entry_end;
+  base::string16::size_type entry_start;
+  base::string16::size_type entry_end;
   omnibox_view_->GetSelectionBounds(&entry_start, &entry_end);
   state->selection_start = entry_start;
   state->selection_end = entry_end;
@@ -1026,10 +1103,6 @@ void LocationBarView::GetAccessibleState(ui::AccessibleViewState* state) {
   }
 }
 
-bool LocationBarView::HasFocus() const {
-  return omnibox_view_->model()->has_focus();
-}
-
 void LocationBarView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   if (browser_ && browser_->instant_controller() && parent())
     browser_->instant_controller()->SetOmniboxBounds(bounds());
@@ -1040,8 +1113,15 @@ void LocationBarView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
 
 void LocationBarView::ButtonPressed(views::Button* sender,
                                     const ui::Event& event) {
-  DCHECK_EQ(mic_search_view_, sender);
-  command_updater()->ExecuteCommand(IDC_TOGGLE_SPEECH_INPUT);
+  if (sender == mic_search_view_) {
+    command_updater()->ExecuteCommand(IDC_TOGGLE_SPEECH_INPUT);
+    return;
+  }
+
+  DCHECK_EQ(search_button_, sender);
+  // TODO(pkasting): When macourteau adds UMA stats for this, wire them up here.
+  omnibox_view_->model()->AcceptInput(
+      ui::DispositionFromEventFlags(event.flags()), false);
 }
 
 void LocationBarView::WriteDragDataForView(views::View* sender,
@@ -1394,7 +1474,7 @@ bool LocationBarView::RefreshManagePasswordsIconView() {
     return false;
   const bool was_visible = manage_passwords_icon_view_->visible();
   manage_passwords_icon_view_->Update(
-      ManagePasswordsIconController::FromWebContents(web_contents));
+      ManagePasswordsBubbleUIController::FromWebContents(web_contents));
   return was_visible != manage_passwords_icon_view_->visible();
 }
 
@@ -1417,7 +1497,7 @@ void LocationBarView::ShowManagePasswordsBubbleIfNeeded() {
   if (!web_contents)
     return;
   manage_passwords_icon_view_->ShowBubbleIfNeeded(
-      ManagePasswordsIconController::FromWebContents(web_contents));
+      ManagePasswordsBubbleUIController::FromWebContents(web_contents));
 }
 
 bool LocationBarView::HasValidSuggestText() const {
@@ -1469,6 +1549,6 @@ void LocationBarView::PaintPageActionBackgrounds(gfx::Canvas* canvas) {
   }
 }
 
-void LocationBarView::AccessibilitySetValue(const string16& new_value) {
+void LocationBarView::AccessibilitySetValue(const base::string16& new_value) {
   omnibox_view_->SetUserText(new_value, new_value, true);
 }

@@ -9,6 +9,8 @@
 #include "chrome/common/search_urls.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/web_contents.h"
 
 namespace {
 
@@ -24,6 +26,25 @@ enum SuggestionsType {
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(NTPUserDataLogger);
 
 NTPUserDataLogger::~NTPUserDataLogger() {}
+
+// static
+NTPUserDataLogger* NTPUserDataLogger::GetOrCreateFromWebContents(
+      content::WebContents* content) {
+  // Calling CreateForWebContents when an instance is already attached has no
+  // effect, so we can do this.
+  NTPUserDataLogger::CreateForWebContents(content);
+  NTPUserDataLogger* logger = NTPUserDataLogger::FromWebContents(content);
+
+  // We record the URL of this NTP in order to identify navigations that
+  // originate from it. We use the NavigationController's URL since it might
+  // differ from the WebContents URL which is usually chrome://newtab/.
+  const content::NavigationEntry* entry =
+      content->GetController().GetVisibleEntry();
+  if (entry)
+    logger->ntp_url_ = entry->GetURL();
+
+  return logger;
+}
 
 void NTPUserDataLogger::EmitThumbnailErrorRate() {
   DCHECK_LE(number_of_thumbnail_errors_, number_of_thumbnail_attempts_);
@@ -47,17 +68,17 @@ void NTPUserDataLogger::EmitThumbnailErrorRate() {
   number_of_fallback_thumbnails_used_ = 0;
 }
 
-void NTPUserDataLogger::EmitSuggestionsType() {
+void NTPUserDataLogger::EmitNtpStatistics() {
+  UMA_HISTOGRAM_COUNTS("NewTabPage.NumberOfMouseOvers", number_of_mouseovers_);
+  number_of_mouseovers_ = 0;
+  UMA_HISTOGRAM_COUNTS("NewTabPage.NumberOfExternalTiles",
+                       number_of_external_tiles_);
+  number_of_external_tiles_ = 0;
   UMA_HISTOGRAM_ENUMERATION(
       "NewTabPage.SuggestionsType",
       server_side_suggestions_ ? SERVER_SIDE : CLIENT_SIDE,
       SUGGESTIONS_TYPE_COUNT);
   server_side_suggestions_ = false;
-}
-
-void NTPUserDataLogger::EmitMouseoverCount() {
-  UMA_HISTOGRAM_COUNTS("NewTabPage.NumberOfMouseOvers", number_of_mouseovers_);
-  number_of_mouseovers_ = 0;
 }
 
 void NTPUserDataLogger::LogEvent(NTPLoggingEventType event) {
@@ -80,6 +101,15 @@ void NTPUserDataLogger::LogEvent(NTPLoggingEventType event) {
     case NTP_SERVER_SIDE_SUGGESTION:
       server_side_suggestions_ = true;
       break;
+    case NTP_CLIENT_SIDE_SUGGESTION:
+      // We should never get a mix of server and client side suggestions,
+      // otherwise there could be a race condition depending on the order in
+      // which the iframes call this method.
+      DCHECK(!server_side_suggestions_);
+    break;
+    case NTP_EXTERNAL_TILE:
+      number_of_external_tiles_++;
+      break;
     default:
       NOTREACHED();
   }
@@ -92,8 +122,7 @@ void NTPUserDataLogger::NavigationEntryCommitted(
     return;
 
   if (search::MatchesOriginAndPath(ntp_url_, load_details.previous_url)) {
-    EmitMouseoverCount();
-    EmitSuggestionsType();
+    EmitNtpStatistics();
     // Only log thumbnail error rates for Instant NTP pages, as we do not have
     // this data for non-Instant NTPs.
     if (ntp_url_ != GURL(chrome::kChromeUINewTabURL))
@@ -108,6 +137,7 @@ NTPUserDataLogger::NTPUserDataLogger(content::WebContents* contents)
       number_of_thumbnail_errors_(0),
       number_of_fallback_thumbnails_requested_(0),
       number_of_fallback_thumbnails_used_(0),
+      number_of_external_tiles_(0),
       server_side_suggestions_(false) {
 }
 

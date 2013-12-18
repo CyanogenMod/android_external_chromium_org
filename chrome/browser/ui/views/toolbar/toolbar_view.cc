@@ -33,10 +33,12 @@
 #include "chrome/browser/ui/views/location_bar/star_view.h"
 #include "chrome/browser/ui/views/location_bar/translate_icon_view.h"
 #include "chrome/browser/ui/views/outdated_upgrade_bubble_view.h"
+#include "chrome/browser/ui/views/toolbar/back_button.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
-#include "chrome/browser/ui/views/toolbar/button_dropdown.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
+#include "chrome/browser/ui/views/toolbar/site_chip_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
 #include "chrome/browser/ui/views/toolbar/wrench_menu.h"
 #include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/browser/upgrade_detector.h"
@@ -120,6 +122,7 @@ ToolbarView::ToolbarView(Browser* browser)
       reload_(NULL),
       home_(NULL),
       location_bar_(NULL),
+      site_chip_view_(NULL),
       browser_actions_(NULL),
       app_menu_(NULL),
       browser_(browser) {
@@ -166,18 +169,16 @@ ToolbarView::~ToolbarView() {
 void ToolbarView::Init() {
   GetWidget()->AddObserver(this);
 
-  back_ = new ButtonDropDown(this, new BackForwardMenuModel(
+  back_ = new BackButton(this, new BackForwardMenuModel(
       browser_, BackForwardMenuModel::BACKWARD_MENU));
   back_->set_triggerable_event_flags(
       ui::EF_LEFT_MOUSE_BUTTON | ui::EF_MIDDLE_MOUSE_BUTTON);
   back_->set_tag(IDC_BACK);
-  back_->SetImageAlignment(views::ImageButton::ALIGN_RIGHT,
-                           views::ImageButton::ALIGN_TOP);
   back_->SetTooltipText(l10n_util::GetStringUTF16(IDS_TOOLTIP_BACK));
   back_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_BACK));
   back_->set_id(VIEW_ID_BACK_BUTTON);
 
-  forward_ = new ButtonDropDown(this, new BackForwardMenuModel(
+  forward_ = new ToolbarButton(this, new BackForwardMenuModel(
       browser_, BackForwardMenuModel::FORWARD_MENU));
   forward_->set_triggerable_event_flags(
       ui::EF_LEFT_MOUSE_BUTTON | ui::EF_MIDDLE_MOUSE_BUTTON);
@@ -201,7 +202,7 @@ void ToolbarView::Init() {
   reload_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_RELOAD));
   reload_->set_id(VIEW_ID_RELOAD_BUTTON);
 
-  home_ = new HomeImageButton(this, browser_);
+  home_ = new HomeButton(this, browser_);
   home_->set_triggerable_event_flags(
       ui::EF_LEFT_MOUSE_BUTTON | ui::EF_MIDDLE_MOUSE_BUTTON);
   home_->set_tag(IDC_HOME);
@@ -228,6 +229,8 @@ void ToolbarView::Init() {
   AddChildView(reload_);
   AddChildView(home_);
   AddChildView(location_bar_);
+  site_chip_view_ = new SiteChipView(this);
+  AddChildView(site_chip_view_);
   AddChildView(browser_actions_);
   AddChildView(app_menu_);
 
@@ -239,6 +242,8 @@ void ToolbarView::Init() {
   UpdateAppMenuState();
 
   location_bar_->Init();
+
+  site_chip_view_->Init();
   show_home_button_.Init(prefs::kShowHomeButton,
                          browser_->profile()->GetPrefs(),
                          base::Bind(&ToolbarView::OnShowHomeButtonChanged,
@@ -267,6 +272,8 @@ void ToolbarView::OnWidgetVisibilityChanged(views::Widget* widget,
 void ToolbarView::Update(WebContents* tab) {
   if (location_bar_)
     location_bar_->Update(tab);
+  if (site_chip_view_->ShouldShow())
+    site_chip_view_->Update(tab);
 
   if (browser_actions_)
     browser_actions_->RefreshBrowserActionViews();
@@ -479,30 +486,35 @@ bool ToolbarView::GetAcceleratorForCommandId(int command_id,
 // ToolbarView, views::View overrides:
 
 gfx::Size ToolbarView::GetPreferredSize() {
+  gfx::Size size(location_bar_->GetPreferredSize());
   if (is_display_mode_normal()) {
     int button_spacing = GetButtonSpacing();
-    int min_width = kLeftEdgeSpacing +
-        back_->GetPreferredSize().width() + button_spacing +
-        forward_->GetPreferredSize().width() + button_spacing +
-        reload_->GetPreferredSize().width() + kStandardSpacing +
-        (show_home_button_.GetValue() ?
-            (home_->GetPreferredSize().width() + button_spacing) : 0) +
-        location_bar_->GetPreferredSize().width() +
-        browser_actions_->GetPreferredSize().width() +
-        app_menu_->GetPreferredSize().width() + kRightEdgeSpacing;
+    size.Enlarge(
+        kLeftEdgeSpacing + back_->GetPreferredSize().width() + button_spacing +
+            forward_->GetPreferredSize().width() + button_spacing +
+            reload_->GetPreferredSize().width() + kStandardSpacing +
+            (show_home_button_.GetValue() ?
+                (home_->GetPreferredSize().width() + button_spacing) : 0) +
+            (site_chip_view_->ShouldShow() ?
+                (site_chip_view_->GetPreferredSize().width() +
+                    2 * kStandardSpacing + 2 * button_spacing) :
+                0) +
+            browser_actions_->GetPreferredSize().width() +
+            app_menu_->GetPreferredSize().width() + kRightEdgeSpacing,
+        0);
     gfx::ImageSkia* normal_background =
         GetThemeProvider()->GetImageSkiaNamed(IDR_CONTENT_TOP_CENTER);
-    return gfx::Size(min_width,
-                     normal_background->height() - content_shadow_height());
+    size.SetToMax(
+        gfx::Size(0, normal_background->height() - content_shadow_height()));
+  } else {
+    const int kPopupBottomSpacingGlass = 1;
+    const int kPopupBottomSpacingNonGlass = 2;
+    size.Enlarge(
+        0,
+        PopupTopSpacing() + (GetWidget()->ShouldUseNativeFrame() ?
+            kPopupBottomSpacingGlass : kPopupBottomSpacingNonGlass));
   }
-
-  const int kPopupBottomSpacingGlass = 1;
-  const int kPopupBottomSpacingNonGlass = 2;
-  int vertical_spacing = PopupTopSpacing() +
-      (GetWidget()->ShouldUseNativeFrame() ?
-          kPopupBottomSpacingGlass : kPopupBottomSpacingNonGlass);
-  return gfx::Size(0, location_bar_->GetPreferredSize().height() +
-      vertical_spacing);
+  return size;
 }
 
 void ToolbarView::Layout() {
@@ -532,10 +544,13 @@ void ToolbarView::Layout() {
   //                http://crbug.com/5540
   bool maximized = browser_->window() && browser_->window()->IsMaximized();
   int back_width = back_->GetPreferredSize().width();
-  if (maximized)
+  if (maximized) {
     back_->SetBounds(0, child_y, back_width + kLeftEdgeSpacing, child_height);
-  else
+    back_->SetLeadingMargin(kLeftEdgeSpacing);
+  } else {
     back_->SetBounds(kLeftEdgeSpacing, child_y, back_width, child_height);
+    back_->SetLeadingMargin(0);
+  }
 
   int button_spacing = GetButtonSpacing();
   forward_->SetBounds(back_->x() + back_->width() + button_spacing,
@@ -554,18 +569,42 @@ void ToolbarView::Layout() {
   }
 
   int browser_actions_width = browser_actions_->GetPreferredSize().width();
+
+  // Note: spacing from location bar to site chip is 1 pixel less than
+  // kStandardSpacing given the edge thickness of the chip.
+  int site_chip_width =
+      (site_chip_view_->ShouldShow() ?
+          site_chip_view_->GetPreferredSize().width() +
+          kStandardSpacing : 0);
   int app_menu_width = app_menu_->GetPreferredSize().width();
   int location_x = home_->x() + home_->width() + kStandardSpacing;
   int available_width = std::max(0, width() - kRightEdgeSpacing -
       app_menu_width - browser_actions_width - location_x);
+
+  // Cap site chip width at 1/2 the size available to the location bar.
+  site_chip_width = std::min(site_chip_width, available_width / 2);
+  available_width -= site_chip_width;
 
   int location_height = location_bar_->GetPreferredSize().height();
   int location_y = (height() - location_height + 1) / 2;
   location_bar_->SetBounds(location_x, location_y, std::max(available_width, 0),
                            location_height);
 
-  browser_actions_->SetBounds(location_bar_->x() + location_bar_->width(), 0,
+  int browser_actions_x = location_bar_->x() + location_bar_->width();
+
+  site_chip_view_->SetVisible(site_chip_view_->ShouldShow());
+  if (site_chip_view_->ShouldShow()) {
+    site_chip_view_->SetBounds(browser_actions_x + kStandardSpacing,
+                               child_y,
+                               site_chip_view_->GetPreferredSize().width(),
+                               child_height);
+    browser_actions_x +=
+        site_chip_view_->GetPreferredSize().width() + kStandardSpacing;
+  }
+
+  browser_actions_->SetBounds(browser_actions_x, 0,
                               browser_actions_width, height());
+
   // The browser actions need to do a layout explicitly, because when an
   // extension is loaded/unloaded/changed, BrowserActionContainer removes and
   // re-adds everything, regardless of whether it has a page action. For a
@@ -713,32 +752,20 @@ int ToolbarView::PopupTopSpacing() const {
 void ToolbarView::LoadImages() {
   ui::ThemeProvider* tp = GetThemeProvider();
 
-  back_->SetImage(views::CustomButton::STATE_NORMAL,
-      tp->GetImageSkiaNamed(IDR_BACK));
-  back_->SetImage(views::CustomButton::STATE_HOVERED,
-      tp->GetImageSkiaNamed(IDR_BACK_H));
-  back_->SetImage(views::CustomButton::STATE_PRESSED,
-      tp->GetImageSkiaNamed(IDR_BACK_P));
-  back_->SetImage(views::CustomButton::STATE_DISABLED,
-      tp->GetImageSkiaNamed(IDR_BACK_D));
+  back_->SetImage(views::Button::STATE_NORMAL,
+                  *(tp->GetImageSkiaNamed(IDR_BACK)));
+  back_->SetImage(views::Button::STATE_DISABLED,
+                  *(tp->GetImageSkiaNamed(IDR_BACK_D)));
 
-  forward_->SetImage(views::CustomButton::STATE_NORMAL,
-      tp->GetImageSkiaNamed(IDR_FORWARD));
-  forward_->SetImage(views::CustomButton::STATE_HOVERED,
-      tp->GetImageSkiaNamed(IDR_FORWARD_H));
-  forward_->SetImage(views::CustomButton::STATE_PRESSED,
-      tp->GetImageSkiaNamed(IDR_FORWARD_P));
-  forward_->SetImage(views::CustomButton::STATE_DISABLED,
-      tp->GetImageSkiaNamed(IDR_FORWARD_D));
+  forward_->SetImage(views::Button::STATE_NORMAL,
+                    *(tp->GetImageSkiaNamed(IDR_FORWARD)));
+  forward_->SetImage(views::Button::STATE_DISABLED,
+                     *(tp->GetImageSkiaNamed(IDR_FORWARD_D)));
 
   reload_->LoadImages();
 
-  home_->SetImage(views::CustomButton::STATE_NORMAL,
-      tp->GetImageSkiaNamed(IDR_HOME));
-  home_->SetImage(views::CustomButton::STATE_HOVERED,
-      tp->GetImageSkiaNamed(IDR_HOME_H));
-  home_->SetImage(views::CustomButton::STATE_PRESSED,
-      tp->GetImageSkiaNamed(IDR_HOME_P));
+  home_->SetImage(views::Button::STATE_NORMAL,
+                  *(tp->GetImageSkiaNamed(IDR_HOME)));
 }
 
 void ToolbarView::ShowCriticalNotification() {
@@ -756,7 +783,7 @@ void ToolbarView::ShowOutdatedInstallNotification() {
 }
 
 void ToolbarView::UpdateAppMenuState() {
-  string16 accname_app = l10n_util::GetStringUTF16(IDS_ACCNAME_APP);
+  base::string16 accname_app = l10n_util::GetStringUTF16(IDS_ACCNAME_APP);
   if (ShouldShowUpgradeRecommended()) {
     accname_app = l10n_util::GetStringFUTF16(
         IDS_ACCNAME_APP_UPGRADE_RECOMMENDED, accname_app);

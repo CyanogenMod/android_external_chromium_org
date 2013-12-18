@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@ package org.chromium.chrome.browser.input;
 
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.UrlUtils;
+import org.chromium.chrome.browser.ContentViewUtil;
+import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.input.SelectPopupDialog;
 import org.chromium.content.browser.test.util.Criteria;
@@ -13,8 +15,6 @@ import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.UiUtils;
-import org.chromium.chrome.browser.ContentViewUtil;
-import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
 

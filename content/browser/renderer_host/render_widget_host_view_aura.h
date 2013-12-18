@@ -20,6 +20,7 @@
 #include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/aura/image_transport_factory.h"
+#include "content/browser/aura/owned_mailbox.h"
 #include "content/browser/renderer_host/delegated_frame_evictor.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
@@ -192,8 +193,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
-  virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
-  virtual void SelectionChanged(const string16& text,
+  virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
+  virtual void SelectionChanged(const base::string16& text,
                                 size_t offset,
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
@@ -258,7 +259,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const ui::CompositionText& composition) OVERRIDE;
   virtual void ConfirmCompositionText() OVERRIDE;
   virtual void ClearCompositionText() OVERRIDE;
-  virtual void InsertText(const string16& text) OVERRIDE;
+  virtual void InsertText(const base::string16& text) OVERRIDE;
   virtual void InsertChar(char16 ch, int flags) OVERRIDE;
   virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
@@ -274,7 +275,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE;
   virtual bool DeleteRange(const gfx::Range& range) OVERRIDE;
   virtual bool GetTextFromRange(const gfx::Range& range,
-                                string16* text) const OVERRIDE;
+                                base::string16* text) const OVERRIDE;
   virtual void OnInputMethodChanged() OVERRIDE;
   virtual bool ChangeTextDirectionAndLayoutAlignment(
       base::i18n::TextDirection direction) OVERRIDE;
@@ -395,6 +396,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, OutputSurfaceIdChange);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            DiscardDelegatedFrames);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SoftwareDPIChange);
 
   class WindowObserver;
   friend class WindowObserver;
@@ -487,9 +489,16 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       scoped_ptr<cc::CopyOutputResult> result);
   static void CopyFromCompositingSurfaceHasResultForVideo(
       base::WeakPtr<RenderWidgetHostViewAura> rwhva,
+      scoped_refptr<OwnedMailbox> subscriber_texture,
       scoped_refptr<media::VideoFrame> video_frame,
       const base::Callback<void(bool)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
+  static void CopyFromCompositingSurfaceFinishedForVideo(
+      base::WeakPtr<RenderWidgetHostViewAura> rwhva,
+      const base::Callback<void(bool)>& callback,
+      scoped_refptr<OwnedMailbox> subscriber_texture,
+      scoped_ptr<cc::SingleReleaseCallback> release_callback,
+      bool result);
 
   ui::Compositor* GetCompositor() const;
 
@@ -575,6 +584,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // after requesting shutdown for another reason (e.g. Escape key).
   bool in_shutdown_;
 
+  // True if in the process of handling a window bounds changed notification.
+  bool in_bounds_changed_;
+
   // Is this a fullscreen view?
   bool is_fullscreen_;
 
@@ -619,7 +631,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   bool accept_return_character_;
 
   // Current tooltip text.
-  string16 tooltip_;
+  base::string16 tooltip_;
 
   std::vector<base::Closure> on_compositing_did_commit_callbacks_;
 
@@ -747,6 +759,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Subscriber that listens to frame presentation events.
   scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
+  std::vector<scoped_refptr<OwnedMailbox> > idle_frame_subscriber_textures_;
 
   // YUV readback pipeline.
   scoped_ptr<content::ReadbackYUVInterface>

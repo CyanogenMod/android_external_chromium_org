@@ -21,6 +21,7 @@
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
+#include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/chromeos/profiles/profile_util.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service.h"
@@ -30,8 +31,6 @@
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/drive/gdata_wapi_service.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -40,6 +39,8 @@
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/gdata_wapi_url_generator.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
@@ -100,11 +101,11 @@ FileError InitializeMetadata(
     internal::ResourceMetadata* resource_metadata,
     const ResourceIdCanonicalizer& id_canonicalizer,
     const base::FilePath& downloads_directory) {
-  if (!file_util::CreateDirectory(cache_root_directory.Append(
+  if (!base::CreateDirectory(cache_root_directory.Append(
           kMetadataDirectory)) ||
-      !file_util::CreateDirectory(cache_root_directory.Append(
+      !base::CreateDirectory(cache_root_directory.Append(
           kCacheFileDirectory)) ||
-      !file_util::CreateDirectory(cache_root_directory.Append(
+      !base::CreateDirectory(cache_root_directory.Append(
           kTemporaryFileDirectory))) {
     LOG(WARNING) << "Failed to create directories.";
     return FILE_ERROR_FAILED;
@@ -148,8 +149,8 @@ FileError InitializeMetadata(
     metadata_storage->RecoverCacheInfoFromTrashedResourceMap(
         &recovered_cache_info);
 
-    LOG(INFO) << "DB could not be opened for some reasons. "
-              << "Recovering cache files to " << dest_directory.value();
+    LOG(WARNING) << "DB could not be opened for some reasons. "
+                 << "Recovering cache files to " << dest_directory.value();
     if (!cache->RecoverFilesFromCacheDirectory(dest_directory,
                                                recovered_cache_info)) {
       LOG(WARNING) << "Failed to recover cache files.";
@@ -275,6 +276,8 @@ DriveIntegrationService::DriveIntegrationService(
     preference_watcher_.reset(preference_watcher);
     preference_watcher->set_integration_service(this);
   }
+
+  SetEnabled(drive::util::IsDriveEnabledForProfile(profile));
 }
 
 DriveIntegrationService::~DriveIntegrationService() {
@@ -301,6 +304,13 @@ void DriveIntegrationService::Shutdown() {
 }
 
 void DriveIntegrationService::SetEnabled(bool enabled) {
+  // If Drive is being disabled, ensure the download destination preference to
+  // be out of Drive. Do this before "Do nothing if not changed." because we
+  // want to run the check for the first SetEnabled() called in the constructor,
+  // which may be a change from false to false.
+  if (!enabled)
+    AvoidDriveAsDownloadDirecotryPreference();
+
   // Do nothing if not changed.
   if (enabled_ == enabled)
     return;
@@ -419,6 +429,7 @@ void DriveIntegrationService::AddDriveMountPoint() {
   bool success = mount_points->RegisterFileSystem(
       drive_mount_point.BaseName().AsUTF8Unsafe(),
       fileapi::kFileSystemTypeDrive,
+      fileapi::FileSystemMountOption(),
       drive_mount_point);
 
   if (success) {
@@ -461,7 +472,7 @@ void DriveIntegrationService::Initialize() {
                  cache_.get(),
                  resource_metadata_.get(),
                  drive_service_->GetResourceIdCanonicalizer(),
-                 DownloadPrefs::GetDefaultDownloadDirectory()),
+                 file_manager::util::GetDownloadsFolderForProfile(profile_)),
       base::Bind(&DriveIntegrationService::InitializeAfterMetadataInitialized,
                  weak_ptr_factory_.GetWeakPtr()));
 }
@@ -478,14 +489,8 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
   if (error != FILE_ERROR_OK) {
     LOG(WARNING) << "Failed to initialize: " << FileErrorToString(error);
 
-    // Change the download directory to the default value if the download
-    // destination is set to under Drive mount point.
-    PrefService* pref_service = profile_->GetPrefs();
-    if (util::IsUnderDriveMountPoint(
-            pref_service->GetFilePath(prefs::kDownloadDefaultDirectory))) {
-      pref_service->SetFilePath(prefs::kDownloadDefaultDirectory,
-                                DownloadPrefs::GetDefaultDownloadDirectory());
-    }
+    // Cannot used Drive. Set the download destination preference out of Drive.
+    AvoidDriveAsDownloadDirecotryPreference();
 
     // Back to NOT_INITIALIZED state. Then, re-running Initialize() should
     // work if the error is recoverable manually (such as out of disk space).
@@ -521,6 +526,16 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
   // the metadata initialization, so we need to look this up again here.
   if (enabled_)
     AddDriveMountPoint();
+}
+
+void DriveIntegrationService::AvoidDriveAsDownloadDirecotryPreference() {
+  PrefService* pref_service = profile_->GetPrefs();
+  if (util::IsUnderDriveMountPoint(
+          pref_service->GetFilePath(prefs::kDownloadDefaultDirectory))) {
+    pref_service->SetFilePath(
+        prefs::kDownloadDefaultDirectory,
+        file_manager::util::GetDownloadsFolderForProfile(profile_));
+  }
 }
 
 //===================== DriveIntegrationServiceFactory =======================
@@ -596,7 +611,6 @@ DriveIntegrationServiceFactory::BuildServiceInstanceFor(
     service = factory_for_test_.Run(profile);
   }
 
-  service->SetEnabled(drive::util::IsDriveEnabledForProfile(profile));
   return service;
 }
 

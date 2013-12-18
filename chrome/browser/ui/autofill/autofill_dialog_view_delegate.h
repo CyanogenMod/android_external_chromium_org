@@ -43,22 +43,25 @@ class AutofillDialogViewDelegate {
  public:
   // Strings -------------------------------------------------------------------
 
-  virtual string16 DialogTitle() const = 0;
-  virtual string16 AccountChooserText() const = 0;
-  virtual string16 SignInLinkText() const = 0;
-  virtual string16 SpinnerText() const = 0;
-  virtual string16 EditSuggestionText() const = 0;
-  virtual string16 CancelButtonText() const = 0;
-  virtual string16 ConfirmButtonText() const = 0;
-  virtual string16 SaveLocallyText() const = 0;
-  virtual string16 SaveLocallyTooltip() const = 0;
-  virtual string16 LegalDocumentsText() = 0;
+  virtual base::string16 DialogTitle() const = 0;
+  virtual base::string16 AccountChooserText() const = 0;
+  virtual base::string16 SignInLinkText() const = 0;
+  virtual base::string16 SpinnerText() const = 0;
+  virtual base::string16 EditSuggestionText() const = 0;
+  virtual base::string16 CancelButtonText() const = 0;
+  virtual base::string16 ConfirmButtonText() const = 0;
+  virtual base::string16 SaveLocallyText() const = 0;
+  virtual base::string16 SaveLocallyTooltip() const = 0;
+  virtual base::string16 LegalDocumentsText() = 0;
 
   // State ---------------------------------------------------------------------
 
   // Whether a loading animation should be shown (e.g. while signing in,
   // retreiving Wallet data, etc.).
   virtual bool ShouldShowSpinner() const = 0;
+
+  // Whether the account chooser/sign in link control should be visible.
+  virtual bool ShouldShowAccountChooser() const = 0;
 
   // Whether the sign in web view should be displayed.
   virtual bool ShouldShowSignInWebView() const = 0;
@@ -118,7 +121,7 @@ class AutofillDialogViewDelegate {
   virtual ui::MenuModel* MenuModelForSection(DialogSection section) = 0;
 
   // Returns the label text used to describe the section (i.e. Billing).
-  virtual string16 LabelForSection(DialogSection section) const = 0;
+  virtual base::string16 LabelForSection(DialogSection section) const = 0;
 
   // Returns the current state of suggestions for |section|.
   virtual SuggestionState SuggestionStateForSection(DialogSection section) = 0;
@@ -133,7 +136,7 @@ class AutofillDialogViewDelegate {
   virtual bool FieldControlsIcons(ServerFieldType type) const = 0;
 
   // Returns a tooltip for the given field, or an empty string if none exists.
-  virtual string16 TooltipForField(ServerFieldType type) const = 0;
+  virtual base::string16 TooltipForField(ServerFieldType type) const = 0;
 
   // Whether a particular DetailInput in |section| should be edited or not.
   virtual bool InputIsEditable(const DetailInput& input,
@@ -142,9 +145,9 @@ class AutofillDialogViewDelegate {
   // Decides whether input of |value| is valid for a field of type |type|. If
   // valid, the returned string will be empty. Otherwise it will contain an
   // error message.
-  virtual string16 InputValidityMessage(DialogSection section,
+  virtual base::string16 InputValidityMessage(DialogSection section,
                                         ServerFieldType type,
-                                        const string16& value) = 0;
+                                        const base::string16& value) = 0;
 
 
   // Decides whether the combination of all |inputs| is valid, returns a
@@ -159,7 +162,7 @@ class AutofillDialogViewDelegate {
                                           ServerFieldType type,
                                           gfx::NativeView parent_view,
                                           const gfx::Rect& content_bounds,
-                                          const string16& field_contents,
+                                          const base::string16& field_contents,
                                           bool was_edit) = 0;
 
   // The view forwards keypresses in text inputs. Returns true if there should

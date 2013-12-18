@@ -9,9 +9,9 @@
 #include "ash/ash_switches.h"
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/multi_profile_uma.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_item_delegate_manager.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_widget.h"
@@ -29,6 +29,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -328,9 +329,11 @@ ChromeLauncherController::ChromeLauncherController(Profile* profile,
       app_sync_ui_state_(NULL),
       ignore_persist_pinned_state_change_(false) {
   if (!profile_) {
+    // If no profile was passed, we take the currently active profile and use it
+    // as the owner of the current desktop.
     // Use the original profile as on chromeos we may get a temporary off the
     // record profile.
-    profile_ = ProfileManager::GetDefaultProfile()->GetOriginalProfile();
+    profile_ = ProfileManager::GetActiveUserProfile()->GetOriginalProfile();
 
     app_sync_ui_state_ = AppSyncUIState::Get(profile_);
     if (app_sync_ui_state_)
@@ -381,7 +384,7 @@ ChromeLauncherController::ChromeLauncherController(Profile* profile,
   if (ash::Shell::HasInstance()) {
     ash::Shell::GetInstance()->display_controller()->AddObserver(this);
     item_delegate_manager_ =
-        ash::Shell::GetInstance()->launcher_item_delegate_manager();
+        ash::Shell::GetInstance()->shelf_item_delegate_manager();
   }
 
   notification_registrar_.Add(this,
@@ -499,7 +502,7 @@ void ChromeLauncherController::SetItemController(
   controller->set_launcher_id(id);
   iter->second = controller;
   // Existing controller is destroyed and replaced by registering again.
-  SetLauncherItemDelegate(id, controller);
+  SetShelfItemDelegate(id, controller);
 }
 
 void ChromeLauncherController::CloseLauncherItem(ash::LauncherID id) {
@@ -513,7 +516,7 @@ void ChromeLauncherController::CloseLauncherItem(ash::LauncherID id) {
     iter->second = new AppShortcutLauncherItemController(app_id, this);
     iter->second->set_launcher_id(id);
     // Existing controller is destroyed and replaced by registering again.
-    SetLauncherItemDelegate(id, iter->second);
+    SetShelfItemDelegate(id, iter->second);
   } else {
     LauncherItemClosed(id);
   }
@@ -661,11 +664,11 @@ void ChromeLauncherController::LaunchApp(const std::string& app_id,
   if (LaunchedInNativeDesktop(app_id))
     return;
 
-  AppLaunchParams params(
-      GetProfileForNewWindows(),
-      extension,
-      event_flags,
-      chrome::HOST_DESKTOP_TYPE_ASH);
+  // The app will be created for the currently active profile.
+  AppLaunchParams params(profile_,
+                         extension,
+                         event_flags,
+                         chrome::HOST_DESKTOP_TYPE_ASH);
   if (source != ash::LAUNCH_FROM_UNKNOWN &&
       app_id == extension_misc::kWebStoreAppId) {
     // Get the corresponding source string.
@@ -701,8 +704,8 @@ void ChromeLauncherController::ActivateApp(const std::string& app_id,
     LaunchApp(app_id, source, event_flags);
 }
 
-extensions::ExtensionPrefs::LaunchType
-    ChromeLauncherController::GetLaunchType(ash::LauncherID id) {
+extensions::LaunchType ChromeLauncherController::GetLaunchType(
+    ash::LauncherID id) {
   DCHECK(HasItemController(id));
 
   const Extension* extension = GetExtensionForAppID(
@@ -710,9 +713,10 @@ extensions::ExtensionPrefs::LaunchType
 
   // An extension can be unloaded/updated/unavailable at any time.
   if (!extension)
-    return extensions::ExtensionPrefs::LAUNCH_TYPE_DEFAULT;
+    return extensions::LAUNCH_TYPE_DEFAULT;
 
-  return profile_->GetExtensionService()->extension_prefs()->GetLaunchType(
+  return extensions::GetLaunchType(
+      profile_->GetExtensionService()->extension_prefs(),
       extension);
 }
 
@@ -808,12 +812,13 @@ void ChromeLauncherController::PinAppWithID(const std::string& app_id) {
 
 void ChromeLauncherController::SetLaunchType(
     ash::LauncherID id,
-    extensions::ExtensionPrefs::LaunchType launch_type) {
+    extensions::LaunchType launch_type) {
   if (!HasItemController(id))
     return;
 
-  profile_->GetExtensionService()->extension_prefs()->SetLaunchType(
-      id_to_item_controller_map_[id]->app_id(), launch_type);
+  extensions::SetLaunchType(profile_->GetExtensionService()->extension_prefs(),
+                            id_to_item_controller_map_[id]->app_id(),
+                            launch_type);
 }
 
 void ChromeLauncherController::UnpinAppWithID(const std::string& app_id) {
@@ -824,16 +829,17 @@ void ChromeLauncherController::UnpinAppWithID(const std::string& app_id) {
 }
 
 bool ChromeLauncherController::IsLoggedInAsGuest() {
-  return ProfileManager::GetDefaultProfileOrOffTheRecord()->IsOffTheRecord();
+  return profile_->IsGuestSession();
 }
 
 void ChromeLauncherController::CreateNewWindow() {
-  chrome::NewEmptyWindow(
-      GetProfileForNewWindows(), chrome::HOST_DESKTOP_TYPE_ASH);
+  // Use the currently active user.
+  chrome::NewEmptyWindow(profile_, chrome::HOST_DESKTOP_TYPE_ASH);
 }
 
 void ChromeLauncherController::CreateNewIncognitoWindow() {
-  chrome::NewEmptyWindow(GetProfileForNewWindows()->GetOffTheRecordProfile(),
+  // Use the currently active user.
+  chrome::NewEmptyWindow(profile_->GetOffTheRecordProfile(),
                          chrome::HOST_DESKTOP_TYPE_ASH);
 }
 
@@ -1144,7 +1150,9 @@ void ChromeLauncherController::ActiveUserChanged(
   // Coming here the default profile is already switched. All profile specific
   // resources get released and the new profile gets attached instead.
   ReleaseProfile();
-  AttachProfile(ProfileManager::GetDefaultProfile());
+  // When coming here, the active user has already be changed so that we can
+  // set it as active.
+  AttachProfile(ProfileManager::GetActiveUserProfile());
   // Update the V1 applications.
   browser_status_monitor_->ActiveUserChanged(user_email);
   // Switch the running applications to the new user.
@@ -1347,7 +1355,7 @@ gfx::Image ChromeLauncherController::GetAppListIcon(
 
 string16 ChromeLauncherController::GetAppListTitle(
     content::WebContents* web_contents) const {
-  string16 title = web_contents->GetTitle();
+  base::string16 title = web_contents->GetTitle();
   if (!title.empty())
     return title;
   WebContentsToAppIDMap::const_iterator iter =
@@ -1383,8 +1391,8 @@ const std::string& ChromeLauncherController::GetAppIdFromLauncherIdForTest(
   return id_to_item_controller_map_[id]->app_id();
 }
 
-void ChromeLauncherController::SetLauncherItemDelegateManagerForTest(
-    ash::LauncherItemDelegateManager* manager) {
+void ChromeLauncherController::SetShelfItemDelegateManagerForTest(
+    ash::ShelfItemDelegateManager* manager) {
   item_delegate_manager_ = manager;
 }
 
@@ -1413,10 +1421,6 @@ bool ChromeLauncherController::IsBrowserFromActiveUser(Browser* browser) {
           chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_SEPARATED)
     return true;
   return multi_user_util::IsProfileFromActiveUser(browser->profile());
-}
-
-Profile* ChromeLauncherController::GetProfileForNewWindows() {
-  return ProfileManager::GetDefaultProfileOrOffTheRecord();
 }
 
 void ChromeLauncherController::LauncherItemClosed(ash::LauncherID id) {
@@ -1741,7 +1745,7 @@ ash::LauncherID ChromeLauncherController::InsertAppLauncherItem(
 
   app_icon_loader_->FetchImage(app_id);
 
-  SetLauncherItemDelegate(id, controller);
+  SetShelfItemDelegate(id, controller);
 
   return id;
 }
@@ -1788,8 +1792,8 @@ ash::LauncherID ChromeLauncherController::CreateBrowserShortcutLauncherItem() {
   id_to_item_controller_map_[id] =
       new BrowserShortcutLauncherItemController(this);
   id_to_item_controller_map_[id]->set_launcher_id(id);
-  // LauncherItemDelegateManager owns BrowserShortcutLauncherItemController.
-  SetLauncherItemDelegate(id, id_to_item_controller_map_[id]);
+  // ShelfItemDelegateManager owns BrowserShortcutLauncherItemController.
+  SetShelfItemDelegate(id, id_to_item_controller_map_[id]);
   return id;
 }
 
@@ -1964,14 +1968,14 @@ void ChromeLauncherController::CloseWindowedAppsFromRemovedExtension(
   }
 }
 
-void ChromeLauncherController::SetLauncherItemDelegate(
+void ChromeLauncherController::SetShelfItemDelegate(
     ash::LauncherID id,
-    ash::LauncherItemDelegate* item_delegate) {
+    ash::ShelfItemDelegate* item_delegate) {
   DCHECK_GT(id, 0);
   DCHECK(item_delegate);
   DCHECK(item_delegate_manager_);
-  item_delegate_manager_->SetLauncherItemDelegate(id,
-      scoped_ptr<ash::LauncherItemDelegate>(item_delegate).Pass());
+  item_delegate_manager_->SetShelfItemDelegate(
+      id, scoped_ptr<ash::ShelfItemDelegate>(item_delegate).Pass());
 }
 
 void ChromeLauncherController::AttachProfile(Profile* profile) {

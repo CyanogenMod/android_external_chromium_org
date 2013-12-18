@@ -65,8 +65,7 @@ class NetLogTempFileTest : public ::testing::Test {
     // Get a temporary file name for unit tests.
     base::FilePath net_log_dir;
     ASSERT_TRUE(net_log_temp_file_->GetNetExportLogDirectory(&net_log_dir));
-    ASSERT_TRUE(file_util::CreateTemporaryFileInDir(net_log_dir,
-                                                    &net_export_log_));
+    ASSERT_TRUE(base::CreateTemporaryFileInDir(net_log_dir, &net_export_log_));
 
     net_log_temp_file_->log_filename_ = net_export_log_.BaseName().value();
 
@@ -96,8 +95,8 @@ class NetLogTempFileTest : public ::testing::Test {
     EXPECT_TRUE(base::PathExists(net_export_log_));
 
     int64 file_size;
-    // file_util::GetFileSize returns proper file size on open handles.
-    EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &file_size));
+    // base::GetFileSize returns proper file size on open handles.
+    EXPECT_TRUE(base::GetFileSize(net_export_log_, &file_size));
     EXPECT_GT(file_size, 0);
   }
 
@@ -222,13 +221,13 @@ TEST_F(NetLogTempFileTest, DoStartClearsFile) {
   VerifyFileAndStateAfterDoStart();
 
   int64 start_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &start_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &start_file_size));
 
   net_log_temp_file_->ProcessCommand(NetLogTempFile::DO_STOP);
   VerifyFileAndStateAfterDoStop();
 
   int64 stop_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &stop_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &stop_file_size));
   EXPECT_GE(stop_file_size, start_file_size);
 
   // Add some junk at the end of the file.
@@ -237,7 +236,7 @@ TEST_F(NetLogTempFileTest, DoStartClearsFile) {
       net_export_log_, junk_data.c_str(), junk_data.size()), 0);
 
   int64 junk_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &junk_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &junk_file_size));
   EXPECT_GT(junk_file_size, stop_file_size);
 
   // Execute DO_START/DO_STOP commands and make sure the file is back to the
@@ -246,14 +245,14 @@ TEST_F(NetLogTempFileTest, DoStartClearsFile) {
   VerifyFileAndStateAfterDoStart();
 
   int64 new_start_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &new_start_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &new_start_file_size));
   EXPECT_EQ(new_start_file_size, start_file_size);
 
   net_log_temp_file_->ProcessCommand(NetLogTempFile::DO_STOP);
   VerifyFileAndStateAfterDoStop();
 
   int64 new_stop_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &new_stop_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &new_stop_file_size));
   EXPECT_EQ(new_stop_file_size, stop_file_size);
 }
 
@@ -268,7 +267,7 @@ TEST_F(NetLogTempFileTest, CheckAddEvent) {
   VerifyFileAndStateAfterDoStop();
 
   int64 stop_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &stop_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &stop_file_size));
 
   // Perform DO_START and add an Event and then DO_STOP and then compare
   // file sizes.
@@ -282,6 +281,6 @@ TEST_F(NetLogTempFileTest, CheckAddEvent) {
   VerifyFileAndStateAfterDoStop();
 
   int64 new_stop_file_size;
-  EXPECT_TRUE(file_util::GetFileSize(net_export_log_, &new_stop_file_size));
+  EXPECT_TRUE(base::GetFileSize(net_export_log_, &new_stop_file_size));
   EXPECT_GE(new_stop_file_size, stop_file_size);
 }

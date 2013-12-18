@@ -345,40 +345,17 @@ void RetargetUserShortcutsWithArgs(const InstallerState& installer_state,
   ShellUtil::ShortcutProperties updated_properties(install_level);
   updated_properties.set_target(new_target_exe);
 
-  // TODO(huangs): Make this data-driven, along with DeleteShortcuts().
-  VLOG(1) << "Retargeting Desktop shortcuts.";
-  if (!ShellUtil::UpdateShortcutsWithArgs(
-          ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist, install_level,
-          old_target_exe, updated_properties)) {
-    LOG(WARNING) << "Failed to retarget Desktop shortcuts.";
-  }
-
-  VLOG(1) << "Retargeting Quick Launch shortcuts.";
-  if (!ShellUtil::UpdateShortcutsWithArgs(
-          ShellUtil::SHORTCUT_LOCATION_QUICK_LAUNCH, dist, install_level,
-          old_target_exe, updated_properties)) {
-    LOG(WARNING) << "Failed to retarget Quick Launch shortcuts.";
-  }
-
-  VLOG(1) << "Retargeting Start Menu shortcuts.";
-  if (!ShellUtil::UpdateShortcutsWithArgs(
-          ShellUtil::SHORTCUT_LOCATION_START_MENU, dist, install_level,
-          old_target_exe, updated_properties)) {
-    LOG(WARNING) << "Failed to retarget Start Menu shortcuts.";
-  }
-
-  // Retarget pinned-to-taskbar shortcuts that point to |chrome_exe|.
-  if (!ShellUtil::UpdateShortcutsWithArgs(
-          ShellUtil::SHORTCUT_LOCATION_TASKBAR_PINS, dist,
-          ShellUtil::CURRENT_USER, old_target_exe, updated_properties)) {
-    LOG(WARNING) << "Failed to retarget taskbar shortcuts at user-level.";
-  }
-
-  // Retarget the folder of secondary tiles from the start screen for |dist|.
-  if (!ShellUtil::UpdateShortcutsWithArgs(
-          ShellUtil::SHORTCUT_LOCATION_APP_SHORTCUTS, dist, install_level,
-          old_target_exe, updated_properties)) {
-    LOG(WARNING) << "Failed to retarget start-screen shortcuts.";
+  // Retarget all shortcuts that point to |old_target_exe| from all
+  // ShellUtil::ShortcutLocations.
+  VLOG(1) << "Retargeting shortcuts.";
+  for (int location = ShellUtil::SHORTCUT_LOCATION_FIRST;
+      location < ShellUtil::NUM_SHORTCUT_LOCATIONS; ++location) {
+    if (!ShellUtil::UpdateShortcutsWithArgs(
+            static_cast<ShellUtil::ShortcutLocation>(location), dist,
+            install_level, old_target_exe, updated_properties)) {
+      LOG(WARNING) << "Failed to retarget shortcuts in ShortcutLocation: "
+                   << location;
+    }
   }
 }
 
@@ -395,34 +372,17 @@ void DeleteShortcuts(const InstallerState& installer_state,
   ShellUtil::ShellChange install_level = installer_state.system_install() ?
       ShellUtil::SYSTEM_LEVEL : ShellUtil::CURRENT_USER;
 
-  VLOG(1) << "Deleting Desktop shortcuts.";
-  if (!ShellUtil::RemoveShortcuts(ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist,
-                                  install_level, target_exe)) {
-    LOG(WARNING) << "Failed to delete Desktop shortcuts.";
-  }
-
-  VLOG(1) << "Deleting Quick Launch shortcuts.";
-  if (!ShellUtil::RemoveShortcuts(ShellUtil::SHORTCUT_LOCATION_QUICK_LAUNCH,
-                                  dist, install_level, target_exe)) {
-    LOG(WARNING) << "Failed to delete Quick Launch shortcuts.";
-  }
-
-  VLOG(1) << "Deleting Start Menu shortcuts.";
-  if (!ShellUtil::RemoveShortcuts(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist,
-                                  install_level, target_exe)) {
-    LOG(WARNING) << "Failed to delete Start Menu shortcuts.";
-  }
-
-  // Unpin all pinned-to-taskbar shortcuts that point to |chrome_exe|.
-  if (!ShellUtil::RemoveShortcuts(ShellUtil::SHORTCUT_LOCATION_TASKBAR_PINS,
-                                  dist, ShellUtil::CURRENT_USER, target_exe)) {
-    LOG(WARNING) << "Failed to unpin taskbar shortcuts at user-level.";
-  }
-
-  // Delete the folder of secondary tiles from the start screen for |dist|.
-  if (!ShellUtil::RemoveShortcuts(ShellUtil::SHORTCUT_LOCATION_APP_SHORTCUTS,
-                                  dist, install_level, target_exe)) {
-    LOG(WARNING) << "Failed to delete start-screen shortcuts.";
+  // Delete and unpin all shortcuts that point to |target_exe| from all
+  // ShellUtil::ShortcutLocations.
+  VLOG(1) << "Deleting shortcuts.";
+  for (int location = ShellUtil::SHORTCUT_LOCATION_FIRST;
+      location < ShellUtil::NUM_SHORTCUT_LOCATIONS; ++location) {
+    if (!ShellUtil::RemoveShortcuts(
+            static_cast<ShellUtil::ShortcutLocation>(location), dist,
+            install_level, target_exe)) {
+      LOG(WARNING) << "Failed to delete shortcuts in ShortcutLocation:"
+                   << location;
+    }
   }
 }
 
@@ -447,7 +407,7 @@ bool ScheduleParentAndGrandparentForDeletion(const base::FilePath& path) {
 // directory is deleted, DELETE_NOT_EMPTY if it is not empty, and DELETE_FAILED
 // otherwise.
 DeleteResult DeleteEmptyDir(const base::FilePath& path) {
-  if (!file_util::IsDirectoryEmpty(path))
+  if (!base::IsDirectoryEmpty(path))
     return DELETE_NOT_EMPTY;
 
   if (base::DeleteFile(path, true))
@@ -477,7 +437,7 @@ base::FilePath BackupLocalStateFile(
         local_state_folder.Append(chrome::kLocalStateFilename));
     if (!base::PathExists(state_file))
       continue;
-    if (!file_util::CreateTemporaryFile(&backup))
+    if (!base::CreateTemporaryFile(&backup))
       LOG(ERROR) << "Failed to create temporary file for Local State.";
     else
       base::CopyFile(state_file, backup);
@@ -535,7 +495,7 @@ bool MoveSetupOutOfInstallFolder(const InstallerState& installer_state,
   base::FilePath temp_file;
   if (!PathService::Get(base::DIR_TEMP, &tmp_dir)) {
     NOTREACHED();
-  } else if (!file_util::CreateTemporaryFileInDir(tmp_dir, &temp_file)) {
+  } else if (!base::CreateTemporaryFileInDir(tmp_dir, &temp_file)) {
     LOG(ERROR) << "Failed to create temporary file for setup.exe.";
   } else {
     VLOG(1) << "Changing current directory to: " << tmp_dir.value();
@@ -1441,7 +1401,7 @@ void CleanUpInstallationDirectoryAfterUninstall(
   }
   base::FilePath setup_exe(base::MakeAbsoluteFilePath(cmd_line.GetProgram()));
   if (!target_path.IsParent(setup_exe)) {
-    LOG(INFO) << "setup.exe is not in target path. Skipping installer cleanup.";
+    VLOG(1) << "setup.exe is not in target path. Skipping installer cleanup.";
     return;
   }
   base::FilePath install_directory(setup_exe.DirName());

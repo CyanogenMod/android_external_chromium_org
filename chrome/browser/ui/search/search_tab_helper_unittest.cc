@@ -7,16 +7,22 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/search/search_ipc_router.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/ntp_logging_events.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -43,8 +49,8 @@ class MockSearchIPCRouterDelegate : public SearchIPCRouter::Delegate {
   MOCK_METHOD1(OnUndoMostVisitedDeletion, void(const GURL& url));
   MOCK_METHOD0(OnUndoAllMostVisitedDeletions, void());
   MOCK_METHOD1(OnLogEvent, void(NTPLoggingEventType event));
-  MOCK_METHOD1(PasteIntoOmnibox, void(const string16&));
-  MOCK_METHOD1(OnChromeIdentityCheck, void(const string16& identity));
+  MOCK_METHOD1(PasteIntoOmnibox, void(const base::string16&));
+  MOCK_METHOD1(OnChromeIdentityCheck, void(const base::string16& identity));
 };
 
 }  // namespace
@@ -135,7 +141,7 @@ TEST_F(SearchTabHelperTest, OnChromeIdentityCheckMatch) {
       SearchTabHelper::FromWebContents(web_contents());
   ASSERT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
 
-  const string16 test_identity = ASCIIToUTF16("foo@bar.com");
+  const base::string16 test_identity = ASCIIToUTF16("foo@bar.com");
   search_tab_helper->OnChromeIdentityCheck(test_identity);
 
   const IPC::Message* message = process()->sink().GetUniqueMessageMatching(
@@ -155,7 +161,7 @@ TEST_F(SearchTabHelperTest, OnChromeIdentityCheckMismatch) {
       SearchTabHelper::FromWebContents(web_contents());
   ASSERT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
 
-  const string16 test_identity = ASCIIToUTF16("bar@foo.com");
+  const base::string16 test_identity = ASCIIToUTF16("bar@foo.com");
   search_tab_helper->OnChromeIdentityCheck(test_identity);
 
   const IPC::Message* message = process()->sink().GetUniqueMessageMatching(
@@ -175,7 +181,7 @@ TEST_F(SearchTabHelperTest, OnChromeIdentityCheckSignedOutMatch) {
       SearchTabHelper::FromWebContents(web_contents());
   ASSERT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
 
-  const string16 test_identity;
+  const base::string16 test_identity;
   search_tab_helper->OnChromeIdentityCheck(test_identity);
 
   const IPC::Message* message = process()->sink().GetUniqueMessageMatching(
@@ -195,7 +201,7 @@ TEST_F(SearchTabHelperTest, OnChromeIdentityCheckSignedOutMismatch) {
       SearchTabHelper::FromWebContents(web_contents());
   ASSERT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
 
-  const string16 test_identity = ASCIIToUTF16("bar@foo.com");
+  const base::string16 test_identity = ASCIIToUTF16("bar@foo.com");
   search_tab_helper->OnChromeIdentityCheck(test_identity);
 
   const IPC::Message* message = process()->sink().GetUniqueMessageMatching(
@@ -213,8 +219,8 @@ class TabTitleObserver : public content::WebContentsObserver {
   explicit TabTitleObserver(content::WebContents* contents)
       : WebContentsObserver(contents) {}
 
-  string16 title_on_start() { return title_on_start_; }
-  string16 title_on_commit() { return title_on_commit_; }
+  base::string16 title_on_start() { return title_on_start_; }
+  base::string16 title_on_commit() { return title_on_commit_; }
 
  private:
   virtual void DidStartProvisionalLoadForFrame(
@@ -234,15 +240,78 @@ class TabTitleObserver : public content::WebContentsObserver {
     title_on_commit_ = web_contents()->GetTitle();
   }
 
-  string16 title_on_start_;
-  string16 title_on_commit_;
+  base::string16 title_on_start_;
+  base::string16 title_on_commit_;
 };
 
 TEST_F(SearchTabHelperTest, TitleIsSetForNTP) {
   TabTitleObserver title_observer(web_contents());
   NavigateAndCommit(GURL(chrome::kChromeUINewTabURL));
-  const string16 title = l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE);
+  const base::string16 title = l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE);
   EXPECT_EQ(title, title_observer.title_on_start());
   EXPECT_EQ(title, title_observer.title_on_commit());
   EXPECT_EQ(title, web_contents()->GetTitle());
+}
+
+class SearchTabHelperWindowTest : public BrowserWithTestWindowTest {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    BrowserWithTestWindowTest::SetUp();
+    TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+        profile(), &TemplateURLServiceFactory::BuildInstanceFor);
+    TemplateURLService* template_url_service =
+        TemplateURLServiceFactory::GetForProfile(profile());
+    ui_test_utils::WaitForTemplateURLServiceToLoad(template_url_service);
+
+    TemplateURLData data;
+    data.SetURL("http://foo.com/url?bar={searchTerms}");
+    data.instant_url = "http://foo.com/instant?"
+        "{google:omniboxStartMarginParameter}{google:forceInstantResults}"
+        "foo=foo#foo=foo&strk";
+    data.new_tab_url = std::string("https://foo.com/newtab?strk");
+    data.alternate_urls.push_back("http://foo.com/alt#quux={searchTerms}");
+    data.search_terms_replacement_key = "strk";
+
+    TemplateURL* template_url = new TemplateURL(profile(), data);
+    template_url_service->Add(template_url);
+    template_url_service->SetDefaultSearchProvider(template_url);
+  }
+};
+
+TEST_F(SearchTabHelperWindowTest, OnProvisionalLoadFailRedirectNTPToLocal) {
+  AddTab(browser(), GURL(chrome::kChromeUINewTabURL));
+  content::WebContents* contents =
+        browser()->tab_strip_model()->GetWebContentsAt(0);
+  content::NavigationController* controller = &contents->GetController();
+
+  SearchTabHelper* search_tab_helper =
+      SearchTabHelper::FromWebContents(contents);
+  ASSERT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
+
+  // A failed provisional load of a cacheable NTP should be redirected to local
+  // NTP.
+  const GURL cacheableNTPURL = chrome::GetNewTabPageURL(profile());
+  search_tab_helper->DidFailProvisionalLoad(1, string16(), true,
+      cacheableNTPURL, 1, string16(), NULL);
+  CommitPendingLoad(controller);
+  EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl),
+                 controller->GetLastCommittedEntry()->GetURL());
+}
+
+TEST_F(SearchTabHelperWindowTest, OnProvisionalLoadFailDontRedirectNonNTP) {
+  AddTab(browser(), GURL(chrome::kChromeUINewTabURL));
+  content::WebContents* contents =
+        browser()->tab_strip_model()->GetWebContentsAt(0);
+  content::NavigationController* controller = &contents->GetController();
+
+  SearchTabHelper* search_tab_helper =
+      SearchTabHelper::FromWebContents(contents);
+  ASSERT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
+
+  // Any other web page shouldn't be redirected when provisional load fails.
+  search_tab_helper->DidFailProvisionalLoad(1, string16(), true,
+      GURL("http://www.example.com"), 1, string16(), NULL);
+  CommitPendingLoad(controller);
+  EXPECT_NE(GURL(chrome::kChromeSearchLocalNtpUrl),
+                 controller->GetLastCommittedEntry()->GetURL());
 }

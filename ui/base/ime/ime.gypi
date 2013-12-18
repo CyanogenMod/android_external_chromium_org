@@ -3,9 +3,12 @@
 # found in the LICENSE file.
 
 {
+  'dependencies' : [
+    '<(DEPTH)/ui/events/events.gyp:events',
+  ],
   'sources': [
-    'character_composer.cc',
-    'character_composer.h',
+    'chromeos/character_composer.cc',
+    'chromeos/character_composer.h',
     'chromeos/ibus_bridge.cc',
     'chromeos/ibus_bridge.h',
     'chromeos/mock_ime_candidate_window_handler.cc',
@@ -21,8 +24,6 @@
     'composition_underline.h',
     'dummy_input_method_delegate.cc',
     'dummy_input_method_delegate.h',
-    'fake_input_method.cc',
-    'fake_input_method.h',
     'input_method.h',
     'input_method_base.cc',
     'input_method_base.h',
@@ -35,8 +36,10 @@
     'input_method_imm32.h',
     'input_method_initializer.cc',
     'input_method_initializer.h',
-    'input_method_linux_x11.cc',
-    'input_method_linux_x11.h',
+    'input_method_auralinux.cc',
+    'input_method_auralinux.h',
+    'input_method_minimal.cc',
+    'input_method_minimal.h',
     'input_method_observer.h',
     'input_method_tsf.cc',
     'input_method_tsf.h',
@@ -71,24 +74,14 @@
   'conditions': [
     ['toolkit_views==0 and use_aura==0', {
       'sources!': [
-        'fake_input_method.cc',
-        'fake_input_method.h',
         'input_method_factory.cc',
         'input_method_factory.h',
+        'input_method_minimal.cc',
+        'input_method_minimal.h',
       ],
     }],
     ['chromeos==0 or use_x11==0', {
       'sources!': [
-        'character_composer.cc',
-        'character_composer.h',
-	'chromeos/ibus_bridge.cc',
-        'chromeos/ibus_bridge.h',
-	'chromeos/mock_ime_candidate_window_handler.cc',
-        'chromeos/mock_ime_candidate_window_handler.h',
-        'chromeos/mock_ime_engine_handler.cc',
-        'chromeos/mock_ime_engine_handler.h',
-        'chromeos/mock_ime_input_context_handler.cc',
-        'chromeos/mock_ime_input_context_handler.h',
         'input_method_ibus.cc',
         'input_method_ibus.h',
       ],
@@ -106,10 +99,10 @@
         'input_method_tsf.h',
       ],
     }],
-    ['use_aura==0 or use_x11==0 or desktop_linux==0', {
+    ['use_aura==0 or desktop_linux==0', {
       'sources!': [
-        'input_method_linux_x11.cc',
-        'input_method_linux_x11.h',
+        'input_method_auralinux.cc',
+        'input_method_auralinux.h',
       ],
     }],
     ['use_aura==0 or desktop_linux==0', {

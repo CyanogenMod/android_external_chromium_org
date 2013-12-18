@@ -522,8 +522,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithRelativeFile) {
   ASSERT_TRUE(extension);
 
   // Run the test
-  AppLaunchParams params(browser()->profile(), extension, LAUNCH_NONE,
-                         NEW_WINDOW);
+  AppLaunchParams params(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW);
   params.command_line = CommandLine::ForCurrentProcess();
   params.current_directory = test_data_dir_;
   OpenApplication(params);
@@ -711,22 +711,6 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MutationEventsDisabled) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/mutation_events")) << message_;
 }
 
-// Test that windows created with an id will remember and restore their
-// geometry when opening new windows.
-// Originally disabled due to flakiness (see http://crbug.com/155459)
-// but now because a regression breaks the test (http://crbug.com/160343).
-//
-// TODO(erg): Now a linux_aura asan regression too: http://crbug.com/304555
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-#define MAYBE_ShellWindowRestorePosition DISABLED_ShellWindowRestorePosition
-#else
-#define MAYBE_ShellWindowRestorePosition ShellWindowRestorePosition
-#endif
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
-                       MAYBE_ShellWindowRestorePosition) {
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/geometry"));
-}
-
 // This appears to be unreliable on linux.
 // TODO(stevenjb): Investigate and enable
 #if defined(OS_LINUX) && !defined(USE_ASH)
@@ -859,8 +843,8 @@ void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
     content::WindowedNotificationObserver app_loaded_observer(
         content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
         content::NotificationService::AllSources());
-    OpenApplication(AppLaunchParams(browser()->profile(), extension,
-                                    LAUNCH_NONE, NEW_WINDOW));
+    OpenApplication(AppLaunchParams(
+        browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
     app_loaded_observer.Wait();
     window = GetFirstShellWindow();
     ASSERT_TRUE(window);
@@ -1002,8 +986,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_TRUE(should_install.seen());
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
@@ -1025,8 +1009,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_TRUE(extension);
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   ASSERT_FALSE(should_not_install.seen());
@@ -1064,8 +1048,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(should_install.seen());
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
@@ -1251,7 +1235,7 @@ class RestartDeviceTest : public PlatformAppBrowserTest {
     power_manager_client_ = new chromeos::FakePowerManagerClient;
     dbus_manager->SetPowerManagerClient(
         scoped_ptr<chromeos::PowerManagerClient>(power_manager_client_));
-    chromeos::DBusThreadManager::InitializeForTesting(dbus_manager);
+    chromeos::DBusThreadManager::SetInstanceForTesting(dbus_manager);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -1273,7 +1257,6 @@ class RestartDeviceTest : public PlatformAppBrowserTest {
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    chromeos::DBusThreadManager::Shutdown();
     PlatformAppBrowserTest::TearDownInProcessBrowserTestFixture();
   }
 

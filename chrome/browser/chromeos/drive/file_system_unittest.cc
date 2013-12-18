@@ -25,9 +25,9 @@
 #include "chrome/browser/chromeos/drive/sync_client.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -100,13 +100,13 @@ class FileSystemTest : public testing::Test {
 
   void SetUpResourceMetadataAndFileSystem() {
     const base::FilePath metadata_dir = temp_dir_.path().AppendASCII("meta");
-    ASSERT_TRUE(file_util::CreateDirectory(metadata_dir));
+    ASSERT_TRUE(base::CreateDirectory(metadata_dir));
     metadata_storage_.reset(new internal::ResourceMetadataStorage(
         metadata_dir, base::MessageLoopProxy::current().get()));
     ASSERT_TRUE(metadata_storage_->Initialize());
 
     const base::FilePath cache_dir = temp_dir_.path().AppendASCII("files");
-    ASSERT_TRUE(file_util::CreateDirectory(cache_dir));
+    ASSERT_TRUE(base::CreateDirectory(cache_dir));
     cache_.reset(new internal::FileCache(
         metadata_storage_.get(),
         cache_dir,
@@ -119,7 +119,7 @@ class FileSystemTest : public testing::Test {
     ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->Initialize());
 
     const base::FilePath temp_file_dir = temp_dir_.path().AppendASCII("tmp");
-    ASSERT_TRUE(file_util::CreateDirectory(temp_file_dir));
+    ASSERT_TRUE(base::CreateDirectory(temp_file_dir));
     file_system_.reset(new FileSystem(
         pref_service_.get(),
         cache_.get(),
@@ -192,7 +192,7 @@ class FileSystemTest : public testing::Test {
     resource_metadata_.reset();
 
     const base::FilePath metadata_dir = temp_dir_.path().AppendASCII("meta");
-    ASSERT_TRUE(file_util::CreateDirectory(metadata_dir));
+    ASSERT_TRUE(base::CreateDirectory(metadata_dir));
     scoped_ptr<internal::ResourceMetadataStorage,
                test_util::DestroyHelperForTests> metadata_storage(
         new internal::ResourceMetadataStorage(
@@ -580,6 +580,27 @@ TEST_F(FileSystemTest, CreateDirectoryByImplicitLoad) {
 
   // It should fail because is_exclusive is set to true.
   EXPECT_EQ(FILE_ERROR_EXISTS, error);
+}
+
+TEST_F(FileSystemTest, CreateDirectoryRecursively) {
+  // Intentionally *not* calling LoadFullResourceList(), for testing that
+  // CreateDirectory ensures the resource list is loaded before it runs.
+
+  base::FilePath new_directory(
+      FILE_PATH_LITERAL("drive/root/Directory 1/a/b/c/d"));
+  FileError error = FILE_ERROR_FAILED;
+  file_system_->CreateDirectory(
+      new_directory,
+      true,  // is_exclusive
+      true,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  scoped_ptr<ResourceEntry> entry(GetResourceEntrySync(new_directory));
+  ASSERT_TRUE(entry);
+  EXPECT_TRUE(entry->file_info().is_directory());
 }
 
 TEST_F(FileSystemTest, PinAndUnpin) {

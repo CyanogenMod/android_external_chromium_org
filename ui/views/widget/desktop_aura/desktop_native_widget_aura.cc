@@ -580,9 +580,10 @@ void DesktopNativeWidgetAura::GetWindowPlacement(
     desktop_root_window_host_->GetWindowPlacement(bounds, maximized);
 }
 
-void DesktopNativeWidgetAura::SetWindowTitle(const string16& title) {
-  if (content_window_)
-    desktop_root_window_host_->SetWindowTitle(title);
+bool DesktopNativeWidgetAura::SetWindowTitle(const string16& title) {
+  if (!content_window_)
+    return false;
+  return desktop_root_window_host_->SetWindowTitle(title);
 }
 
 void DesktopNativeWidgetAura::SetWindowIcons(const gfx::ImageSkia& window_icon,
@@ -641,6 +642,8 @@ void DesktopNativeWidgetAura::StackAbove(gfx::NativeView native_view) {
 }
 
 void DesktopNativeWidgetAura::StackAtTop() {
+  if (content_window_)
+    desktop_root_window_host_->StackAtTop();
 }
 
 void DesktopNativeWidgetAura::StackBelow(gfx::NativeView native_view) {

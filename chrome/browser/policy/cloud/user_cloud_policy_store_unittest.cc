@@ -9,9 +9,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
-#include "chrome/browser/policy/cloud/mock_cloud_external_data_manager.h"
-#include "chrome/browser/policy/cloud/mock_cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
+#include "components/policy/core/common/cloud/mock_cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -115,7 +115,7 @@ TEST_F(UserCloudPolicyStoreTest, LoadWithInvalidFile) {
   EXPECT_TRUE(store_->policy_map().empty());
 
   // Create a bogus file.
-  ASSERT_TRUE(file_util::CreateDirectory(policy_file().DirName()));
+  ASSERT_TRUE(base::CreateDirectory(policy_file().DirName()));
   std::string bogus_data = "bogus_data";
   int size = bogus_data.size();
   ASSERT_EQ(size, file_util::WriteFile(policy_file(),
@@ -148,7 +148,7 @@ TEST_F(UserCloudPolicyStoreTest, LoadImmediatelyWithInvalidFile) {
   EXPECT_TRUE(store_->policy_map().empty());
 
   // Create a bogus file.
-  ASSERT_TRUE(file_util::CreateDirectory(policy_file().DirName()));
+  ASSERT_TRUE(base::CreateDirectory(policy_file().DirName()));
   std::string bogus_data = "bogus_data";
   int size = bogus_data.size();
   ASSERT_EQ(size, file_util::WriteFile(policy_file(),

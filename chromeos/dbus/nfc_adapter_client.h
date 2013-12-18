@@ -11,7 +11,6 @@
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "chromeos/dbus/nfc_client_helpers.h"
 #include "chromeos/dbus/nfc_property_set.h"
 #include "dbus/object_path.h"
@@ -86,6 +85,9 @@ class CHROMEOS_EXPORT NfcAdapterClient : public DBusClient {
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
 
+  // Returns the list of adapter object paths known to the system.
+  virtual std::vector<dbus::ObjectPath> GetAdapters() = 0;
+
   // Obtains the properties for the adapter with object path |object_path|, any
   // values should be copied if needed. A NULL pointer will be returned, if no
   // adapter with the given object path is known to exist.
@@ -110,8 +112,7 @@ class CHROMEOS_EXPORT NfcAdapterClient : public DBusClient {
       const nfc_client_helpers::ErrorCallback& error_callback) = 0;
 
   // Creates the instance.
-  static NfcAdapterClient* Create(DBusClientImplementationType type,
-                                  NfcManagerClient* manager_client);
+  static NfcAdapterClient* Create(NfcManagerClient* manager_client);
 
  protected:
   friend class NfcClientTest;

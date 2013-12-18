@@ -37,6 +37,7 @@
 #include "chrome/browser/intranet_redirect_detector.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
+#include "chrome/browser/media/media_device_id_salt.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/metrics_service.h"
@@ -104,8 +105,8 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/policy_statistics_collector.h"
 #include "chrome/browser/policy/url_blacklist_manager.h"
+#include "components/policy/core/common/policy_statistics_collector.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -309,6 +310,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 
 #if defined(OS_WIN)
   app_metro_launch::RegisterPrefs(registry);
+  PasswordManager::RegisterLocalPrefs(registry);
 #endif
 
 #if defined(TOOLKIT_VIEWS)
@@ -339,6 +341,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   IncognitoModePrefs::RegisterProfilePrefs(registry);
   InstantUI::RegisterProfilePrefs(registry);
   MediaCaptureDevicesDispatcher::RegisterProfilePrefs(registry);
+  MediaDeviceIDSalt::RegisterProfilePrefs(registry);
   MediaStreamDevicesController::RegisterProfilePrefs(registry);
   NetPrefObserver::RegisterProfilePrefs(registry);
   NetworkTimeService::RegisterProfilePrefs(registry);
@@ -540,8 +543,6 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
   }
 
   if (!(current_version & GOOGLE_URL_TRACKER_PREFS)) {
-    GoogleURLTrackerFactory::GetInstance()->RegisterUserPrefsOnBrowserContext(
-        profile);
     registry->RegisterStringPref(prefs::kLastKnownGoogleURL,
                                  GoogleURLTracker::kDefaultGoogleHomepage);
     if (local_state->HasPrefPath(prefs::kLastKnownGoogleURL)) {

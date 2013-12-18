@@ -20,10 +20,13 @@
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/view.h"
 
+class BackButton;
 class BrowserActionsContainer;
 class Browser;
-class HomeImageButton;
+class HomeButton;
 class ReloadButton;
+class SiteChipView;
+class ToolbarButton;
 class WrenchMenu;
 class WrenchMenuModel;
 class WrenchToolbarButton;
@@ -84,6 +87,7 @@ class ToolbarView : public views::AccessiblePaneView,
   BrowserActionsContainer* browser_actions() const { return browser_actions_; }
   ReloadButton* reload_button() const { return reload_; }
   LocationBarView* location_bar() const { return location_bar_; }
+  SiteChipView* site_chip() const { return site_chip_view_; }
   views::MenuButton* app_menu() const;
 
   // Overridden from AccessiblePaneView
@@ -210,11 +214,12 @@ class ToolbarView : public views::AccessiblePaneView,
   int content_shadow_height() const;
 
   // Controls
-  views::ImageButton* back_;
-  views::ImageButton* forward_;
+  BackButton* back_;
+  ToolbarButton* forward_;
   ReloadButton* reload_;
-  HomeImageButton* home_;
+  HomeButton* home_;
   LocationBarView* location_bar_;
+  SiteChipView* site_chip_view_;
   BrowserActionsContainer* browser_actions_;
   WrenchToolbarButton* app_menu_;
   Browser* browser_;

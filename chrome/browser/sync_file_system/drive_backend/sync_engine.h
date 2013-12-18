@@ -17,6 +17,7 @@
 #include "net/base/network_change_notifier.h"
 
 class ExtensionServiceInterface;
+class ProfileOAuth2TokenService;
 
 namespace base {
 class SequencedTaskRunner;
@@ -45,12 +46,11 @@ class SyncEngine : public RemoteFileSyncService,
  public:
   typedef Observer SyncServiceObserver;
 
-  SyncEngine(const base::FilePath& base_dir,
-             base::SequencedTaskRunner* task_runner,
-             scoped_ptr<drive::DriveServiceInterface> drive_service,
-             scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
-             drive::DriveNotificationManager* notification_manager,
-             ExtensionServiceInterface* extension_service);
+  static scoped_ptr<SyncEngine> CreateForBrowserContext(
+      content::BrowserContext* context);
+  static void AppendDependsOnFactories(
+      std::set<BrowserContextKeyedServiceFactory*>* factories);
+
   virtual ~SyncEngine();
 
   void Initialize();
@@ -79,6 +79,7 @@ class SyncEngine : public RemoteFileSyncService,
   virtual RemoteServiceState GetCurrentState() const OVERRIDE;
   virtual void GetOriginStatusMap(OriginStatusMap* status_map) OVERRIDE;
   virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
+  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
   virtual SyncStatusCode SetConflictResolutionPolicy(
       ConflictResolutionPolicy policy) OVERRIDE;
@@ -125,11 +126,21 @@ class SyncEngine : public RemoteFileSyncService,
 
  private:
   friend class SyncEngineTest;
+
+  SyncEngine(const base::FilePath& base_dir,
+             base::SequencedTaskRunner* task_runner,
+             scoped_ptr<drive::DriveServiceInterface> drive_service,
+             scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
+             drive::DriveNotificationManager* notification_manager,
+             ExtensionServiceInterface* extension_service,
+             ProfileOAuth2TokenService* auth_token_service);
+
   void DoDisableApp(const std::string& app_id,
                     const SyncStatusCallback& callback);
   void DoEnableApp(const std::string& app_id,
                    const SyncStatusCallback& callback);
 
+  void PostInitializeTask();
   void DidInitialize(SyncEngineInitializer* initializer,
                      SyncStatusCode status);
   void DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
@@ -138,9 +149,11 @@ class SyncEngine : public RemoteFileSyncService,
   void DidApplyLocalChange(LocalToRemoteSyncer* syncer,
                            const SyncStatusCallback& callback,
                            SyncStatusCode status);
-  void DidFetchChangeList(SyncStatusCallback& callback);
 
   void MaybeStartFetchChanges();
+  void DidResolveConflict(SyncStatusCode status);
+  void DidFetchChanges(SyncStatusCode status);
+
   void UpdateServiceStateFromSyncStatusCode(SyncStatusCode state,
                                             bool used_network);
   void UpdateServiceState(RemoteServiceState state,
@@ -162,6 +175,7 @@ class SyncEngine : public RemoteFileSyncService,
   // BrowserContextKeyedService::DependsOn().
   drive::DriveNotificationManager* notification_manager_;
   ExtensionServiceInterface* extension_service_;
+  ProfileOAuth2TokenService* auth_token_service_;
 
   ObserverList<SyncServiceObserver> service_observers_;
   ObserverList<FileStatusObserver> file_status_observers_;
@@ -169,6 +183,7 @@ class SyncEngine : public RemoteFileSyncService,
 
   RemoteServiceState service_state_;
 
+  bool should_check_conflict_;
   bool should_check_remote_change_;
   base::TimeTicks time_to_check_changes_;
 

@@ -9,13 +9,13 @@
 #include "base/callback.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client_registration_helper.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -27,10 +27,12 @@ UserPolicySigninService::UserPolicySigninService(
     Profile* profile,
     PrefService* local_state,
     DeviceManagementService* device_management_service,
+    scoped_refptr<net::URLRequestContextGetter> system_request_context,
     ProfileOAuth2TokenService* token_service)
     : UserPolicySigninServiceBase(profile,
                                   local_state,
-                                  device_management_service),
+                                  device_management_service,
+                                  system_request_context),
       oauth2_token_service_(token_service) {
   // ProfileOAuth2TokenService should not yet have loaded its tokens since this
   // happens in the background after PKS initialization - so this service
@@ -68,16 +70,19 @@ void UserPolicySigninService::RegisterForPolicy(
   DCHECK(!oauth2_refresh_token.empty());
 
   // Create a new CloudPolicyClient for fetching the DMToken.
-  scoped_ptr<CloudPolicyClient> policy_client = PrepareToRegister(username);
+  scoped_ptr<CloudPolicyClient> policy_client = CreateClientForRegistrationOnly(
+      username);
   if (!policy_client) {
     callback.Run(std::string(), std::string());
     return;
   }
 
   // Fire off the registration process. Callback keeps the CloudPolicyClient
-  // alive for the length of the registration process.
+  // alive for the length of the registration process. Use the system
+  // request context because the user is not signed in to this profile yet
+  // (we are just doing a test registration to see if policy is supported for
+  // this user).
   registration_helper_.reset(new CloudPolicyClientRegistrationHelper(
-      request_context(),
       policy_client.get(),
       ShouldForceLoadPolicy(),
       enterprise_management::DeviceRegisterRequest::BROWSER));
@@ -164,7 +169,6 @@ void UserPolicySigninService::RegisterCloudPolicyService() {
   // Start the process of registering the CloudPolicyClient. Once it completes,
   // policy fetch will automatically happen.
   registration_helper_.reset(new CloudPolicyClientRegistrationHelper(
-      request_context(),
       GetManager()->core()->client(),
       ShouldForceLoadPolicy(),
       enterprise_management::DeviceRegisterRequest::BROWSER));

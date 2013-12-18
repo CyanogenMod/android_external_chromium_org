@@ -9,6 +9,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -67,7 +68,7 @@ ManagedModeInterstitial::ManagedModeInterstitial(
     }
     details.type = content::NAVIGATION_TYPE_NEW_PAGE;
     for (int i = service->infobar_count() - 1; i >= 0; --i) {
-      if (service->infobar_at(i)->ShouldExpire(details))
+      if (service->infobar_at(i)->delegate()->ShouldExpire(details))
         service->RemoveInfoBar(service->infobar_at(i));
     }
   }
@@ -111,7 +112,8 @@ std::string ManagedModeInterstitial::GetHTMLContents() {
   bool allow_access_requests = managed_user_service->AccessRequestsEnabled();
   strings.SetBoolean("allowAccessRequests", allow_access_requests);
 
-  string16 custodian = UTF8ToUTF16(managed_user_service->GetCustodianName());
+  base::string16 custodian =
+      UTF8ToUTF16(managed_user_service->GetCustodianName());
   strings.SetString(
       "blockPageMessage",
       allow_access_requests

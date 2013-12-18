@@ -20,7 +20,7 @@
 namespace chromeos {
 class ComponentExtensionIMEManager;
 class ComponentExtensionIMEManagerDelegate;
-class InputMethodEngineIBus;
+class InputMethodEngine;
 namespace input_method {
 class InputMethodDelegate;
 class XKeyboard;
@@ -72,7 +72,7 @@ class InputMethodManagerImpl : public InputMethodManager,
       const std::vector<std::string>& languages,
       const GURL& options_page,
       const GURL& input_view,
-      InputMethodEngine* instance) OVERRIDE;
+      InputMethodEngineInterface* instance) OVERRIDE;
   virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
   virtual void GetInputMethodExtensions(
       InputMethodDescriptors* result) OVERRIDE;
@@ -108,6 +108,7 @@ class InputMethodManagerImpl : public InputMethodManager,
   void PropertyChanged();
 
   // CandidateWindowController::Observer overrides:
+  virtual void CandidateClicked(int index) OVERRIDE;
   virtual void CandidateWindowOpened() OVERRIDE;
   virtual void CandidateWindowClosed() OVERRIDE;
 
@@ -190,7 +191,6 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Extra input methods that have been explicitly added to the menu, such as
   // those created by extension.
   std::map<std::string, InputMethodDescriptor> extra_input_methods_;
-  std::map<std::string, InputMethodEngineIBus*> extra_input_method_instances_;
 
   // Property list of the input method.  This is set by extension IMEs.
   InputMethodPropertyList property_list_;

@@ -37,7 +37,7 @@
 
       <!-- metrics.js initiates load performance tracking
            so we want to parse it as early as possible -->
-      <script src="js/metrics.js"></script>
+      <script src="foreground/js/metrics.js"></script>
 
       <!-- Loads the client of the image loader extension -->
       <script src="chrome-extension://pmfjbimdmchhbnneeidfognadeopoehp/image_loader_client.js"></script>
@@ -92,7 +92,6 @@
       <script src="foreground/js/ui/file_manager_dialog_base.js"></script>
 
       <script src="foreground/js/app_installer.js"></script>
-      <script src="foreground/js/butter_bar.js"></script>
       <script src="foreground/js/cws_container_client.js"></script>
       <script src="foreground/js/directory_contents.js"></script>
       <script src="foreground/js/directory_model.js"></script>
@@ -124,8 +123,9 @@
       <script src="foreground/js/ui/preview_panel.js"></script>
       <script src="foreground/js/ui/progress_center_panel.js"></script>
       <script src="foreground/js/ui/search_box.js"></script>
-      <script src="foreground/js/url_constants.js"></script>
       <script src="foreground/js/volume_manager_wrapper.js"></script>
+      <script src="foreground/js/media/media_util.js"></script>
+      <script src="foreground/js/metadata/metadata_cache.js"></script>
       <script src="foreground/js/default_action_dialog.js"></script>
       <script src="foreground/js/file_manager_commands.js"></script>
 
@@ -173,7 +173,6 @@
 
       <command id="unmount" i18n-values="label:UNMOUNT_DEVICE_BUTTON_LABEL">
       <command id="format" i18n-values="label:FORMAT_DEVICE_BUTTON_LABEL">
-      <command id="import-photos" i18n-values="label:PHOTO_IMPORT_TITLE" hidden>
 
       <command id="volume-help" i18n-values="label:DRIVE_MENU_HELP">
       <command id="drive-buy-more-space"
@@ -186,7 +185,8 @@
       <command id="open-with" i18n-values="label:OPEN_WITH_BUTTON_LABEL">
       <command id="zip-selection"
                i18n-values="label:ZIP_SELECTION_BUTTON_LABEL">
-      <command id="share" i18n-values="label:SHARE_BUTTON_LABEL">
+      <command id="share" i18n-values="label:SHARE_BUTTON_LABEL"
+               shortcut="U+00BE" hideShortcutText><!-- Shortcut: '.' -->
 
       <command id="zoom-in" shortcut="U+00BB-Ctrl">
       <command id="zoom-out" shortcut="U+00BD-Ctrl">
@@ -216,7 +216,6 @@
     </menu>
 
     <menu id="roots-context-menu" class="chrome-menu" >
-      <menuitem command="#import-photos"></menuitem>
       <menuitem command="#unmount"></menuitem>
       <menuitem command="#format"></menuitem>
       <menuitem command="#remove-folder-shortcut"></menuitem>
@@ -279,7 +278,6 @@
           <list id="navigation-list" tabindex="14"></list>
         </div>
         <div class="dialog-navigation-list-footer">
-          <!-- This progress center is under development and hidden. -->
           <div id="progress-center" hidden>
             <div id="progress-center-close-view">
               <li>
@@ -293,17 +291,6 @@
               </li>
             </div>
             <div id="progress-center-open-view"></div>
-          </div>
-          <div id="butter-bar-container" hidden>
-            <div id="butter-bar">
-              <div class="content">
-                <div class="butter-message"></div>
-                <div class="progress-bar" hidden>
-                  <div class="progress-track"></div>
-                </div>
-              </div>
-              <div class="actions" hidden></div>
-            </div>
           </div>
         </div>
       </div>

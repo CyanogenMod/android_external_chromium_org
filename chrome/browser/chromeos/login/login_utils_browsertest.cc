@@ -30,9 +30,6 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/device_management_service.h"
-#include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
@@ -51,6 +48,8 @@
 #include "chromeos/network/network_handler.h"
 #include "chromeos/system/mock_statistics_provider.h"
 #include "chromeos/system/statistics_provider.h"
+#include "components/policy/core/common/cloud/device_management_service.h"
+#include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -62,6 +61,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -447,6 +447,10 @@ class LoginUtilsTest : public testing::Test,
   }
 
  protected:
+  // Must be the first member variable as browser_process_ and local_state_
+  // rely on this being set up.
+  TestingBrowserProcessInitializer initializer_;
+
   base::Closure fake_io_thread_work_;
   base::WaitableEvent fake_io_thread_completion_;
   base::Thread fake_io_thread_;
@@ -551,7 +555,7 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
   EXPECT_EQ(std::string(), local_state_.Get()->GetString(prefs::kRLZBrand));
 
   // RLZ value for homepage access point should have been initialized.
-  string16 rlz_string;
+  base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
       RLZTracker::CHROME_HOME_PAGE, &rlz_string));
   EXPECT_EQ(string16(), rlz_string);

@@ -129,6 +129,8 @@ v8.log
 /cloud_print/cloud_print_version_resources.xml
 /components/variations.xml
 /content/content_unittests_run.xml
+/content/test/data/gpu/generated/
+/content/test/data/gpu/gpu_reference/
 /content/test/data/layout_tests/
 /content/test/data/plugin/
 /data
@@ -145,6 +147,10 @@ v8.log
 /media/test/data/security
 /media/yuv_convert_simd_x86.xml
 /metro_driver
+/mojo/hello_world_service.xml
+/mojo/mojo_public_unittests.xml
+/mojo/mojom_test.xml
+/mojo/sample_service.xml
 /native_client
 /net/Debug
 /net/net_unittests_run.xml
@@ -295,7 +301,7 @@ v8.log
 /third_party/valgrind
 /third_party/webdriver/pylib
 /third_party/webdriver/python/selenium
-/third_party/webgl_conformance
+/third_party/webgl
 /third_party/WebKit
 /third_party/webpagereplay/
 /third_party/webrtc
@@ -303,6 +309,7 @@ v8.log
 /third_party/webrtc/modules/video_coding/codecs/vp8_internal
 /third_party/widevine/cdm/binaries
 /third_party/widevine/cdm/symbols
+/third_party/win_toolchain/.timestamps
 /third_party/win_toolchain/files
 /third_party/wix
 /third_party/xdg-utils

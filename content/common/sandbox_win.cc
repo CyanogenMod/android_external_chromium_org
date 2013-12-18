@@ -40,6 +40,9 @@ namespace {
 // The DLLs listed here are known (or under strong suspicion) of causing crashes
 // when they are loaded in the renderer. Note: at runtime we generate short
 // versions of the dll name only if the dll has an extension.
+// For more information about how this list is generated, and how to get off
+// of it, see:
+// https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
@@ -217,7 +220,7 @@ void AddGenericDllEvictionPolicy(sandbox::TargetPolicy* policy) {
 }
 
 // Returns the object path prepended with the current logon session.
-string16 PrependWindowsSessionPath(const char16* object) {
+base::string16 PrependWindowsSessionPath(const char16* object) {
   // Cache this because it can't change after process creation.
   static uintptr_t s_session_id = 0;
   if (s_session_id == 0) {
@@ -514,7 +517,7 @@ void SetJobLevel(const CommandLine& cmd_line,
 // Just have to figure out what needs to be warmed up first.
 void AddBaseHandleClosePolicy(sandbox::TargetPolicy* policy) {
   // TODO(cpu): Add back the BaseNamedObjects policy.
-  string16 object_path = PrependWindowsSessionPath(
+  base::string16 object_path = PrependWindowsSessionPath(
       L"\\BaseNamedObjects\\windows_shell_global_counters");
   policy->AddKernelObjectToClose(L"Section", object_path.data());
 }

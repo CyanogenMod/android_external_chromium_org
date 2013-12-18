@@ -32,11 +32,11 @@ namespace test {
 class ShelfViewTestAPI;
 }
 
-class LauncherDelegate;
-struct LauncherItem;
-class LauncherItemDelegateManager;
+class ShelfDelegate;
 class ShelfIconObserver;
+class ShelfItemDelegateManager;
 class ShelfModel;
+struct LauncherItem;
 
 namespace internal {
 
@@ -62,8 +62,8 @@ class ASH_EXPORT ShelfView : public views::View,
                              public app_list::ApplicationDragAndDropHost {
  public:
   ShelfView(ShelfModel* model,
-            LauncherDelegate* delegate,
-            ShelfLayoutManager* shelf_layout_manager);
+            ShelfDelegate* delegate,
+            ShelfLayoutManager* manager);
   virtual ~ShelfView();
 
   ShelfTooltipManager* tooltip_manager() { return tooltip_.get(); }
@@ -167,6 +167,9 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Sets the bounds of each view to its ideal bounds.
   void LayoutToIdealBounds();
+
+  // Update all button's visibility in overflow.
+  void UpdateAllButtonsVisibilityInOverflowMode();
 
   // Calculates the ideal bounds. The bounds of each button corresponding to an
   // item in the model is set in |view_model_|.
@@ -335,7 +338,7 @@ class ASH_EXPORT ShelfView : public views::View,
   ShelfModel* model_;
 
   // Delegate; owned by Launcher.
-  LauncherDelegate* delegate_;
+  ShelfDelegate* delegate_;
 
   // Used to manage the set of active launcher buttons. There is a view per
   // item in |model_|.
@@ -431,14 +434,20 @@ class ASH_EXPORT ShelfView : public views::View,
   // The rip off view when a snap back operation is underway.
   views::View* snap_back_from_rip_off_view_;
 
-  // Holds LauncherItemDelegateManager.
-  LauncherItemDelegateManager* item_manager_;
+  // Holds ShelfItemDelegateManager.
+  ShelfItemDelegateManager* item_manager_;
 
   // Holds ShelfLayoutManager.
   ShelfLayoutManager* layout_manager_;
 
   // True when this ShelfView is used for Overflow Bubble.
   bool overflow_mode_;
+
+  // Holds a pointer to main ShelfView when a ShelfView is in overflow mode.
+  ShelfView* main_shelf_;
+
+  // True when ripped item from overflow bubble is entered into Shelf.
+  bool dragged_off_from_overflow_to_shelf_;
 
   DISALLOW_COPY_AND_ASSIGN(ShelfView);
 };

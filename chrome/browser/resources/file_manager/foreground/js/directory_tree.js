@@ -213,7 +213,6 @@ DirectoryItem.prototype.decorate = function(
       ' <span class="expand-icon"></span>' +
       ' <span class="icon"></span>' +
       ' <span class="label"></span>' +
-      ' <div class="root-eject"></div>' +
       '</div>' +
       '<div class="tree-children"></div>';
   this.setAttribute('role', 'treeitem');
@@ -238,17 +237,6 @@ DirectoryItem.prototype.decorate = function(
     icon.setAttribute('volume-type-icon', iconType);
   else
     icon.setAttribute('file-type-icon', 'folder');
-
-  var eject = this.querySelector('.root-eject');
-  eject.hidden = !PathUtil.isUnmountableByUser(path);
-  eject.addEventListener('click',
-      function(event) {
-        event.stopPropagation();
-        if (!PathUtil.isUnmountableByUser(path))
-          return;
-
-        tree.volumeManager.unmount(path, function() {}, function() {});
-      }.bind(this));
 
   if (this.parentTree_.contextMenuForSubitems)
     this.setContextMenu(this.parentTree_.contextMenuForSubitems);
@@ -309,7 +297,7 @@ DirectoryItem.prototype.onExpand_ = function(e) {
  */
 DirectoryItem.prototype.updateSubDirectories = function(
     recursive, opt_successCallback, opt_errorCallback) {
-  if (util.isFakeDirectoryEntry(this.entry)) {
+  if (util.isFakeEntry(this.entry)) {
     if (opt_errorCallback)
       opt_errorCallback();
     return;
@@ -592,7 +580,7 @@ DirectoryTree.prototype.selectByEntry = function(entry) {
 DirectoryTree.prototype.maybeResolveMyDriveRoot_ = function(
     completionCallback) {
   var myDriveItem = this.items[0];
-  if (!util.isFakeDirectoryEntry(myDriveItem.entry)) {
+  if (!util.isFakeEntry(myDriveItem.entry)) {
     // The entry is already resolved. Don't need to try again.
     completionCallback();
     return;
@@ -602,9 +590,8 @@ DirectoryTree.prototype.maybeResolveMyDriveRoot_ = function(
   this.directoryModel_.resolveDirectory(
       myDriveItem.fullPath,
       function(entry) {
-        if (!util.isFakeDirectoryEntry(entry)) {
+        if (!util.isFakeEntry(entry))
           myDriveItem.dirEntry_ = entry;
-        }
 
         completionCallback();
       },
@@ -653,12 +640,13 @@ DirectoryTree.prototype.onFilterChanged_ = function() {
  */
 DirectoryTree.prototype.onDirectoryContentChanged_ = function(event) {
   if (event.eventType == 'changed') {
-    var path = util.extractFilePath(event.directoryUrl);
-    if (!DirectoryTreeUtil.isEligiblePathForDirectoryTree(path))
+    // TODO: Use Entry instead of urls. This will stop working once migrating
+    // to separate file systems. See: crbug.com/325052.
+    if (!DirectoryTreeUtil.isEligiblePathForDirectoryTree(event.entry.fullPath))
       return;
 
     var myDriveItem = this.items[0];
-    myDriveItem.updateItemByPath(path);
+    myDriveItem.updateItemByPath(event.entry.fullPath);
   }
 };
 

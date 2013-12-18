@@ -10,10 +10,10 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 #include "net/base/mime_util.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
@@ -112,15 +112,28 @@ scoped_ptr<FileMetadata> CreateFileMetadataFromChangeResource(
   return file.Pass();
 }
 
-webkit_blob::ScopedFile CreateTemporaryFile() {
+scoped_ptr<FileMetadata> CreateDeletedFileMetadata(
+    int64 change_id,
+    const std::string& file_id) {
+  scoped_ptr<FileMetadata> file(new FileMetadata);
+  file->set_file_id(file_id);
+
+  FileDetails* details = file->mutable_details();
+  details->set_change_id(change_id);
+  details->set_missing(true);
+  return file.Pass();
+}
+
+webkit_blob::ScopedFile CreateTemporaryFile(
+    base::TaskRunner* file_task_runner) {
   base::FilePath temp_file_path;
-  if (!file_util::CreateTemporaryFile(&temp_file_path))
+  if (!base::CreateTemporaryFile(&temp_file_path))
     return webkit_blob::ScopedFile();
 
   return webkit_blob::ScopedFile(
       temp_file_path,
       webkit_blob::ScopedFile::DELETE_ON_SCOPE_OUT,
-      base::MessageLoopProxy::current().get());
+      file_task_runner);
 }
 
 std::string FileKindToString(FileKind file_kind) {
@@ -159,7 +172,7 @@ scoped_ptr<google_apis::ResourceEntry> GetOldestCreatedFolderResource(
   scoped_ptr<google_apis::ResourceEntry> oldest;
   for (size_t i = 0; i < candidates.size(); ++i) {
     google_apis::ResourceEntry* entry = candidates[i];
-    if (!entry->is_folder())
+    if (!entry->is_folder() || entry->deleted())
       continue;
 
     if (!oldest || oldest->published_time() > entry->published_time()) {

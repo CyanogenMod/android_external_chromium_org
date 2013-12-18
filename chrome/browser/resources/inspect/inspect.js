@@ -482,13 +482,13 @@ function addTargetToList(data, list, properties) {
 }
 
 function addActionLink(row, text, handler, opt_disabled) {
-  var link = document.createElement('a');
+  var link = document.createElement('span');
+  link.classList.add('action');
   if (opt_disabled)
     link.classList.add('disabled');
   else
     link.classList.remove('disabled');
 
-  link.setAttribute('href', '#');
   link.textContent = text;
   link.addEventListener('click', handler, true);
   row.querySelector('.actions').appendChild(link);
@@ -687,7 +687,7 @@ function validatePort(input) {
   if (!match)
     return false;
   var port = parseInt(match[1]);
-  if (port < 5000 || 10000 < port)
+  if (port < 1024 || 10000 < port)
     return false;
 
   var inputs = document.querySelectorAll('input.port:not(.invalid)');

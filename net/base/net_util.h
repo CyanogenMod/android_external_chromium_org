@@ -447,7 +447,7 @@ NET_EXPORT_PRIVATE AddressFamily GetAddressFamily(
     const IPAddressNumber& address);
 
 // Maps the given AddressFamily to either AF_INET, AF_INET6 or AF_UNSPEC.
-int ConvertAddressFamily(AddressFamily address_family);
+NET_EXPORT_PRIVATE int ConvertAddressFamily(AddressFamily address_family);
 
 // Parses an IP address literal (either IPv4 or IPv6) to its numeric value.
 // Returns true on success and fills |ip_number| with the numeric value.
@@ -515,11 +515,13 @@ NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 struct NET_EXPORT NetworkInterface {
   NetworkInterface();
   NetworkInterface(const std::string& name,
+                   uint32 interface_index,
                    const IPAddressNumber& address,
                    size_t network_prefix);
   ~NetworkInterface();
 
   std::string name;
+  uint32 interface_index;  // Always 0 on Android.
   IPAddressNumber address;
   size_t network_prefix;
 };

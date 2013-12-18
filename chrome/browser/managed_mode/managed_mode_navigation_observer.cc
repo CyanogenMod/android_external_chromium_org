@@ -12,6 +12,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_mode_interstitial.h"
 #include "chrome/browser/managed_mode/managed_mode_resource_throttle.h"
@@ -80,36 +81,36 @@ void GoBackToSafety(content::WebContents* web_contents) {
 
 class ManagedModeWarningInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a managed mode warning infobar delegate and adds it to
-  // |infobar_service|.  Returns the delegate if it was successfully added.
-  static InfoBarDelegate* Create(InfoBarService* infobar_service);
+  // Creates a managed mode warning infobar and delegate and adds the infobar to
+  // |infobar_service|.  Returns the infobar if it was successfully added.
+  static InfoBar* Create(InfoBarService* infobar_service);
 
  private:
-  explicit ManagedModeWarningInfoBarDelegate(InfoBarService* infobar_service);
+  ManagedModeWarningInfoBarDelegate();
   virtual ~ManagedModeWarningInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ManagedModeWarningInfoBarDelegate);
 };
 
 // static
-InfoBarDelegate* ManagedModeWarningInfoBarDelegate::Create(
+InfoBar* ManagedModeWarningInfoBarDelegate::Create(
     InfoBarService* infobar_service) {
-  return infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new ManagedModeWarningInfoBarDelegate(infobar_service)));
+  return infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new ManagedModeWarningInfoBarDelegate())));
 }
 
-ManagedModeWarningInfoBarDelegate::ManagedModeWarningInfoBarDelegate(
-    InfoBarService* infobar_service)
-    : ConfirmInfoBarDelegate(infobar_service) {
+ManagedModeWarningInfoBarDelegate::ManagedModeWarningInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
 ManagedModeWarningInfoBarDelegate::~ManagedModeWarningInfoBarDelegate() {
@@ -193,7 +194,7 @@ void ManagedModeNavigationObserver::ProvisionalChangeToMainFrameUrl(
 
 void ManagedModeNavigationObserver::DidCommitProvisionalLoadForFrame(
     int64 frame_id,
-    const string16& frame_unique_name,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& url,
     content::PageTransition transition_type,

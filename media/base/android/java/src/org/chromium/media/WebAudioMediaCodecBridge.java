@@ -1,11 +1,10 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.media;
 
 import android.content.Context;
-import android.media.AudioFormat;
 import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
 import android.media.MediaExtractor;
@@ -13,11 +12,11 @@ import android.media.MediaFormat;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
-import java.io.File;
-import java.nio.ByteBuffer;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+
+import java.io.File;
+import java.nio.ByteBuffer;
 
 @JNINamespace("media")
 class WebAudioMediaCodecBridge {
@@ -84,7 +83,15 @@ class WebAudioMediaCodecBridge {
               " Format: " + format);
 
         // Create decoder
-        MediaCodec codec = MediaCodec.createDecoderByType(mime);
+        MediaCodec codec;
+        try {
+            codec = MediaCodec.createDecoderByType(mime);
+        } catch (Exception e) {
+            Log.w(LOG_TAG, "Failed to create MediaCodec for mime type: " + mime);
+            encodedFD.detachFd();
+            return false;
+        }
+
         codec.configure(format, null /* surface */, null /* crypto */, 0 /* flags */);
         codec.start();
 

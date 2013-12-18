@@ -16,11 +16,12 @@
 #include "components/policy/policy_export.h"
 
 namespace base {
-class DictionaryValue;
 class Value;
 }
 
 namespace policy {
+
+class Schema;
 
 // A case-insensitive string comparison functor.
 struct POLICY_EXPORT CaseInsensitiveStringCompare {
@@ -67,14 +68,13 @@ class POLICY_EXPORT RegistryDict {
   void Swap(RegistryDict* other);
 
   // Read a Windows registry subtree into this registry dictionary object.
-  void ReadRegistry(HKEY hive, const string16& root);
+  void ReadRegistry(HKEY hive, const base::string16& root);
 
   // Converts the dictionary to base::Value representation. For key/value name
-  // collisions, the key wins. |schema| supplies an optional JSON schema that
-  // will be used to map types to base::Value types. The returned object is
-  // either a base::DictionaryValue or a base::ListValue.
-  scoped_ptr<base::Value> ConvertToJSON(
-      const base::DictionaryValue* schema) const;
+  // collisions, the key wins. |schema| is used to determine the expected type
+  // for each policy.
+  // The returned object is either a base::DictionaryValue or a base::ListValue.
+  scoped_ptr<base::Value> ConvertToJSON(const Schema& schema) const;
 
   const KeyMap& keys() const { return keys_; }
   const ValueMap& values() const { return values_; }

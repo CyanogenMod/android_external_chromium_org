@@ -4,13 +4,14 @@
 
 #include "chrome/browser/download/download_request_infobar_delegate.h"
 
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 DownloadRequestInfoBarDelegate::FakeCreateCallback*
-  DownloadRequestInfoBarDelegate::callback_ = NULL;
+    DownloadRequestInfoBarDelegate::callback_ = NULL;
 
 DownloadRequestInfoBarDelegate::~DownloadRequestInfoBarDelegate() {
   if (!responded_ && host_)
@@ -35,8 +36,9 @@ void DownloadRequestInfoBarDelegate::Create(
     // "downloads" permission) to automatically download >1 files.
     host->Cancel();
   } else {
-    infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-        new DownloadRequestInfoBarDelegate(infobar_service, host)));
+    infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+        scoped_ptr<ConfirmInfoBarDelegate>(
+            new DownloadRequestInfoBarDelegate(host))));
   }
 }
 
@@ -45,11 +47,10 @@ void DownloadRequestInfoBarDelegate::SetCallbackForTesting(
     FakeCreateCallback* callback) {
   DownloadRequestInfoBarDelegate::callback_ = callback;
 }
-#
+
 DownloadRequestInfoBarDelegate::DownloadRequestInfoBarDelegate(
-    InfoBarService* infobar_service,
     base::WeakPtr<DownloadRequestLimiter::TabDownloadState> host)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       responded_(false),
       host_(host) {
 }
@@ -58,11 +59,11 @@ int DownloadRequestInfoBarDelegate::GetIconID() const {
   return IDR_INFOBAR_MULTIPLE_DOWNLOADS;
 }
 
-string16 DownloadRequestInfoBarDelegate::GetMessageText() const {
+base::string16 DownloadRequestInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_MULTI_DOWNLOAD_WARNING);
 }
 
-string16 DownloadRequestInfoBarDelegate::GetButtonLabel(
+base::string16 DownloadRequestInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_MULTI_DOWNLOAD_WARNING_ALLOW : IDS_MULTI_DOWNLOAD_WARNING_DENY);

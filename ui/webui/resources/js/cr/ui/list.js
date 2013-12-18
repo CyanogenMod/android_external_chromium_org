@@ -711,6 +711,11 @@ cr.define('cr.ui', function() {
       var top = this.getItemTop(index);
       var clientHeight = this.clientHeight;
 
+      var cs = getComputedStyle(this);
+      var paddingY = parseInt(cs.paddingTop, 10) +
+                     parseInt(cs.paddingBottom, 10);
+      var availableHeight = clientHeight - paddingY;
+
       var self = this;
       // Function to adjust the tops of viewport and row.
       function scrollToAdjustTop() {
@@ -719,27 +724,20 @@ cr.define('cr.ui', function() {
       };
       // Function to adjust the bottoms of viewport and row.
       function scrollToAdjustBottom() {
-          var cs = getComputedStyle(self);
-          var paddingY = parseInt(cs.paddingTop, 10) +
-                         parseInt(cs.paddingBottom, 10);
-
-          if (top + itemHeight > scrollTop + clientHeight - paddingY) {
-            self.scrollTop = top + itemHeight - clientHeight + paddingY;
-            return true;
-          }
-          return false;
+          self.scrollTop = top + itemHeight - availableHeight;
+          return true;
       };
 
       // Check if the entire of given indexed row can be shown in the viewport.
-      if (itemHeight <= clientHeight) {
+      if (itemHeight <= availableHeight) {
         if (top < scrollTop)
           return scrollToAdjustTop();
-        if (scrollTop + clientHeight < top + itemHeight)
+        if (scrollTop + availableHeight < top + itemHeight)
           return scrollToAdjustBottom();
       } else {
         if (scrollTop < top)
           return scrollToAdjustTop();
-        if (top + itemHeight < scrollTop + clientHeight)
+        if (top + itemHeight < scrollTop + availableHeight)
           return scrollToAdjustBottom();
       }
       return false;
@@ -1300,24 +1298,23 @@ cr.define('cr.ui', function() {
     //
     // [1] For example, clicking non-focusable area gives focus on the first
     // form control in the item.
-    if (!tryFocusOnAncestor(e.target, listItem) &&
+    if (!containsFocusableElement(e.target, listItem) &&
         listItem.contains(listItem.ownerDocument.activeElement)) {
       e.preventDefault();
     }
   }
 
   /**
-   * Try focusing on |eventTarget| or its ancestor under |root|.
+   * Check if |start| or its ancestor under |root| is focusable.
    * This is a helper for handleMouseDown.
-   * @param {!Element} start An element which we start to try.
-   * @param {!Element} root An element which we finish to try.
-   * @return {boolean} True if we focused on an element successfully.
+   * @param {!Element} start An element which we start to check.
+   * @param {!Element} root An element which we finish to check.
+   * @return {boolean} True if we found a focusable element.
    */
-  function tryFocusOnAncestor(start, root) {
+  function containsFocusableElement(start, root) {
     for (var element = start; element && element != root;
         element = element.parentElement) {
-      element.focus();
-      if (root.ownerDocument.activeElement == element)
+      if (element.tabIndex >= 0 && !element.disabled)
         return true;
     }
     return false;

@@ -11,6 +11,7 @@
 #include "mojo/public/system/core_cpp.h"
 
 namespace mojo {
+namespace internal {
 
 // The Connector class is responsible for performing read/write operations on a
 // MessagePipe. It writes messages it receives through the MessageReceiver
@@ -32,7 +33,7 @@ class Connector : public MessageReceiver {
 
   // Returns true if an error was encountered while reading from or writing to
   // the message pipe.
-  bool EncounteredError() const { return error_; }
+  bool encountered_error() const { return error_; }
 
   // MessageReceiver implementation:
   virtual bool Accept(Message* message) MOJO_OVERRIDE;
@@ -73,6 +74,7 @@ class Connector : public MessageReceiver {
   MOJO_DISALLOW_COPY_AND_ASSIGN(Connector);
 };
 
+}  // namespace internal
 }  // namespace mojo
 
 #endif  // MOJO_PUBLIC_BINDINGS_LIB_CONNECTOR_H_

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 from extensions_paths import PRIVATE_TEMPLATES
+from file_system import FileNotFoundError
 
 
 class TableOfContentsRenderer(object):
@@ -13,15 +14,22 @@ class TableOfContentsRenderer(object):
   class for testability.
   '''
 
-  def __init__(self, host_file_system, compiled_fs_factory):
+  def __init__(self,
+               host_file_system,
+               compiled_fs_factory,
+               template_renderer):
     self._templates = compiled_fs_factory.ForTemplates(host_file_system)
+    self._template_renderer = template_renderer
 
   def Render(self, sections):
     '''Renders a list of DocumentSections |sections| and returns a tuple
     (text, warnings).
     '''
-    table_of_contents_template = self._templates.GetFromFile(
-        '%s/table_of_contents.html' % PRIVATE_TEMPLATES).Get()
+    path = '%s/table_of_contents.html' % PRIVATE_TEMPLATES
+    try:
+      table_of_contents_template = self._templates.GetFromFile(path).Get()
+    except FileNotFoundError:
+      return '', ['%s not found' % path]
 
     def make_toc_items(entries):
       return [{
@@ -39,7 +47,9 @@ class TableOfContentsRenderer(object):
         items_for_section[0]['separator'] = True
       toc_items.extend(items_for_section)
 
-    table_of_contents = table_of_contents_template.Render({
-      'items': toc_items
-    })
-    return table_of_contents.text, table_of_contents.errors
+    return self._template_renderer.Render(
+        self._templates.GetFromFile(
+            '%s/table_of_contents.html' % PRIVATE_TEMPLATES).Get(),
+        None,  # no request
+        data_sources=('partials'),
+        additional_context={'items': toc_items})

@@ -130,11 +130,13 @@ static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
 }
 
 WebMediaPlayerImpl::WebMediaPlayerImpl(
+    content::RenderView* render_view,
     blink::WebFrame* frame,
     blink::WebMediaPlayerClient* client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     const WebMediaPlayerParams& params)
-    : frame_(frame),
+    : content::RenderViewObserver(render_view),
+      frame_(frame),
       network_state_(WebMediaPlayer::NetworkStateEmpty),
       ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
       main_loop_(base::MessageLoopProxy::current()),
@@ -182,9 +184,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       base::Bind(&WebMediaPlayerImpl::IncrementExternallyAllocatedMemory,
                  AsWeakPtr()));
 
-  // Also we want to be notified of |main_loop_| destruction.
-  base::MessageLoop::current()->AddDestructionObserver(this);
-
   if (blink::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
     decryptor_.reset(new ProxyDecryptor(
 #if defined(ENABLE_PEPPER_CDMS)
@@ -215,11 +214,6 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
     delegate_->PlayerGone(this);
 
   Destroy();
-
-  // Remove destruction observer if we're being destroyed but the main thread is
-  // still running.
-  if (base::MessageLoop::current())
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
 }
 
 namespace {
@@ -652,7 +646,7 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     DCHECK_EQ(static_cast<GLuint>(bound_texture), texture);
   }
 
-  scoped_refptr<media::VideoFrame::MailboxHolder> mailbox_holder =
+  media::VideoFrame::MailboxHolder* mailbox_holder =
       video_frame->texture_mailbox();
 
   uint32 source_texture = web_graphics_context->createTexture();
@@ -859,7 +853,7 @@ WebMediaPlayerImpl::CancelKeyRequestInternal(
   return WebMediaPlayer::MediaKeyExceptionNoError;
 }
 
-void WebMediaPlayerImpl::WillDestroyCurrentMessageLoop() {
+void WebMediaPlayerImpl::OnDestruct() {
   Destroy();
 }
 
@@ -1083,7 +1077,6 @@ void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
 
 void WebMediaPlayerImpl::StartPipeline() {
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  bool increase_preroll_on_underflow = true;
 
   // Keep track if this is a MSE or non-MSE playback.
   UMA_HISTOGRAM_BOOLEAN("Media.MSE.Playback",
@@ -1107,19 +1100,6 @@ void WebMediaPlayerImpl::StartPipeline() {
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
         base::Bind(&LogMediaSourceError, media_log_));
     demuxer_.reset(chunk_demuxer_);
-
-#if !defined(OS_CHROMEOS)
-    // Disable GpuVideoDecoder creation on platforms other than CrOS until
-    // they support codec config changes.
-    // TODO(acolwell): Remove this once http://crbug.com/151045 is fixed.
-    gpu_factories_ = NULL;
-#endif
-
-    // Disable preroll increases on underflow since the web application has no
-    // way to detect that this is happening and runs the risk of triggering
-    // unwanted garbage collection if it is to aggressive about appending data.
-    // TODO(acolwell): Remove this once http://crbug.com/144683 is fixed.
-    increase_preroll_on_underflow = false;
   }
 
   scoped_ptr<media::FilterCollection> filter_collection(
@@ -1144,8 +1124,7 @@ void WebMediaPlayerImpl::StartPipeline() {
       new media::AudioRendererImpl(media_loop_,
                                    audio_source_provider_.get(),
                                    audio_decoders.Pass(),
-                                   set_decryptor_ready_cb,
-                                   increase_preroll_on_underflow));
+                                   set_decryptor_ready_cb));
   filter_collection->SetAudioRenderer(audio_renderer.Pass());
 
   // Create our video decoders and renderer.
@@ -1239,7 +1218,8 @@ void WebMediaPlayerImpl::Destroy() {
 
   // Let V8 know we are not using extra resources anymore.
   if (incremented_externally_allocated_memory_) {
-    v8::V8::AdjustAmountOfExternalAllocatedMemory(-kPlayerExtraMemory);
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
+        -kPlayerExtraMemory);
     incremented_externally_allocated_memory_ = false;
   }
 
@@ -1262,7 +1242,8 @@ blink::WebAudioSourceProvider* WebMediaPlayerImpl::audioSourceProvider() {
 void WebMediaPlayerImpl::IncrementExternallyAllocatedMemory() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   incremented_externally_allocated_memory_ = true;
-  v8::V8::AdjustAmountOfExternalAllocatedMemory(kPlayerExtraMemory);
+  v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
+      kPlayerExtraMemory);
 }
 
 double WebMediaPlayerImpl::GetPipelineDuration() const {

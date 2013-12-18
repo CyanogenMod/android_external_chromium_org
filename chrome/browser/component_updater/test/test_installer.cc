@@ -47,8 +47,7 @@ bool ReadOnlyTestInstaller::GetInstalledFile(const std::string& file,
 
 
 VersionedTestInstaller::VersionedTestInstaller() {
-  file_util::CreateNewTempDirectory(FILE_PATH_LITERAL("TEST_"),
-                                    &install_directory_);
+  base::CreateNewTempDirectory(FILE_PATH_LITERAL("TEST_"), &install_directory_);
 }
 
 VersionedTestInstaller::~VersionedTestInstaller() {
@@ -64,7 +63,7 @@ bool VersionedTestInstaller::Install(const base::DictionaryValue& manifest,
 
   base::FilePath path;
   path = install_directory_.AppendASCII(version.GetString());
-  file_util::CreateDirectory(path.DirName());
+  base::CreateDirectory(path.DirName());
   if (!base::Move(unpack_path, path))
     return false;
   current_version_ = version;

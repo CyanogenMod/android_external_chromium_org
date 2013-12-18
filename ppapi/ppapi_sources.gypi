@@ -69,7 +69,9 @@
 
       # Dev interfaces.
       'c/dev/pp_cursor_type_dev.h',
+      'c/dev/pp_optional_structs_dev.h',
       'c/dev/pp_video_dev.h',
+      'c/dev/ppb_alarms_dev.h',
       'c/dev/ppb_buffer_dev.h',
       'c/dev/ppb_char_set_dev.h',
       'c/dev/ppb_cursor_control_dev.h',
@@ -143,8 +145,6 @@
       'c/trusted/ppp_broker.h',
 
       # Extensions dev interfaces.
-      'c/extensions/dev/ppb_ext_alarms_dev.h',
-      'c/extensions/dev/ppb_ext_events_dev.h',
       'c/extensions/dev/ppb_ext_socket_dev.h',
     ],
     'cpp_source_files': [
@@ -360,18 +360,12 @@
 
       # Extensions interfaces.
       'cpp/extensions/dict_field.h',
-      'cpp/extensions/event_base.cc',
-      'cpp/extensions/event_base.h',
       'cpp/extensions/ext_output_traits.h',
       'cpp/extensions/from_var_converter.h',
       'cpp/extensions/optional.h',
       'cpp/extensions/to_var_converter.h',
 
       # Extensions dev interfaces.
-      'cpp/extensions/dev/alarms_dev.cc',
-      'cpp/extensions/dev/alarms_dev.h',
-      'cpp/extensions/dev/events_dev.cc',
-      'cpp/extensions/dev/events_dev.h',
       'cpp/extensions/dev/socket_dev.cc',
       'cpp/extensions/dev/socket_dev.h',
 

@@ -29,7 +29,7 @@
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/first_run/drive_first_run_controller.h"
-#include "chrome/browser/chromeos/first_run/first_run_controller.h"
+#include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/language_preferences.h"
@@ -83,7 +83,8 @@
 
 namespace {
 
-const int kStartupSoundInitialDelayMs = 500;
+// Maximum delay for startup sound after 'loginPromptVisible' signal.
+const int kStartupSoundMaxDelayMs = 2000;
 
 // URL which corresponds to the login WebUI.
 const char kLoginURL[] = "chrome://oobe/login";
@@ -172,13 +173,6 @@ class AnimationObserver : public ui::ImplicitAnimationObserver {
   DISALLOW_COPY_AND_ASSIGN(AnimationObserver);
 };
 
-void PlayStartupSoundHelper(bool startup_sound_honors_spoken_feedback) {
-  if (!startup_sound_honors_spoken_feedback ||
-      chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
-    media::SoundsManager::Get()->Play(media::SoundsManager::SOUND_STARTUP);
-  }
-}
-
 // ShowLoginWizard is split into two parts. This function is sometimes called
 // from ShowLoginWizard(), and sometimes from OnLanguageSwitchedCallback()
 // (if locale was updated).
@@ -264,10 +258,10 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
       auto_enrollment_check_done_(false),
       finalize_animation_type_(ANIMATION_WORKSPACE),
       animation_weak_ptr_factory_(this),
-      startup_sound_requested_(false),
       startup_sound_played_(false),
       startup_sound_honors_spoken_feedback_(false) {
   DBusThreadManager::Get()->GetSessionManagerClient()->AddObserver(this);
+  CrasAudioHandler::Get()->AddAudioObserver(this);
 
   // We need to listen to CLOSE_ALL_BROWSERS_REQUEST but not APP_TERMINATING
   // because/ APP_TERMINATING will never be fired as long as this keeps
@@ -357,6 +351,7 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
 LoginDisplayHostImpl::~LoginDisplayHostImpl() {
   DBusThreadManager::Get()->GetSessionManagerClient()->RemoveObserver(this);
+  CrasAudioHandler::Get()->RemoveAudioObserver(this);
 
   views::FocusManager::set_arrow_key_traversal_enabled(false);
   ResetLoginWindowAndView();
@@ -372,7 +367,7 @@ LoginDisplayHostImpl::~LoginDisplayHostImpl() {
       ((chromeos::UserManager::Get()->IsCurrentUserNew() &&
         !command_line->HasSwitch(::switches::kTestType)) ||
        command_line->HasSwitch(switches::kForceFirstRunUI))) {
-    FirstRunController::Start();
+    LaunchFirstRunDialog();
   }
 
   // TODO(tengs): This should be refactored together with the first run UI.
@@ -488,7 +483,8 @@ void LoginDisplayHostImpl::GetAutoEnrollmentCheckResult(
 void LoginDisplayHostImpl::StartWizard(
     const std::string& first_screen_name,
     scoped_ptr<DictionaryValue> screen_parameters) {
-  TryToPlayStartupSound(false);
+  startup_sound_honors_spoken_feedback_ = false;
+  TryToPlayStartupSound();
 
   // Keep parameters to restore if renderer crashes.
   restore_path_ = RESTORE_WIZARD;
@@ -563,7 +559,8 @@ void LoginDisplayHostImpl::StartUserAdding(
 
 void LoginDisplayHostImpl::StartSignInScreen(
     const LoginScreenContext& context) {
-  TryToPlayStartupSound(true);
+  startup_sound_honors_spoken_feedback_ = true;
+  TryToPlayStartupSound();
 
   restore_path_ = RESTORE_SIGN_IN;
   is_showing_login_ = true;
@@ -785,6 +782,10 @@ void LoginDisplayHostImpl::RenderProcessGone(base::TerminationStatus status) {
 
 void LoginDisplayHostImpl::EmitLoginPromptVisibleCalled() {
   OnLoginPromptVisible();
+}
+
+void LoginDisplayHostImpl::OnActiveOutputNodeChanged() {
+  TryToPlayStartupSound();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1010,69 +1011,31 @@ void LoginDisplayHostImpl::NotifyAutoEnrollmentCheckResult(
     callbacks[i].Run(should_auto_enroll);
 }
 
-void LoginDisplayHostImpl::TryToPlayStartupSound(bool honor_spoken_feedback) {
-  if (startup_sound_requested_)
+void LoginDisplayHostImpl::TryToPlayStartupSound() {
+  if (startup_sound_played_ || login_prompt_visible_time_.is_null() ||
+      !CrasAudioHandler::Get()->GetActiveOutputNode()) {
     return;
-  startup_sound_requested_ = true;
-  startup_sound_honors_spoken_feedback_ = honor_spoken_feedback;
-  if (!login_prompt_visible_time_.is_null())
-    PlayStartupSound();
+  }
+
+  // Don't play startup sound if login prompt is already visible for a
+  // long time.
+  if (base::TimeTicks::Now() - login_prompt_visible_time_ >
+      base::TimeDelta::FromMilliseconds(kStartupSoundMaxDelayMs)) {
+    return;
+  }
+
+  if (!startup_sound_honors_spoken_feedback_ ||
+      chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
+    startup_sound_played_ = true;
+    media::SoundsManager::Get()->Play(media::SoundsManager::SOUND_STARTUP);
+  }
 }
 
 void LoginDisplayHostImpl::OnLoginPromptVisible() {
   if (!login_prompt_visible_time_.is_null())
     return;
-
-  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  std::vector<base::StringPiece> sound_resources(
-      media::SoundsManager::SOUND_COUNT);
-  sound_resources[media::SoundsManager::SOUND_STARTUP] =
-      bundle.GetRawDataResource(IDR_SOUND_STARTUP_WAV);
-  sound_resources[media::SoundsManager::SOUND_LOCK] =
-      bundle.GetRawDataResource(IDR_SOUND_LOCK_WAV);
-  sound_resources[media::SoundsManager::SOUND_UNLOCK] =
-      bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV);
-  sound_resources[media::SoundsManager::SOUND_SHUTDOWN] =
-      bundle.GetRawDataResource(IDR_SOUND_SHUTDOWN_WAV);
-  for (size_t i = 0; i < sound_resources.size(); ++i) {
-    DCHECK(!sound_resources[i].empty()) << "System sound " << i << " "
-                                        << "missing.";
-  }
-  if (!media::SoundsManager::Get()->Initialize(sound_resources))
-    LOG(ERROR) << "Failed to initialize SoundsManager.";
-
   login_prompt_visible_time_ = base::TimeTicks::Now();
-  if (startup_sound_requested_ && !startup_sound_played_)
-    PlayStartupSound();
-}
-
-void LoginDisplayHostImpl::PlayStartupSound() {
-  if (startup_sound_played_)
-    return;
-  startup_sound_played_ = true;
-
-  // TODO (ygorshenin@): remove this as soon as crbug.com/315108 will
-  // be fixed.
-  return;
-
-  const base::TimeDelta delay =
-      base::TimeDelta::FromMilliseconds(kStartupSoundInitialDelayMs);
-  const base::TimeDelta delta =
-      base::TimeTicks::Now() - login_prompt_visible_time_;
-
-  // Cras audio server starts initialization after
-  // login-prompt-visible signal from session manager. Alas, but it
-  // doesn't send notifications after initialization. Thus, we're
-  // trying to play startup sound after some delay.
-  if (delta > delay) {
-    PlayStartupSoundHelper(startup_sound_honors_spoken_feedback_);
-  } else {
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&PlayStartupSoundHelper,
-                   startup_sound_honors_spoken_feedback_),
-        delay - delta);
-  }
+  TryToPlayStartupSound();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1122,11 +1085,20 @@ void ShowLoginWizard(const std::string& first_screen_name) {
 
   bool show_app_launch_splash_screen = (first_screen_name ==
       chromeos::WizardController::kAppLaunchSplashScreenName);
-
   if (show_app_launch_splash_screen) {
     const std::string& auto_launch_app_id =
         chromeos::KioskAppManager::Get()->GetAutoLaunchApp();
     display_host->StartAppLaunch(auto_launch_app_id);
+    return;
+  }
+
+  bool should_show_enrollment_screen =
+      first_screen_name.empty() && oobe_complete &&
+      chromeos::WizardController::ShouldAutoStartEnrollment() &&
+      !g_browser_process->browser_policy_connector()->IsEnterpriseManaged();
+  if (should_show_enrollment_screen) {
+    display_host->StartWizard(chromeos::WizardController::kEnrollmentScreenName,
+                              scoped_ptr<DictionaryValue>());
     return;
   }
 

@@ -8,6 +8,7 @@
 
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_browser_main_parts.h"
+#include "android_webview/browser/aw_resource_context.h"
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 #include "android_webview/browser/in_process_view_renderer.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
@@ -17,6 +18,7 @@
 #include "android_webview/native/aw_browser_dependency_factory.h"
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
+#include "android_webview/native/aw_pdf_exporter.h"
 #include "android_webview/native/aw_picture.h"
 #include "android_webview/native/aw_web_contents_delegate.h"
 #include "android_webview/native/java_browser_view_renderer_helper.h"
@@ -188,7 +190,6 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
                              new AwContentsUserData(this));
   render_view_host_ext_.reset(
       new AwRenderViewHostExt(this, web_contents_.get()));
-  AwContentsIoThreadClientImpl::RegisterPendingContents(web_contents_.get());
 
   AwAutofillManagerDelegate* autofill_manager_delegate =
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
@@ -221,14 +222,16 @@ void AwContents::SetJavaPeers(JNIEnv* env,
 
   AwContentsIoThreadClientImpl::Associate(
       web_contents_.get(), ScopedJavaLocalRef<jobject>(env, io_thread_client));
-  int child_id = web_contents_->GetRenderProcessHost()->GetID();
-  int route_id = web_contents_->GetRoutingID();
-  AwResourceDispatcherHostDelegate::OnIoThreadClientReady(child_id, route_id);
 
   InterceptNavigationDelegate::Associate(
       web_contents_.get(),
       make_scoped_ptr(new InterceptNavigationDelegate(
           env, intercept_navigation_delegate)));
+
+  // Finally, having setup the associations, release any deferred requests
+  int child_id = web_contents_->GetRenderProcessHost()->GetID();
+  int route_id = web_contents_->GetRoutingID();
+  AwResourceDispatcherHostDelegate::OnIoThreadClientReady(child_id, route_id);
 }
 
 void AwContents::SetSaveFormData(bool enabled) {
@@ -299,18 +302,6 @@ AwContents::~AwContents() {
   if (icon_helper_.get())
     icon_helper_->SetListener(NULL);
   base::subtle::NoBarrier_AtomicIncrement(&g_instance_count, -1);
-}
-
-jint AwContents::GetWebContents(JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(web_contents_);
-  return reinterpret_cast<jint>(web_contents_.get());
-}
-
-void AwContents::Destroy(JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  delete this;
-
   // When the last WebView is destroyed free all discardable memory allocated by
   // Chromium, because the app process may continue to run for a long time
   // without ever using another WebView.
@@ -320,14 +311,28 @@ void AwContents::Destroy(JNIEnv* env, jobject obj) {
   }
 }
 
-static jint Init(JNIEnv* env, jclass, jobject browser_context) {
+jint AwContents::GetWebContents(JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(web_contents_);
+  return reinterpret_cast<jint>(web_contents_.get());
+}
+
+void AwContents::Destroy(JNIEnv* env, jobject obj) {
+  java_ref_.reset();
+  // We do not delete AwContents immediately. Some applications try to delete
+  // Webview in ShouldOverrideUrlLoading callback, which is a sync IPC from
+  // Webkit.
+  BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, this);
+}
+
+static jlong Init(JNIEnv* env, jclass, jobject browser_context) {
   // TODO(joth): Use |browser_context| to get the native BrowserContext, rather
   // than hard-code the default instance lookup here.
   scoped_ptr<WebContents> web_contents(content::WebContents::Create(
       content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
   // Return an 'uninitialized' instance; most work is deferred until the
   // subsequent SetJavaPeers() call.
-  return reinterpret_cast<jint>(new AwContents(web_contents.Pass()));
+  return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
 }
 
 static void SetAwDrawSWFunctionTable(JNIEnv* env, jclass, jint function_table) {
@@ -392,6 +397,16 @@ void AwContents::GenerateMHTML(JNIEnv* env, jobject obj,
   web_contents_->GenerateMHTML(
       target_path,
       base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback), target_path));
+}
+
+void AwContents::CreatePdfExporter(JNIEnv* env,
+                                   jobject obj,
+                                   jobject pdfExporter) {
+  pdf_exporter_.reset(
+      new AwPdfExporter(env,
+                        pdfExporter,
+                        browser_view_renderer_.get(),
+                        web_contents_.get()));
 }
 
 bool AwContents::OnReceivedHttpAuthRequest(const JavaRef<jobject>& handler,
@@ -944,12 +959,12 @@ void AwContents::OnWebLayoutContentsSizeChanged(
       env, obj.obj(), contents_size.width(), contents_size.height());
 }
 
-jint AwContents::CapturePicture(JNIEnv* env,
-                                jobject obj,
-                                int width,
-                                int height) {
+jlong AwContents::CapturePicture(JNIEnv* env,
+                                 jobject obj,
+                                 int width,
+                                 int height) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return reinterpret_cast<jint>(new AwPicture(
+  return reinterpret_cast<intptr_t>(new AwPicture(
       browser_view_renderer_->CapturePicture(width, height)));
 }
 
@@ -958,6 +973,18 @@ void AwContents::EnableOnNewPicture(JNIEnv* env,
                                     jboolean enabled) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   browser_view_renderer_->EnableOnNewPicture(enabled);
+}
+
+void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
+                                       jstring url, jstring jextra_headers) {
+  std::string extra_headers;
+  if (jextra_headers)
+    extra_headers = ConvertJavaStringToUTF8(env, jextra_headers);
+  AwResourceContext* resource_context = static_cast<AwResourceContext*>(
+      AwBrowserContext::FromWebContents(web_contents_.get())->
+      GetResourceContext());
+  resource_context->SetExtraHeaders(GURL(ConvertJavaStringToUTF8(env, url)),
+                                    extra_headers);
 }
 
 void AwContents::SetJsOnlineProperty(JNIEnv* env,

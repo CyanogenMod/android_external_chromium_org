@@ -570,7 +570,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         &amp;Edit
       </message>
       <message name="IDS_LEARN_MORE" desc="Learn more text">
-        Learn&#160;more
+        Learn more
       </message>
       <message name="IDS_CLOSE" desc="A generic term for Close on buttons and menus.">
         Close
@@ -590,21 +590,21 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_DISABLE" desc="Used for Disable on buttons">
         Disable
       </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_MENU" desc="The name of the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Writing Direction
+      </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_DEFAULT" desc="The name of the 'default' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Default
+      </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_LTR" desc="The name of the 'Left to Right' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Left to Right
+      </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_RTL" desc="The name of the 'Right to Left' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Right to Left
+      </message>
 
       <!-- content area context menus -->
       <if expr="is_macosx or is_linux">
-          <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_MENU" desc="The name of the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
-            Writing Direction
-          </message>
-          <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_DEFAULT" desc="The name of the 'default' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
-            Default
-          </message>
-          <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_LTR" desc="The name of the 'Left to Right' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
-            Left to Right
-          </message>
-          <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_RTL" desc="The name of the 'Right to Left' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
-            Right to Left
-          </message>
           <message name="IDS_CONTENT_CONTEXT_LOOK_UP_IN_DICTIONARY" desc="The name of the 'Look Up in Dictionary' item in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
             Look Up in Dictionary
           </message>
@@ -5428,11 +5428,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION" desc="Description of the 'device discovery notifications' flag.">
         Device discovery notifications on local network.
       </message>
-      <message name="IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_NAME">
-        Enable Privet local printing
+      <message name="IDS_FLAGS_DISABLE_PRIVET_LOCAL_PRINTING_NAME">
+        Disable Privet local printing
       </message>
-      <message name="IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_DESCRIPTION">
-        Print to printers on the local network using the Privet protocol.
+      <message name="IDS_FLAGS_DISABLE_PRIVET_LOCAL_PRINTING_DESCRIPTION">
+        Disable printing to printers on the local network using the Privet protocol.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_NAME">
+        Enable Print Preview Registration Promos
+      </message>
+      <message name="IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_DESCRIPTION">
+        Enable registering unregistered cloud printers from print preview.
       </message>
       <message name="IDS_FLAGS_TOUCH_OPTIMIZED_UI_NAME" desc="Title of the touch-optimized UI flag." >
         Touch Optimized UI
@@ -5452,6 +5458,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_DESCRIPTION" desc="Description of the flag to enable the accessibility tab switcher.">
           Enable the accessibility tab switcher for Android.
+        </message>
+        <message name="IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_NAME" desc="Name of the flag to disable script injection for accessibility.">
+          Disable Script Injection For Accessibility.
+        </message>
+        <message name="IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_DESCRIPTION" desc="Description of the flag to disable script injection for accessibility.">
+          Disable script injection, enabling native Android accessibility instead.
         </message>
       </if>
       <message name="IDS_FLAGS_ENABLE_ADD_TO_HOMESCREEN_NAME" desc="Name of the flag to enable the add to homescreen menu item.">
@@ -5575,6 +5587,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_LAYER_SQUASHING_DESCRIPTION" desc="Description of the 'layer squashing' lab.">
         Layers that overlap other composited content need to be composited as well, to ensure correct paint order. This feature enables Blink to paint multiple RenderLayer
         subtrees into one composited layer so that we may be able to avoid unnecessarily large number of composited layers.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_DIRECT_WRITE_NAME" desc="Name of the 'Enable DirectWrite' lab.">
+        Enable DirectWrite
+      </message>
+      <message name="IDS_FLAGS_ENABLE_DIRECT_WRITE_DESCRIPTION" desc="Description of the 'Enable DirectWrite' lab.">
+        Enables the use of experimental DirectWrite font rendering system.
       </message>
       <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_CANVAS_FEATURES_NAME" desc="Name of the 'Enable experimental canvas features' lab.">
         Enable experimental canvas features
@@ -5969,12 +5987,22 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_DESCRIPTION" desc="Description of chrome:flags option to turn off WebRTC hardware video encoding support.">
         This option disables support in WebRTC for encoding video streams using platform hardware.
       </message>
-      <message name="IDS_FLAGS_DISABLE_WEBAUDIO_NAME" desc="Name of the 'Disable WebAudio' lab.">
-        Disable WebAudio
-      </message>
-      <message name="IDS_FLAGS_DISABLE_WEBAUDIO_DESCRIPTION" desc="Description for the flag to disable WebAudio.">
-        Enabling this option prevents web sites from accessing the WebAudio API.
-      </message>
+      <if expr="not pp_ifdef('use_webaudio_enable_message')">
+        <message name="IDS_FLAGS_DISABLE_WEBAUDIO_NAME" desc="Name of the 'Disable WebAudio' lab.">
+          Disable WebAudio
+        </message>
+        <message name="IDS_FLAGS_DISABLE_WEBAUDIO_DESCRIPTION" desc="Description for the flag to disable WebAudio.">
+          Enabling this option prevents web sites from accessing the WebAudio API.
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_webaudio_enable_message')">
+        <message name="IDS_FLAGS_ENABLE_WEBAUDIO_NAME" desc="Name of the 'Enable WebAudio' lab.">
+          Enable WebAudio
+        </message>
+        <message name="IDS_FLAGS_ENABLE_WEBAUDIO_DESCRIPTION" desc="Description for the flag to enable WebAudio.">
+          Enabling this option allows web sites to access the WebAudio API.
+        </message>
+      </if>
       <message name="IDS_FLAGS_FIXED_POSITION_CREATES_STACKING_CONTEXT_NAME" desc="Name of the 'Fixed position creates stacking context' lab.">
         Fixed position elements create stacking contexts.
       </message>
@@ -6395,10 +6423,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enable or disable a feature which allows the user to select username/password combinations for domains that match the same public suffix registry domain.
       </message>
       <message name="IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_NAME" desc="Name of the flag for the password manager reauthentication option.">
-        Password Manager Reauthentication
+        Disable Password Manager Reauthentication
       </message>
       <message name="IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION" desc="Description of the flag for the password manager reauthentication option.">
-        Prompt the user for their OS password before revealing passwords on the passwords page.
+        Disable prompting the user for their OS password before revealing passwords on the passwords page.
       </message>
       <message name="IDS_FLAGS_PERFORMANCE_MONITOR_GATHERING_NAME" desc="Name for the flag to enable Performance Monitor.">
         Enable performance monitoring
@@ -6570,6 +6598,27 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DEFAULT_TILE_HEIGHT_VENTI" desc="">
         1024
       </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_NAME" desc="Name of about:flags option for number of raster threads.">
+        Number of raster threads
+      </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_DESCRIPTION" desc="Description of about:flags option for number of raster threads.">
+        Specify the number of raster threads.
+      </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_DEFAULT" desc="">
+        Default
+      </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_ONE" desc="">
+        1
+      </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_TWO" desc="">
+        2
+      </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_THREE" desc="">
+        3
+      </message>
+      <message name="IDS_FLAGS_NUM_RASTER_THREADS_FOUR" desc="">
+        4
+      </message>
       <message name="IDS_FLAGS_ENABLE_SYNC_DIRECTORY_OPERATION_NAME" desc="Name of the flag to enable syncfs direcory support.">
         Enable Syncfs directory operation.
       </message>
@@ -6659,12 +6708,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_EPHEMERAL_APPS_DESCRIPTION" desc="Description for the flag to enable ephemeral apps.">
         Enables experimentation with ephemeral apps, which are launched without installing in Chrome.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_NAME" desc="Name of the flag to enable linkable ephemeral apps.">
-        Enable experimental linkable ephemeral apps.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_DESCRIPTION" desc="Description for the flag to enable linkable ephemeral apps.">
-        Enables experimentation with launching ephemeral apps from hyperlinks. For example, links to Chrome Web Store app detail pages in Google search results will launch the app rather than navigate to the detail page.
       </message>
       <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_NAME" desc="Name of the flag to enable streamlined ServiceWorker.">
         Enable support for ServiceWorker.
@@ -7216,11 +7259,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OMNIBOX_KEYWORD_TEXT" desc="Text shown in the search button at the front of the omnibox when the user has selected a keyword">
         Search <ph name="SITE_NAME">$1<ex>google.com</ex></ph>:
       </message>
-      <if expr="is_ios">
-        <message name="IDS_OMNIBOX_EMPTY_HINT" desc="The text displayed in the omnibox when it is empty.">
-          Search or type URL
-        </message>
-      </if>
+      <message name="IDS_OMNIBOX_EMPTY_HINT" desc="The text displayed in the omnibox when it is empty.">
+        Search or type URL
+      </message>
 
       <!-- Native Frame menu -->
       <message name="IDS_ALWAYS_ON_TOP" desc="The optional menu in native frame windows for setting the window to be always on top">
@@ -8455,6 +8496,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_PRINT_PREVIEW_COULD_NOT_PRINT" desc="Error message when printing fails in the print preview">
         Printing failed. Please check your printer and try again.
       </message>
+      <message name="IDS_PRINT_PREVIEW_REGISTER_PROMO_BUTTON_TEXT">
+        Register
+      </message>
 
       <!-- Load State -->
       <message name="IDS_LOAD_STATE_WAITING_FOR_SOCKET_SLOT" desc="Status text when Chrome is at its connection limit, and is waiting for a URL request to complete to free up a connection.">
@@ -9229,8 +9273,18 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_PAGE_INFO_HELP_CENTER_LINK" desc="This is the text of the link pointing to the Help Center. This appears at the bottom of the SSL dialog and 'this' refers to the sections within the bubble.">
         What do these mean?
       </message>
-      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY" desc="The text of the identity section when the page is secure.">
-        The identity of this website has been verified by <ph name="ISSUER">$1<ex>VeriSign</ex></ph>.
+
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_NO_CT" desc="The text of the identity section when the page is secure and no Certificate Transparency information is present.">
+        The identity of this website has been verified by <ph name="ISSUER">$1<ex>VeriSign</ex></ph> but does not have public audit records.
+      </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_CT_VERIFIED" desc="The text of the identity section when the page is secure and a Signed Certificate Timestamp from a known Certificate Transparency log is present and valid.">
+        The identity of this website has been verified by <ph name="ISSUER">$1<ex>VeriSign</ex></ph> and is publicly auditable.
+      </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_CT_UNVERIFIED" desc="The text of the identity section when the page is secure and contains a Signed Certificate Timestamp from an unknown Certificate Transparency log.">
+        The identity of this website has been verified by <ph name="ISSUER">$1<ex>VeriSign</ex></ph>, it claims to have public audit records, but the records cannot be verified.
+      </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_CT_INVALID" desc="The text of the identity section when the page is secure, but it contains a Signed Certificate Timestamp from a known Certificate Transparency log that failed to verify.">
+        The identity of this website has been verified by <ph name="ISSUER">$1<ex>VeriSign</ex></ph>, but its public audit records failed verification.
       </message>
 
       <message name="IDS_PAGEINFO_ADDRESS" desc="Locality as reported in the EV identity text.">
@@ -9241,9 +9295,19 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <ph name="CITY">$1<ex>Mountain View</ex></ph>, <ph name="COUNTRY">$2<ex>US</ex></ph>
       </message>
 
-      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV" desc="The text of the identity section when the page is secured with an EV cert.">
-        The identity of <ph name="ORGANIZATION">$1<ex>Google</ex></ph> at <ph name="LOCALITY">$2<ex>Mountain View, CA US</ex></ph> has been verified by <ph name="ISSUER">$3<ex>VeriSign</ex></ph>.
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_NO_CT" desc="The text of the identity section when the page is secured with an EV cert and no Certificate Transparency information is present.">
+        The identity of <ph name="ORGANIZATION">$1<ex>Google</ex></ph> at <ph name="LOCALITY">$2<ex>Mountain View, CA US</ex></ph> has been verified by <ph name="ISSUER">$3<ex>VeriSign</ex></ph> but does not have public audit records.
       </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_CT_VERIFIED" desc="The text of the identity section when the page is secured with an EV cert and a Signed Certificate Timestamp from a known Certificate Transparency log is present and valid.">
+        The identity of <ph name="ORGANIZATION">$1<ex>Google</ex></ph> at <ph name="LOCALITY">$2<ex>Mountain View, CA US</ex></ph> has been verified by <ph name="ISSUER">$3<ex>VeriSign</ex></ph> and is publicly auditable.
+      </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_CT_UNVERIFIED" desc="The text of the identity section when the page is secured with an EV cert and contains a Signed Certificate Timestamp from an unknown Certificate Transparency log.">
+        The identity of <ph name="ORGANIZATION">$1<ex>Google</ex></ph> at <ph name="LOCALITY">$2<ex>Mountain View, CA US</ex></ph> has been verified by <ph name="ISSUER">$3<ex>VeriSign</ex></ph>, it claims to have public audit records, but the records cannot be verified.
+      </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_CT_INVALID" desc="The text of the identity section when the page is secured with an EV cert, but it contains a Signed Certificate Timestamp from a known Certificate Transparency log that failed to verify.">
+        The identity of <ph name="ORGANIZATION">$1<ex>Google</ex></ph> at <ph name="LOCALITY">$2<ex>Mountain View, CA US</ex></ph> has been verified by <ph name="ISSUER">$3<ex>VeriSign</ex></ph>, but its public audit records failed verification.
+      </message>
+
       <message name="IDS_PAGE_INFO_SECURITY_TAB_UNKNOWN_PARTY" desc="The default name used when we did not find a principal name.">
         unknown name
       </message>
@@ -10189,7 +10253,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         For your security, please verify your card details.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_NOT_PROD_WARNING" desc="Text warning the user that they're not using the Online Wallet production server, so their purchases probably wont succeed.">
-        Warning: You are not connected to production Wallet servers. Issued cards are probably invalid.
+        Warning: You are not connected to production Wallet servers. Issued cards will be invalid.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_FAILED_TO_SAVE_WALLET_DATA" desc="Text advising the user that there was an unrecoverable validation error on the wallet server.">
         Could not save data to Wallet.
@@ -10294,36 +10358,20 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_DIALOG_LOCATION_DISCLOSURE_WITH_LEGAL_DOCS" desc="Text at the bottom of the autofill dialog which informs the user that they'll be sharing their location with Google Wallet if they choose to proceed, appended to a message about accepting other legal documents like Terms of Service.">
         <ph name="LEGAL_DOC_AGREEMENT">$1<ex>By clicking Continue you agree to the Google Wallet Terms of Service and Privacy Policy.</ex></ph> To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph>.
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph>.
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph>.
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph>.
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph>.
-      </message>
-
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Yet More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
       </message>
 
       <!-- Autofill dialog: validation messages -->
@@ -10943,41 +10991,24 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_OTR_MESSAGE_MOBILE"
                  desc="Mobile: Used when a person opens an OTR tab">
           <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          Pages you view in this tab won't appear in your browser history or search history, and they won't leave other traces, like cookies, on your device after you close <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> incognito tabs. Any files you download or bookmarks you create will be preserved, however.
-          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Going incognito doesn't affect the behavior of other people, servers, or software.<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          Be wary of surveillance by secret agents or people standing behind you.
+          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept. Going incognito doesn't affect the behavior of other people, servers, software, or people standing behind you.
           <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
           <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
         </message>
         <message name="IDS_NEW_TAB_OTR_MESSAGE"
                  desc="Mobile: Used when a person opens an OTR tab">
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito<ph name="END_BOLD">"&lt;/strong&gt;</ph>. Pages you view in this tab won't appear in your browser history or search history, and they won't leave other traces, like cookies, on your device after you close <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> open incognito tabs. Any bookmarks you create will be preserved, however.
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">"&lt;/strong&gt;</ph>
+          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept. Going incognito doesn't affect the behavior of other people, servers, software, or people standing behind you.
           <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Going incognito doesn't affect the behavior of other people, servers, or software. Be wary of:<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          <ph name="BEGIN_LIST">&lt;ul&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Websites that collect or share information about you<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Internet service providers or employers that track the pages you visit<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Surveillance by secret agents<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>People standing behind you<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-          <ph name="END_LIST">&lt;/ul&gt;</ph>
           <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
         </message>
       </if>
       <if expr="not is_android">
         <message name="IDS_NEW_TAB_OTR_MESSAGE"
                  desc="Used when a person opens an OTR window">
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito<ph name="END_BOLD">"&lt;/strong&gt;</ph>. Pages you view in this window won't appear in your browser history or search history, and they won't leave other traces, like cookies, on your computer after you close &lt;strong&gt;all&lt;/strong&gt; open incognito windows. Any files you download or bookmarks you create will be preserved, however.
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">&lt;/strong&gt;</ph>
+          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept. Going incognito doesn't affect the behavior of other people, servers, software, or people standing behind you.
           <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Going incognito doesn't affect the behavior of other people, servers, or software. Be wary of:<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          <ph name="BEGIN_LIST">&lt;ul&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Websites that collect or share information about you<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Internet service providers or employers that track the pages you visit<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Malicious software that tracks your keystrokes in exchange for free smileys<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>Surveillance by secret agents<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-            <ph name="BEGIN_LIST_ITEM">&lt;li&gt;</ph>People standing behind you<ph name="END_LIST_ITEM">&lt;/li&gt;</ph>
-          <ph name="END_LIST">&lt;/ul&gt;</ph>
           <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
         </message>
       </if>
@@ -11923,9 +11954,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION_DESCRIPTION" desc="Description of the about:flag option to enable the webstore integration feature in Files app.">
         Enables the webstore integration feature in Files.app.
       </message>
-      <message name="IDS_FILE_BROWSER_ROOT_DIRECTORY_LABEL" desc="Root directory label.">
-        Files
-      </message>
       <message name="IDS_FILE_BROWSER_ARCHIVE_DIRECTORY_LABEL" desc="/archive directory label.">
         Archives
       </message>
@@ -12004,9 +12032,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_DATE_COLUMN_LABEL" desc="Date column label.">
         Date modified
       </message>
-      <message name="IDS_FILE_BROWSER_PREVIEW_COLUMN_LABEL" desc="Preview column label.">
-        Preview
-      </message>
       <message name="IDS_FILE_BROWSER_OFFLINE_COLUMN_LABEL" desc="Available offline column label.">
         Available offline
       </message>
@@ -12025,9 +12050,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_ERROR_WHITESPACE_NAME" desc="Error message displayed when the user enters a file name consisting of only whitespace characters.">
         Invalid name
       </message>
-      <message name="IDS_FILE_BROWSER_ERROR_NEW_FOLDER_EMPTY_NAME" desc="Warning displayed when user trys to enter empty name for the new folder.">
-        Please specify a folder name
-      </message>
       <message name="IDS_FILE_BROWSER_ERROR_LONG_NAME" desc="Error message displayed when user trys to enter too long name for a file or a folder.">
         This name is too long
       </message>
@@ -12045,23 +12067,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_DRAGGING_MULTIPLE_ITEMS" desc="Tooltip message for dragging multiple files.">
         $1 items
-      </message>
-
-      <message name="IDS_FILE_BROWSER_DIMENSIONS_LABEL" desc="Image dimensions label.">
-        Dimensions
-      </message>
-      <message name="IDS_FILE_BROWSER_DIMENSIONS_FORMAT" desc="Image dimensions format (width x height).">
-        $1 x $2
-      </message>
-
-      <message name="IDS_FILE_BROWSER_IMAGE_DIMENSIONS" desc="Dimensions of a selected image.">
-        Image Dimensions
-      </message>
-      <message name="IDS_FILE_BROWSER_VOLUME_LABEL" desc="Label for the disk volume.">
-        Volume Label
-      </message>
-      <message name="IDS_FILE_BROWSER_READ_ONLY" desc="Indication that a volume is mounted read only.">
-        Read Only
       </message>
 
       <message name="IDS_FILE_BROWSER_ARCHIVE_MOUNT_FAILED" desc="Title of the error dialog when file mount operation failed.">
@@ -12124,9 +12129,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_GALLERY_DELETE" desc="In the Gallery, the title on the button that deletes selected images.">
         Delete
-      </message>
-      <message name="IDS_FILE_BROWSER_SEND_TO_DRIVE" desc="Title of the action for copying file to Drive.">
-        Send to Google Drive
       </message>
 
       <message name="IDS_FILE_BROWSER_GALLERY_EDIT" desc="In the Gallery, the title on the button shows/hides editing buttons.">
@@ -12217,101 +12219,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         This file is not available offline.
       </message>
 
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_OPENING_METHOD" desc="In the action choice dialog, header with a question about an action to choose.">
-        How would you like to handle photos and videos?
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_PHOTOS_DRIVE" desc="In the action choice dialog, label of action to import photos to Drive.">
-        Save to Google Drive
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_DRIVE_NOT_REACHED" desc="In the action choice dialog, message informing that Drive is unreachable.">
-        Google Drive could not be reached
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_VIEW_FILES" desc="In the action choice dialog, label of action to view all files.">
-        View with the Files app
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_WATCH_SINGLE_VIDEO" desc="In the action choice dialog, label of action to watch a single video.">
-        Watch <ph name="VIDEO_NAME">$1<ex>Best movie</ex></ph>
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_ONCE" desc="In the action choice dialog, label of the button performing the selected action just once, without remembering.">
-        Just once
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_ALWAYS" desc="In the action choice dialog, label of the button performing the selected action with remembering the choice for the future.">
-        Always
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_COUNTER_NO_MEDIA" desc="In the action choice dialog, text with number of files.">
-        <ph name="FILES_COUNT">$1<ex>123</ex></ph> files
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_COUNTER" desc="In the action choice dialog, text with number of files and photos.">
-        <ph name="PHOTOS_COUNT">$1<ex>85</ex></ph> photos
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_LOADING_USB" desc="In the action choice dialog, label informing about loading the usb device.">
-        Checking your USB drive...
-      </message>
-      <message name="IDS_FILE_BROWSER_ACTION_CHOICE_LOADING_SD" desc="In the action choice dialog, label informing about loading the sd device.">
-        Checking your SD card...
-      </message>
-
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_TITLE" desc="In the Photo import, the window title.">
-        Import media
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_IMPORT_BUTTON" desc="In the Photo import, label of import button.">
-        Import
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_CANCEL_BUTTON" desc="In the Photo import, label of cancel button.">
-        Cancel
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_DRIVE_ERROR" desc="In the Photo import, error message when drive is unaccessible.">
-        Google Drive cannot be reached. Please try again.
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_DESTINATION_ERROR" desc="In the Photo import, error when it is impossible to create a destination directory.">
-        Unable to create the destination directory.
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_SOURCE_ERROR" desc="In the Photo import, error message inidcating that photos cannot be read.">
-        Cannot read the photos.
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_UNKNOWN_DATE" desc="In the Photo import, label of group for photos with unknown date.">
-        Unknown date
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_NEW_ALBUM_NAME" desc="In the Photo import, default name for new album.">
-        New Album
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_SELECT_ALBUM_CAPTION" desc="In the Photo import, caption of select album dialog.">
-        Where to import this photo?
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_SELECT_ALBUM_CAPTION_PLURAL" desc="In the Photo import, caption of select album dialog (plural).">
-        Where to import these $1 photos?
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_IMPORTING_ERROR" desc="In the Photo import, importing error message.">
-        Cannot import. An error occured.
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_IMPORTING" desc="In the Photo import, text informing that import is running.">
-        Importing to Drive...
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_IMPORT_COMPLETE" desc="In the Photo import, text informing that import is done.">
-        Import complete
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_CAPTION" desc="In the Photo import, caption inside the dialog, with items 'All' and 'None' to select everything and nothing.">
-        Select photos to import
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_ONE_SELECTED" desc="In the Photo import, message informing about one photo selected.">
-        1 selected
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_MANY_SELECTED" desc="In the Photo import, message informing about multiple photos selected.">
-        <ph name="COUNT">$1<ex>42</ex></ph> selected
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_SELECT_ALL" desc="In the Photo import, link to select all photos.">
-        Select all
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_SELECT_NONE" desc="In the Photo import, link to select no photos.">
-        Select none
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_DELETE_AFTER" desc="In the Photo import, label of checkbox to remove files after import is done.">
-        Delete photos after import
-      </message>
-      <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_MY_PHOTOS_DIRECTORY_NAME" desc="Directory name for storing photos.">
-        My Photos
-      </message>
-
       <message name="IDS_FILE_BROWSER_RECOVERED_FILES_FROM_GOOGLE_DRIVE_DIRECTORY_NAME" desc="The name of the direcotry which stores files recovered from Google Drive directory when the locally stored Google Drive data is found to be broken.">
         Recovered files from Google Drive
       </message>
@@ -12341,20 +12248,12 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_ERROR_RENAMING" desc="Error message.">
         Unable to rename "<ph name="FILE_NAME">$1<ex>document.pdf</ex></ph>". <ph name="ERROR_MESSAGE">$2<ex>An error occurred (code: ABORT)</ex></ph>
       </message>
-      <message name="IDS_FILE_BROWSER_RENAME_PROMPT" desc="Dialog Prompt.">
-        Enter a new name
-      </message>
       <message name="IDS_FILE_BROWSER_RENAME_BUTTON_LABEL" desc="Button Label.">
         Rename
-      </message>
-
-      <message name="IDS_FILE_BROWSER_ERROR_DELETING" desc="Error Message.">
-        Unable to delete "<ph name="FILE_NAME">$1<ex>document.pdf</ex></ph>". <ph name="ERROR_MESSAGE">$2<ex>An error occurred (code: ABORT)</ex></ph>
       </message>
       <message name="IDS_FILE_BROWSER_DELETE_BUTTON_LABEL" desc="Button Label.">
         Delete
       </message>
-
       <message name="IDS_FILE_BROWSER_PASTE_BUTTON_LABEL" desc="Button Label.">
         Paste
       </message>
@@ -12460,9 +12359,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         <ph name="COUNT">$1<ex>10</ex></ph> errors.
       </message>
 
-      <message name="IDS_FILE_BROWSER_UNDO_DELETE" desc="Text on the button to undo the delete operation.">
-        Undo
-      </message>
       <message name="IDS_FILE_BROWSER_CANCEL_LABEL" desc="Cancel label.">
         Cancel
       </message>
@@ -12481,15 +12377,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_SEARCH_TEXT_LABEL" desc="Search text field label.">
         Search
       </message>
-      <message name="IDS_FILE_BROWSER_VIEW_LABEL" desc="View label.">
-        View
-      </message>
 
       <message name="IDS_FILE_BROWSER_DEFAULT_NEW_FOLDER_NAME" desc="The default name for a newly created folder.">
         New Folder
-      </message>
-      <message name="IDS_FILE_BROWSER_MORE_FILES" desc="Link shown when there are more files available to display">
-        Show all files
       </message>
 
      <message name="IDS_FILE_BROWSER_CONFIRM_DELETE_ONE" desc="Asks the user if they are sure they want to delete a single file.">
@@ -12607,9 +12497,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_DRIVE_LEARN_MORE" desc="In the Loading Google Drive page and in the Welcome to Google Drive banner, a text on the Learn More link.">
         Learn more
       </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_RETRY" desc="Button label for Google Drive content load retry.">
-        Retry
-      </message>
       <message name="IDS_FILE_BROWSER_DRIVE_OUT_OF_SPACE_MESSAGE" desc="Message informing the user how to make more space available to save the selected file offline.">
         To save "<ph name="FILE_NAME">$1<ex>document.pdf</ex></ph>" offline you must free up an additional <ph name="TOTAL_FILE_SIZE">$2<ex>3.3 MB</ex></ph> of space:<ph name="MARKUP_1">&lt;br&gt;<ex>&lt;br&gt;</ex></ph>
         <ph name="MARKUP_2">&lt;ul&gt;&lt;li&gt;<ex>&lt;ul&gt;&lt;li&gt;</ex></ph>unpin files that you no longer need to access offline<ph name="MARKUP_3">&lt;/li&gt;<ex>>&lt;/li&gt;</ex></ph>
@@ -12655,74 +12542,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
         This file type is not supported. Please visit the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to find a similar app.
         <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
       </message>
-      <message name="IDS_FILE_BROWSER_ID3_ALBUM" desc="Album">
-        Album
+      <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX_TITLE" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
+        Wait just a sec
       </message>
-      <message name="IDS_FILE_BROWSER_ID3_BPM" desc="BPM ">
-        BPM
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_COMPOSER" desc="Composer">
-        Composer
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_COPYRIGHT_MESSAGE" desc="Copyright message">
-        Copyright message
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_DATE" desc="Date">
-        Date
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_PLAYLIST_DELAY" desc="Playlist delay">
-        Playlist delay
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_ENCODED_BY" desc="Encoded by">
-        Encoded by
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_LYRICIST" desc="Lyricist">
-        Lyricist
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_FILE_TYPE" desc="File type">
-        File type
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_TIME" desc="Time">
-        Time
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_TITLE" desc="Title">
-        Title
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_LENGTH" desc="Length">
-        Length
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_FILE_OWNER" desc="File owner">
-        File owner
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_LEAD_PERFORMER" desc="Artist">
-        Artist
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_BAND" desc="Band">
-        Band
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_TRACK_NUMBER" desc="Track number">
-        Track number
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_YEAR" desc="Year">
-        Year
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_COPYRIGHT" desc="Copyright">
-        Copyright
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_OFFICIAL_AUDIO_FILE_WEBPAGE" desc="Official audio file webpage">
-        Official audio file webpage
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_OFFICIAL_ARTIST" desc="Official artist">
-        Official artist
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_OFFICIAL_AUDIO_SOURCE_WEBPAGE" desc="Official audio source webpage">
-        Official audio source webpage
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_PUBLISHERS_OFFICIAL_WEBPAGE" desc="Publishers official webpage">
-        Publishers official webpage
-      </message>
-      <message name="IDS_FILE_BROWSER_ID3_USER_DEFINED_URL_LINK_FRAME" desc="User defined URL link frame">
-        User defined URL link frame
+      <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
+        We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Lean more<ph name="END_LINK">&lt;/a&gt;</ph>
       </message>
 
       <message name="IDS_FILE_BROWSER_FOLDER" desc="Folder entry type">
@@ -12733,9 +12557,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_NO_EXTENSION_FILE_TYPE" desc="An entry type for a file without an extension">
         File
-      </message>
-      <message name="IDS_FILE_BROWSER_DEVICE" desc="Mounted external device volume entry type">
-        Device
       </message>
       <message name="IDS_FILE_BROWSER_IMAGE_FILE_TYPE" desc="Image file type">
         $1 image
@@ -12849,12 +12670,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_SEARCH_NO_MATCHING_FILES_HTML" desc="In the File Manager, the message informing the user that the search did not match any files or directories.">
         No items match &lt;b&gt;"<ph name="SEARCH_STRING">$1<ex>abc</ex></ph>"&lt;/b&gt;
       </message>
-      <message name="IDS_FILE_BROWSER_SEARCH_EXPAND" desc="In the File Manager, the text on the link to expand search when no matching files were found.">
-        Search all <ph name="DRIVE_NAME">$1<ex>Downloads</ex></ph>
-      </message>
-      <message name="IDS_FILE_BROWSER_SEARCH_SPINNER" desc="In the File Manager, the text is shown near the spinner while waiting for the results of a search.">
-        Searching...
-      </message>
 
       <message name="IDS_FILE_BROWSER_CHANGE_DEFAULT_MENU_ITEM" desc="In the File Manager, the text in the menu item to change the default action for a particular file type.">
         Change default...
@@ -12898,10 +12713,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_FAILED_SPACE_INFO" desc="Menu item, saying that FileBrowser is failed to retrieve space information.">
         Failed to retrieve space info
-      </message>
-
-      <message name="IDS_FILE_BROWSER_HELP_LINK_LABEL" desc="Label for a link to help pages in a general context menu in file browser.">
-        Help
       </message>
 
       <message name="IDS_RECENT_TABS_MENU" desc="The title of the Recent Tabs menu in the wrench menu.">
@@ -14826,6 +14637,9 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
       <message name="IDS_SCREEN_LOCK_ACTIVE_USER">
         Currently signed in
       </message>
+      <message name="IDS_LOGIN_ERROR_AUTHENTICATING" desc="Couldn't sign in because password is invalid">
+        Sorry, your password could not be verified. Please try again.
+      </message>
       <message name="IDS_LOGIN_POD_EMPTY_PASSWORD_TEXT" desc="Text to display in the password field for user pod when no password has been entered.">
         Enter password
       </message>
@@ -15149,9 +14963,6 @@ Do you accept?
     <message name="IDS_APP_LIST_START_SPEECH_RECOGNITION" desc="Tooltip text for the button to start the speech recognition.">
       Start speech recognition
     </message>
-    <message name="IDS_APP_LIST_STOP_SPEECH_RECOGNITION" desc="Tooltip text for the button to stop the speech recognition.">
-      Stop speech recognition
-    </message>
     <if expr="not pp_ifdef('use_titlecase')">
       <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of an app list item configured to open in a tab">
         New tab
@@ -15443,112 +15254,113 @@ Do you accept?
     </if>
 
     <!-- Local Device Discovery display strings -->
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_REGISTER" desc="Table header for registering a service">
-      Register
-    </message>
-    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER" desc="Title of notification for a new printer showing up on your network">
-      New printer on your network
-    </message>
-    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER" desc="Contents of notification for a new printer showing up on your network">
-      Add the printer to <ph name="PRODUCT_NAME">$1<ex>Google Cloud Print</ex></ph> so you can print from anywhere.
-    </message>
-    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER_MULTIPLE" desc="Title of notification for a new printer showing up on your network">
+    <if expr="pp_ifdef('enable_mdns')">
+      <message name="IDS_LOCAL_DISCOVERY_SERVICE_REGISTER" desc="Table header for registering a service">
+        Register
+      </message>
+      <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER" desc="Title of notification for a new printer showing up on your network">
+        New printer on your network
+      </message>
+      <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER" desc="Contents of notification for a new printer showing up on your network">
+        Add the printer to Google Cloud Print so you can print from anywhere.
+      </message>
+      <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER_MULTIPLE" desc="Title of notification for a new printer showing up on your network">
       New printers on your network
-    </message>
-    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER_MULTIPLE" desc="Contents of notification for a new printer showing up on your network">
-      Add the printers to <ph name="PRODUCT_NAME">$1<ex>Google Cloud Print</ex></ph> so you can print from anywhere.
-    </message>
-    <message name="IDS_LOCAL_DISOCVERY_PRODUCT_NAME_PRINTER" desc="Display name for notification for a new printer showing up on your network">
-      Google Cloud Print
-    </message>
-    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_BUTTON_PRINTER" desc="Message on registration button for printer">
-      Add to Cloud Print
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_DEVICES_PAGE_TITLE" desc="Title for devices page">
-      Devices
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTER_CONFIRMATION" desc="Confirmation for registering a printer to Google Cloud Print">
-      Do you wish to register the printer <ph name="PRINTER_NAME">$1</ph> to Google Cloud Print?
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTER_USER" desc="Label for user picker in registration dialog">
-      User:
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_CONFIRM_REGISTRATION" desc="Title for 'confirm registration' page">
-      Confirm registration
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER" desc="Title for 'adding printer' page">
-      Adding printer...
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED" desc="Title for error page">
-      Could not complete registration
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE1" desc="Message for adding printer number 1">
-      You must confirm registration on your printer to finish this process - check it now.
-    </message>
-     <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE2" desc="Message for adding printer number 2">
-      Adding the printer to your account - this may take a moment...
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED_MESSAGE" desc="Message for error page">
-      An error has occured. Please check your printer and try again.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_NO_DESCRIPTION" desc="Description for devices with an empty description">
-      Printer on Google Cloud Print
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ZERO" desc="'Zero' case for number indicator for locally discoverable printers">
-      No other available devices.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ONE" desc="'One' case for number indicator for locally discoverable printers">
-      One other available device.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_MULTIPLE" desc="General case for number indicator for locally discoverable printers">
-      <ph name="NUM_PRINTERS">$1</ph> other available devices.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_LOADING" desc="Loading for local discovery screens">
-      Loading
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_ADD_PRINTERS" desc="Text on button to add printers to cloud print">
-      Add Devices
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_NO_PRINTERS_ON_NETWORK_EXPLANATION" desc="Explanatory text in case there are no printers to register on the network">
-      Looks like there are no devices available to register on the network. If your device is on and connected to the internet, try registering it using instructions in its instruction manual.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_UNAVAILABLE" desc="Explanatory text in case the list of cloud devices can't be retrieved">
-      Could not load devices.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_RETRY_LOAD_CLOUD_DEVICES" desc="Text on button to retry loading cloud devices">
-      Try again
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_NEED_LOGIN" desc="Text on login promo for local discovery page">
-      You need to sign in to Chrome to see your devices
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTER_NEED_LOGIN" desc="Text on login promo for local discovery registration">
-      You need to sign in to Chrome to register new devices
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_LOGIN" desc="Text on login button for local discovery page">
-      sign in
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_DEVICES_PAGE_BUTTON" desc="Text on button to take user to devices page">
-      Manage
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_AVAILABLE_DEVICES" desc="Title for 'available devices' section in devices page">
-      New devices
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_MY_DEVICES" desc="Title for 'my devices' section in devices page">
-      My devices
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL" desc="In local discovery page: The label of the cloud print setup button when it hasn't been set up yet.">
-      You can add classic printers connected to your computer to <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_CONNECTOR_SECTION" desc="In local discovery page: Title of cloud print connector section.">
-      Classic printers
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_ENABLE_CHECKBOX_LABEL" desc="Label for notificatiosn-enable checkbox">
-      Show notifications when new printers are detected on the network
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_DISABLE_BUTTON_LABEL" desc="Label for button disabling local device notifications">
-      Don't show this again
-    </message>
-
+      </message>
+      <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER_MULTIPLE" desc="Contents of notification for a new printer showing up on your network">
+        Add the printers to Google Cloud Print so you can print from anywhere.
+      </message>
+      <message name="IDS_LOCAL_DISOCVERY_SERVICE_NAME_PRINTER" desc="Display name for notification for a new printer showing up on your network">
+        Google Cloud Print
+      </message>
+      <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_BUTTON_PRINTER" desc="Message on registration button for printer">
+        Add to Cloud Print
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_DEVICES_PAGE_TITLE" desc="Title for devices page">
+        Devices
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_REGISTER_CONFIRMATION" desc="Confirmation for registering a printer to Google Cloud Print">
+        Do you wish to register the printer <ph name="PRINTER_NAME">$1</ph> to Google Cloud Print?
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_REGISTER_USER" desc="Label for user picker in registration dialog">
+        User:
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_CONFIRM_REGISTRATION" desc="Title for 'confirm registration' page">
+        Confirm registration
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER" desc="Title for 'adding printer' page">
+        Adding printer...
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED" desc="Title for error page">
+        Could not complete registration
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE1" desc="Message for adding printer number 1">
+        You must confirm registration on your printer to finish this process - check it now.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE2" desc="Message for adding printer number 2">
+        Adding the printer to your account - this may take a moment...
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED_MESSAGE" desc="Message for error page">
+        An error has occured. Please check your printer and try again.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_NO_DESCRIPTION" desc="Description for devices with an empty description">
+        Printer on Google Cloud Print
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ZERO" desc="'Zero' case for number indicator for locally discoverable printers">
+        No other available devices.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ONE" desc="'One' case for number indicator for locally discoverable printers">
+        One other available device.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_MULTIPLE" desc="General case for number indicator for locally discoverable printers">
+        <ph name="NUM_PRINTERS">$1</ph> other available devices.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_LOADING" desc="Loading for local discovery screens">
+        Loading
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_ADD_PRINTERS" desc="Text on button to add printers to cloud print">
+        Add Devices
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_NO_PRINTERS_ON_NETWORK_EXPLANATION" desc="Explanatory text in case there are no printers to register on the network">
+        Looks like there are no devices available to register on the network. If your device is on and connected to the internet, try registering it using instructions in its instruction manual.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_UNAVAILABLE" desc="Explanatory text in case the list of cloud devices can't be retrieved">
+        Could not load devices.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_RETRY_LOAD_CLOUD_DEVICES" desc="Text on button to retry loading cloud devices">
+        Try again
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_NEED_LOGIN" desc="Text on login promo for local discovery page">
+        You need to sign in to Chrome to see your devices
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_REGISTER_NEED_LOGIN" desc="Text on login promo for local discovery registration">
+        You need to sign in to Chrome to register new devices
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_LOGIN" desc="Text on login button for local discovery page">
+        sign in
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_DEVICES_PAGE_BUTTON" desc="Text on button to take user to devices page">
+        Manage
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_AVAILABLE_DEVICES" desc="Title for 'available devices' section in devices page">
+        New devices
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_MY_DEVICES" desc="Title for 'my devices' section in devices page">
+        My devices
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL" desc="In local discovery page: The label of the cloud print setup button when it hasn't been set up yet.">
+        You can add classic printers connected to your computer to <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>.
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_CONNECTOR_SECTION" desc="In local discovery page: Title of cloud print connector section.">
+        Classic printers
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_ENABLE_CHECKBOX_LABEL" desc="Label for notificatiosn-enable checkbox">
+        Show notifications when new printers are detected on the network
+      </message>
+      <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_DISABLE_BUTTON_LABEL" desc="Label for button disabling local device notifications">
+        Don't show this again
+      </message>
+    </if>
     <!-- People search strings -->
     <message name="IDS_PEOPLE_SEARCH_ACTION_EMAIL_TOOLTIP" desc="Tooltip text for sending an email to the person in the result">
       Email this person
@@ -15585,6 +15397,23 @@ Do you accept?
     <!-- Accessibility alerts -->
     <message name="IDS_A11Y_ALERT_WINDOW_NEEDED" desc="Alert sent to the accessibility api when the user attempts a keyboard command that requires a window to work.">
       Command unavailable. Press control-N to open a new window.
+    </message>
+
+    <!-- Zero suggest experiment flags -->
+    <message name="IDS_FLAGS_ZERO_SUGGEST_EXPERIMENT_NAME" desc="An about:flags experiment for zero suggest">
+      Zero Suggest
+    </message>
+    <message name="IDS_FLAGS_ZERO_SUGGEST_EXPERIMENT_DESCRIPTION" desc="Describes about:flags experiment options for zero suggest">
+      NOTE: Only works dev and canary channels. Turns on suggestions in the omnibox that are shown on focus before typing.
+    </message>
+    <message name="IDS_FLAGS_ZERO_SUGGEST_MOST_VISITED" desc="A choice in dropdown dialog on about:flags page for the most visited sites option">
+      Most visited
+    </message>
+    <message name="IDS_FLAGS_ZERO_SUGGEST_ETHER_SERP" desc="A choice in dropdown dialog on about:flags page to show zero suggest on http pages and Google.com">
+      Related URLs and Google.com searches
+    </message>
+    <message name="IDS_FLAGS_ZERO_SUGGEST_ETHER_NO_SERP" desc="A choice in dropdown dialog on about:flags page to show zero suggest on http pages only">
+      Related URLs only
     </message>
   </messages>
 

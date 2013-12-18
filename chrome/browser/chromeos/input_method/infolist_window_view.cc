@@ -18,6 +18,8 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/grid_layout.h"
@@ -101,8 +103,8 @@ void InfolistEntryView::Init(const gfx::Font& title_font,
 }
 
 void InfolistEntryView::Relayout(const InfolistWindowView::Entry& entry) {
-  const string16 title = UTF8ToUTF16(entry.title);
-  const string16 description = UTF8ToUTF16(entry.body);
+  const base::string16 title = UTF8ToUTF16(entry.title);
+  const base::string16 description = UTF8ToUTF16(entry.body);
 
   if ((title_label_->text() == title) &&
       (description_label_->text() == description)) {

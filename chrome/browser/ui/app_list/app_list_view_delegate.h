@@ -11,12 +11,14 @@
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/ui/app_list/chrome_signin_delegate.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/app_list/app_list_view_delegate.h"
+#include "ui/app_list/speech_ui_model.h"
 
 class AppListControllerDelegate;
 class Profile;
@@ -62,6 +64,7 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE;
   virtual app_list::AppListModel* GetModel() OVERRIDE;
   virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE;
+  virtual app_list::SpeechUIModel* GetSpeechUI() OVERRIDE;
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
       const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE;
@@ -83,10 +86,17 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
       const base::FilePath& profile_path) OVERRIDE;
   virtual content::WebContents* GetStartPageContents() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
+  virtual void AddObserver(
+      app_list::AppListViewDelegateObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(
+      app_list::AppListViewDelegateObserver* observer) OVERRIDE;
 
   // Overridden from app_list::StartPageObserver:
-  virtual void OnSearch(const base::string16& query) OVERRIDE;
-  virtual void OnSpeechRecognitionStateChanged(bool recognizing) OVERRIDE;
+  virtual void OnSpeechResult(const base::string16& result,
+                              bool is_final) OVERRIDE;
+  virtual void OnSpeechSoundLevelChanged(int16 level) OVERRIDE;
+  virtual void OnSpeechRecognitionStateChanged(
+      app_list::SpeechRecognitionState new_state) OVERRIDE;
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -111,6 +121,8 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // if |profile_| changes.
   app_list::AppListModel* model_;
 
+  app_list::SpeechUIModel speech_ui_;
+
   Users users_;
 
   content::NotificationRegistrar registrar_;
@@ -118,6 +130,8 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
 #if defined(USE_ASH)
   scoped_ptr<AppSyncUIStateWatcher> app_sync_ui_state_watcher_;
 #endif
+
+  ObserverList<app_list::AppListViewDelegateObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

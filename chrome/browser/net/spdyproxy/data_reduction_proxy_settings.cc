@@ -229,6 +229,13 @@ bool DataReductionProxySettings::IsDataReductionProxyPromoAllowed() {
             kEnabled);
 }
 
+bool DataReductionProxySettings::IsPreconnectHintingAllowed() {
+  if (!IsDataReductionProxyAllowed())
+    return false;
+  return FieldTrialList::FindFullName("DataCompressionProxyPreconnectHints") ==
+      kEnabled;
+}
+
 std::string DataReductionProxySettings::GetDataReductionProxyOrigin() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kSpdyProxyAuthOrigin))
@@ -408,8 +415,11 @@ void DataReductionProxySettings::AddDefaultProxyBypassRules() {
   AddHostPatternToBypass("10.0.0.0/8");
   AddHostPatternToBypass("172.16.0.0/12");
   AddHostPatternToBypass("192.168.0.0/16");
-   // RFC4193 private addresses.
+  // RFC4193 private addresses.
   AddHostPatternToBypass("fc00::/7");
+  // IPV6 probe addresses.
+  AddHostPatternToBypass("*-ds.metric.gstatic.com");
+  AddHostPatternToBypass("*-v4.metric.gstatic.com");
 }
 
 void DataReductionProxySettings::LogProxyState(bool enabled, bool at_startup) {

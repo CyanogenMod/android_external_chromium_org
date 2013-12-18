@@ -86,6 +86,7 @@ GLES2Implementation::GLES2Implementation(
       ShareGroup* share_group,
       TransferBufferInterface* transfer_buffer,
       bool bind_generates_resource,
+      bool free_everything_when_invisible,
       GpuControl* gpu_control)
     : helper_(helper),
       transfer_buffer_(transfer_buffer),
@@ -112,6 +113,9 @@ GLES2Implementation::GLES2Implementation(
       current_query_(NULL),
       error_message_callback_(NULL),
       gpu_control_(gpu_control),
+      surface_visible_(true),
+      free_everything_when_invisible_(free_everything_when_invisible),
+      capabilities_(gpu_control->GetCapabilities()),
       weak_ptr_factory_(this) {
   DCHECK(helper);
   DCHECK(transfer_buffer);
@@ -334,6 +338,15 @@ void GLES2Implementation::SignalQuery(uint32 query,
       base::Bind(&GLES2Implementation::RunIfContextNotLost,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
+}
+
+void GLES2Implementation::SetSurfaceVisible(bool visible) {
+  // TODO(piman): This probably should be ShallowFlushCHROMIUM().
+  Flush();
+  surface_visible_ = visible;
+  gpu_control_->SetSurfaceVisible(visible);
+  if (!visible)
+    FreeEverything();
 }
 
 void GLES2Implementation::SendManagedMemoryStats(
@@ -834,6 +847,8 @@ void GLES2Implementation::Flush() {
   // Flush our command buffer
   // (tell the service to execute up to the flush cmd.)
   helper_->CommandBufferHelper::Flush();
+  if (!surface_visible_ && free_everything_when_invisible_)
+    FreeEverything();
 }
 
 void GLES2Implementation::ShallowFlushCHROMIUM() {
@@ -842,11 +857,14 @@ void GLES2Implementation::ShallowFlushCHROMIUM() {
   // Flush our command buffer
   // (tell the service to execute up to the flush cmd.)
   helper_->CommandBufferHelper::Flush();
+  // TODO(piman): Add the FreeEverything() logic here.
 }
 
 void GLES2Implementation::Finish() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   FinishHelper();
+  if (!surface_visible_ && free_everything_when_invisible_)
+    FreeEverything();
 }
 
 void GLES2Implementation::ShallowFinishCHROMIUM() {
@@ -2128,10 +2146,8 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
       case GL_EXTENSIONS:
         str += std::string(str.empty() ? "" : " ") +
             "GL_CHROMIUM_flipy "
-            "GL_CHROMIUM_map_sub "
-            "GL_CHROMIUM_shallow_flush "
             "GL_EXT_unpack_subimage";
-        if (gpu_control_->SupportsGpuMemoryBuffer()) {
+        if (capabilities_.map_image) {
           // The first space character is intentional.
           str += " GL_CHROMIUM_map_image";
         }
@@ -2757,6 +2773,32 @@ void GLES2Implementation::GetVertexAttribiv(
     }
   });
   CheckGLError();
+}
+
+void GLES2Implementation::Swap() {
+  SwapBuffers();
+  gpu_control_->Echo(
+      base::Bind(&GLES2Implementation::OnSwapBuffersComplete,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GLES2Implementation::PartialSwapBuffers(gfx::Rect sub_buffer) {
+  PostSubBufferCHROMIUM(sub_buffer.x(),
+                        sub_buffer.y(),
+                        sub_buffer.width(),
+                        sub_buffer.height());
+  gpu_control_->Echo(base::Bind(&GLES2Implementation::OnSwapBuffersComplete,
+                                weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GLES2Implementation::SetSwapBuffersCompleteCallback(
+      const base::Closure& swap_buffers_complete_callback) {
+  swap_buffers_complete_callback_ = swap_buffers_complete_callback;
+}
+
+void GLES2Implementation::OnSwapBuffersComplete() {
+  if (!swap_buffers_complete_callback_.is_null())
+    swap_buffers_complete_callback_.Run();
 }
 
 GLboolean GLES2Implementation::EnableFeatureCHROMIUM(

@@ -110,6 +110,7 @@ bool MoveCursor(int swipe_direction,
 bool SendKeyEvent(const std::string type,
                   int key_value,
                   int key_code,
+                  std::string key_name,
                   int modifiers,
                   aura::WindowEventDispatcher* dispatcher) {
   ui::EventType event_type = ui::ET_UNKNOWN;
@@ -153,7 +154,7 @@ bool SendKeyEvent(const std::string type,
       }
     }
 
-    ui::KeyEvent event(event_type, code, modifiers, false);
+    ui::KeyEvent event(event_type, code, key_name, modifiers, false);
     dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
   }
   return true;
@@ -241,7 +242,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/main.js", IDR_KEYBOARD_MAIN_JS},
     {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
     {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
-    {"keyboard/polymer.min.js", IDR_KEYBOARD_POLYMER},
+    {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
     {"keyboard/voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS},
   };
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);

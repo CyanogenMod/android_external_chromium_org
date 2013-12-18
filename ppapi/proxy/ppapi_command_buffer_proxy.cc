@@ -139,6 +139,10 @@ void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
       ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id));
 }
 
+void PpapiCommandBufferProxy::Echo(const base::Closure& callback) {
+  NOTREACHED();
+}
+
 gpu::Buffer PpapiCommandBufferProxy::GetTransferBuffer(int32 id) {
   if (last_state_.error != gpu::error::kNoError)
     return gpu::Buffer();
@@ -213,13 +217,19 @@ void PpapiCommandBufferProxy::SignalQuery(uint32 query,
   NOTREACHED();
 }
 
+void PpapiCommandBufferProxy::SetSurfaceVisible(bool visible) {
+  NOTREACHED();
+}
+
 void PpapiCommandBufferProxy::SendManagedMemoryStats(
     const gpu::ManagedMemoryStats& stats) {
   NOTREACHED();
 }
 
-bool PpapiCommandBufferProxy::SupportsGpuMemoryBuffer() {
-  return false;
+gpu::Capabilities PpapiCommandBufferProxy::GetCapabilities() {
+  // TODO(boliu): Need to implement this to use cc in Pepper. Tracked in
+  // crbug.com/325391.
+  return gpu::Capabilities();
 }
 
 gfx::GpuMemoryBuffer* PpapiCommandBufferProxy::CreateGpuMemoryBuffer(

@@ -20,10 +20,11 @@ namespace dom_distiller {
 
 class DistilledPageProto;
 class DistillerFactory;
+class DomDistillerObserver;
 class DomDistillerStoreInterface;
 class TaskTracker;
-class ViewRequestDelegate;
 class ViewerHandle;
+class ViewRequestDelegate;
 
 // Provide a view of the article list and ways of interacting with it.
 class DomDistillerService {
@@ -41,6 +42,9 @@ class DomDistillerService {
   // Gets the full list of entries.
   std::vector<ArticleEntry> GetEntries() const;
 
+  // Removes the specified entry from the dom distiller store.
+  void RemoveEntry(const std::string& entry_id);
+
   // Request to view an article by entry id. Returns a null pointer if no entry
   // with |entry_id| exists. The ViewerHandle should be destroyed before the
   // ViewRequestDelegate. The request will be cancelled when the handle is
@@ -51,6 +55,9 @@ class DomDistillerService {
   // Request to view an article by url.
   scoped_ptr<ViewerHandle> ViewUrl(ViewRequestDelegate* delegate,
                                    const GURL& url);
+
+  void AddObserver(DomDistillerObserver* observer);
+  void RemoveObserver(DomDistillerObserver* observer);
 
  private:
   void CancelTask(TaskTracker* task);

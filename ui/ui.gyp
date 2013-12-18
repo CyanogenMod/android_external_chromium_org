@@ -491,6 +491,9 @@
           ],
         }],
         ['OS=="mac"', {
+          'dependencies': [
+            '../third_party/mozilla/mozilla.gyp:mozilla',
+          ],
           'sources!': [
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
@@ -634,9 +637,6 @@
           'target_name': 'ui_cocoa_third_party_toolkits',
           'type': '<(component)',
           'sources': [
-            # Build Apple sample code
-            '../third_party/apple_sample_code/ImageAndTextCell.h',
-            '../third_party/apple_sample_code/ImageAndTextCell.m',
             # Build the necessary GTM sources
             '../third_party/GTM/AppKit/GTMFadeTruncatingTextFieldCell.h',
             '../third_party/GTM/AppKit/GTMFadeTruncatingTextFieldCell.m',
@@ -659,18 +659,9 @@
             '../third_party/GTM/Foundation/GTMNSNumber+64Bit.m',
             '../third_party/GTM/Foundation/GTMNSObject+KeyValueObserving.h',
             '../third_party/GTM/Foundation/GTMNSObject+KeyValueObserving.m',
-            # MolokoCacao additions
-            '../third_party/molokocacao/NSBezierPath+MCAdditions.h',
-            '../third_party/molokocacao/NSBezierPath+MCAdditions.m',
-            # Build necessary Mozilla sources
-            '../third_party/mozilla/NSScreen+Utils.h',
-            '../third_party/mozilla/NSScreen+Utils.m',
-            '../third_party/mozilla/NSWorkspace+Utils.h',
-            '../third_party/mozilla/NSWorkspace+Utils.m',
           ],
           'include_dirs': [
             '..',
-            '../third_party/apple',
             '../third_party/GTM',
             '../third_party/GTM/AppKit',
             '../third_party/GTM/DebugUtils',

@@ -23,6 +23,7 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_quota_client.h"
+#include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/indexed_db_info.h"
@@ -106,6 +107,7 @@ IndexedDBContextImpl::IndexedDBContextImpl(
       special_storage_policy_(special_storage_policy),
       quota_manager_proxy_(quota_manager_proxy),
       task_runner_(task_runner) {
+  IDB_TRACE("init");
   if (!data_path.empty())
     data_path_ = data_path.Append(kIndexedDBDirectory);
   if (quota_manager_proxy) {
@@ -295,7 +297,7 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
     return base::Time();
   base::FilePath idb_directory = GetFilePath(origin_url);
   base::PlatformFileInfo file_info;
-  if (!file_util::GetFileInfo(idb_directory, &file_info))
+  if (!base::GetFileInfo(idb_directory, &file_info))
     return base::Time();
   return file_info.last_modified;
 }
@@ -346,6 +348,8 @@ void IndexedDBContextImpl::ForceClose(const GURL origin_url) {
     DCHECK_EQ(connections_[origin_url].size(), 0UL);
     connections_.erase(origin_url);
   }
+  if (factory_)
+    factory_->ForceClose(origin_url);
 }
 
 size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {

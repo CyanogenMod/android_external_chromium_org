@@ -9,14 +9,14 @@
 #include "base/run_loop.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace sync_file_system {
@@ -59,6 +59,7 @@ class SyncEngineInitializerTest : public testing::Test {
 
   SyncStatusCode RunInitializer() {
     initializer_.reset(new SyncEngineInitializer(
+        NULL,
         base::MessageLoopProxy::current(),
         &fake_drive_service_,
         database_path()));
@@ -69,33 +70,6 @@ class SyncEngineInitializerTest : public testing::Test {
 
     metadata_database_ = initializer_->PassMetadataDatabase();
     return status;
-  }
-
-  google_apis::GDataErrorCode FillTrackedFileByTrackerID(
-      int64 tracker_id,
-      scoped_ptr<TrackedFile>* file_out) {
-    scoped_ptr<TrackedFile> file(new TrackedFile);
-    if (!metadata_database_->FindTrackerByTrackerID(
-            tracker_id, &file->tracker))
-      return google_apis::HTTP_NOT_FOUND;
-    if (!metadata_database_->FindFileByFileID(
-            file->tracker.file_id(), &file->metadata))
-      return google_apis::HTTP_NOT_FOUND;
-
-    google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-    scoped_ptr<google_apis::ResourceEntry> entry;
-    fake_drive_service_.GetResourceEntry(file->metadata.file_id(),
-                                         CreateResultReceiver(&error, &entry));
-    base::RunLoop().RunUntilIdle();
-
-    if (entry) {
-      file->resource =
-          drive::util::ConvertResourceEntryToFileResource(*entry);
-    }
-
-    if (file_out)
-      *file_out = file.Pass();
-    return error;
   }
 
   SyncStatusCode PopulateDatabase(
@@ -159,7 +133,7 @@ class SyncEngineInitializerTest : public testing::Test {
           sync_root->file_id(),
           CreateResultReceiver(&error));
       base::RunLoop().RunUntilIdle();
-      EXPECT_EQ(google_apis::HTTP_SUCCESS, error);
+      EXPECT_EQ(google_apis::HTTP_NO_CONTENT, error);
     }
 
     return sync_root.Pass();

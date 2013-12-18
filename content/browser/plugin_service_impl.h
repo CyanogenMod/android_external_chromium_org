@@ -59,7 +59,7 @@ struct PepperPluginInfo;
 // surpass that limit.
 struct PluginServiceFilterParams {
   int render_process_id;
-  int render_view_id;
+  int render_frame_id;
   GURL page_url;
   ResourceContext* resource_context;
 };
@@ -80,7 +80,7 @@ class CONTENT_EXPORT PluginServiceImpl
       std::vector<WebPluginInfo>* info,
       std::vector<std::string>* actual_mime_types) OVERRIDE;
   virtual bool GetPluginInfo(int render_process_id,
-                             int render_view_id,
+                             int render_frame_id,
                              ResourceContext* context,
                              const GURL& url,
                              const GURL& page_url,
@@ -91,7 +91,7 @@ class CONTENT_EXPORT PluginServiceImpl
                              std::string* actual_mime_type) OVERRIDE;
   virtual bool GetPluginInfoByPath(const base::FilePath& plugin_path,
                                    WebPluginInfo* info) OVERRIDE;
-  virtual string16 GetPluginDisplayNameByPath(
+  virtual base::string16 GetPluginDisplayNameByPath(
       const base::FilePath& path) OVERRIDE;
   virtual void GetPlugins(const GetPluginsCallback& callback) OVERRIDE;
   virtual PepperPluginInfo* GetRegisteredPpapiPluginInfo(
@@ -139,7 +139,7 @@ class CONTENT_EXPORT PluginServiceImpl
   // a new plugin process if necessary.  This must be called on the IO thread
   // or else a deadlock can occur.
   void OpenChannelToNpapiPlugin(int render_process_id,
-                                int render_view_id,
+                                int render_frame_id,
                                 const GURL& url,
                                 const GURL& page_url,
                                 const std::string& mime_type,
@@ -195,7 +195,7 @@ class CONTENT_EXPORT PluginServiceImpl
   // Helper so we can do the plugin lookup on the FILE thread.
   void GetAllowedPluginForOpenChannelToPlugin(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const GURL& url,
       const GURL& page_url,
       const std::string& mime_type,

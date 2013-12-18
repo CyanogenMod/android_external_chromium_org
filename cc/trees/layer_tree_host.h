@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/base/swap_promise.h"
+#include "cc/base/swap_promise_monitor.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/input/input_handler.h"
@@ -37,7 +39,6 @@
 #include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/proxy.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/events/latency_info.h"
 #include "ui/gfx/rect.h"
 
 namespace cc {
@@ -68,7 +69,6 @@ struct CC_EXPORT RendererCapabilities {
 
   ResourceFormat best_texture_format;
   bool using_partial_swap;
-  bool using_set_visibility;
   bool using_egl_image;
   bool allow_partial_texture_updates;
   bool using_offscreen_context3d;
@@ -233,7 +233,6 @@ class CC_EXPORT LayerTreeHost {
   void ApplyScrollAndScale(const ScrollAndScaleSet& info);
 
   void SetImplTransform(const gfx::Transform& transform);
-  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
 
   // Virtual for tests.
   virtual void StartRateLimiter();
@@ -281,11 +280,18 @@ class CC_EXPORT LayerTreeHost {
   virtual gfx::Size GetUIResourceSize(UIResourceId id) const;
 
   bool UsingSharedMemoryResources();
-  int id() const { return tree_id_; }
+  int id() const { return id_; }
 
   bool ScheduleMicroBenchmark(const std::string& benchmark_name,
                               scoped_ptr<base::Value> value,
                               const MicroBenchmark::DoneCallback& callback);
+
+  // When a SwapPromiseMonitor is created on the main thread, it calls
+  // InsertSwapPromiseMonitor() to register itself with LayerTreeHost.
+  // When the monitor is destroyed, it calls RemoveSwapPromiseMonitor()
+  // to unregister itself.
+  void InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor);
+  void RemoveSwapPromiseMonitor(SwapPromiseMonitor* monitor);
 
   // Call this function when you expect there to be a swap buffer.
   // See swap_promise.h for how to use SwapPromise.
@@ -351,6 +357,8 @@ class CC_EXPORT LayerTreeHost {
 
   void CalculateLCDTextMetricsCallback(Layer* layer);
 
+  void NotifySwapPromiseMonitorsOfSetNeedsCommit();
+
   bool animating_;
   bool needs_full_tree_sync_;
   bool needs_filter_context_;
@@ -415,8 +423,6 @@ class CC_EXPORT LayerTreeHost {
 
   bool in_paint_layer_contents_;
 
-  ui::LatencyInfo latency_info_;
-
   static const int kTotalFramesToUseForLCDTextMetrics = 50;
   int total_frames_used_for_lcd_text_metrics_;
 
@@ -431,7 +437,7 @@ class CC_EXPORT LayerTreeHost {
     int64 total_num_cc_layers_will_use_lcd_text;
   };
   LCDTextMetrics lcd_text_metrics_;
-  int tree_id_;
+  int id_;
   bool next_commit_forces_redraw_;
 
   scoped_refptr<Layer> page_scale_layer_;
@@ -441,6 +447,7 @@ class CC_EXPORT LayerTreeHost {
   SharedBitmapManager* shared_bitmap_manager_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
+  std::set<SwapPromiseMonitor*> swap_promise_monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

@@ -66,7 +66,7 @@
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
-#include "chrome/browser/ui/passwords/manage_passwords_icon_controller.h"
+#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
@@ -629,7 +629,7 @@ void LocationBarViewGtk::Update(const WebContents* contents) {
 void LocationBarViewGtk::OnChanged() {
   UpdateSiteTypeArea();
 
-  const string16 keyword(omnibox_view_->model()->keyword());
+  const base::string16 keyword(omnibox_view_->model()->keyword());
   const bool is_keyword_hint = omnibox_view_->model()->is_keyword_hint();
   show_selected_keyword_ = !keyword.empty() && !is_keyword_hint;
   show_keyword_hint_ = !keyword.empty() && is_keyword_hint;
@@ -1291,7 +1291,7 @@ void LocationBarViewGtk::UpdateSiteTypeArea() {
                                    gtk_util::BORDER_ALL);
     }
 
-    string16 info_text = GetToolbarModel()->GetEVCertName();
+    base::string16 info_text = GetToolbarModel()->GetEVCertName();
     gtk_label_set_text(GTK_LABEL(security_info_label_),
                        UTF16ToUTF8(info_text).c_str());
 
@@ -1353,7 +1353,7 @@ void LocationBarViewGtk::UpdateEVCertificateLabelSize() {
   pango_font_metrics_unref(metrics);
 }
 
-void LocationBarViewGtk::SetKeywordLabel(const string16& keyword) {
+void LocationBarViewGtk::SetKeywordLabel(const base::string16& keyword) {
   if (keyword.empty())
     return;
 
@@ -1364,13 +1364,14 @@ void LocationBarViewGtk::SetKeywordLabel(const string16& keyword) {
     return;
 
   bool is_extension_keyword;
-  const string16 short_name = template_url_service->GetKeywordShortName(
+  const base::string16 short_name = template_url_service->GetKeywordShortName(
       keyword, &is_extension_keyword);
-  const string16 min_string = location_bar_util::CalculateMinString(short_name);
-  const string16 full_name = is_extension_keyword ?
+  const base::string16 min_string =
+      location_bar_util::CalculateMinString(short_name);
+  const base::string16 full_name = is_extension_keyword ?
       short_name :
       l10n_util::GetStringFUTF16(IDS_OMNIBOX_KEYWORD_TEXT, short_name);
-  const string16 partial_name = is_extension_keyword ?
+  const base::string16 partial_name = is_extension_keyword ?
       min_string :
       l10n_util::GetStringFUTF16(IDS_OMNIBOX_KEYWORD_TEXT, min_string);
   gtk_label_set_text(GTK_LABEL(tab_to_search_full_label_),
@@ -1396,7 +1397,7 @@ void LocationBarViewGtk::SetKeywordLabel(const string16& keyword) {
   }
 }
 
-void LocationBarViewGtk::SetKeywordHintLabel(const string16& keyword) {
+void LocationBarViewGtk::SetKeywordHintLabel(const base::string16& keyword) {
   if (keyword.empty())
     return;
 
@@ -1406,14 +1407,14 @@ void LocationBarViewGtk::SetKeywordHintLabel(const string16& keyword) {
     return;
 
   bool is_extension_keyword;
-  const string16 short_name = template_url_service->
+  const base::string16 short_name = template_url_service->
       GetKeywordShortName(keyword, &is_extension_keyword);
   int message_id = is_extension_keyword ?
       IDS_OMNIBOX_EXTENSION_KEYWORD_HINT : IDS_OMNIBOX_KEYWORD_HINT;
   std::vector<size_t> content_param_offsets;
-  const string16 keyword_hint = l10n_util::GetStringFUTF16(
+  const base::string16 keyword_hint = l10n_util::GetStringFUTF16(
       message_id,
-      string16(),
+      base::string16(),
       short_name,
       &content_param_offsets);
   if (content_param_offsets.size() != 2) {
@@ -1603,7 +1604,7 @@ void LocationBarViewGtk::UpdateZoomIcon() {
   gtk_image_set_from_pixbuf(GTK_IMAGE(zoom_image_),
       theme_service_->GetImageNamed(zoom_resource).ToGdkPixbuf());
 
-  string16 tooltip = l10n_util::GetStringFUTF16Int(
+  base::string16 tooltip = l10n_util::GetStringFUTF16Int(
       IDS_TOOLTIP_ZOOM, zoom_controller->zoom_percent());
   gtk_widget_set_tooltip_text(zoom_.get(), UTF16ToUTF8(tooltip).c_str());
 
@@ -1615,10 +1616,10 @@ void LocationBarViewGtk::UpdateManagePasswordsIcon() {
   if (!manage_passwords_icon_.get() || !web_contents)
     return;
 
-  ManagePasswordsIconController* manage_passwords_icon_controller =
-      ManagePasswordsIconController::FromWebContents(web_contents);
-  if (!manage_passwords_icon_controller ||
-      !manage_passwords_icon_controller->password_to_be_saved() ||
+  ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
+      ManagePasswordsBubbleUIController::FromWebContents(web_contents);
+  if (!manage_passwords_bubble_ui_controller ||
+      !manage_passwords_bubble_ui_controller->password_to_be_saved() ||
       GetToolbarModel()->input_in_progress()) {
     gtk_widget_hide(manage_passwords_icon_.get());
     ManagePasswordsBubbleGtk::CloseBubble();
@@ -1629,16 +1630,16 @@ void LocationBarViewGtk::UpdateManagePasswordsIcon() {
       GTK_IMAGE(manage_passwords_icon_image_),
       theme_service_->GetImageNamed(IDR_SAVE_PASSWORD).ToGdkPixbuf());
 
-  string16 tooltip =
+  base::string16 tooltip =
       l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_TOOLTIP_SAVE);
   gtk_widget_set_tooltip_text(manage_passwords_icon_.get(),
                               UTF16ToUTF8(tooltip).c_str());
 
   gtk_widget_show(manage_passwords_icon_.get());
-  if (manage_passwords_icon_controller->
+  if (manage_passwords_bubble_ui_controller->
           manage_passwords_bubble_needs_showing()) {
     ShowManagePasswordsBubble();
-    manage_passwords_icon_controller->OnBubbleShown();
+    manage_passwords_bubble_ui_controller->OnBubbleShown();
   }
 }
 

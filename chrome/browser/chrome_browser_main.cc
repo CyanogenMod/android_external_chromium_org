@@ -613,7 +613,7 @@ void ChromeBrowserMainParts::SetupMetricsAndFieldTrials() {
   }
   if (command_line->HasSwitch(switches::kForceVariationIds)) {
     // Create default variation ids which will always be included in the
-    // X-Chrome-Variations request header.
+    // X-Client-Data request header.
     chrome_variations::VariationsHttpHeaderProvider* provider =
         chrome_variations::VariationsHttpHeaderProvider::GetInstance();
     bool result = provider->SetDefaultVariationIds(
@@ -644,16 +644,9 @@ void ChromeBrowserMainParts::StartMetricsRecording() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::StartMetricsRecording");
   MetricsService* metrics = g_browser_process->metrics_service();
 
-  // TODO(miu): Metrics reporting is disabled in DEBUG builds until ill-fired
-  // DCHECKs are fixed, and/or we reconsider whether metrics reporting should
-  // really ever be enabled for debug builds.  http://crbug.com/156979
-#if defined(NDEBUG)
   const bool only_do_metrics_recording =
       parsed_command_line_.HasSwitch(switches::kMetricsRecordingOnly) ||
       parsed_command_line_.HasSwitch(switches::kEnableBenchmarking);
-#else
-  const bool only_do_metrics_recording = true;
-#endif
   if (only_do_metrics_recording) {
     // If we're testing then we don't care what the user preference is, we turn
     // on recording, but not reporting, otherwise tests fail.
@@ -1350,7 +1343,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
                           master_prefs_->import_bookmarks_path);
 
     // Note: this can pop the first run consent dialog on linux.
-    first_run::DoPostImportTasks(profile_, master_prefs_->make_chrome_default);
+    first_run::DoPostImportTasks(profile_,
+                                 master_prefs_->make_chrome_default_for_user);
 
     if (!master_prefs_->suppress_first_run_default_browser_prompt) {
       browser_creator_->set_show_main_browser_window(

@@ -13,8 +13,8 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/local_file_reader.h"
-#include "chrome/browser/google_apis/task_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/task_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_byte_range.h"
@@ -360,7 +360,7 @@ void DriveFileStreamReader::InitializeAfterGetFileContentInitialized(
     // needed and and invalidate weak pointers so that we won't
     // receive unwanted callbacks.
     if (!ui_cancel_download_closure.is_null())
-      ui_cancel_download_closure.Run();
+      RunTaskOnUIThread(ui_cancel_download_closure);
     weak_ptr_factory_.InvalidateWeakPtrs();
     callback.Run(
         net::ERR_REQUEST_RANGE_NOT_SATISFIABLE, scoped_ptr<ResourceEntry>());

@@ -27,7 +27,7 @@ namespace errors = manifest_errors;
 const std::string& LocaleInfo::GetDefaultLocale(const Extension* extension) {
   LocaleInfo* info = static_cast<LocaleInfo*>(
       extension->GetManifestData(keys::kDefaultLocale));
-  return info ? info->default_locale : EmptyString();
+  return info ? info->default_locale : base::EmptyString();
 }
 
 DefaultLocaleHandler::DefaultLocaleHandler() {
@@ -36,7 +36,7 @@ DefaultLocaleHandler::DefaultLocaleHandler() {
 DefaultLocaleHandler::~DefaultLocaleHandler() {
 }
 
-bool DefaultLocaleHandler::Parse(Extension* extension, string16* error) {
+bool DefaultLocaleHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<LocaleInfo> info(new LocaleInfo);
   if (!extension->manifest()->GetString(keys::kDefaultLocale,
                                         &info->default_locale) ||

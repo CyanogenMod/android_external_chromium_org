@@ -71,6 +71,7 @@ class SyncSessionSnapshot;
 
 namespace syncer {
 class BaseTransaction;
+class NetworkResources;
 struct SyncCredentials;
 struct UserShare;
 }  // namespace syncer
@@ -461,7 +462,7 @@ class ProfileSyncService
   }
 
   // Returns a user-friendly string form of last synced time (in minutes).
-  virtual string16 GetLastSyncedTimeString() const;
+  virtual base::string16 GetLastSyncedTimeString() const;
 
   // Returns a human readable string describing backend initialization state.
   std::string GetBackendInitializationStateString() const;
@@ -699,10 +700,12 @@ class ProfileSyncService
 
   browser_sync::FaviconCache* GetFaviconCache();
 
- protected:
-  // Used by test classes that derive from ProfileSyncService.
-  virtual browser_sync::SyncBackendHost* GetBackendForTest();
+  // Overrides the NetworkResources used for Sync connections.
+  // This function takes ownership of |network_resources|.
+  void OverrideNetworkResourcesForTest(
+      scoped_ptr<syncer::NetworkResources> network_resources);
 
+ protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
 
@@ -872,6 +875,8 @@ class ProfileSyncService
                                     bool delete_sync_database,
                                     UnrecoverableErrorReason reason);
 
+  bool IsSessionsDataTypeControllerRunning() const;
+
   // Returns the username (in form of an email address) that should be used in
   // the credentials.
   std::string GetEffectiveUsername();
@@ -1039,6 +1044,8 @@ class ProfileSyncService
   base::Time next_token_request_time_;
 
   scoped_ptr<SessionsSyncManager> sessions_sync_manager_;
+
+  scoped_ptr<syncer::NetworkResources> network_resources_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

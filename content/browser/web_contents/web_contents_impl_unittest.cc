@@ -7,7 +7,6 @@
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/view_messages.h"
@@ -27,6 +26,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
+#include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -183,7 +183,7 @@ class TestInterstitialPage : public InterstitialPageImpl {
   virtual RenderViewHost* CreateRenderViewHost() OVERRIDE {
     return new TestRenderViewHost(
         SiteInstance::Create(web_contents()->GetBrowserContext()),
-        this, this, MSG_ROUTING_NONE, MSG_ROUTING_NONE, false);
+        this, this, this, MSG_ROUTING_NONE, MSG_ROUTING_NONE, false);
   }
 
   virtual WebContentsView* CreateWebContentsView() OVERRIDE {
@@ -284,7 +284,7 @@ class TestWebContentsObserver : public WebContentsObserver {
                            const GURL& validated_url,
                            bool is_main_frame,
                            int error_code,
-                           const string16& error_description,
+                           const base::string16& error_description,
                            RenderViewHost* render_view_host) OVERRIDE {
     last_url_ = validated_url;
   }
@@ -318,12 +318,12 @@ TEST_F(WebContentsImplTest, DontUseTitleFromPendingEntry) {
   const GURL kGURL("chrome://blah");
   controller().LoadURL(
       kGURL, Referrer(), PAGE_TRANSITION_TYPED, std::string());
-  EXPECT_EQ(string16(), contents()->GetTitle());
+  EXPECT_EQ(base::string16(), contents()->GetTitle());
 }
 
 TEST_F(WebContentsImplTest, UseTitleFromPendingEntryIfSet) {
   const GURL kGURL("chrome://blah");
-  const string16 title = ASCIIToUTF16("My Title");
+  const base::string16 title = ASCIIToUTF16("My Title");
   controller().LoadURL(
       kGURL, Referrer(), PAGE_TRANSITION_TYPED, std::string());
 
@@ -2152,7 +2152,7 @@ TEST_F(WebContentsImplTest, FilterURLs) {
 
   // Check that an IPC with about:whatever is correctly normalized.
   other_contents->TestDidFailLoadWithError(
-      1, url_from_ipc, true, 1, string16());
+      1, url_from_ipc, true, 1, base::string16());
   EXPECT_EQ(url_normalized, other_observer.last_url());
 }
 

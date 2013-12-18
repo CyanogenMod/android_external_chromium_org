@@ -286,7 +286,7 @@ void UpdateShortcutWorker::UpdateShortcutsOnFileThread() {
   // Ensure web_app_path exists. web_app_path could be missing for a legacy
   // shortcut created by Gears.
   if (!base::PathExists(web_app_path) &&
-      !file_util::CreateDirectory(web_app_path)) {
+      !base::CreateDirectory(web_app_path)) {
     NOTREACHED();
     return;
   }
@@ -299,7 +299,7 @@ void UpdateShortcutWorker::UpdateShortcutsOnFileThread() {
   CheckExistingShortcuts();
   if (!shortcut_files_.empty()) {
     // Generates app id from web app url and profile path.
-    string16 app_id = ShellIntegration::GetAppModelIdForProfile(
+    base::string16 app_id = ShellIntegration::GetAppModelIdForProfile(
         UTF8ToWide(web_app::GenerateApplicationNameFromURL(shortcut_info_.url)),
         profile_path_);
 

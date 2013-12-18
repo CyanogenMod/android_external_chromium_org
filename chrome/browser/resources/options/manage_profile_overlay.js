@@ -58,12 +58,8 @@ cr.define('options', function() {
         CreateProfileOverlay.cancelCreateProfile();
       };
 
-      $('create-profile-managed-container').hidden =
-          !loadTimeData.getBoolean('managedUsersEnabled');
-
       $('import-existing-managed-user-link').hidden =
-          !loadTimeData.getBoolean('allowCreateExistingManagedUsers') ||
-          !loadTimeData.getBoolean('managedUsersEnabled');
+          !loadTimeData.getBoolean('allowCreateExistingManagedUsers');
 
       $('manage-profile-cancel').onclick =
           $('delete-profile-cancel').onclick = function(event) {
@@ -415,8 +411,8 @@ cr.define('options', function() {
       $('manage-profile-overlay-delete').hidden = false;
       $('delete-profile-message').textContent =
           loadTimeData.getStringF('deleteProfileMessage', profileInfo.name);
-      $('delete-profile-message').style.backgroundImage = 'url("' +
-          profileInfo.iconURL + '")';
+      $('delete-profile-message').style.backgroundImage =
+          imageset(profileInfo.iconURL + '@scalefactorx');
       $('delete-managed-profile-addendum').hidden = !profileInfo.isManaged;
 
       // Because this dialog isn't useful when refreshing or as part of the

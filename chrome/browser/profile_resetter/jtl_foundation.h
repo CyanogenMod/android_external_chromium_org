@@ -56,8 +56,8 @@ namespace jtl_foundation {
 // before being compared to hash values listed in |program|.
 
 // JTL byte code consists of uint8 opcodes followed by parameters. Parameters
-// are either boolean (uint8 with value \x00 or \x01), uint8s, or hash strings
-// of 32 bytes.
+// are either boolean (uint8 with value \x00 or \x01), uint32 (in little-endian
+// notation), or hash string of 32 bytes.
 // The following opcodes are defined:
 enum OpCodes {
   // Continues execution with the next operation on the element of a
@@ -106,6 +106,17 @@ enum OpCodes {
   // Parameters:
   // - a 32 byte hash of the parameter name.
   STORE_NODE_HASH = 0x15,
+  // Interprets the value of the current node as a URL, and stores the hash of
+  // its effective SLD (second-level domain) into the working memory. If the
+  // current node is not a string that represents a URL which has an SLD part,
+  // the program execution returns from the current instruction.
+  // Note: Effective SLD means the dot-separated part of the domain that is
+  // immediately below the portion that is controlled by a registrar.
+  // For instance, both "example.com" and "example.co.uk" will yield "example".
+  // See the unit test for more details.
+  // Parameters:
+  // - a 32 byte hash of the parameter name.
+  STORE_NODE_EFFECTIVE_SLD_HASH = 0x16,
   // Compares the current node against a boolean value and continues execution
   // with the next operation in case of a match. If the current node does not
   // match or is not a boolean value, the program execution returns from the
@@ -139,6 +150,16 @@ enum OpCodes {
   // Parameters:
   // - a 32 byte hash of the parameter name.
   COMPARE_NODE_TO_STORED_HASH = 0x24,
+  // Checks whether the current node is a string value that contains the given
+  // pattern as a substring, and continues execution with the next operation in
+  // case it does. If the current node is not a string, or if does not match the
+  // pattern, the program execution returns from the current instruction.
+  // Parameters:
+  // - a 32 byte hash of the pattern,
+  // - a 4 byte unsigned integer: the length (>0) of the pattern in bytes,
+  // - a 4 byte unsigned integer: the sum of all bytes in the pattern, serving
+  //   as a heuristic to reduce the number of actual SHA-256 calculations.
+  COMPARE_NODE_SUBSTRING = 0x25,
   // Stop execution in this specific sentence.
   STOP_EXECUTING_SENTENCE = 0x30,
   // Separator between sentences, starts a new sentence.

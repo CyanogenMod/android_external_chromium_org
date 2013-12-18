@@ -11,9 +11,10 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_client.h"
 #include "ipc/ipc_forwarding_message_filter.h"
 
@@ -132,6 +133,10 @@ void BrowserGpuChannelHostFactory::EstablishRequest::Wait() {
 void BrowserGpuChannelHostFactory::EstablishRequest::Cancel() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   finished_ = true;
+}
+
+bool BrowserGpuChannelHostFactory::CanUseForTesting() {
+  return GpuDataManager::GetInstance()->GpuAccessAllowed(NULL);
 }
 
 void BrowserGpuChannelHostFactory::Initialize(bool establish_gpu_channel) {
@@ -355,7 +360,6 @@ void BrowserGpuChannelHostFactory::GpuChannelEstablished() {
   GetContentClient()->SetGpuInfo(pending_request_->gpu_info());
   gpu_channel_ = GpuChannelHost::Create(this,
                                         pending_request_->gpu_host_id(),
-                                        gpu_client_id_,
                                         pending_request_->gpu_info(),
                                         pending_request_->channel_handle());
   gpu_host_id_ = pending_request_->gpu_host_id();
@@ -381,11 +385,12 @@ scoped_ptr<gfx::GpuMemoryBuffer>
   if (!shm->CreateAnonymous(size))
     return scoped_ptr<gfx::GpuMemoryBuffer>();
 
-  return make_scoped_ptr<gfx::GpuMemoryBuffer>(
-      new GpuMemoryBufferImpl(shm.Pass(),
-                              width,
-                              height,
-                              internalformat));
+  scoped_ptr<GpuMemoryBufferImplShm> buffer(
+      new GpuMemoryBufferImplShm(gfx::Size(width, height), internalformat));
+  if (!buffer->InitializeFromSharedMemory(shm.Pass()))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  return buffer.PassAs<gfx::GpuMemoryBuffer>();
 }
 
 // static

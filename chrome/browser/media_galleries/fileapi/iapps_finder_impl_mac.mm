@@ -10,8 +10,8 @@
 #import "base/mac/foundation_util.h"
 #import "base/mac/scoped_nsobject.h"
 #include "base/time/time.h"
-#include "chrome/browser/policy/preferences_mac.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
+#include "components/policy/core/common/preferences_mac.h"
 #include "content/public/browser/browser_thread.h"
 
 using base::mac::CFCast;
@@ -57,7 +57,7 @@ void FindMostRecentDatabase(
       continue;
 
     base::PlatformFileInfo file_info;
-    if (!file_util::GetFileInfo(db_path, &file_info))
+    if (!base::GetFileInfo(db_path, &file_info))
       continue;
 
     // In case of two databases with the same modified time, tie breaker goes

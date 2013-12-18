@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,16 +9,16 @@ import android.test.suitebuilder.annotation.SmallTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.testshell.ChromiumTestShellActivity;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.content.browser.test.util.TouchCommon;
-import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
-import org.chromium.ui.base.ActivityWindowAndroid;
-import org.chromium.ui.base.ViewAndroidDelegate;
-import org.chromium.ui.base.WindowAndroid;
+import org.chromium.content.browser.test.util.TouchCommon;
+import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.ui.autofill.AutofillPopup;
 import org.chromium.ui.autofill.AutofillPopup.AutofillPopupDelegate;
 import org.chromium.ui.autofill.AutofillSuggestion;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.ViewAndroidDelegate;
+import org.chromium.ui.base.WindowAndroid;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 

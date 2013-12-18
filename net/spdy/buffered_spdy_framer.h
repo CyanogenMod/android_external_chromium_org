@@ -53,6 +53,11 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
                          bool fin,
                          const SpdyHeaderBlock& headers) = 0;
 
+  // Called when a data frame header is received.
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                 size_t length,
+                                 bool fin) = 0;
+
   // Called when data is received.
   // |stream_id| The stream receiving data.
   // |data| A buffer containing the data received.
@@ -165,11 +170,9 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                              SpdyPriority priority,
                              uint8 credential_slot,
                              SpdyControlFlags flags,
-                             bool compressed,
                              const SpdyHeaderBlock* headers);
   SpdyFrame* CreateSynReply(SpdyStreamId stream_id,
                             SpdyControlFlags flags,
-                            bool compressed,
                             const SpdyHeaderBlock* headers);
   SpdyFrame* CreateRstStream(SpdyStreamId stream_id,
                              SpdyRstStreamStatus status) const;
@@ -180,7 +183,6 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
       SpdyGoAwayStatus status) const;
   SpdyFrame* CreateHeaders(SpdyStreamId stream_id,
                            SpdyControlFlags flags,
-                           bool compressed,
                            const SpdyHeaderBlock* headers);
   SpdyFrame* CreateWindowUpdate(
       SpdyStreamId stream_id,

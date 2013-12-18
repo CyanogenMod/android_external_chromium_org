@@ -13,6 +13,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,GYP,android_webview_android_webview_pak_gyp)/android_webview_pak.stamp
 
@@ -42,6 +43,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_quota_manager_bridge.cc \
 	android_webview/browser/aw_quota_permission_context.cc \
 	android_webview/browser/aw_request_interceptor.cc \
+	android_webview/browser/aw_resource_context.cc \
 	android_webview/browser/aw_web_preferences_populater.cc \
 	android_webview/browser/find_helper.cc \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
@@ -57,11 +59,13 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/net/input_stream_reader.cc \
 	android_webview/browser/renderer_host/aw_render_view_host_ext.cc \
 	android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.cc \
+	android_webview/browser/renderer_host/print_manager.cc \
 	android_webview/browser/scoped_app_gl_state_restore.cc \
 	android_webview/common/android_webview_message_generator.cc \
 	android_webview/common/aw_content_client.cc \
 	android_webview/common/aw_hit_test_data.cc \
 	android_webview/common/aw_switches.cc \
+	android_webview/common/print_messages.cc \
 	android_webview/common/render_view_messages.cc \
 	android_webview/common/url_constants.cc \
 	android_webview/lib/aw_browser_dependency_factory_impl.cc \
@@ -69,7 +73,9 @@ LOCAL_SRC_FILES := \
 	android_webview/renderer/aw_content_renderer_client.cc \
 	android_webview/renderer/aw_key_systems.cc \
 	android_webview/renderer/aw_render_process_observer.cc \
-	android_webview/renderer/aw_render_view_ext.cc
+	android_webview/renderer/aw_render_view_ext.cc \
+	android_webview/renderer/print_web_view_helper.cc \
+	android_webview/renderer/print_web_view_helper_android.cc
 
 
 # Flags passed to both C and C++ files.
@@ -107,6 +113,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -116,9 +123,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -130,6 +139,10 @@ MY_DEFS_Debug := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -153,6 +166,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -164,6 +178,19 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -218,6 +245,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -227,9 +255,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -241,6 +271,10 @@ MY_DEFS_Release := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -265,6 +299,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -276,6 +311,19 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

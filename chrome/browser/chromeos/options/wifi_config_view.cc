@@ -106,7 +106,7 @@ class SecurityComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SecurityComboboxModel);
@@ -119,7 +119,7 @@ class EAPMethodComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EAPMethodComboboxModel);
@@ -132,7 +132,7 @@ class Phase2AuthComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   views::Combobox* eap_method_combobox_;
@@ -147,7 +147,7 @@ class ServerCACertComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ServerCACertComboboxModel);
@@ -160,7 +160,7 @@ class UserCertComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   WifiConfigView* owner_;
@@ -179,7 +179,7 @@ SecurityComboboxModel::~SecurityComboboxModel() {
 int SecurityComboboxModel::GetItemCount() const {
     return SECURITY_INDEX_COUNT;
   }
-string16 SecurityComboboxModel::GetItemAt(int index) {
+base::string16 SecurityComboboxModel::GetItemAt(int index) {
   if (index == SECURITY_INDEX_NONE)
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SECURITY_NONE);
@@ -190,7 +190,7 @@ string16 SecurityComboboxModel::GetItemAt(int index) {
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SECURITY_PSK);
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 // EAPMethodComboboxModel ------------------------------------------------------
@@ -204,7 +204,7 @@ EAPMethodComboboxModel::~EAPMethodComboboxModel() {
 int EAPMethodComboboxModel::GetItemCount() const {
   return EAP_METHOD_INDEX_COUNT;
 }
-string16 EAPMethodComboboxModel::GetItemAt(int index) {
+base::string16 EAPMethodComboboxModel::GetItemAt(int index) {
   if (index == EAP_METHOD_INDEX_NONE)
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_EAP_METHOD_NONE);
@@ -221,7 +221,7 @@ string16 EAPMethodComboboxModel::GetItemAt(int index) {
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_EAP_METHOD_TTLS);
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 // Phase2AuthComboboxModel -----------------------------------------------------
@@ -249,7 +249,7 @@ int Phase2AuthComboboxModel::GetItemCount() const {
   return 0;
 }
 
-string16 Phase2AuthComboboxModel::GetItemAt(int index) {
+base::string16 Phase2AuthComboboxModel::GetItemAt(int index) {
   if (index == PHASE_2_AUTH_INDEX_AUTO)
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PHASE_2_AUTH_AUTO);
@@ -269,7 +269,7 @@ string16 Phase2AuthComboboxModel::GetItemAt(int index) {
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PHASE_2_AUTH_CHAP);
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 // ServerCACertComboboxModel ---------------------------------------------------
@@ -288,7 +288,7 @@ int ServerCACertComboboxModel::GetItemCount() const {
       CertLibrary::CERT_TYPE_SERVER_CA) + 2;
 }
 
-string16 ServerCACertComboboxModel::GetItemAt(int index) {
+base::string16 ServerCACertComboboxModel::GetItemAt(int index) {
   if (CertLibrary::Get()->CertificatesLoading())
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_LOADING);
@@ -324,9 +324,9 @@ int UserCertComboboxModel::GetItemCount() const {
   return num_certs;
 }
 
-string16 UserCertComboboxModel::GetItemAt(int index) {
+base::string16 UserCertComboboxModel::GetItemAt(int index) {
   if (!owner_->UserCertActive())
-    return string16();
+    return base::string16();
   if (CertLibrary::Get()->CertificatesLoading())
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_LOADING);
@@ -379,7 +379,7 @@ WifiConfigView::~WifiConfigView() {
   CertLibrary::Get()->RemoveObserver(this);
 }
 
-string16 WifiConfigView::GetTitle() const {
+base::string16 WifiConfigView::GetTitle() const {
   return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_JOIN_WIFI_NETWORKS);
 }
 
@@ -497,7 +497,7 @@ void WifiConfigView::RefreshEapFields() {
                                     passphrase_ui_data_.IsEditable());
   passphrase_label_->SetEnabled(passphrase_enabled);
   if (!passphrase_enabled)
-    passphrase_textfield_->SetText(string16());
+    passphrase_textfield_->SetText(base::string16());
 
   // User cert.
   bool certs_loading = CertLibrary::Get()->CertificatesLoading();
@@ -526,7 +526,7 @@ void WifiConfigView::RefreshEapFields() {
   subject_match_label_->SetEnabled(subject_match_enabled);
   subject_match_textfield_->SetEnabled(subject_match_enabled);
   if (!subject_match_enabled)
-    subject_match_textfield_->SetText(string16());
+    subject_match_textfield_->SetText(base::string16());
 
   // No anonymous identity if no phase 2 auth.
   bool identity_anonymous_enabled = phase_2_auth_enabled;
@@ -534,7 +534,7 @@ void WifiConfigView::RefreshEapFields() {
       identity_anonymous_enabled && identity_anonymous_ui_data_.IsEditable());
   identity_anonymous_label_->SetEnabled(identity_anonymous_enabled);
   if (!identity_anonymous_enabled)
-    identity_anonymous_textfield_->SetText(string16());
+    identity_anonymous_textfield_->SetText(base::string16());
 
   RefreshShareCheckbox();
 }
@@ -596,7 +596,7 @@ void WifiConfigView::UpdateErrorLabel() {
 }
 
 void WifiConfigView::ContentsChanged(views::Textfield* sender,
-                                     const string16& new_contents) {
+                                     const base::string16& new_contents) {
   UpdateDialogButtons();
 }
 
@@ -647,12 +647,17 @@ void WifiConfigView::OnCertificatesLoaded(bool initial_load) {
 }
 
 bool WifiConfigView::Login() {
-  const bool share_default = true;
+  const NetworkState* wifi = !service_path_.empty() ?
+      NetworkHandler::Get()->network_state_handler()->
+          GetNetworkState(service_path_) :
+      NULL;
 
   // Set configuration properties.
   base::DictionaryValue properties;
-  bool share_network = GetShareNetwork(share_default);
 
+  // Default shared state for non-private networks is true.
+  const bool share_default = !wifi || !wifi->IsPrivate();
+  bool share_network = GetShareNetwork(share_default);
   bool only_policy_autoconnect =
       onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(!share_network);
   if (only_policy_autoconnect) {
@@ -699,8 +704,6 @@ bool WifiConfigView::Login() {
     ash::network_connect::CreateConfigurationAndConnect(&properties,
                                                         share_network);
   } else {
-    const NetworkState* wifi = NetworkHandler::Get()->network_state_handler()->
-        GetNetworkState(service_path_);
     if (!wifi) {
       // Shill no longer knows about this wifi network (edge case).
       // TODO(stevenjb): Add notification for this.
@@ -948,7 +951,7 @@ void WifiConfigView::Init(bool show_8021x) {
   // Security select
   if (!wifi && !show_8021x) {
     layout->StartRow(0, column_view_set_id);
-    string16 label_text = l10n_util::GetStringUTF16(
+    base::string16 label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SECURITY);
     layout->AddView(new views::Label(label_text));
     security_combobox_model_.reset(new internal::SecurityComboboxModel);
@@ -966,7 +969,7 @@ void WifiConfigView::Init(bool show_8021x) {
 
     // EAP method
     layout->StartRow(0, column_view_set_id);
-    string16 eap_label_text = l10n_util::GetStringUTF16(
+    base::string16 eap_label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_EAP_METHOD);
     layout->AddView(new views::Label(eap_label_text));
     eap_method_combobox_model_.reset(new internal::EAPMethodComboboxModel);
@@ -981,7 +984,7 @@ void WifiConfigView::Init(bool show_8021x) {
 
     // Phase 2 authentication
     layout->StartRow(0, column_view_set_id);
-    string16 phase_2_label_text = l10n_util::GetStringUTF16(
+    base::string16 phase_2_label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PHASE_2_AUTH);
     phase_2_auth_label_ = new views::Label(phase_2_label_text);
     layout->AddView(phase_2_auth_label_);
@@ -999,7 +1002,7 @@ void WifiConfigView::Init(bool show_8021x) {
 
     // Server CA certificate
     layout->StartRow(0, column_view_set_id);
-    string16 server_ca_cert_label_text = l10n_util::GetStringUTF16(
+    base::string16 server_ca_cert_label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_SERVER_CA);
     server_ca_cert_label_ = new views::Label(server_ca_cert_label_text);
     layout->AddView(server_ca_cert_label_);
@@ -1019,7 +1022,7 @@ void WifiConfigView::Init(bool show_8021x) {
 
     // Subject Match
     layout->StartRow(0, column_view_set_id);
-    string16 subject_match_label_text = l10n_util::GetStringUTF16(
+    base::string16 subject_match_label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_EAP_SUBJECT_MATCH);
     subject_match_label_ = new views::Label(subject_match_label_text);
     layout->AddView(subject_match_label_);
@@ -1032,7 +1035,7 @@ void WifiConfigView::Init(bool show_8021x) {
 
     // User certificate
     layout->StartRow(0, column_view_set_id);
-    string16 user_cert_label_text = l10n_util::GetStringUTF16(
+    base::string16 user_cert_label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT);
     user_cert_label_ = new views::Label(user_cert_label_text);
     layout->AddView(user_cert_label_);
@@ -1048,7 +1051,7 @@ void WifiConfigView::Init(bool show_8021x) {
 
     // Identity
     layout->StartRow(0, column_view_set_id);
-    string16 identity_label_text = l10n_util::GetStringUTF16(
+    base::string16 identity_label_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY);
     identity_label_ = new views::Label(identity_label_text);
     layout->AddView(identity_label_);
@@ -1064,7 +1067,8 @@ void WifiConfigView::Init(bool show_8021x) {
   // Passphrase input
   layout->StartRow(0, column_view_set_id);
   int label_text_id = IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE;
-  string16 passphrase_label_text = l10n_util::GetStringUTF16(label_text_id);
+  base::string16 passphrase_label_text =
+      l10n_util::GetStringUTF16(label_text_id);
   passphrase_label_ = new views::Label(passphrase_label_text);
   layout->AddView(passphrase_label_);
   passphrase_textfield_ = new PassphraseTextfield();

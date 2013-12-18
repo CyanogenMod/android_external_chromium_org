@@ -45,7 +45,7 @@ class ScoredHistoryMatch : public history::HistoryMatch {
   ScoredHistoryMatch(const URLRow& row,
                      const VisitInfoVector& visits,
                      const std::string& languages,
-                     const string16& lower_string,
+                     const base::string16& lower_string,
                      const String16Vector& terms_vector,
                      const RowWordStarts& word_starts,
                      const base::Time now,
@@ -74,6 +74,9 @@ class ScoredHistoryMatch : public history::HistoryMatch {
 
  private:
   friend class ScoredHistoryMatchTest;
+  FRIEND_TEST_ALL_PREFIXES(ScoredHistoryMatchTest, ScoringBookmarks);
+  FRIEND_TEST_ALL_PREFIXES(ScoredHistoryMatchTest, ScoringScheme);
+  FRIEND_TEST_ALL_PREFIXES(ScoredHistoryMatchTest, ScoringTLD);
 
   // The number of days of recency scores to precompute.
   static const int kDaysToPrecomputeRecencyScoresFor;
@@ -88,7 +91,7 @@ class ScoredHistoryMatch : public history::HistoryMatch {
   // process so they only reflect matches used for scoring.  (For
   // instance, some mid-word matches are not given credit in scoring.)
   float GetTopicalityScore(const int num_terms,
-                           const string16& cleaned_up_url,
+                           const base::string16& cleaned_up_url,
                            const RowWordStarts& word_starts);
 
   // Precalculates raw_term_score_to_topicality_score_, used in
@@ -119,8 +122,9 @@ class ScoredHistoryMatch : public history::HistoryMatch {
       float frecency_score);
 
   // Sets |also_do_hup_like_scoring_|,
-  // |max_assigned_score_for_non_inlineable_matches_| and |bookmark_value_|
-  // based on the field trial state.
+  // |max_assigned_score_for_non_inlineable_matches_|, |bookmark_value_|,
+  // |allow_tld_matches_|, and |allow_scheme_matches_| based on the field
+  // trial state.
   static void Init();
 
   // An interim score taking into consideration location and completeness
@@ -165,6 +169,12 @@ class ScoredHistoryMatch : public history::HistoryMatch {
   // Untyped visits to bookmarked pages score this, compared to 1 for
   // untyped visits to non-bookmarked pages and 20 for typed visits.
   static int bookmark_value_;
+
+  // If true, we allow input terms to match in the TLD (e.g., .com).
+  static bool allow_tld_matches_;
+
+  // If true, we allow input terms to match in the scheme (e.g., http://).
+  static bool allow_scheme_matches_;
 
   // If true, assign raw scores to be max(whatever it normally would be,
   // a score that's similar to the score HistoryURL provider would assign).

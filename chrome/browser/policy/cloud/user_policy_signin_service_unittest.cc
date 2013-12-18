@@ -11,11 +11,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_external_data_manager.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/mock_device_management_service.h"
 #include "chrome/browser/policy/cloud/mock_user_cloud_policy_store.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,6 +25,9 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/policy/core/common/cloud/cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/mock_device_management_service.h"
 #include "components/policy/core/common/schema_registry.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_details.h"
@@ -133,15 +134,14 @@ class UserPolicySigninServiceTest : public testing::Test {
 
     local_state_.reset(new TestingPrefServiceSimple);
     chrome::RegisterLocalState(local_state_->registry());
-    request_context_getter_ = new net::TestURLRequestContextGetter(
+    system_request_context_getter_ = new net::TestURLRequestContextGetter(
         base::MessageLoopProxy::current());
     TestingBrowserProcess::GetGlobal()->SetSystemRequestContext(
-        request_context_getter_.get());
+        system_request_context_getter_.get());
     TestingBrowserProcess::GetGlobal()->SetLocalState(local_state_.get());
 
-    scoped_refptr<net::URLRequestContextGetter> system_request_context;
     g_browser_process->browser_policy_connector()->Init(
-        local_state_.get(), system_request_context);
+        local_state_.get(), system_request_context_getter_);
 
     // Create a testing profile with cloud-policy-on-signin enabled, and bring
     // up a UserCloudPolicyManager with a MockUserCloudPolicyStore.
@@ -157,13 +157,13 @@ class UserPolicySigninServiceTest : public testing::Test {
 
     profile_ = builder.Build().Pass();
     url_factory_.set_remove_fetcher_on_delete(true);
+
     signin_manager_ = static_cast<SigninManagerFake*>(
         SigninManagerFactory::GetForProfile(profile_.get()));
 
     mock_store_ = new MockUserCloudPolicyStore();
     EXPECT_CALL(*mock_store_, Load()).Times(AnyNumber());
     manager_.reset(new UserCloudPolicyManager(
-        profile_.get(),
         scoped_ptr<UserCloudPolicyStore>(mock_store_),
         base::FilePath(),
         scoped_ptr<CloudExternalDataManager>(),
@@ -171,6 +171,8 @@ class UserPolicySigninServiceTest : public testing::Test {
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));
     manager_->Init(&schema_registry_);
+    UserCloudPolicyManagerFactory::GetInstance()->RegisterForTesting(
+        profile_.get(), manager_.get());
 
     AddProfile();
 
@@ -251,7 +253,7 @@ class UserPolicySigninServiceTest : public testing::Test {
     // registration.
     MockDeviceManagementJob* register_request = NULL;
     EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
+                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION, _))
         .WillOnce(device_management_service_.CreateAsyncJob(
             &register_request));
     EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
@@ -284,7 +286,7 @@ class UserPolicySigninServiceTest : public testing::Test {
     // Now call to fetch policy - this should fire off a fetch request.
     MockDeviceManagementJob* fetch_request = NULL;
     EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+                CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
         .WillOnce(device_management_service_.CreateAsyncJob(&fetch_request));
     EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
         .Times(1);
@@ -350,7 +352,7 @@ class UserPolicySigninServiceTest : public testing::Test {
   MockDeviceManagementService device_management_service_;
 
   scoped_ptr<TestingPrefServiceSimple> local_state_;
-  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
+  scoped_refptr<net::URLRequestContextGetter> system_request_context_getter_;
 };
 
 class UserPolicySigninServiceSignedInTest : public UserPolicySigninServiceTest {
@@ -627,7 +629,7 @@ TEST_F(UserPolicySigninServiceTest, RegisterPolicyClientFailedRegistration) {
   // registration.
   MockDeviceManagementJob* register_request = NULL;
   EXPECT_CALL(device_management_service_,
-              CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
+              CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION, _))
       .WillOnce(device_management_service_.CreateAsyncJob(&register_request));
   EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
         .Times(1);
@@ -661,7 +663,7 @@ TEST_F(UserPolicySigninServiceTest, RegisterPolicyClientSucceeded) {
   // registration.
   MockDeviceManagementJob* register_request = NULL;
   EXPECT_CALL(device_management_service_,
-              CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
+              CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION, _))
       .WillOnce(device_management_service_.CreateAsyncJob(&register_request));
   EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
       .Times(1);
@@ -694,7 +696,7 @@ TEST_F(UserPolicySigninServiceTest, FetchPolicyFailed) {
   // Initiate a policy fetch request.
   MockDeviceManagementJob* fetch_request = NULL;
   EXPECT_CALL(device_management_service_,
-              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
       .WillOnce(device_management_service_.CreateAsyncJob(&fetch_request));
   EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
       .Times(1);
@@ -741,7 +743,7 @@ TEST_F(UserPolicySigninServiceTest, PolicyFetchFailureTemporary) {
   // Kick off another policy fetch.
   MockDeviceManagementJob* fetch_request = NULL;
   EXPECT_CALL(device_management_service_,
-              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
       .WillOnce(device_management_service_.CreateAsyncJob(&fetch_request));
   EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
       .Times(1);
@@ -767,7 +769,7 @@ TEST_F(UserPolicySigninServiceTest, PolicyFetchFailureDisableManagement) {
   // Kick off another policy fetch.
   MockDeviceManagementJob* fetch_request = NULL;
   EXPECT_CALL(device_management_service_,
-              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
       .WillOnce(device_management_service_.CreateAsyncJob(&fetch_request));
   EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
       .Times(1);

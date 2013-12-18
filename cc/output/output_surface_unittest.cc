@@ -27,14 +27,13 @@ class TestOutputSurface : public OutputSurface {
         retroactive_begin_impl_frame_deadline_enabled_(false),
         override_retroactive_period_(false) {}
 
-  explicit TestOutputSurface(
-      scoped_ptr<cc::SoftwareOutputDevice> software_device)
+  explicit TestOutputSurface(scoped_ptr<SoftwareOutputDevice> software_device)
       : OutputSurface(software_device.Pass()),
         retroactive_begin_impl_frame_deadline_enabled_(false),
         override_retroactive_period_(false) {}
 
   TestOutputSurface(scoped_refptr<ContextProvider> context_provider,
-                    scoped_ptr<cc::SoftwareOutputDevice> software_device)
+                    scoped_ptr<SoftwareOutputDevice> software_device)
       : OutputSurface(context_provider, software_device.Pass()),
         retroactive_begin_impl_frame_deadline_enabled_(false),
         override_retroactive_period_(false) {}
@@ -153,7 +152,7 @@ TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientFailure) {
       TestContextProvider::Create();
 
   // Lose the context so BindToClient fails.
-  context_provider->UnboundTestContext3d()->set_times_make_current_succeeds(0);
+  context_provider->UnboundTestContext3d()->set_context_lost(true);
 
   TestOutputSurface output_surface(context_provider);
   EXPECT_FALSE(output_surface.HasClient());
@@ -209,8 +208,7 @@ TEST_F(OutputSurfaceTestInitializeNewContext3d, Success) {
 TEST_F(OutputSurfaceTestInitializeNewContext3d, Context3dMakeCurrentFails) {
   BindOutputSurface();
 
-  context_provider_->UnboundTestContext3d()
-      ->set_times_make_current_succeeds(0);
+  context_provider_->UnboundTestContext3d()->set_context_lost(true);
   InitializeNewContextExpectFail();
 }
 

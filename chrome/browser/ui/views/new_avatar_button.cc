@@ -39,7 +39,7 @@ views::TextButtonDefaultBorder* CreateBorder(const int normal_image_set[],
   return border;
 }
 
-string16 GetElidedText(const string16& original_text) {
+string16 GetElidedText(const base::string16& original_text) {
   // Maximum characters the button can be before the text will get elided.
   const int kMaxCharactersToDisplay = 15;
 
@@ -56,7 +56,7 @@ string16 GetElidedText(const string16& original_text) {
 
 NewAvatarButton::NewAvatarButton(
     views::ButtonListener* listener,
-    const string16& profile_name,
+    const base::string16& profile_name,
     AvatarButtonStyle button_style,
     Browser* browser)
     : MenuButton(listener, GetElidedText(profile_name), NULL, true),
@@ -113,7 +113,7 @@ void NewAvatarButton::OnPaint(gfx::Canvas* canvas) {
   // From TextButton::PaintButton, draw everything but the text.
   OnPaintBackground(canvas);
   OnPaintBorder(canvas);
-  OnPaintFocusBorder(canvas);
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter());
 
   gfx::Rect rect;
   // In RTL languages the marker gets drawn leftmost, so account for its offset.

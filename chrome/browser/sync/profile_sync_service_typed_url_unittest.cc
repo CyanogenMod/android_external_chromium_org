@@ -23,6 +23,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
@@ -84,7 +85,8 @@ class HistoryBackendMock : public HistoryBackend {
                                history::VisitSource visit_source));
   MOCK_METHOD1(RemoveVisits, bool(const history::VisitVector& visits));
   MOCK_METHOD2(GetURL, bool(const GURL& url_id, history::URLRow* url_row));
-  MOCK_METHOD2(SetPageTitle, void(const GURL& url, const string16& title));
+  MOCK_METHOD2(SetPageTitle, void(const GURL& url,
+                                  const base::string16& title));
   MOCK_METHOD1(DeleteURL, void(const GURL& url));
 
  private:

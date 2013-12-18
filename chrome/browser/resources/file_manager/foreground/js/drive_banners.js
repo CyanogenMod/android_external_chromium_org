@@ -36,7 +36,7 @@ function FileListBannerController(
   this.volumeManager_.volumeInfoList.addEventListener(
       'splice', this.onVolumeInfoListSplice_.bind(this));
   this.volumeManager_.addEventListener('drive-connection-changed',
-        this.onDriveConnectionChanged_.bind(this));
+      this.onDriveConnectionChanged_.bind(this));
 
   chrome.storage.onChanged.addListener(this.onStorageChange_.bind(this));
   this.welcomeHeaderCounter_ = WELCOME_HEADER_COUNTER_LIMIT;
@@ -88,9 +88,9 @@ var WELCOME_HEADER_COUNTER_LIMIT = 25;
  * @private
  */
 FileListBannerController.prototype.initializeWelcomeBanner_ = function() {
-  this.usePromoWelcomeBanner_ = (!util.boardIs('x86-mario') &&
-                               !util.boardIs('x86-zgb') &&
-                               !util.boardIs('x86-alex'));
+  this.usePromoWelcomeBanner_ = !util.boardIs('x86-mario') &&
+                                !util.boardIs('x86-zgb') &&
+                                !util.boardIs('x86-alex');
 };
 
 /**
@@ -184,12 +184,12 @@ FileListBannerController.prototype.prepareAndShowWelcomeBanner_ =
     more = util.createChild(links,
         'drive-welcome-button drive-welcome-start', 'a');
     more.textContent = str('DRIVE_WELCOME_CHECK_ELIGIBILITY');
-    more.href = urlConstants.GOOGLE_DRIVE_REDEEM;
+    more.href = str('GOOGLE_DRIVE_REDEEM_URL');
   } else {
     title.textContent = str('DRIVE_WELCOME_TITLE');
     more = util.createChild(links, 'plain-link', 'a');
     more.textContent = str('DRIVE_LEARN_MORE');
-    more.href = urlConstants.GOOGLE_DRIVE_FAQ_URL;
+    more.href = str('GOOGLE_DRIVE_OVERVIEW_URL');
   }
   more.tabIndex = '13';  // See: go/filesapp-tabindex.
   more.target = '_blank';
@@ -254,7 +254,7 @@ FileListBannerController.prototype.showLowDriveSpaceWarning_ =
     var link = this.document_.createElement('a');
     link.className = 'plain-link';
     link.textContent = str('DRIVE_BUY_MORE_SPACE_LINK');
-    link.href = urlConstants.GOOGLE_DRIVE_BUY_STORAGE;
+    link.href = str('GOOGLE_DRIVE_BUY_STORAGE_URL');
     link.target = '_blank';
     box.appendChild(link);
 
@@ -289,7 +289,7 @@ FileListBannerController.prototype.closeWelcomeBanner_ = function() {
  */
 FileListBannerController.prototype.checkSpaceAndMaybeShowWelcomeBanner_ =
     function() {
-  if (!this.isOnDrive()) {
+  if (!this.isOnCurrentProfileDrive()) {
     // We are not on the drive file system. Do not show (close) the welcome
     // banner.
     this.cleanupWelcomeBanner_();
@@ -297,7 +297,8 @@ FileListBannerController.prototype.checkSpaceAndMaybeShowWelcomeBanner_ =
     return;
   }
 
-  var driveVolume = this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE);
+  var driveVolume = this.volumeManager_.getCurrentProfileVolumeInfo(
+      util.VolumeType.DRIVE);
   if (this.welcomeHeaderCounter_ >= WELCOME_HEADER_COUNTER_LIMIT ||
       !driveVolume || driveVolume.error) {
     // The banner is already shown enough times or the drive FS is not mounted.
@@ -368,7 +369,7 @@ FileListBannerController.prototype.maybeShowWelcomeBanner_ = function() {
     // The timeout below is required because sometimes another
     // 'rescan-completed' event arrives shortly with non-empty file list.
     setTimeout(function() {
-      if (this.isOnDrive() && this.welcomeHeaderCounter_ == 0) {
+      if (this.isOnCurrentProfileDrive() && this.welcomeHeaderCounter_ == 0) {
         this.prepareAndShowWelcomeBanner_('page', 'DRIVE_WELCOME_TEXT_LONG');
       }
     }.bind(this), 2000);
@@ -385,10 +386,17 @@ FileListBannerController.prototype.maybeShowWelcomeBanner_ = function() {
 };
 
 /**
- * @return {boolean} True if current directory is on Drive.
+ * @return {boolean} True if current directory is on Drive root of current
+ * profile.
  */
-FileListBannerController.prototype.isOnDrive = function() {
-  return this.directoryModel_.getCurrentRootType() === RootType.DRIVE;
+FileListBannerController.prototype.isOnCurrentProfileDrive = function() {
+  var entry = this.directoryModel_.getCurrentDirEntry();
+  if (!entry || util.isFakeEntry(entry))
+    return false;
+  var locationInfo = this.volumeManager_.getLocationInfo(entry);
+  return locationInfo &&
+      locationInfo.rootType === RootType.DRIVE &&
+      locationInfo.volumeInfo.profile.isCurrentProfile;
 };
 
 /**
@@ -411,15 +419,17 @@ FileListBannerController.prototype.showWelcomeBanner_ = function(type) {
  * @private
  */
 FileListBannerController.prototype.onDirectoryChanged_ = function(event) {
-  var root = PathUtil.getTopDirectory(event.newDirEntry.fullPath);
+  var rootVolume = this.volumeManager_.getVolumeInfo(event.newDirEntry);
+  var previousRootVolume = event.previousDirEntry ?
+      this.volumeManager_.getVolumeInfo(event.previousDirEntry) : null;
+
   // Show (or hide) the low space warning.
-  this.maybeShowLowSpaceWarning_(root);
+  this.maybeShowLowSpaceWarning_(rootVolume);
 
   // Add or remove listener to show low space warning, if necessary.
-  var isLowSpaceWarningTarget = this.isLowSpaceWarningTarget_(root);
-  var previousRoot = event.previousDirEntry ?
-      PathUtil.getTopDirectory(event.previousDirEntry.fullPath) : '';
-  if (isLowSpaceWarningTarget !== this.isLowSpaceWarningTarget_(previousRoot)) {
+  var isLowSpaceWarningTarget = this.isLowSpaceWarningTarget_(rootVolume);
+  if (isLowSpaceWarningTarget !==
+      this.isLowSpaceWarningTarget_(previousRootVolume)) {
     if (isLowSpaceWarningTarget) {
       chrome.fileBrowserPrivate.onDirectoryChanged.addListener(
           this.privateOnDirectoryChangedBound_);
@@ -429,26 +439,30 @@ FileListBannerController.prototype.onDirectoryChanged_ = function(event) {
     }
   }
 
-  if (!this.isOnDrive()) {
+  if (!this.isOnCurrentProfileDrive()) {
     this.cleanupWelcomeBanner_();
     this.authFailedBanner_.hidden = true;
   }
 
   this.updateDriveUnmountedPanel_();
-  if (this.isOnDrive()) {
+  if (this.isOnCurrentProfileDrive()) {
     this.unmountedPanel_.classList.remove('retry-enabled');
     this.maybeShowAuthFailBanner_();
   }
 };
 
 /**
- * @param {string} root Root directory to be checked.
+ * @param {VolumeInfo} volumeInfo Volume info to be checked.
  * @return {boolean} true if the file system specified by |root| is a target
  *     to show low space warning. Otherwise false.
  * @private
  */
-FileListBannerController.prototype.isLowSpaceWarningTarget_ = function(root) {
-  return (root == RootDirectory.DOWNLOADS || root == RootDirectory.DRIVE);
+FileListBannerController.prototype.isLowSpaceWarningTarget_ =
+    function(volumeInfo) {
+  return volumeInfo &&
+      volumeInfo.profile.isCurrentProfile &&
+      (volumeInfo.volumeType === util.VolumeType.DOWNLOADS ||
+       volumeInfo.volumeType === util.VolumeType.DRIVE);
 };
 
 /**
@@ -461,47 +475,49 @@ FileListBannerController.prototype.privateOnDirectoryChanged_ = function(
   if (!this.directoryModel_.getCurrentDirEntry())
     return;
 
-  var currentRoot = PathUtil.getTopDirectory(
-      this.directoryModel_.getCurrentDirPath());
-  var eventRoot = PathUtil.getTopDirectory(
-      util.extractFilePath(event.directoryUrl));
-  if (currentRoot == eventRoot) {
+  var currentDirEntry = this.directoryModel_.getCurrentDirEntry();
+  var currentVolume = currentDirEntry &&
+      this.volumeManager_.getVolumeInfo(currentDirEntry);
+  var eventVolume = this.volumeManager_.getVolumeInfo(event.entry);
+  if (currentVolume === eventVolume) {
     // The file system we are currently on is changed.
     // So, check the free space.
-    this.maybeShowLowSpaceWarning_(eventRoot);
+    this.maybeShowLowSpaceWarning_(currentVolume);
   }
 };
 
 /**
  * Shows or hides the low space warning.
- * @param {string} root Root directory of the file system, which we are
- *     interested in.
+ * @param {VolumeInfo} volume Type of volume, which we are interested in.
  * @private
  */
-FileListBannerController.prototype.maybeShowLowSpaceWarning_ = function(root) {
+FileListBannerController.prototype.maybeShowLowSpaceWarning_ = function(
+    volume) {
   // TODO(kaznacheev): Unify the two low space warning.
   var threshold = 0;
-  if (root === RootDirectory.DOWNLOADS) {
-    this.showLowDriveSpaceWarning_(false);
-    threshold = 0.2;
-  } else if (root === RootDirectory.DRIVE) {
-    this.showLowDownloadsSpaceWarning_(false);
-    threshold = 0.1;
-  } else {
-    // If the current file system is neither the DOWNLOAD nor the DRIVE,
-    // just hide the warning.
-    this.showLowDownloadsSpaceWarning_(false);
-    this.showLowDriveSpaceWarning_(false);
-    return;
+  switch (volume.volumeType) {
+    case util.VolumeType.DOWNLOADS:
+      this.showLowDriveSpaceWarning_(false);
+      threshold = 0.2;
+      break;
+    case util.VolumeType.DRIVE:
+      this.showLowDownloadsSpaceWarning_(false);
+      threshold = 0.1;
+      break;
+    default:
+      // If the current file system is neither the DOWNLOAD nor the DRIVE,
+      // just hide the warning.
+      this.showLowDownloadsSpaceWarning_(false);
+      this.showLowDriveSpaceWarning_(false);
+      return;
   }
 
-  var self = this;
   chrome.fileBrowserPrivate.getSizeStats(
-      util.makeFilesystemUrl(root),
+      volume.getDisplayRootDirectoryURL(),
       function(sizeStats) {
-        var currentRoot = PathUtil.getTopDirectory(
-            self.directoryModel_.getCurrentDirPath());
-        if (root != currentRoot) {
+        var currentVolume = this.volumeManager_.getVolumeInfo(
+            this.directoryModel_.getCurrentDirEntry());
+        if (volume !== currentVolume) {
           // This happens when the current directory is moved during requesting
           // the file system size. Just ignore it.
           return;
@@ -512,11 +528,11 @@ FileListBannerController.prototype.maybeShowLowSpaceWarning_ = function(root) {
 
         var remainingRatio = sizeStats.remainingSize / sizeStats.totalSize;
         var isLowDiskSpace = remainingRatio < threshold;
-        if (root == RootDirectory.DOWNLOADS)
-          self.showLowDownloadsSpaceWarning_(isLowDiskSpace);
+        if (volume.volumeType === util.VolumeType.DOWNLOADS)
+          this.showLowDownloadsSpaceWarning_(isLowDiskSpace);
         else
-          self.showLowDriveSpaceWarning_(isLowDiskSpace, sizeStats);
-      });
+          this.showLowDriveSpaceWarning_(isLowDiskSpace, sizeStats);
+      }.bind(this));
 };
 
 /**
@@ -554,7 +570,7 @@ FileListBannerController.prototype.showLowDownloadsSpaceWarning_ =
     var html = util.htmlUnescape(str('DOWNLOADS_DIRECTORY_WARNING'));
     box.innerHTML = html;
     var link = box.querySelector('a');
-    link.href = urlConstants.DOWNLOADS_FAQ_URL;
+    link.href = str('DOWNLOADS_LOW_SPACE_WARNING_HELP_URL');
     link.target = '_blank';
   } else {
     box.innerHTML = '';
@@ -589,7 +605,7 @@ FileListBannerController.prototype.ensureDriveUnmountedPanelInitialized_ =
 
   var learnMore = create(panel, 'a', 'learn-more plain-link',
                          str('DRIVE_LEARN_MORE'));
-  learnMore.href = urlConstants.GOOGLE_DRIVE_ERROR_HELP_URL;
+  learnMore.href = str('GOOGLE_DRIVE_ERROR_HELP_URL');
   learnMore.target = '_blank';
 };
 
@@ -614,8 +630,9 @@ FileListBannerController.prototype.onVolumeInfoListSplice_ = function(event) {
  */
 FileListBannerController.prototype.updateDriveUnmountedPanel_ = function() {
   var node = this.document_.body;
-  if (this.isOnDrive()) {
-    var driveVolume = this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE);
+  if (this.isOnCurrentProfileDrive()) {
+    var driveVolume = this.volumeManager_.getCurrentProfileVolumeInfo(
+        util.VolumeType.DRIVE);
     if (driveVolume && driveVolume.error) {
       this.ensureDriveUnmountedPanelInitialized_();
       this.unmountedPanel_.classList.add('retry-enabled');
@@ -635,13 +652,9 @@ FileListBannerController.prototype.updateDriveUnmountedPanel_ = function() {
  */
 FileListBannerController.prototype.maybeShowAuthFailBanner_ = function() {
   var connection = this.volumeManager_.getDriveConnectionState();
-  var reasons = connection.reasons;
   var showDriveNotReachedMessage =
-      this.isOnDrive() &&
+      this.isOnCurrentProfileDrive() &&
       connection.type == util.DriveConnectionType.OFFLINE &&
-      // Show the banner only when authentication fails. Don't show it when the
-      // drive service is disabled.
-      reasons.indexOf(util.DriveConnectionReason.NOT_READY) != -1 &&
-      reasons.indexOf(util.DriveConnectionReason.NO_SERVICE) == -1;
+      connection.reason == util.DriveConnectionReason.NOT_READY;
   this.authFailedBanner_.hidden = !showDriveNotReachedMessage;
 };

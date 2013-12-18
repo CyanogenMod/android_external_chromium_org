@@ -5,15 +5,13 @@
 package org.chromium.chrome.browser;
 
 import android.app.AlertDialog;
-import android.app.Dialog;
 import android.test.suitebuilder.annotation.MediumTest;
 
 import org.chromium.base.test.util.EnormousTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.chrome.browser.RepostFormWarningDialog;
+import org.chromium.chrome.test.util.TabBaseTabUtils;
 import org.chromium.chrome.test.util.TestHttpServerClient;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.chrome.testshell.TabShellTabUtils;
 import org.chromium.chrome.testshell.TestShellTab;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 
@@ -33,7 +31,7 @@ public class RepostFormWarningTest extends ChromiumTestShellTestBase {
         super.setUp();
 
         mTab = launchChromiumTestShellWithBlankPage().getActiveTab();
-        mCallbackHelper = TabShellTabUtils.getTestCallbackHelperContainer(mTab);
+        mCallbackHelper = TabBaseTabUtils.getTestCallbackHelperContainer(mTab);
 
         // Wait for the initial load of about://blank to finish.
         mCallbackHelper.getOnPageFinishedHelper().waitForCallback(0);

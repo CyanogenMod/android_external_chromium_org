@@ -42,7 +42,6 @@
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -51,6 +50,7 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache_factory.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 
 #if defined(ENABLE_EXTENSIONS)
@@ -118,6 +118,7 @@
 #endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/cloud/policy_header_service_factory.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_invalidator_factory.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #if defined(OS_CHROMEOS)
@@ -204,6 +205,9 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   BackgroundContentsServiceFactory::GetInstance();
 #endif
   BookmarkModelFactory::GetInstance();
+#if !defined(OS_ANDROID)
+  BookmarkUndoServiceFactory::GetInstance();
+#endif
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   captive_portal::CaptivePortalServiceFactory::GetInstance();
 #endif
@@ -221,7 +225,6 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   DownloadServiceFactory::GetInstance();
 #if defined(ENABLE_EXTENSIONS)
   AppShortcutManagerFactory::GetInstance();
-  apps::AppKeepAliveServiceFactory::GetInstance();
   apps::AppLoadServiceFactory::GetInstance();
   apps::AppRestoreServiceFactory::GetInstance();
   apps::ShellWindowGeometryCache::Factory::GetInstance();
@@ -351,6 +354,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   policy::UserCloudPolicyManagerFactory::GetInstance();
   policy::UserPolicySigninServiceFactory::GetInstance();
 #endif
+  policy::PolicyHeaderServiceFactory::GetInstance();
   policy::SchemaRegistryServiceFactory::GetInstance();
   policy::UserCloudPolicyInvalidatorFactory::GetInstance();
 #endif
@@ -379,7 +383,6 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if defined(ENABLE_EXTENSIONS)
   TokenCacheServiceFactory::GetInstance();
 #endif
-  TokenServiceFactory::GetInstance();
   WebDataServiceFactory::GetInstance();
 }
 

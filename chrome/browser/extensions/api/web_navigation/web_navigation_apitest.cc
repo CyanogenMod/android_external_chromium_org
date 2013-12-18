@@ -135,6 +135,10 @@ class TestNavigationListener
     virtual void WillStartRequest(bool* defer) OVERRIDE {
       *defer = true;
     }
+
+    virtual const char* GetNameForLogging() const OVERRIDE {
+      return "TestNavigationListener::Throttle";
+    }
   };
   typedef base::WeakPtr<Throttle> WeakThrottle;
   typedef std::list<WeakThrottle> WeakThrottleList;
@@ -202,7 +206,7 @@ class DelayLoadStartAndExecuteJavascript
 
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
-      const string16& frame_unique_name,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,

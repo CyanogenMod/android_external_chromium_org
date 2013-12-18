@@ -15,6 +15,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/native_theme_delegate.h"
 
@@ -58,7 +59,7 @@ void PaintHelper(LabelButtonBorder* border,
     if (!painter && extra.button.is_focused)
       painter = border->GetPainter(false, GetButtonState(state));
     if (painter)
-      painter->Paint(canvas, rect.size());
+      Painter::PaintPainterAt(canvas, painter, rect);
   }
 }
 
@@ -147,11 +148,6 @@ void LabelButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
     rect.Inset(insets_);
     canvas->FillRect(rect, extra.button.background_color);
   }
-
-  // Draw the Views focus border for the native theme style.
-  if (style() == Button::STYLE_NATIVE_TEXTBUTTON &&
-      view.focus_border() && extra.button.is_focused)
-    view.focus_border()->Paint(view, canvas);
 }
 
 gfx::Insets LabelButtonBorder::GetInsets() const {

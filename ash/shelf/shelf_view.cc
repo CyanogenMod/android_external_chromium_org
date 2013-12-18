@@ -9,9 +9,6 @@
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
 #include "ash/drag_drop/drag_image_view.h"
-#include "ash/launcher/launcher_delegate.h"
-#include "ash/launcher/launcher_item_delegate.h"
-#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/root_window_controller.h"
 #include "ash/scoped_target_root_window.h"
 #include "ash/shelf/alternate_app_list_button.h"
@@ -20,8 +17,12 @@
 #include "ash/shelf/overflow_bubble_view.h"
 #include "ash/shelf/overflow_button.h"
 #include "ash/shelf/shelf_button.h"
+#include "ash/shelf/shelf_delegate.h"
 #include "ash/shelf/shelf_icon_observer.h"
+#include "ash/shelf/shelf_item_delegate.h"
+#include "ash/shelf/shelf_item_delegate_manager.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_menu_model.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_tooltip_manager.h"
 #include "ash/shelf/shelf_widget.h"
@@ -50,7 +51,6 @@
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/focus/focus_search.h"
-#include "ui/views/focus_border.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/widget.h"
@@ -114,16 +114,18 @@ const int kRipOffDistance = 48;
 // The rip off drag and drop proxy image should get scaled by this factor.
 const float kDragAndDropProxyScale = 1.5f;
 
+// The opacity represents that this partially disappeared item will get removed.
+const float kDraggedImageOpacity = 0.5f;
+
 namespace {
 
 // The MenuModelAdapter gets slightly changed to adapt the menu appearance to
 // our requirements.
-class LauncherMenuModelAdapter
-    : public views::MenuModelAdapter {
+class ShelfMenuModelAdapter : public views::MenuModelAdapter {
  public:
-  explicit LauncherMenuModelAdapter(ash::LauncherMenuModel* menu_model);
+  explicit ShelfMenuModelAdapter(ShelfMenuModel* menu_model);
 
-  // Overriding MenuModelAdapter's MenuDelegate implementation.
+  // views::MenuModelAdapter:
   virtual const gfx::Font* GetLabelFont(int command_id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void GetHorizontalIconMargins(int id,
@@ -140,18 +142,17 @@ class LauncherMenuModelAdapter
   virtual bool ShouldReserveSpaceForSubmenuIndicator() const OVERRIDE;
 
  private:
-  ash::LauncherMenuModel* launcher_menu_model_;
+  ShelfMenuModel* menu_model_;
 
-  DISALLOW_COPY_AND_ASSIGN(LauncherMenuModelAdapter);
+  DISALLOW_COPY_AND_ASSIGN(ShelfMenuModelAdapter);
 };
 
-LauncherMenuModelAdapter::LauncherMenuModelAdapter(
-    ash::LauncherMenuModel* menu_model)
+ShelfMenuModelAdapter::ShelfMenuModelAdapter(ShelfMenuModel* menu_model)
     : MenuModelAdapter(menu_model),
-      launcher_menu_model_(menu_model) {}
+      menu_model_(menu_model) {
+}
 
-const gfx::Font* LauncherMenuModelAdapter::GetLabelFont(
-    int command_id) const {
+const gfx::Font* ShelfMenuModelAdapter::GetLabelFont(int command_id) const {
   if (command_id != kCommandIdOfMenuName)
     return MenuModelAdapter::GetLabelFont(command_id);
 
@@ -159,14 +160,13 @@ const gfx::Font* LauncherMenuModelAdapter::GetLabelFont(
   return &rb.GetFont(ui::ResourceBundle::BoldFont);
 }
 
-bool LauncherMenuModelAdapter::IsCommandEnabled(int id) const {
+bool ShelfMenuModelAdapter::IsCommandEnabled(int id) const {
   return id != kCommandIdOfMenuName;
 }
 
-bool LauncherMenuModelAdapter::GetForegroundColor(
-    int command_id,
-    bool is_hovered,
-    SkColor* override_color) const {
+bool ShelfMenuModelAdapter::GetForegroundColor(int command_id,
+                                               bool is_hovered,
+                                               SkColor* override_color) const {
   if (command_id != kCommandIdOfMenuName)
     return false;
 
@@ -174,11 +174,10 @@ bool LauncherMenuModelAdapter::GetForegroundColor(
   return true;
 }
 
-bool LauncherMenuModelAdapter::GetBackgroundColor(
-    int command_id,
-    bool is_hovered,
-    SkColor* override_color) const {
-  if (!launcher_menu_model_->IsCommandActive(command_id))
+bool ShelfMenuModelAdapter::GetBackgroundColor(int command_id,
+                                               bool is_hovered,
+                                               SkColor* override_color) const {
+  if (!menu_model_->IsCommandActive(command_id))
     return false;
 
   *override_color = is_hovered ? kFocusedActiveListItemBackgroundColor :
@@ -186,21 +185,20 @@ bool LauncherMenuModelAdapter::GetBackgroundColor(
   return true;
 }
 
-void LauncherMenuModelAdapter::GetHorizontalIconMargins(
-    int command_id,
-    int icon_size,
-    int* left_margin,
-    int* right_margin) const {
+void ShelfMenuModelAdapter::GetHorizontalIconMargins(int command_id,
+                                                     int icon_size,
+                                                     int* left_margin,
+                                                     int* right_margin) const {
   *left_margin = kHorizontalIconSpacing;
   *right_margin = (command_id != kCommandIdOfMenuName) ?
       kHorizontalIconSpacing : -(icon_size + kHorizontalNoIconInsetSpacing);
 }
 
-int LauncherMenuModelAdapter::GetMaxWidthForMenu(views::MenuItemView* menu) {
+int ShelfMenuModelAdapter::GetMaxWidthForMenu(views::MenuItemView* menu) {
   return kMaximumAppMenuItemLength;
 }
 
-bool LauncherMenuModelAdapter::ShouldReserveSpaceForSubmenuIndicator() const {
+bool ShelfMenuModelAdapter::ShouldReserveSpaceForSubmenuIndicator() const {
   return false;
 }
 
@@ -241,22 +239,6 @@ class LauncherFocusSearch : public views::FocusSearch {
   views::ViewModel* view_model_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherFocusSearch);
-};
-
-class ShelfButtonFocusBorder : public views::FocusBorder {
- public:
-  ShelfButtonFocusBorder() {}
-  virtual ~ShelfButtonFocusBorder() {}
-
- private:
-  // views::FocusBorder overrides:
-  virtual void Paint(const View& view, gfx::Canvas* canvas) const OVERRIDE {
-    gfx::Rect rect(view.GetLocalBounds());
-    rect.Inset(1, 1);
-    canvas->DrawRect(rect, kFocusBorderColor);
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(ShelfButtonFocusBorder);
 };
 
 // AnimationDelegate used when inserting a new item. This steadily increases the
@@ -370,8 +352,8 @@ class ShelfView::StartFadeAnimationDelegate
 };
 
 ShelfView::ShelfView(ShelfModel* model,
-                     LauncherDelegate* delegate,
-                     ShelfLayoutManager* shelf_layout_manager)
+                     ShelfDelegate* delegate,
+                     ShelfLayoutManager* manager)
     : model_(model),
       delegate_(delegate),
       view_model_(new views::ViewModel),
@@ -393,15 +375,17 @@ ShelfView::ShelfView(ShelfModel* model,
       drag_and_drop_launcher_id_(0),
       dragged_off_shelf_(false),
       snap_back_from_rip_off_view_(NULL),
-      item_manager_(Shell::GetInstance()->launcher_item_delegate_manager()),
-      layout_manager_(shelf_layout_manager),
-      overflow_mode_(false) {
+      item_manager_(Shell::GetInstance()->shelf_item_delegate_manager()),
+      layout_manager_(manager),
+      overflow_mode_(false),
+      main_shelf_(NULL),
+      dragged_off_from_overflow_to_shelf_(false) {
   DCHECK(model_);
   bounds_animator_.reset(new views::BoundsAnimator(this));
   bounds_animator_->AddObserver(this);
   set_context_menu_controller(this);
   focus_search_.reset(new LauncherFocusSearch(view_model_.get()));
-  tooltip_.reset(new ShelfTooltipManager(shelf_layout_manager, this));
+  tooltip_.reset(new ShelfTooltipManager(manager, this));
 }
 
 ShelfView::~ShelfView() {
@@ -602,7 +586,11 @@ bool ShelfView::StartDrag(const std::string& app_id,
   // Check if the application is known and pinned - if not, we have to pin it so
   // that we can re-arrange the launcher order accordingly. Note that items have
   // to be pinned to give them the same (order) possibilities as a shortcut.
-  if (!drag_and_drop_launcher_id_ || !delegate_->IsAppPinned(app_id)) {
+  // When an item is dragged from overflow to shelf, IsShowingOverflowBubble()
+  // returns true. At this time, we don't need to pin the item.
+  if (!IsShowingOverflowBubble() &&
+      (!drag_and_drop_launcher_id_ ||
+       !delegate_->IsAppPinned(app_id))) {
     delegate_->PinAppWithID(app_id);
     drag_and_drop_launcher_id_ =
         delegate_->GetLauncherIDForAppID(drag_and_drop_app_id_);
@@ -695,6 +683,27 @@ void ShelfView::LayoutToIdealBounds() {
   overflow_button_->SetBoundsRect(ideal_bounds.overflow_bounds);
 }
 
+void ShelfView::UpdateAllButtonsVisibilityInOverflowMode() {
+  // The overflow button is not shown in overflow mode.
+  overflow_button_->SetVisible(false);
+  int last_button_index = model_->FirstPanelIndex() - 1;
+  DCHECK_LT(last_visible_index_, view_model_->view_size());
+  for (int i = 0; i < view_model_->view_size(); ++i) {
+    bool visible = i >= first_visible_index_ &&
+        i <= last_visible_index_;
+    if (!ash::switches::UseAlternateShelfLayout())
+      visible &= i != last_button_index;
+
+    // To track the dragging of |drag_view_| continuously, its visibility
+    // should be always true regardless of its position.
+    if (dragged_off_from_overflow_to_shelf_ &&
+        view_model_->view_at(i) == drag_view_)
+      view_model_->view_at(i)->SetVisible(true);
+    else
+      view_model_->view_at(i)->SetVisible(visible);
+  }
+}
+
 void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
   int available_size = layout_manager_->PrimaryAxisValue(width(), height());
   DCHECK(model_->item_count() == view_model_->view_size());
@@ -730,16 +739,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
   }
 
   if (is_overflow_mode()) {
-    // The overflow button is not shown in overflow mode.
-    overflow_button_->SetVisible(false);
-    DCHECK_LT(last_visible_index_, view_model_->view_size());
-    for (int i = 0; i < view_model_->view_size(); ++i) {
-      bool visible = i >= first_visible_index_ &&
-          i <= last_visible_index_;
-      if (!ash::switches::UseAlternateShelfLayout())
-        visible &= i != last_button_index;
-      view_model_->view_at(i)->SetVisible(visible);
-    }
+    UpdateAllButtonsVisibilityInOverflowMode();
     return;
   }
 
@@ -952,7 +952,6 @@ views::View* ShelfView::CreateViewForItem(const LauncherItem& item) {
       break;
   }
   view->set_context_menu_controller(this);
-  view->set_focus_border(new ShelfButtonFocusBorder);
 
   DCHECK(view);
   ConfigureChildView(view);
@@ -979,7 +978,7 @@ void ShelfView::PrepareForDrag(Pointer pointer, const ui::LocatedEvent& event) {
   }
 
   // If the item is no longer draggable, bail out.
-  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+  ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[start_drag_index_].id);
   if (!item_delegate->IsDraggable()) {
     CancelDrag(-1);
@@ -997,7 +996,7 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
   int current_index = view_model_->GetIndexOfView(drag_view_);
   DCHECK_NE(-1, current_index);
 
-  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+  ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[current_index].id);
   if (!item_delegate->IsDraggable()) {
     CancelDrag(-1);
@@ -1069,6 +1068,8 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
 bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
   int current_index = view_model_->GetIndexOfView(drag_view_);
   DCHECK_NE(-1, current_index);
+  std::string dragged_app_id =
+      delegate_->GetAppIDForLauncherID(model_->items()[current_index].id);
 
   gfx::Point screen_location = event.root_location();
   ash::wm::ConvertPointToScreen(GetWidget()->GetNativeWindow()->GetRootWindow(),
@@ -1080,17 +1081,47 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
     // If the shelf/overflow bubble bounds contains |screen_location| we insert
     // the item back into the shelf.
     if (GetBoundsForDragInsertInScreen().Contains(screen_location)) {
+      if (dragged_off_from_overflow_to_shelf_) {
+        // During the dragging an item from Shelf to Overflow, it can enter here
+        // directly because both are located very closly.
+        main_shelf_->EndDrag(true);
+        // Stops the animation of |drag_view_| and sets its bounds explicitly
+        // becase ContinueDrag() stops its animation. Without this, unexpected
+        // bounds will be set.
+        bounds_animator_->StopAnimatingView(drag_view_);
+        int drag_view_index = view_model_->GetIndexOfView(drag_view_);
+        drag_view_->SetBoundsRect(view_model_->ideal_bounds(drag_view_index));
+        dragged_off_from_overflow_to_shelf_ = false;
+      }
       // Destroy our proxy view item.
       DestroyDragIconProxy();
       // Re-insert the item and return simply false since the caller will handle
       // the move as in any normal case.
       dragged_off_shelf_ = false;
       drag_view_->layer()->SetOpacity(1.0f);
-      // Overflow bubble should be enlarged immediately when an item is
-      // re-inserted.
+      // The size of Overflow bubble should be updated immediately when an item
+      // is re-inserted.
       if (is_overflow_mode())
         PreferredSizeChanged();
       return false;
+    } else if (is_overflow_mode() &&
+               main_shelf_->GetBoundsForDragInsertInScreen().Contains(
+                   screen_location)) {
+      if (!dragged_off_from_overflow_to_shelf_) {
+        dragged_off_from_overflow_to_shelf_ = true;
+        drag_image_->SetOpacity(1.0f);
+        main_shelf_->StartDrag(dragged_app_id, screen_location);
+      } else {
+        main_shelf_->Drag(screen_location);
+      }
+    } else if (dragged_off_from_overflow_to_shelf_) {
+      // Makes the |drag_image_| partially disappear again.
+      dragged_off_from_overflow_to_shelf_ = false;
+      drag_image_->SetOpacity(kDraggedImageOpacity);
+      main_shelf_->EndDrag(true);
+      bounds_animator_->StopAnimatingView(drag_view_);
+      int drag_view_index = view_model_->GetIndexOfView(drag_view_);
+      drag_view_->SetBoundsRect(view_model_->ideal_bounds(drag_view_index));
     }
     // Move our proxy view item.
     UpdateDragIconProxy(screen_location);
@@ -1122,7 +1153,7 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
       }
       // Make the item partially disappear to show that it will get removed if
       // dropped.
-      drag_image_->SetOpacity(0.5f);
+      drag_image_->SetOpacity(kDraggedImageOpacity);
     }
     return true;
   }
@@ -1150,9 +1181,13 @@ void ShelfView::FinalizeRipOffDrag(bool cancel) {
   bool snap_back = false;
   // Items which cannot be dragged off will be handled as a cancel.
   if (!cancel) {
-    // Make sure we do not try to remove un-removable items like items which
-    // were not pinned or have to be always there.
-    if (RemovableByRipOff(current_index) != REMOVABLE) {
+    if (dragged_off_from_overflow_to_shelf_) {
+      dragged_off_from_overflow_to_shelf_ = false;
+      main_shelf_->EndDrag(false);
+      drag_view_->layer()->SetOpacity(1.0f);
+    } else if (RemovableByRipOff(current_index) != REMOVABLE) {
+      // Make sure we do not try to remove un-removable items like items which
+      // were not pinned or have to be always there.
       cancel = true;
       snap_back = true;
     } else {
@@ -1164,7 +1199,12 @@ void ShelfView::FinalizeRipOffDrag(bool cancel) {
     }
   }
   if (cancel || snap_back) {
-    if (!cancelling_drag_model_changed_) {
+    if (dragged_off_from_overflow_to_shelf_) {
+      dragged_off_from_overflow_to_shelf_ = false;
+      // Main shelf handles revert of dragged item.
+      main_shelf_->EndDrag(true);
+      drag_view_->layer()->SetOpacity(1.0f);
+    } else if (!cancelling_drag_model_changed_) {
       // Only do something if the change did not come through a model change.
       gfx::Rect drag_bounds = drag_image_->GetBoundsInScreen();
       gfx::Point relative_to = GetBoundsInScreen().origin();
@@ -1253,6 +1293,7 @@ void ShelfView::ToggleOverflowBubble() {
   overflow_view->Init();
   overflow_view->set_owner_overflow_bubble(overflow_bubble_.get());
   overflow_view->OnShelfAlignmentChanged();
+  overflow_view->main_shelf_ = this;
   UpdateOverflowRange(overflow_view);
 
   overflow_bubble_->Show(overflow_button_, overflow_view);
@@ -1421,7 +1462,11 @@ gfx::Size ShelfView::GetPreferredSize() {
   // When an item is dragged off from the overflow bubble, it is moved to last
   // position and and changed to invisible. Overflow bubble size should be
   // shrunk to fit only for visible items.
-  if (is_overflow_mode() && dragged_off_shelf_ &&
+  // If |dragged_off_from_overflow_to_shelf_| is set, there will be no invisible
+  // items in the shelf.
+  if (is_overflow_mode() &&
+      dragged_off_shelf_ &&
+      !dragged_off_from_overflow_to_shelf_ &&
       RemovableByRipOff(view_model_->GetIndexOfView(drag_view_)) == REMOVABLE)
     last_button_index--;
 
@@ -1614,7 +1659,7 @@ void ShelfView::PointerPressedOnButton(views::View* view,
   if (index == -1)
     return;
 
-  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+  ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[index].id);
   if (view_model_->view_size() <= 1 || !item_delegate->IsDraggable())
     return;  // View is being deleted or not draggable, ignore request.
@@ -1690,7 +1735,7 @@ base::string16 ShelfView::GetAccessibleName(const views::View* view) {
   if (view_index == -1)
     return base::string16();
 
-  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+  ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[view_index].id);
   return item_delegate->GetTitle();
 }
@@ -1748,9 +1793,8 @@ void ShelfView::ButtonPressed(views::Button* sender, const ui::Event& event) {
         break;
     }
 
-    LauncherItemDelegate* item_delegate =
-        item_manager_->GetLauncherItemDelegate(
-            model_->items()[view_index].id);
+    ShelfItemDelegate* item_delegate =
+        item_manager_->GetShelfItemDelegate(model_->items()[view_index].id);
     if (!item_delegate->ItemSelected(event))
       ShowListMenuForView(model_->items()[view_index], sender, event);
   }
@@ -1759,9 +1803,9 @@ void ShelfView::ButtonPressed(views::Button* sender, const ui::Event& event) {
 bool ShelfView::ShowListMenuForView(const LauncherItem& item,
                                     views::View* source,
                                     const ui::Event& event) {
-  scoped_ptr<ash::LauncherMenuModel> menu_model;
-  LauncherItemDelegate* item_delegate =
-      item_manager_->GetLauncherItemDelegate(item.id);
+  scoped_ptr<ShelfMenuModel> menu_model;
+  ShelfItemDelegate* item_delegate =
+      item_manager_->GetShelfItemDelegate(item.id);
   menu_model.reset(item_delegate->CreateApplicationMenu(event.flags()));
 
   // Make sure we have a menu and it has at least two items in addition to the
@@ -1770,7 +1814,7 @@ bool ShelfView::ShowListMenuForView(const LauncherItem& item,
     return false;
 
   ShowMenu(scoped_ptr<views::MenuModelAdapter>(
-               new LauncherMenuModelAdapter(menu_model.get())),
+               new ShelfMenuModelAdapter(menu_model.get())),
            source,
            gfx::Point(),
            false,
@@ -1783,9 +1827,8 @@ void ShelfView::ShowContextMenuForView(views::View* source,
                                        ui::MenuSourceType source_type) {
   int view_index = view_model_->GetIndexOfView(source);
   // TODO(simon.hong81): Create LauncherContextMenu for applist in its
-  // LauncherItemDelegate.
-  if (view_index != -1 &&
-      model_->items()[view_index].type == TYPE_APP_LIST) {
+  // ShelfItemDelegate.
+  if (view_index != -1 && model_->items()[view_index].type == TYPE_APP_LIST) {
     view_index = -1;
   }
 
@@ -1794,7 +1837,7 @@ void ShelfView::ShowContextMenuForView(views::View* source,
     return;
   }
   scoped_ptr<ui::MenuModel> menu_model;
-  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+  ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[view_index].id);
   menu_model.reset(item_delegate->CreateContextMenu(
       source->GetWidget()->GetNativeView()->GetRootWindow()));
@@ -1955,8 +1998,8 @@ bool ShelfView::ShouldShowTooltipForView(const views::View* view) const {
   const LauncherItem* item = LauncherItemForView(view);
   if (!item)
     return true;
-  LauncherItemDelegate* item_delegate =
-      item_manager_->GetLauncherItemDelegate(item->id);
+  ShelfItemDelegate* item_delegate =
+      item_manager_->GetShelfItemDelegate(item->id);
   return item_delegate->ShouldShowTooltip();
 }
 

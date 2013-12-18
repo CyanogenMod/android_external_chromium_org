@@ -107,6 +107,12 @@
             ['embedded==1', {
               'use_ozone%': 1,
             }],
+
+            ['OS=="android"', {
+              'android_goma_dir%': '<!(echo "${GOMA_DIR}")',
+            }, {
+              'android_goma_dir%': ''
+            }],
           ],
         },
         # Copy conditionally-set variables out one scope.
@@ -140,6 +146,12 @@
 
         # Set ARM architecture version.
         'arm_version%': 7,
+
+        # goma settings.
+        # 1 to use goma.
+        # If no gomadir is set, it uses the default gomadir.
+        'use_goma%': 0,
+        'gomadir%': '',
 
         'conditions': [
           # Ash needs Aura.
@@ -196,7 +208,19 @@
             'use_ozone_evdev%': 1,
           }, {
             'use_ozone_evdev%': 0,
-          }]
+          }],
+
+          # Set default gomadir.
+          ['OS=="win"', {
+            'gomadir': 'c:\\goma\\goma-win',
+          }],
+          ['android_goma_dir!=""', {
+            'use_goma': 1,
+            'gomadir': '<(android_goma_dir)',
+          }],
+          ['OS!="win" and android_goma_dir==""', {
+            'gomadir': '<!(/bin/echo -n ${HOME}/goma)',
+          }],
         ],
       },
 
@@ -219,6 +243,8 @@
       'enable_touch_ui%': '<(enable_touch_ui)',
       'android_webview_build%': '<(android_webview_build)',
       'google_tv%': '<(google_tv)',
+      'use_goma%': '<(use_goma)',
+      'gomadir%': '<(gomadir)',
       'enable_app_list%': '<(enable_app_list)',
       'use_default_render_theme%': '<(use_default_render_theme)',
       'buildtype%': '<(buildtype)',
@@ -493,6 +519,8 @@
         }],
 
         # Set armv7 for backward compatibility.
+        # TODO(mostynb@opera.com): remove armv7 once all uses are
+        # removed http://crbug.com/234135
         ['arm_version==7', {
           'armv7': 1,
         }, {
@@ -590,15 +618,7 @@
           'arm_neon_optional%': 1,
           'native_discardable_memory%': 1,
           'native_memory_pressure_signals%': 1,
-        }],
-
-        # Enable basic printing for Chrome for Android but disable printing
-        # completely for WebView.
-        ['OS=="android" and android_webview_build==0', {
           'enable_printing%': 2,
-        }],
-        ['OS=="android" and android_webview_build==1', {
-          'enable_printing%': 0,
         }],
 
         # Android OS includes support for proprietary codecs regardless of
@@ -766,11 +786,13 @@
         }, {
           'test_isolation_mode%': 'noop',
         }],
-        # Whether Android ARM build uses OpenMAX DL FFT.
-        ['OS=="android" and target_arch=="arm" and android_webview_build==0', {
-          # Currently only supported on Android ARM, without webview.
-          # When enabled, this will also enable WebAudio on Android
-          # ARM.  Default is enabled.
+        # Whether Android ARM or x86 build uses OpenMAX DL FFT.
+        ['OS=="android" and ((target_arch=="arm" and arm_version >= 7) or target_arch=="ia32") and android_webview_build==0', {
+          # Currently only supported on Android ARMv7+, or ia32
+          # without webview.  When enabled, this will also enable
+          # WebAudio support on Android ARM and ia32.  Default is
+          # enabled.  Whether WebAudio is actually available depends
+          # on runtime settings and flags.
           'use_openmax_dl_fft%': 1,
         }, {
           'use_openmax_dl_fft%': 0,
@@ -958,6 +980,8 @@
     'enable_enhanced_bookmarks%' : '<(enable_enhanced_bookmarks)',
     'v8_optimized_debug%': '<(v8_optimized_debug)',
     'proprietary_codecs%': '<(proprietary_codecs)',
+    'use_goma%': '<(use_goma)',
+    'gomadir%': '<(gomadir)',
 
     # Use system nspr instead of the bundled one.
     'use_system_nspr%': 0,
@@ -1002,6 +1026,9 @@
     # separated with whitespace and/or comma. Only has effect if
     # 'emma_coverage=1'.
     'emma_filter%': '',
+
+    # Set to 1 to enable running Android lint on java/class files.
+    'android_lint%': 0,
 
     # Set to 1 to force Visual C++ to use legacy debug information format /Z7.
     # This is useful for parallel compilation tools which can't support /Zi.
@@ -1075,8 +1102,6 @@
     # Profile without optimizing out stack frames when profiling==1.
     'profiling_full_stack_frames%': '0',
 
-    # Enable strict glibc debug mode.
-    'glibcxx_debug%': 0,
     # And if we want to dump symbols for Breakpad-enabled builds.
     'linux_dump_symbols%': 0,
     # And if we want to strip the binary after dumping symbols.
@@ -1216,6 +1241,13 @@
 
     # Relative path to icu.gyp from this file.
     'icu_gyp_path': '../third_party/icu/icu.gyp',
+
+    # IPC fuzzer is disabled by default.
+    'enable_ipc_fuzzer%': 0,
+
+    # Whether or not to use "icu*.dat" file for ICU data.
+    # Do not use it by default.
+    'icu_use_data_file_flag%': 0,
 
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
@@ -1450,7 +1482,7 @@
           ['(branding=="Chrome" and buildtype=="Official")', {
             'mac_strip_release%': 1,
           }],
-        ], 
+        ],
       }],  # OS=="mac"
       ['OS=="mac" or OS=="ios"', {
         'variables': {
@@ -1649,6 +1681,11 @@
       ['use_titlecase_in_grd_files==1', {
         'grit_defines': ['-D', 'use_titlecase'],
       }],
+      ['OS=="android" and target_arch=="ia32"', {
+        # WebAudio on Android/x86 is disabled by default, unlike
+        # everywhere else, so use appropriate message.
+        'grit_defines': ['-D', 'use_webaudio_enable_message'],
+      }],
       ['use_third_party_translations==1', {
         'grit_defines': ['-D', 'use_third_party_translations'],
         'locales': [
@@ -1685,6 +1722,10 @@
       }],
       ['enable_extensions==1', {
         'grit_defines': ['-D', 'enable_extensions'],
+      }],
+      ['enable_plugins!=0', {
+
+        'grit_defines': ['-D', 'enable_plugins'],
       }],
       ['enable_printing!=0', {
         'grit_defines': ['-D', 'enable_printing'],
@@ -1813,14 +1854,6 @@
       }],
 
       # Set default compiler flags depending on ARM version.
-      ['arm_version==5 and android_webview_build==0', {
-        # Flags suitable for Android emulator
-        'arm_arch%': 'armv5te',
-        'arm_tune%': 'xscale',
-        'arm_fpu%': '',
-        'arm_float_abi%': 'soft',
-        'arm_thumb%': 0,
-      }],
       ['arm_version==6 and android_webview_build==0', {
         'arm_arch%': 'armv6',
         'arm_tune%': '',
@@ -1867,6 +1900,16 @@
       }, {  # use_ozone==0
         'ozone_platform_dri%': 0,
         'ozone_platform_test%': 0,
+      }],
+      ['OS=="win" and use_goma==1', {
+        # goma doesn't support pch yet.
+        'chromium_win_pch': 0,
+        # goma doesn't support PDB yet, so win_z7=1 or fastbuild=1.
+        'conditions': [
+          ['fastbuild==0', {
+            'win_z7': 1,
+          }],
+        ],
       }],
     ],
 
@@ -2002,6 +2045,9 @@
       # Set this to use the new DX11 version of ANGLE.
       # TODO(apatrick): Remove this when the transition is complete.
       'ANGLE_DX11',
+
+      # Don't use deprecated V8 APIs anywhere.
+      'V8_DEPRECATION_WARNINGS',
     ],
     'conditions': [
       ['(OS=="mac" or OS=="ios") and asan==1', {
@@ -2113,10 +2159,6 @@
       ['profiling==1', {
         'defines': ['ENABLE_PROFILING=1'],
       }],
-      ['OS=="linux" and glibcxx_debug==1', {
-        'defines': ['_GLIBCXX_DEBUG=1',],
-        'cflags_cc+': ['-g'],
-      }],
       ['remoting==1', {
         'defines': ['ENABLE_REMOTING=1'],
       }],
@@ -2152,6 +2194,17 @@
       }],
       ['use_udev==1', {
         'defines': ['USE_UDEV'],
+      }],
+      ['icu_use_data_file_flag==1', {
+        'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE'],
+      }, { # else icu_use_data_file_flag !=1
+        'conditions': [
+          ['OS=="win"', {
+            'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_SHARED'],
+          }, {
+            'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC'],
+          }],
+        ],
       }],
       ['fastbuild!=0', {
         'xcode_settings': {
@@ -2395,7 +2448,10 @@
       }],
       ['enable_enhanced_bookmarks==1', {
         'defines': ['ENABLE_ENHANCED_BOOKMARKS=1'],
-      }]
+      }],
+      ['enable_ipc_fuzzer==1', {
+        'defines': ['ENABLE_IPC_FUZZER=1'],
+      }],
     ],  # conditions for 'target_defaults'
     'target_conditions': [
       ['enable_wexit_time_destructors==1', {
@@ -2431,8 +2487,7 @@
               '-Wno-format',
             ],
             'cflags_cc!': [
-              # TODO(fischman): remove this.
-              # http://code.google.com/p/chromium/issues/detail?id=90453
+              # Necessary because llvm.org/PR10448 is WONTFIX (crbug.com/90453).
               '-Wsign-compare',
             ]
           }],
@@ -2567,6 +2622,8 @@
               'odbc32.lib',
               'odbccp32.lib',
               'delayimp.lib',
+              'credui.lib',
+              'netapi32.lib',
             ],
           },
         },
@@ -2679,6 +2736,12 @@
                 ],
               }],
             ],
+          }],
+          ['OS=="linux" and target_arch!="ia32"', {
+            # Enable libstdc++ debugging facilities to help catch problems
+            # early, see http://crbug.com/65151 .
+            # TODO(phajdan.jr): Should we enable this for all of POSIX?
+            'defines': ['_GLIBCXX_DEBUG=1',],
           }],
           # Disabled on iOS because it was causing a crash on startup.
           # TODO(michelea): investigate, create a reduced test and possibly
@@ -2879,9 +2942,7 @@
           # Surprisingly, not covered by -fvisibility=hidden.
           '-fvisibility-inlines-hidden',
           # GCC turns on -Wsign-compare for C++ under -Wall, but clang doesn't,
-          # so we specify it explicitly.
-          # TODO(fischman): remove this if http://llvm.org/PR10448 obsoletes it.
-          # http://code.google.com/p/chromium/issues/detail?id=90453
+          # so we specify it explicitly.  (llvm.org/PR10448, crbug.com/90453)
           '-Wsign-compare',
         ],
         'ldflags': [
@@ -3271,9 +3332,6 @@
               # code generated by flex (used in angle) contains that keyword.
               # http://crbug.com/255186
               '-Wno-deprecated-register',
-
-              # This warns about auto_ptr<>, used in third-party code.
-              '-Wno-deprecated-declarations',
             ],
             'cflags!': [
               # Clang doesn't seem to know know this flag.
@@ -3443,6 +3501,16 @@
                     'ldflags': [
                       # Add RPATH to result binary to make it linking instrumented libraries ($ORIGIN means relative RPATH)
                       '-Wl,-R,\$$ORIGIN/instrumented_libraries/asan/lib/:\$$ORIGIN/instrumented_libraries/asan/usr/lib/x86_64-linux-gnu/',
+                      '-Wl,-z,origin',
+                    ],
+                  }],
+                ],
+              }],
+              ['msan==1', {
+                'target_conditions': [
+                  ['_toolset=="target"', {
+                    'ldflags': [
+                      '-Wl,-R,\$$ORIGIN/instrumented_libraries/msan/lib/:\$$ORIGIN/instrumented_libraries/msan/usr/lib/x86_64-linux-gnu/',
                       '-Wl,-z,origin',
                     ],
                   }],
@@ -3995,9 +4063,6 @@
                 # code generated by flex (used in angle) contains that keyword.
                 # http://crbug.com/255186
                 '-Wno-deprecated-register',
-
-                # This warns about auto_ptr<>, used in third-party code.
-                '-Wno-deprecated-declarations',
               ],
             }],
             ['clang==1 and clang_use_chrome_plugins==1', {
@@ -4641,33 +4706,21 @@
       },
     }],
     ['clang==1', {
-      'conditions': [
-        ['OS=="android"', {
-          # Android could use the goma with clang.
-          'make_global_settings': [
-            ['CC', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang)'],
-            ['CXX', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang++)'],
-            ['CC.host', '$(CC)'],
-            ['CXX.host', '$(CXX)'],
-          ],
-        }, {
-          'make_global_settings': [
-            ['CC', '<(make_clang_dir)/bin/clang'],
-            ['CXX', '<(make_clang_dir)/bin/clang++'],
-            ['CC.host', '$(CC)'],
-            ['CXX.host', '$(CXX)'],
-          ],
-        }],
+      'make_global_settings': [
+        ['CC', '<(make_clang_dir)/bin/clang'],
+        ['CXX', '<(make_clang_dir)/bin/clang++'],
+        ['CC.host', '$(CC)'],
+        ['CXX.host', '$(CXX)'],
       ],
     }],
     ['OS=="android" and clang==0', {
       # Hardcode the compiler names in the Makefile so that
       # it won't depend on the environment at make time.
       'make_global_settings': [
-        ['CC', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <(android_toolchain)/*-gcc)'],
-        ['CXX', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <(android_toolchain)/*-g++)'],
-        ['CC.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <!(which gcc))'],
-        ['CXX.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <!(which g++))'],
+        ['CC', '<!(/bin/echo -n <(android_toolchain)/*-gcc)'],
+        ['CXX', '<!(/bin/echo -n <(android_toolchain)/*-g++)'],
+        ['CC.host', '<!(which gcc)'],
+        ['CXX.host', '<!(which g++)'],
       ],
     }],
     ['OS=="linux" and target_arch=="mipsel"', {
@@ -4676,6 +4729,18 @@
         ['CXX', '<(sysroot)/../bin/mipsel-linux-gnu-g++'],
         ['CC.host', '<!(which gcc)'],
         ['CXX.host', '<!(which g++)'],
+      ],
+    }],
+
+    # TODO(yyanagisawa): supports GENERATOR==make
+    #  make generator doesn't support CC_wrapper without CC
+    #  in make_global_settings yet.
+    ['use_goma==1 and ("<(GENERATOR)"=="ninja" or clang==1)', {
+      'make_global_settings': [
+       ['CC_wrapper', '<(gomadir)/gomacc'],
+       ['CXX_wrapper', '<(gomadir)/gomacc'],
+       ['CC.host_wrapper', '<(gomadir)/gomacc'],
+       ['CXX.host_wrapper', '<(gomadir)/gomacc'],
       ],
     }],
   ],

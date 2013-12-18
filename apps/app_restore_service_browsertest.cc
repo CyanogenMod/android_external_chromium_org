@@ -10,6 +10,7 @@
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/common/extension.h"
@@ -62,8 +63,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, FileAccessIsSavedToPrefs) {
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_directory.path(),
-                                                  &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_directory.path(),
+                                             &temp_file));
 
   FileSystemChooseEntryFunction::SkipPickerAndAlwaysSelectPathForTest(
       &temp_file);
@@ -107,8 +108,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_FileAccessIsRestored) {
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_directory.path(),
-                                                  &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_directory.path(),
+                                             &temp_file));
 
   FileSystemChooseEntryFunction::SkipPickerAndAlwaysSelectPathForTest(
       &temp_file);

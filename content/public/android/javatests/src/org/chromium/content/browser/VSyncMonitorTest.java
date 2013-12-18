@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,17 @@ package org.chromium.content.browser;
 import android.content.Context;
 import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.MediumTest;
-import java.util.Arrays;
-import java.util.concurrent.Callable;
 
 import org.chromium.base.ThreadUtils;
+
+import java.util.Arrays;
+import java.util.concurrent.Callable;
 
 public class VSyncMonitorTest extends InstrumentationTestCase {
     private static class VSyncDataCollector implements VSyncMonitor.Listener {
         public long mFramePeriods[];
         public int mFrameCount;
+        public long mLastVSyncCpuTimeMillis;
 
         private final boolean mActivelyRequestUpdate;
         private boolean mDone;
@@ -35,6 +37,7 @@ public class VSyncMonitorTest extends InstrumentationTestCase {
 
         @Override
         public void onVSync(VSyncMonitor monitor, long vsyncTimeMicros) {
+            mLastVSyncCpuTimeMillis = System.currentTimeMillis();
             if (mPreviousVSyncTimeMicros == 0) {
                 mPreviousVSyncTimeMicros = vsyncTimeMicros;
                 return;
@@ -117,5 +120,32 @@ public class VSyncMonitorTest extends InstrumentationTestCase {
     @MediumTest
     public void testVSyncPeriodDisallowJBVSync() throws InterruptedException {
         performVSyncPeriodTest(false);
+    }
+
+    // Check that the vsync period roughly matches the timestamps that the monitor generates.
+    private void performVSyncActivationFromIdle(boolean enableJBVSync) throws InterruptedException {
+        VSyncDataCollector collector = new VSyncDataCollector(1, false);
+        VSyncMonitor monitor = createVSyncMonitor(collector, enableJBVSync);
+
+        monitor.requestUpdate();
+        collector.waitTillDone();
+        assertTrue(collector.isDone());
+        monitor.stop();
+
+        long period = monitor.getVSyncPeriodInMicroseconds() / 1000;
+        long delay = System.currentTimeMillis() - collector.mLastVSyncCpuTimeMillis;
+
+        // The VSync should have activated immediately instead of at the next real vsync.
+        assertTrue(delay < period);
+    }
+
+    @MediumTest
+    public void testVSyncActivationFromIdleAllowJBVSync() throws InterruptedException {
+        performVSyncActivationFromIdle(true);
+    }
+
+    @MediumTest
+    public void testVSyncActivationFromIdleDisallowJBVSync() throws InterruptedException {
+        performVSyncActivationFromIdle(false);
     }
 }

@@ -14,8 +14,10 @@ namespace content {
 
 MediaStreamDispatcherHost::MediaStreamDispatcherHost(
     int render_process_id,
+    ResourceContext* resource_context,
     MediaStreamManager* media_stream_manager)
     : render_process_id_(render_process_id),
+      resource_context_(resource_context),
       media_stream_manager_(media_stream_manager) {
 }
 
@@ -70,7 +72,7 @@ void MediaStreamDispatcherHost::DevicesEnumerated(
   StreamRequest request = it->second;
 
   Send(new MediaStreamMsg_DevicesEnumerated(
-      request.render_view_id, request.page_request_id, label, devices));
+      request.render_view_id, request.page_request_id, devices));
 }
 
 void MediaStreamDispatcherHost::DeviceOpened(
@@ -79,16 +81,6 @@ void MediaStreamDispatcherHost::DeviceOpened(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << "MediaStreamDispatcherHost::DeviceOpened("
            << ", {label = " << label <<  "})";
-
-  // TODO(perkj): Checking for StreamRequest here is a temporary fix to avoid
-  // an Assert in PopRequest. Remove this once the real problem is solved.
-  // crbug/316396.
-  StreamMap::iterator it = streams_.find(label);
-  DCHECK(it != streams_.end());
-  if (it == streams_.end()) {
-    LOG(ERROR) << "DeviceOpened but there is no request for the device.";
-    return;
-  }
 
   StreamRequest request = PopRequest(label);
 
@@ -145,14 +137,11 @@ void MediaStreamDispatcherHost::OnGenerateStream(
            << security_origin.spec() << ")";
 
   const std::string& label = media_stream_manager_->GenerateStream(
-      this, render_process_id_, render_view_id, page_request_id,
+      this, render_process_id_, render_view_id, resource_context_,
+      page_request_id,
       components, security_origin);
-  if (label.empty()) {
-    Send(new MediaStreamMsg_StreamGenerationFailed(render_view_id,
-                                                   page_request_id));
-  } else {
-    StoreRequest(render_view_id, page_request_id, label);
-  }
+  CHECK(!label.empty());
+  StoreRequest(render_view_id, page_request_id, label);
 }
 
 void MediaStreamDispatcherHost::OnCancelGenerateStream(int render_view_id,
@@ -194,25 +183,20 @@ void MediaStreamDispatcherHost::OnEnumerateDevices(
            << security_origin.spec() << ")";
 
   const std::string& label = media_stream_manager_->EnumerateDevices(
-      this, render_process_id_, render_view_id, page_request_id,
-      type, security_origin);
+      this, render_process_id_, render_view_id, resource_context_,
+      page_request_id, type, security_origin);
   StoreRequest(render_view_id, page_request_id, label);
 }
 
 void MediaStreamDispatcherHost::OnCancelEnumerateDevices(
     int render_view_id,
-    const std::string& label) {
+    int page_request_id) {
   DVLOG(1) << "MediaStreamDispatcherHost::OnCancelEnumerateDevices("
            << render_view_id << ", "
-           << label << ")";
+           << page_request_id << ")";
 
-  if (streams_.find(label) == streams_.end()) {
-    // According to the comments in MediaStreamDispatcher::OnDevicesEnumerated,
-    // OnCancelEnumerateDevices can be called several times with the same label.
-    DVLOG(1) << "Enumeration request with label " << label
-             << "does not exist.";
-    return;
-  }
+  std::string label;
+  GetRequestLabel(render_view_id, page_request_id, &label);
   media_stream_manager_->CancelRequest(label);
   PopRequest(label);
 }
@@ -231,8 +215,8 @@ void MediaStreamDispatcherHost::OnOpenDevice(
            << security_origin.spec() << ")";
 
   const std::string& label = media_stream_manager_->OpenDevice(
-      this, render_process_id_, render_view_id, page_request_id,
-      device_id, type, security_origin);
+      this, render_process_id_, render_view_id, resource_context_,
+      page_request_id, device_id, type, security_origin);
   StoreRequest(render_view_id, page_request_id, label);
 }
 
@@ -262,6 +246,19 @@ MediaStreamDispatcherHost::PopRequest(const std::string& label) {
   StreamRequest request = it->second;
   streams_.erase(it);
   return request;
+}
+
+void MediaStreamDispatcherHost::GetRequestLabel(
+    int render_view_id, int page_request_id, std::string* label) {
+  for (StreamMap::const_iterator it = streams_.begin(); it != streams_.end();
+       ++it) {
+    if (it->second.render_view_id == render_view_id &&
+        it->second.page_request_id == page_request_id) {
+      *label = it->first;
+      return;
+    }
+  }
+  NOTREACHED();
 }
 
 }  // namespace content

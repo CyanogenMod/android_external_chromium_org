@@ -25,6 +25,12 @@ class SkBitmap;
 
 namespace blink { class WebGraphicsContext3D; }
 
+namespace gpu {
+namespace gles2 {
+class GLES2Interface;
+}
+}
+
 namespace cc {
 
 class GLRendererShaderTest;
@@ -46,16 +52,13 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       OutputSurface* output_surface,
       ResourceProvider* resource_provider,
       TextureMailboxDeleter* texture_mailbox_deleter,
-      int highp_threshold_min,
-      bool use_skia_gpu_backend);
+      int highp_threshold_min);
 
   virtual ~GLRenderer();
 
   virtual const RendererCapabilities& Capabilities() const OVERRIDE;
 
   blink::WebGraphicsContext3D* Context();
-
-  virtual void ViewportChanged() OVERRIDE;
 
   // Waits for rendering to finish.
   virtual void Finish() OVERRIDE;
@@ -73,12 +76,10 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE;
 
-  static void DebugGLCall(blink::WebGraphicsContext3D* context,
+  static void DebugGLCall(gpu::gles2::GLES2Interface* gl,
                           const char* command,
                           const char* file,
                           int line);
-
-  bool CanUseSkiaGPUBackend() const;
 
  protected:
   GLRenderer(RendererClient* client,
@@ -89,7 +90,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
              int highp_threshold_min);
 
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
-  bool Initialize();
   void InitializeGrContext();
 
   const gfx::QuadF& SharedGeometryQuad() const { return shared_geometry_quad_; }
@@ -175,8 +175,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                         const YUVVideoDrawQuad* quad);
   void DrawPictureQuad(const DrawingFrame* frame,
                        const PictureDrawQuad* quad);
-  void DrawPictureQuadDirectToBackbuffer(const DrawingFrame* frame,
-                                         const PictureDrawQuad* quad);
 
   void SetShaderOpacity(float opacity, int alpha_location);
   void SetShaderQuadF(const gfx::QuadF& quad, int quad_location);
@@ -198,7 +196,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   bool MakeContextCurrent();
 
-  bool InitializeSharedObjects();
+  void InitializeSharedObjects();
   void CleanupSharedObjects();
 
   typedef base::Callback<void(scoped_ptr<CopyOutputRequest> copy_request,
@@ -219,7 +217,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                       scoped_ptr<CopyOutputRequest> request,
                       bool success);
 
-  void ReinitializeGrCanvas();
   void ReinitializeGLState();
 
   virtual void DiscardBackbuffer() OVERRIDE;
@@ -403,6 +400,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   SolidColorProgramAA solid_color_program_aa_;
 
   blink::WebGraphicsContext3D* context_;
+  gpu::gles2::GLES2Interface* gl_;
   gpu::ContextSupport* context_support_;
 
   skia::RefPtr<GrContext> gr_context_;

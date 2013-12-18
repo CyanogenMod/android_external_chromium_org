@@ -246,6 +246,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kPrincipalsPrivate, "principalsPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kFirstRunPrivate, "firstRunPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional},
 
     // Full url access permissions.
     { APIPermission::kDebugger, "debugger",
@@ -289,6 +291,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kAppCurrentWindowInternal, "app.currentWindowInternal" },
     { APIPermission::kAppRuntime, "app.runtime" },
     { APIPermission::kAppWindow, "app.window" },
+    { APIPermission::kAlwaysOnTopWindows, "alwaysOnTopWindows" },
     { APIPermission::kAudioCapture, "audioCapture",
       APIPermissionInfo::kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_AUDIO_CAPTURE,
@@ -353,7 +356,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kPointerLock, "pointerLock" },
     { APIPermission::kFullscreen, "fullscreen" },
     { APIPermission::kAudio, "audio" },
-    { APIPermission::kWebRtc, "webrtc" },
+    { APIPermission::kCastStreaming, "cast.streaming" },
     { APIPermission::kOverrideEscFullscreen, "overrideEscFullscreen" },
 
     // Settings override permissions.

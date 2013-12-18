@@ -7,7 +7,6 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/common/media/media_stream_messages.h"
-#include "content/public/browser/media_device_id.h"
 #include "content/public/browser/resource_context.h"
 
 // Clears the MediaStreamDevice.name from all devices in |device_list|.
@@ -97,12 +96,12 @@ void DeviceRequestMessageFilter::DevicesEnumerated(
   if (label == request_it->audio_devices_label) {
     request_it->has_audio_returned = true;
     DCHECK(audio_devices->empty());
-    HmacDeviceIds(request_it->origin, new_devices, audio_devices);
+    *audio_devices = new_devices;
   } else {
     DCHECK(label == request_it->video_devices_label);
     request_it->has_video_returned = true;
     DCHECK(video_devices->empty());
-    HmacDeviceIds(request_it->origin, new_devices, video_devices);
+    *video_devices = new_devices;
   }
 
   if (!request_it->has_audio_returned || !request_it->has_video_returned) {
@@ -151,33 +150,18 @@ void DeviceRequestMessageFilter::OnChannelClosing() {
   requests_.clear();
 }
 
-void DeviceRequestMessageFilter::HmacDeviceIds(
-    const GURL& origin,
-    const StreamDeviceInfoArray& raw_devices,
-    StreamDeviceInfoArray* devices_with_guids) {
-  DCHECK(devices_with_guids);
-
-  // Replace raw ids with hmac'd ids before returning to renderer process.
-  for (StreamDeviceInfoArray::const_iterator device_itr = raw_devices.begin();
-       device_itr != raw_devices.end();
-       ++device_itr) {
-    StreamDeviceInfo current_device_info = *device_itr;
-    current_device_info.device.id =
-        content::GetHMACForMediaDeviceID(origin, device_itr->device.id);
-    devices_with_guids->push_back(current_device_info);
-  }
-}
-
 void DeviceRequestMessageFilter::OnGetSources(int request_id,
                                               const GURL& security_origin) {
   // Make request to get audio devices.
   const std::string& audio_label = media_stream_manager_->EnumerateDevices(
-      this, -1, -1, -1, MEDIA_DEVICE_AUDIO_CAPTURE, security_origin);
+      this, -1, -1, resource_context_, -1, MEDIA_DEVICE_AUDIO_CAPTURE,
+      security_origin);
   DCHECK(!audio_label.empty());
 
   // Make request for video devices.
   const std::string& video_label = media_stream_manager_->EnumerateDevices(
-      this, -1, -1, -1, MEDIA_DEVICE_VIDEO_CAPTURE, security_origin);
+      this, -1, -1, resource_context_, -1, MEDIA_DEVICE_VIDEO_CAPTURE,
+      security_origin);
   DCHECK(!video_label.empty());
 
   requests_.push_back(DeviceRequest(

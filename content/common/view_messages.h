@@ -20,6 +20,7 @@
 #include "content/common/view_message_enums.h"
 #include "content/common/webplugin_geometry.h"
 #include "content/port/common/input_event_ack_state.h"
+#include "content/public/common/color_suggestion.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/favicon_url.h"
@@ -34,6 +35,7 @@
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/window_container_type.h"
+#include "content/common/date_time_suggestion.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
@@ -159,6 +161,17 @@ IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
   IPC_STRUCT_TRAITS_MEMBER(submenu)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(content::ColorSuggestion)
+  IPC_STRUCT_TRAITS_MEMBER(color)
+  IPC_STRUCT_TRAITS_MEMBER(label)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::DateTimeSuggestion)
+  IPC_STRUCT_TRAITS_MEMBER(value)
+  IPC_STRUCT_TRAITS_MEMBER(localized_value)
+  IPC_STRUCT_TRAITS_MEMBER(label)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(media_type)
   IPC_STRUCT_TRAITS_MEMBER(x)
@@ -180,11 +193,9 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(speech_input_enabled)
   IPC_STRUCT_TRAITS_MEMBER(spellcheck_enabled)
   IPC_STRUCT_TRAITS_MEMBER(is_editable)
-#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
   IPC_STRUCT_TRAITS_MEMBER(writing_direction_default)
   IPC_STRUCT_TRAITS_MEMBER(writing_direction_left_to_right)
   IPC_STRUCT_TRAITS_MEMBER(writing_direction_right_to_left)
-#endif  // OS_MACOSX || defined(TOOLKIT_GTK)
   IPC_STRUCT_TRAITS_MEMBER(edit_flags)
   IPC_STRUCT_TRAITS_MEMBER(security_info)
   IPC_STRUCT_TRAITS_MEMBER(frame_charset)
@@ -332,7 +343,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
 
   // The name of the resulting frame that should be created (empty if none
   // has been specified).
-  IPC_STRUCT_MEMBER(string16, frame_name)
+  IPC_STRUCT_MEMBER(base::string16, frame_name)
 
   // The frame identifier of the frame initiating the open.
   IPC_STRUCT_MEMBER(int64, opener_frame_id)
@@ -367,7 +378,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // The additional window features to use for the new view. We pass these
   // separately from |features| above because we cannot serialize WebStrings
   // over IPC.
-  IPC_STRUCT_MEMBER(std::vector<string16>, additional_features)
+  IPC_STRUCT_MEMBER(std::vector<base::string16>, additional_features)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
@@ -375,7 +386,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
   IPC_STRUCT_MEMBER(GURL, url)
 
   // Name for a SharedWorker, otherwise empty string.
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
 
   // The ID of the parent document (unique within parent renderer).
   IPC_STRUCT_MEMBER(unsigned long long, document_id)
@@ -393,32 +404,26 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_DateTimeDialogValue_Params)
-  IPC_STRUCT_MEMBER(int, dialog_type)
-  IPC_STRUCT_MEMBER(int, year)
-  IPC_STRUCT_MEMBER(int, month)
-  IPC_STRUCT_MEMBER(int, day)
-  IPC_STRUCT_MEMBER(int, hour)
-  IPC_STRUCT_MEMBER(int, minute)
-  IPC_STRUCT_MEMBER(int, second)
-  IPC_STRUCT_MEMBER(int, milli)
-  IPC_STRUCT_MEMBER(int, week)
+  IPC_STRUCT_MEMBER(ui::TextInputType, dialog_type)
+  IPC_STRUCT_MEMBER(double, dialog_value)
   IPC_STRUCT_MEMBER(double, minimum)
   IPC_STRUCT_MEMBER(double, maximum)
   IPC_STRUCT_MEMBER(double, step)
+  IPC_STRUCT_MEMBER(std::vector<content::DateTimeSuggestion>, suggestions)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_DidFailProvisionalLoadWithError_Params)
   // The frame ID for the failure report.
   IPC_STRUCT_MEMBER(int64, frame_id)
   // The WebFrame's uniqueName().
-  IPC_STRUCT_MEMBER(string16, frame_unique_name)
+  IPC_STRUCT_MEMBER(base::string16, frame_unique_name)
   // True if this is the top-most frame.
   IPC_STRUCT_MEMBER(bool, is_main_frame)
   // Error code as reported in the DidFailProvisionalLoad callback.
   IPC_STRUCT_MEMBER(int, error_code)
   // An error message generated from the error_code. This can be an empty
   // string if we were unable to find a meaningful description.
-  IPC_STRUCT_MEMBER(string16, error_description)
+  IPC_STRUCT_MEMBER(base::string16, error_description)
   // The URL that the error is reported for.
   IPC_STRUCT_MEMBER(GURL, url)
   // True if the failure is the result of navigating to a POST again
@@ -436,7 +441,7 @@ IPC_STRUCT_BEGIN_WITH_PARENT(ViewHostMsg_FrameNavigate_Params,
   IPC_STRUCT_MEMBER(int64, frame_id)
 
   // The WebFrame's uniqueName().
-  IPC_STRUCT_MEMBER(string16, frame_unique_name)
+  IPC_STRUCT_MEMBER(base::string16, frame_unique_name)
 
   // Information regarding the security of the connection (empty if the
   // connection was not secure).
@@ -729,7 +734,7 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   IPC_STRUCT_MEMBER(int64, session_storage_namespace_id)
 
   // The name of the frame associated with this view (or empty if none).
-  IPC_STRUCT_MEMBER(string16, frame_name)
+  IPC_STRUCT_MEMBER(base::string16, frame_name)
 
   // The route ID of the opener RenderView if we need to set one
   // (MSG_ROUTING_NONE otherwise).
@@ -760,7 +765,7 @@ IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
   // The serialized script value.
-  IPC_STRUCT_MEMBER(string16, data)
+  IPC_STRUCT_MEMBER(base::string16, data)
 
   // When sent to the browser, this is the routing ID of the source frame in
   // the source process.  The browser replaces it with the routing ID of the
@@ -768,10 +773,10 @@ IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
   IPC_STRUCT_MEMBER(int, source_routing_id)
 
   // The origin of the source frame.
-  IPC_STRUCT_MEMBER(string16, source_origin)
+  IPC_STRUCT_MEMBER(base::string16, source_origin)
 
   // The origin for the message's target.
-  IPC_STRUCT_MEMBER(string16, target_origin)
+  IPC_STRUCT_MEMBER(base::string16, target_origin)
 
   // Information about the MessagePorts this message contains.
   IPC_STRUCT_MEMBER(std::vector<int>, message_port_ids)
@@ -955,7 +960,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_ReloadFrame)
 // Sent when the user wants to search for a word on the page (find in page).
 IPC_MESSAGE_ROUTED3(ViewMsg_Find,
                     int /* request_id */,
-                    string16 /* search_text */,
+                    base::string16 /* search_text */,
                     blink::WebFindOptions)
 
 // This message notifies the renderer that the user has closed the FindInPage
@@ -970,7 +975,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetBrowserRenderingStats,
 
 // Replaces a date time input field.
 IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
-                    ViewHostMsg_DateTimeDialogValue_Params /* value */)
+                    double /* dialog_value */)
 
 // Copies the image at location x, y to the clipboard (if there indeed is an
 // image at that location).
@@ -1014,8 +1019,8 @@ IPC_MESSAGE_ROUTED2(ViewMsg_PluginActionAt,
 // ViewHostMsg_ScriptEvalResponse is passed the ID parameter so that the
 // client can uniquely identify the request.
 IPC_MESSAGE_ROUTED4(ViewMsg_ScriptEvalRequest,
-                    string16,  /* frame_xpath */
-                    string16,  /* jscript_url */
+                    base::string16,  /* frame_xpath */
+                    base::string16,  /* jscript_url */
                     int,  /* ID */
                     bool  /* If true, result is sent back. */)
 
@@ -1030,7 +1035,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_DisownOpener)
 // into that frame's document. See ViewMsg_ScriptEvalRequest for details on
 // allowed xpath expressions.
 IPC_MESSAGE_ROUTED2(ViewMsg_CSSInsertRequest,
-                    string16,  /* frame_xpath */
+                    base::string16,  /* frame_xpath */
                     std::string  /* css string */)
 
 // Change the zoom level for the current main frame.  If the level actually
@@ -1099,17 +1104,22 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SetWebUIProperty,
 IPC_MESSAGE_ROUTED1(ViewMsg_SetInputMethodActive,
                     bool /* is_active */)
 
+// IME API oncandidatewindow* events for InputMethodContext.
+IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowShown)
+IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowUpdated)
+IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowHidden)
+
 // This message sends a string being composed with an input method.
 IPC_MESSAGE_ROUTED4(
     ViewMsg_ImeSetComposition,
-    string16, /* text */
+    base::string16, /* text */
     std::vector<blink::WebCompositionUnderline>, /* underlines */
     int, /* selectiont_start */
     int /* selection_end */)
 
 // This message confirms an ongoing composition.
 IPC_MESSAGE_ROUTED3(ViewMsg_ImeConfirmComposition,
-                    string16 /* text */,
+                    base::string16 /* text */,
                     gfx::Range /* replacement_range */,
                     bool /* keep_selection */)
 
@@ -1365,7 +1375,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInLiveResize,
 
 // Tell the renderer that plugin IME has completed.
 IPC_MESSAGE_ROUTED2(ViewMsg_PluginImeCompositionCompleted,
-                    string16 /* text */,
+                    base::string16 /* text */,
                     int /* plugin_id */)
 
 // External popup menus.
@@ -1573,7 +1583,7 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_DidFinishLoad,
 // title changes.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_UpdateTitle,
                     int32 /* page_id */,
-                    string16 /* title */,
+                    base::string16 /* title */,
                     blink::WebTextDirection /* title direction */)
 
 // Change the encoding name of the page in UI when the page has detected
@@ -1638,7 +1648,7 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_DidFailLoadWithError,
                     GURL /* validated_url */,
                     bool /* is_main_frame */,
                     int /* error_code */,
-                    string16 /* error_description */)
+                    base::string16 /* error_description */)
 
 // Sent when the renderer fails a provisional load with an error.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidFailProvisionalLoadWithError,
@@ -1716,31 +1726,6 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_GetPlugins,
     bool /* refresh*/,
     std::vector<content::WebPluginInfo> /* plugins */)
 
-// Return information about a plugin for the given URL and MIME
-// type. If there is no matching plugin, |found| is false.
-// |actual_mime_type| is the actual mime type supported by the
-// found plugin.
-IPC_SYNC_MESSAGE_CONTROL4_3(ViewHostMsg_GetPluginInfo,
-                            int /* routing_id */,
-                            GURL /* url */,
-                            GURL /* page_url */,
-                            std::string /* mime_type */,
-                            bool /* found */,
-                            content::WebPluginInfo /* plugin info */,
-                            std::string /* actual_mime_type */)
-
-// A renderer sends this to the browser process when it wants to
-// create a plugin.  The browser will create the plugin process if
-// necessary, and will return a handle to the channel on success.
-// On error an empty string is returned.
-IPC_SYNC_MESSAGE_CONTROL4_2(ViewHostMsg_OpenChannelToPlugin,
-                            int /* routing_id */,
-                            GURL /* url */,
-                            GURL /* page_url */,
-                            std::string /* mime_type */,
-                            IPC::ChannelHandle /* channel_handle */,
-                            content::WebPluginInfo /* info */)
-
 #if defined(OS_WIN)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_WindowlessPluginDummyWindowCreated,
                     gfx::NativeViewId /* dummy_activation_window */)
@@ -1800,7 +1785,7 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_AppCacheAccessed,
 IPC_MESSAGE_ROUTED3(ViewHostMsg_DownloadUrl,
                     GURL     /* url */,
                     content::Referrer /* referrer */,
-                    string16 /* suggested_name */)
+                    base::string16 /* suggested_name */)
 
 // Used to go to the session history entry at the given offset (ie, -1 will
 // return the "back" item).
@@ -1817,12 +1802,12 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_RouteMessageEvent,
                     ViewMsg_PostMessage_Params)
 
 IPC_SYNC_MESSAGE_ROUTED4_2(ViewHostMsg_RunJavaScriptMessage,
-                           string16     /* in - alert message */,
-                           string16     /* in - default prompt */,
+                           base::string16     /* in - alert message */,
+                           base::string16     /* in - default prompt */,
                            GURL         /* in - originating page URL */,
                            content::JavaScriptMessageType /* in - type */,
                            bool         /* out - success */,
-                           string16     /* out - user_input field */)
+                           base::string16     /* out - user_input field */)
 
 // Requests that the given URL be opened in the specified manner.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenURL, ViewHostMsg_OpenURL_Params)
@@ -1951,7 +1936,7 @@ IPC_SYNC_MESSAGE_ROUTED1_0(ViewHostMsg_DestroyPluginContainer,
 
 // Send the tooltip text for the current mouse position to the browser.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_SetTooltipText,
-                    string16 /* tooltip text string */,
+                    base::string16 /* tooltip text string */,
                     blink::WebTextDirection /* text direction hint */)
 
 IPC_MESSAGE_ROUTED0(ViewHostMsg_SelectRange_ACK)
@@ -1961,7 +1946,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_MoveCaret_ACK)
 // Note: The secound parameter is the character based offset of the string16
 // text in the document.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_SelectionChanged,
-                    string16 /* text covers the selection range */,
+                    base::string16 /* text covers the selection range */,
                     size_t /* the offset of the text in the document */,
                     gfx::Range /* selection range in the document */)
 
@@ -1970,9 +1955,10 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionBoundsChanged,
                     ViewHostMsg_SelectionBounds_Params)
 
 // Asks the browser to open the color chooser.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_OpenColorChooser,
+IPC_MESSAGE_ROUTED3(ViewHostMsg_OpenColorChooser,
                     int /* id */,
-                    SkColor /* color */)
+                    SkColor /* color */,
+                    std::vector<content::ColorSuggestion> /* suggestions */)
 
 // Asks the browser to end the color chooser.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_EndColorChooser, int /* id */)
@@ -2020,28 +2006,19 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_ImeCancelComposition)
 // or debugger UI.
 IPC_MESSAGE_ROUTED4(ViewHostMsg_AddMessageToConsole,
                     int32, /* log level */
-                    string16, /* msg */
+                    base::string16, /* msg */
                     int32, /* line number */
-                    string16 /* source id */ )
-
-// Sent by the renderer process to indicate that a plugin instance has crashed.
-// Note: |plugin_pid| should not be trusted. The corresponding process has
-// probably died. Moreover, the ID may have been reused by a new process. Any
-// usage other than displaying it in a prompt to the user is very likely to be
-// wrong.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_CrashedPlugin,
-                    base::FilePath /* plugin_path */,
-                    base::ProcessId /* plugin_pid */)
+                    base::string16 /* source id */ )
 
 // Displays a box to confirm that the user wants to navigate away from the
 // page. Replies true if yes, false otherwise, the reply string is ignored,
 // but is included so that we can use OnJavaScriptMessageBoxClosed.
 IPC_SYNC_MESSAGE_ROUTED3_2(ViewHostMsg_RunBeforeUnloadConfirm,
-                           GURL,     /* in - originating frame URL */
-                           string16  /* in - alert message */,
-                           bool      /* in - is a reload */,
-                           bool      /* out - success */,
-                           string16  /* out - This is ignored.*/)
+                           GURL,           /* in - originating frame URL */
+                           base::string16  /* in - alert message */,
+                           bool            /* in - is a reload */,
+                           bool            /* out - success */,
+                           base::string16  /* out - This is ignored.*/)
 
 // Sent when a provisional load on the main frame redirects.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_DidRedirectProvisionalLoad,
@@ -2140,7 +2117,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_JSOutOfMemory)
 IPC_MESSAGE_ROUTED4(ViewHostMsg_RegisterProtocolHandler,
                     std::string /* scheme */,
                     GURL /* url */,
-                    string16 /* title */,
+                    base::string16 /* title */,
                     bool /* user_gesture */)
 
 // Stores new inspector setting in the profile.
@@ -2205,15 +2182,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_DidAccessInitialDocument)
 IPC_MESSAGE_ROUTED2(ViewHostMsg_DomOperationResponse,
                     std::string  /* json_string */,
                     int  /* automation_id */)
-
-// Sent to the browser when the renderer detects it is blocked on a pepper
-// plugin message for too long. This is also sent when it becomes unhung
-// (according to the value of is_hung). The browser can give the user the
-// option of killing the plugin.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_PepperPluginHung,
-                    int /* plugin_child_id */,
-                    base::FilePath /* path */,
-                    bool /* is_hung */)
 
 // Notifies that multiple touch targets may have been pressed, and to show
 // the disambiguation popup.
@@ -2331,7 +2299,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
 // for details.
 IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_PreCacheFontCharacters,
                             LOGFONT /* font_data */,
-                            string16 /* characters */)
+                            base::string16 /* characters */)
 #endif
 
 #if defined(OS_POSIX)

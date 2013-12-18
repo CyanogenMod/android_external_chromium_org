@@ -13,7 +13,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -53,7 +53,7 @@ TEST_F(OpenFileOperationTest, OpenExistingFile) {
   EXPECT_EQ(FILE_ERROR_OK, error);
   ASSERT_TRUE(base::PathExists(file_path));
   int64 local_file_size;
-  ASSERT_TRUE(file_util::GetFileSize(file_path, &local_file_size));
+  ASSERT_TRUE(base::GetFileSize(file_path, &local_file_size));
   EXPECT_EQ(file_size, local_file_size);
 
   ASSERT_FALSE(close_callback.is_null());
@@ -123,7 +123,7 @@ TEST_F(OpenFileOperationTest, CreateNonExistingFile) {
   EXPECT_EQ(FILE_ERROR_OK, error);
   ASSERT_TRUE(base::PathExists(file_path));
   int64 local_file_size;
-  ASSERT_TRUE(file_util::GetFileSize(file_path, &local_file_size));
+  ASSERT_TRUE(base::GetFileSize(file_path, &local_file_size));
   EXPECT_EQ(0, local_file_size);  // Should be an empty file.
 
   ASSERT_FALSE(close_callback.is_null());
@@ -158,7 +158,7 @@ TEST_F(OpenFileOperationTest, OpenOrCreateExistingFile) {
   EXPECT_EQ(FILE_ERROR_OK, error);
   ASSERT_TRUE(base::PathExists(file_path));
   int64 local_file_size;
-  ASSERT_TRUE(file_util::GetFileSize(file_path, &local_file_size));
+  ASSERT_TRUE(base::GetFileSize(file_path, &local_file_size));
   EXPECT_EQ(file_size, local_file_size);
 
   ASSERT_FALSE(close_callback.is_null());
@@ -201,7 +201,7 @@ TEST_F(OpenFileOperationTest, OpenOrCreateNonExistingFile) {
   EXPECT_EQ(FILE_ERROR_OK, error);
   ASSERT_TRUE(base::PathExists(file_path));
   int64 local_file_size;
-  ASSERT_TRUE(file_util::GetFileSize(file_path, &local_file_size));
+  ASSERT_TRUE(base::GetFileSize(file_path, &local_file_size));
   EXPECT_EQ(0, local_file_size);  // Should be an empty file.
 
   ASSERT_FALSE(close_callback.is_null());
@@ -232,7 +232,7 @@ TEST_F(OpenFileOperationTest, OpenFileTwice) {
   EXPECT_EQ(FILE_ERROR_OK, error);
   ASSERT_TRUE(base::PathExists(file_path));
   int64 local_file_size;
-  ASSERT_TRUE(file_util::GetFileSize(file_path, &local_file_size));
+  ASSERT_TRUE(base::GetFileSize(file_path, &local_file_size));
   EXPECT_EQ(file_size, local_file_size);
 
   // Open again.
@@ -248,7 +248,7 @@ TEST_F(OpenFileOperationTest, OpenFileTwice) {
 
   EXPECT_EQ(FILE_ERROR_OK, error);
   ASSERT_TRUE(base::PathExists(file_path));
-  ASSERT_TRUE(file_util::GetFileSize(file_path, &local_file_size));
+  ASSERT_TRUE(base::GetFileSize(file_path, &local_file_size));
   EXPECT_EQ(file_size, local_file_size);
 
   ASSERT_FALSE(close_callback.is_null());

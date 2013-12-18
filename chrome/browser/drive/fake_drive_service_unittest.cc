@@ -14,11 +14,11 @@
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_requests.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/gdata_wapi_requests.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using google_apis::AboutResource;
@@ -29,6 +29,7 @@ using google_apis::GDATA_OTHER_ERROR;
 using google_apis::GetContentCallback;
 using google_apis::HTTP_CREATED;
 using google_apis::HTTP_NOT_FOUND;
+using google_apis::HTTP_NO_CONTENT;
 using google_apis::HTTP_PRECONDITION;
 using google_apis::HTTP_RESUME_INCOMPLETE;
 using google_apis::HTTP_SUCCESS;
@@ -1289,84 +1290,6 @@ TEST_F(FakeDriveServiceTest, RenameResource_Offline) {
   EXPECT_EQ(GDATA_NO_CONNECTION, error);
 }
 
-TEST_F(FakeDriveServiceTest, TouchResource_ExistingFile) {
-  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
-      "gdata/root_feed.json"));
-  ASSERT_TRUE(fake_service_.LoadAccountMetadataForWapi(
-      "gdata/account_metadata.json"));
-
-  int64 old_largest_change_id = GetLargestChangeByAboutResource();
-
-  const std::string kResourceId = "file:2_file_resource_id";
-  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
-  const base::Time::Exploded kLastViewedByMeDate =
-      {2013, 7, 0, 19, 15, 59, 13, 123};
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<ResourceEntry> entry;
-  fake_service_.TouchResource(
-      kResourceId,
-      base::Time::FromUTCExploded(kModifiedDate),
-      base::Time::FromUTCExploded(kLastViewedByMeDate),
-      test_util::CreateCopyResultCallback(&error, &entry));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-
-  ASSERT_TRUE(entry);
-  EXPECT_EQ(base::Time::FromUTCExploded(kModifiedDate),
-            entry->updated_time());
-  EXPECT_EQ(base::Time::FromUTCExploded(kLastViewedByMeDate),
-            entry->last_viewed_time());
-
-  // Should be incremented as a file was renamed.
-  EXPECT_EQ(old_largest_change_id + 1, fake_service_.largest_changestamp());
-  EXPECT_EQ(old_largest_change_id + 1, GetLargestChangeByAboutResource());
-}
-
-TEST_F(FakeDriveServiceTest, TouchResource_NonexistingFile) {
-  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
-      "gdata/root_feed.json"));
-
-  const std::string kResourceId = "file:nonexisting_file";
-  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
-  const base::Time::Exploded kLastViewedByMeDate =
-      {2013, 7, 0, 19, 15, 59, 13, 123};
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<ResourceEntry> entry;
-  fake_service_.TouchResource(
-      kResourceId,
-      base::Time::FromUTCExploded(kModifiedDate),
-      base::Time::FromUTCExploded(kLastViewedByMeDate),
-      test_util::CreateCopyResultCallback(&error, &entry));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(HTTP_NOT_FOUND, error);
-}
-
-TEST_F(FakeDriveServiceTest, TouchResource_Offline) {
-  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
-      "gdata/root_feed.json"));
-  fake_service_.set_offline(true);
-
-  const std::string kResourceId = "file:2_file_resource_id";
-  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
-  const base::Time::Exploded kLastViewedByMeDate =
-      {2013, 7, 0, 19, 15, 59, 13, 123};
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<ResourceEntry> entry;
-  fake_service_.TouchResource(
-      kResourceId,
-      base::Time::FromUTCExploded(kModifiedDate),
-      base::Time::FromUTCExploded(kLastViewedByMeDate),
-      test_util::CreateCopyResultCallback(&error, &entry));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(GDATA_NO_CONNECTION, error);
-}
-
 TEST_F(FakeDriveServiceTest, AddResourceToDirectory_FileInRootDirectory) {
   ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
       "gdata/root_feed.json"));
@@ -1525,7 +1448,7 @@ TEST_F(FakeDriveServiceTest, RemoveResourceFromDirectory_ExistingFile) {
       test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(HTTP_NO_CONTENT, error);
 
   resource_entry = FindEntry(kResourceId);
   ASSERT_TRUE(resource_entry);

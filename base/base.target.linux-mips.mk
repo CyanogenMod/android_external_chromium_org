@@ -89,12 +89,14 @@ LOCAL_SRC_FILES := \
 	base/file_util.cc \
 	base/file_util_android.cc \
 	base/file_util_posix.cc \
+	base/files/file.cc \
 	base/files/file_enumerator.cc \
 	base/files/file_enumerator_posix.cc \
 	base/files/file_path.cc \
 	base/files/file_path_constants.cc \
 	base/files/file_path_watcher.cc \
 	base/files/file_path_watcher_linux.cc \
+	base/files/file_posix.cc \
 	base/files/file_util_proxy.cc \
 	base/files/important_file_writer.cc \
 	base/files/memory_mapped_file.cc \
@@ -115,6 +117,7 @@ LOCAL_SRC_FILES := \
 	base/location.cc \
 	base/logging.cc \
 	base/memory/aligned_memory.cc \
+	base/memory/discardable_memory_allocator_android.cc \
 	base/memory/discardable_memory_android.cc \
 	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
@@ -274,6 +277,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -283,9 +287,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -357,6 +363,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -366,9 +373,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

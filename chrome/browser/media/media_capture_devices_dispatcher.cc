@@ -76,6 +76,7 @@ bool IsOriginWhitelistedForScreenCapture(const GURL& origin) {
   if (// Google Hangouts.
       (origin.SchemeIs("https") &&
        EndsWith(origin.spec(), ".talkgadget.google.com/", true)) ||
+      origin.spec() == "https://talkgadget.google.com/" ||
       origin.spec() == "https://plus.google.com/" ||
       origin.spec() == "chrome-extension://pkedcjkdefgpdelpbcmbmeomcjbeemfm/" ||
       origin.spec() == "chrome-extension://fmfcbgogabcbclcofgocippekhfcmgfj/" ||
@@ -108,6 +109,38 @@ string16 GetApplicationTitle(content::WebContents* web_contents,
     title = web_contents->GetURL().GetOrigin().spec();
   }
   return UTF8ToUTF16(title);
+}
+
+// Helper to get list of media stream devices for desktop capture in |devices|.
+// Registers to display notification if |display_notification| is true.
+// Returns an instance of MediaStreamUI to be passed to content layer.
+scoped_ptr<content::MediaStreamUI> GetDevicesForDesktopCapture(
+    content::MediaStreamDevices& devices,
+    content::DesktopMediaID media_id,
+    bool capture_audio,
+    bool display_notification,
+    base::string16 application_title) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  scoped_ptr<content::MediaStreamUI> ui;
+
+  // Add selected desktop source to the list.
+  devices.push_back(content::MediaStreamDevice(
+      content::MEDIA_DESKTOP_VIDEO_CAPTURE, media_id.ToString(), "Screen"));
+  if (capture_audio) {
+    // Use the special loopback device ID for system audio capture.
+    devices.push_back(content::MediaStreamDevice(
+        content::MEDIA_LOOPBACK_AUDIO_CAPTURE,
+        media::AudioManagerBase::kLoopbackInputDeviceId, "System Audio"));
+  }
+
+  // If required, register to display the notification for stream capture.
+  if (display_notification) {
+    ui = ScreenCaptureNotificationUI::Create(l10n_util::GetStringFUTF16(
+        IDS_MEDIA_SCREEN_CAPTURE_NOTIFICATION_TEXT,
+        application_title));
+  }
+
+  return ui.Pass();
 }
 
 }  // namespace
@@ -250,11 +283,6 @@ void MediaCaptureDevicesDispatcher::ProcessDesktopCaptureAccessRequest(
     return;
   }
 
-  // Add selected desktop source to the list.
-  devices.push_back(content::MediaStreamDevice(
-      content::MEDIA_DESKTOP_VIDEO_CAPTURE, media_id.ToString(),
-      std::string()));
-
   bool loopback_audio_supported = false;
 #if defined(USE_CRAS) || defined(OS_WIN)
   // Currently loopback audio capture is supported only on Windows and ChromeOS.
@@ -262,17 +290,14 @@ void MediaCaptureDevicesDispatcher::ProcessDesktopCaptureAccessRequest(
 #endif
 
   // Audio is only supported for screen capture streams.
-  if (media_id.type == content::DesktopMediaID::TYPE_SCREEN &&
-      request.audio_type == content::MEDIA_LOOPBACK_AUDIO_CAPTURE &&
-      loopback_audio_supported) {
-    devices.push_back(content::MediaStreamDevice(
-        content::MEDIA_LOOPBACK_AUDIO_CAPTURE,
-        media::AudioManagerBase::kLoopbackInputDeviceId, "System Audio"));
-  }
+  bool capture_audio =
+      (media_id.type == content::DesktopMediaID::TYPE_SCREEN &&
+       request.audio_type == content::MEDIA_LOOPBACK_AUDIO_CAPTURE &&
+       loopback_audio_supported);
 
-  ui = ScreenCaptureNotificationUI::Create(l10n_util::GetStringFUTF16(
-      IDS_MEDIA_SCREEN_CAPTURE_NOTIFICATION_TEXT,
-      GetApplicationTitle(web_contents, extension)));
+  ui = GetDevicesForDesktopCapture(
+      devices, media_id, capture_audio, true,
+      GetApplicationTitle(web_contents, extension));
 
   callback.Run(devices, ui.Pass());
 }
@@ -329,12 +354,20 @@ void MediaCaptureDevicesDispatcher::ProcessScreenCaptureAccessRequest(
   //     the given origin.
   //  2. Request comes from a page with a secure origin or from an extension.
   if (screen_capture_enabled && origin_is_secure) {
+    // Get title of the calling application prior to showing the message box.
+    // chrome::ShowMessageBox() starts a nested message loop which may allow
+    // |web_contents| to be destroyed on the UI thread before the message box
+    // is closed. See http://crbug.com/326690.
+    base::string16 application_title =
+        GetApplicationTitle(web_contents, extension);
+    web_contents = NULL;
+
     // For component extensions, bypass message box.
     bool user_approved = false;
     if (!component_extension) {
-      string16 application_name = UTF8ToUTF16(
+      base::string16 application_name = UTF8ToUTF16(
           extension ? extension->name() : request.security_origin.spec());
-      string16 confirmation_text = l10n_util::GetStringFUTF16(
+      base::string16 confirmation_text = l10n_util::GetStringFUTF16(
           request.audio_type == content::MEDIA_NO_SERVICE ?
               IDS_MEDIA_SCREEN_CAPTURE_CONFIRMATION_TEXT :
               IDS_MEDIA_SCREEN_AND_AUDIO_CAPTURE_CONFIRMATION_TEXT,
@@ -349,24 +382,17 @@ void MediaCaptureDevicesDispatcher::ProcessScreenCaptureAccessRequest(
     }
 
     if (user_approved || component_extension) {
-      devices.push_back(content::MediaStreamDevice(
-          content::MEDIA_DESKTOP_VIDEO_CAPTURE, media_id.ToString(), "Screen"));
-      if (request.audio_type == content::MEDIA_LOOPBACK_AUDIO_CAPTURE &&
-          loopback_audio_supported) {
-        // Use the special loopback device ID for system audio capture.
-        devices.push_back(content::MediaStreamDevice(
-            content::MEDIA_LOOPBACK_AUDIO_CAPTURE,
-            media::AudioManagerBase::kLoopbackInputDeviceId, "System Audio"));
-      }
-    }
-  }
+      bool capture_audio =
+          (request.audio_type == content::MEDIA_LOOPBACK_AUDIO_CAPTURE &&
+           loopback_audio_supported);
 
-  // Unless we're being invoked from a component extension, register to display
-  // the notification for stream capture.
-  if (!devices.empty() && !component_extension) {
-    ui = ScreenCaptureNotificationUI::Create(l10n_util::GetStringFUTF16(
-        IDS_MEDIA_SCREEN_CAPTURE_NOTIFICATION_TEXT,
-        GetApplicationTitle(web_contents, extension)));
+      // Unless we're being invoked from a component extension, register to
+      // display the notification for stream capture.
+      bool display_notification = !component_extension;
+
+      ui = GetDevicesForDesktopCapture(devices, media_id,  capture_audio,
+                                       display_notification, application_title);
+    }
   }
 
   callback.Run(devices, ui.Pass());
@@ -680,6 +706,29 @@ void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
     int page_request_id,
     const content::MediaStreamDevice& device,
     content::MediaRequestState state) {
+  // Track desktop capture sessions.  Tracking is necessary to avoid unbalanced
+  // session counts since not all requests will reach MEDIA_REQUEST_STATE_DONE,
+  // but they will all reach MEDIA_REQUEST_STATE_CLOSING.
+  if (device.type == content::MEDIA_DESKTOP_VIDEO_CAPTURE) {
+    if (state == content::MEDIA_REQUEST_STATE_DONE) {
+      DesktopCaptureSession session = { render_process_id, render_view_id,
+                                        page_request_id };
+      desktop_capture_sessions_.push_back(session);
+    } else if (state == content::MEDIA_REQUEST_STATE_CLOSING) {
+      for (DesktopCaptureSessions::iterator it =
+               desktop_capture_sessions_.begin();
+           it != desktop_capture_sessions_.end();
+           ++it) {
+        if (it->render_process_id == render_process_id &&
+            it->render_view_id == render_view_id &&
+            it->page_request_id == page_request_id) {
+          desktop_capture_sessions_.erase(it);
+          break;
+        }
+      }
+    }
+  }
+
   // Cancel the request.
   if (state == content::MEDIA_REQUEST_STATE_CLOSING) {
     bool found = false;
@@ -714,4 +763,9 @@ void MediaCaptureDevicesDispatcher::OnCreatingAudioStreamOnUIThread(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   FOR_EACH_OBSERVER(Observer, observers_,
                     OnCreatingAudioStream(render_process_id, render_view_id));
+}
+
+bool MediaCaptureDevicesDispatcher::IsDesktopCaptureInProgress() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return desktop_capture_sessions_.size() > 0;
 }

@@ -12,16 +12,17 @@
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/time/time.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client_registration_helper.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
 #include "components/policy/core/common/policy_switches.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "policy/proto/device_management_backend.pb.h"
 
 namespace policy {
 
@@ -40,10 +41,12 @@ UserPolicySigninService::UserPolicySigninService(
     Profile* profile,
     PrefService* local_state,
     DeviceManagementService* device_management_service,
+    scoped_refptr<net::URLRequestContextGetter> system_request_context,
     ProfileOAuth2TokenService* token_service)
     : UserPolicySigninServiceBase(profile,
                                   local_state,
-                                  device_management_service),
+                                  device_management_service,
+                                  system_request_context),
       weak_factory_(this),
       oauth2_token_service_(token_service) {}
 
@@ -53,7 +56,8 @@ void UserPolicySigninService::RegisterForPolicy(
     const std::string& username,
     const PolicyRegistrationCallback& callback) {
   // Create a new CloudPolicyClient for fetching the DMToken.
-  scoped_ptr<CloudPolicyClient> policy_client = PrepareToRegister(username);
+  scoped_ptr<CloudPolicyClient> policy_client = CreateClientForRegistrationOnly(
+      username);
   if (!policy_client) {
     callback.Run(std::string(), std::string());
     return;
@@ -65,7 +69,6 @@ void UserPolicySigninService::RegisterForPolicy(
   // alive for the length of the registration process.
   const bool force_load_policy = false;
   registration_helper_.reset(new CloudPolicyClientRegistrationHelper(
-      request_context(),
       policy_client.get(),
       force_load_policy,
       GetRegistrationType()));
@@ -146,7 +149,6 @@ void UserPolicySigninService::RegisterCloudPolicyService() {
 
   const bool force_load_policy = false;
   registration_helper_.reset(new CloudPolicyClientRegistrationHelper(
-      request_context(),
       GetManager()->core()->client(),
       force_load_policy,
       GetRegistrationType()));

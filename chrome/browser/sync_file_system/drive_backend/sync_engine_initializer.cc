@@ -9,11 +9,12 @@
 #include "base/logging.h"
 #include "chrome/browser/drive/drive_api_service.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -89,10 +90,12 @@ ScopedVector<google_apis::FileResource> ConvertResourceEntriesToFileResources(
 }  // namespace
 
 SyncEngineInitializer::SyncEngineInitializer(
+    SyncEngineContext* sync_context,
     base::SequencedTaskRunner* task_runner,
     drive::DriveServiceInterface* drive_service,
     const base::FilePath& database_path)
-    : task_runner_(task_runner),
+    : sync_context_(sync_context),
+      task_runner_(task_runner),
       drive_service_(drive_service),
       database_path_(database_path),
       find_sync_root_retry_count_(0),
@@ -108,6 +111,12 @@ SyncEngineInitializer::~SyncEngineInitializer() {
 }
 
 void SyncEngineInitializer::Run(const SyncStatusCallback& callback) {
+  // The metadata seems to have been already initialized. Just return with OK.
+  if (sync_context_ && sync_context_->GetMetadataDatabase()) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
   MetadataDatabase::Create(
       task_runner_.get(), database_path_,
       base::Bind(&SyncEngineInitializer::DidCreateMetadataDatabase,
@@ -150,8 +159,10 @@ void SyncEngineInitializer::DidGetAboutResource(
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::AboutResource> about_resource) {
   cancel_callback_.Reset();
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 
@@ -183,8 +194,10 @@ void SyncEngineInitializer::DidFindSyncRoot(
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceList> resource_list) {
   cancel_callback_.Reset();
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 
@@ -250,9 +263,10 @@ void SyncEngineInitializer::DidCreateSyncRoot(
     scoped_ptr<google_apis::ResourceEntry> entry) {
   DCHECK(!sync_root_folder_);
   cancel_callback_.Reset();
-  if (error != google_apis::HTTP_SUCCESS &&
-      error != google_apis::HTTP_CREATED) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 
@@ -273,8 +287,10 @@ void SyncEngineInitializer::DidDetachSyncRoot(
     const SyncStatusCallback& callback,
     google_apis::GDataErrorCode error) {
   cancel_callback_.Reset();
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 
@@ -297,8 +313,10 @@ void SyncEngineInitializer::DidListAppRootFolders(
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceList> resource_list) {
   cancel_callback_.Reset();
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 

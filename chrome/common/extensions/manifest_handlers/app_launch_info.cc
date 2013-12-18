@@ -27,7 +27,7 @@ bool ReadLaunchDimension(const extensions::Manifest* manifest,
                          const char* key,
                          int* target,
                          bool is_valid_container,
-                         string16* error) {
+                         base::string16* error) {
   const Value* temp = NULL;
   if (manifest->Get(key, &temp)) {
     if (!is_valid_container) {
@@ -59,7 +59,7 @@ const AppLaunchInfo& GetAppLaunchInfo(const Extension* extension) {
 }  // namespace
 
 AppLaunchInfo::AppLaunchInfo()
-    : launch_container_(LAUNCH_TAB),
+    : launch_container_(LAUNCH_CONTAINER_TAB),
       launch_width_(0),
       launch_height_(0) {
 }
@@ -104,14 +104,14 @@ GURL AppLaunchInfo::GetFullLaunchURL(const Extension* extension) {
     return extension->url().Resolve(info.launch_local_path_);
 }
 
-bool AppLaunchInfo::Parse(Extension* extension, string16* error) {
+bool AppLaunchInfo::Parse(Extension* extension, base::string16* error) {
   if (!LoadLaunchURL(extension, error) ||
       !LoadLaunchContainer(extension, error))
     return false;
   return true;
 }
 
-bool AppLaunchInfo::LoadLaunchURL(Extension* extension, string16* error) {
+bool AppLaunchInfo::LoadLaunchURL(Extension* extension, base::string16* error) {
   const Value* temp = NULL;
 
   // Launch URL can be either local (to chrome-extension:// root) or an absolute
@@ -225,7 +225,7 @@ bool AppLaunchInfo::LoadLaunchURL(Extension* extension, string16* error) {
 }
 
 bool AppLaunchInfo::LoadLaunchContainer(Extension* extension,
-                                        string16* error) {
+                                        base::string16* error) {
   const Value* tmp_launcher_container = NULL;
   if (!extension->manifest()->Get(keys::kLaunchContainer,
                                   &tmp_launcher_container))
@@ -238,15 +238,15 @@ bool AppLaunchInfo::LoadLaunchContainer(Extension* extension,
   }
 
   if (launch_container_string == values::kLaunchContainerPanel) {
-    launch_container_ = LAUNCH_PANEL;
+    launch_container_ = LAUNCH_CONTAINER_PANEL;
   } else if (launch_container_string == values::kLaunchContainerTab) {
-    launch_container_ = LAUNCH_TAB;
+    launch_container_ = LAUNCH_CONTAINER_TAB;
   } else {
     *error = ASCIIToUTF16(errors::kInvalidLaunchContainer);
     return false;
   }
 
-  bool can_specify_initial_size = launch_container_ == LAUNCH_PANEL;
+  bool can_specify_initial_size = launch_container_ == LAUNCH_CONTAINER_PANEL;
 
   // Validate the container width if present.
   if (!ReadLaunchDimension(extension->manifest(),
@@ -299,7 +299,8 @@ AppLaunchManifestHandler::AppLaunchManifestHandler() {
 AppLaunchManifestHandler::~AppLaunchManifestHandler() {
 }
 
-bool AppLaunchManifestHandler::Parse(Extension* extension, string16* error) {
+bool AppLaunchManifestHandler::Parse(Extension* extension,
+                                     base::string16* error) {
   scoped_ptr<AppLaunchInfo> info(new AppLaunchInfo);
   if (!info->Parse(extension, error))
     return false;

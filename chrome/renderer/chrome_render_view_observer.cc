@@ -28,6 +28,7 @@
 #include "chrome/renderer/webview_color_overlay.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/stack_frame.h"
@@ -56,7 +57,6 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "v8/include/v8-testing.h"
 
-using base::string16;
 using extensions::APIPermission;
 using blink::WebAXObject;
 using blink::WebCString;
@@ -224,16 +224,17 @@ const char kStackFrameDelimiter[] = "\n    at ";
 //    the given line number and source.
 // |message| will be populated with the error message only (i.e., will not
 // include any stack trace).
-extensions::StackTrace GetStackTraceFromMessage(string16* message,
-                                                const string16& source,
-                                                const string16& stack_trace,
-                                                int32 line_number) {
+extensions::StackTrace GetStackTraceFromMessage(
+    base::string16* message,
+    const base::string16& source,
+    const base::string16& stack_trace,
+    int32 line_number) {
   extensions::StackTrace result;
   std::vector<base::string16> pieces;
   size_t index = 0;
 
   if (message->find(base::UTF8ToUTF16(kStackFrameDelimiter)) !=
-          string16::npos) {
+          base::string16::npos) {
     base::SplitStringUsingSubstr(*message,
                                  base::UTF8ToUTF16(kStackFrameDelimiter),
                                  &pieces);
@@ -322,17 +323,12 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
-  // Filter only.
-  IPC_BEGIN_MESSAGE_MAP(ChromeRenderViewObserver, message)
-    IPC_MESSAGE_HANDLER(PrerenderMsg_SetIsPrerendering, OnSetIsPrerendering);
-  IPC_END_MESSAGE_MAP()
-
   return handled;
 }
 
 void ChromeRenderViewObserver::OnWebUIJavaScript(
-    const string16& frame_xpath,
-    const string16& jscript,
+    const base::string16& frame_xpath,
+    const base::string16& jscript,
     int id,
     bool notify_result) {
   webui_javascript_.reset(new WebUIJavaScript());
@@ -763,15 +759,6 @@ void ChromeRenderViewObserver::didNotAllowScript(WebFrame* frame) {
   content_settings_->DidNotAllowScript();
 }
 
-void ChromeRenderViewObserver::OnSetIsPrerendering(bool is_prerendering) {
-  if (is_prerendering) {
-    DCHECK(!prerender::PrerenderHelper::Get(render_view()));
-    // The PrerenderHelper will destroy itself either after recording histograms
-    // or on destruction of the RenderView.
-    new prerender::PrerenderHelper(render_view());
-  }
-}
-
 void ChromeRenderViewObserver::DidStartLoading() {
   if ((render_view()->GetEnabledBindings() & content::BINDINGS_POLICY_WEB_UI) &&
       webui_javascript_.get()) {
@@ -829,7 +816,7 @@ void ChromeRenderViewObserver::DetailedConsoleMessageAdded(
     const base::string16& stack_trace_string,
     int32 line_number,
     int32 severity_level) {
-  string16 trimmed_message = message;
+  base::string16 trimmed_message = message;
   extensions::StackTrace stack_trace = GetStackTraceFromMessage(
       &trimmed_message,
       source,
@@ -878,12 +865,14 @@ void ChromeRenderViewObserver::CapturePageInfo(int page_id,
     return;
 
   // Don't index/capture pages that are being prerendered.
-  if (prerender::PrerenderHelper::IsPrerendering(render_view()))
+  if (prerender::PrerenderHelper::IsPrerendering(
+          render_view()->GetMainRenderFrame())) {
     return;
+  }
 
   // Retrieve the frame's full text (up to kMaxIndexChars), and pass it to the
   // translate helper for language detection and possible translation.
-  string16 contents;
+  base::string16 contents;
   base::TimeTicks capture_begin_time = base::TimeTicks::Now();
   CaptureText(main_frame, &contents);
   UMA_HISTOGRAM_TIMES(kTranslateCaptureText,
@@ -934,7 +923,7 @@ void ChromeRenderViewObserver::CapturePageInfo(int page_id,
 }
 
 void ChromeRenderViewObserver::CaptureText(WebFrame* frame,
-                                           string16* contents) {
+                                           base::string16* contents) {
   contents->clear();
   if (!frame)
     return;
@@ -958,8 +947,8 @@ void ChromeRenderViewObserver::CaptureText(WebFrame* frame,
   // partial word indexed at the end that might have been clipped. Therefore,
   // terminate the string at the last space to ensure no words are clipped.
   if (contents->size() == kMaxIndexChars) {
-    size_t last_space_index = contents->find_last_of(kWhitespaceUTF16);
-    if (last_space_index == std::wstring::npos)
+    size_t last_space_index = contents->find_last_of(base::kWhitespaceUTF16);
+    if (last_space_index == base::string16::npos)
       return;  // don't index if we got a huge block of text with no spaces
     contents->resize(last_space_index);
   }

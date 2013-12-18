@@ -41,6 +41,7 @@ namespace ash {
 class Launcher;
 
 namespace internal {
+class DockedBackgroundWidget;
 class DockedWindowLayoutManagerObserver;
 class DockedWindowResizerTest;
 class ShelfLayoutManager;
@@ -74,6 +75,7 @@ class ASH_EXPORT DockedWindowLayoutManager
       public aura::WindowObserver,
       public aura::client::ActivationChangeObserver,
       public keyboard::KeyboardControllerObserver,
+      public ShelfLayoutManagerObserver,
       public wm::WindowStateObserver {
  public:
   // Maximum width of the docked windows area.
@@ -132,6 +134,9 @@ class ASH_EXPORT DockedWindowLayoutManager
   // Returns true if currently dragged window is docked at the screen edge.
   bool is_dragged_window_docked() const { return is_dragged_window_docked_; }
 
+  // Updates docked layout when launcher shelf bounds change.
+  void OnShelfBoundsChanged();
+
   // aura::LayoutManager:
   virtual void OnWindowResized() OVERRIDE;
   virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE;
@@ -147,6 +152,11 @@ class ASH_EXPORT DockedWindowLayoutManager
   virtual void OnFullscreenStateChanged(bool is_fullscreen,
                                         aura::Window* root_window) OVERRIDE;
   virtual void OnShelfAlignmentChanged(aura::Window* root_window) OVERRIDE;
+
+  // ShelfLayoutManagerObserver:
+  virtual void OnBackgroundUpdated(
+      ShelfBackgroundType background_type,
+      BackgroundAnimatorChangeType change_type) OVERRIDE;
 
   // wm::WindowStateObserver:
   virtual void OnWindowShowTypeChanged(wm::WindowState* window_state,
@@ -165,6 +175,7 @@ class ASH_EXPORT DockedWindowLayoutManager
                                  aura::Window* lost_active) OVERRIDE;
 
  private:
+  class ShelfWindowObserver;
   friend class DockedWindowLayoutManagerTest;
   friend class DockedWindowResizerTest;
 
@@ -255,6 +266,7 @@ class ASH_EXPORT DockedWindowLayoutManager
 
   // The launcher to respond to launcher alignment changes.
   Launcher* launcher_;
+
   // Workspace controller that can be checked for fullscreen mode.
   WorkspaceController* workspace_controller_;
   // Tracks if any window in the same root window is in fullscreen mode.
@@ -279,8 +291,11 @@ class ASH_EXPORT DockedWindowLayoutManager
   // Used in UMA metrics.
   base::Time last_action_time_;
 
+  // Observes launcher shelf for bounds changes.
+  scoped_ptr<ShelfWindowObserver> shelf_observer_;
+
   // Widget used to paint a background for the docked area.
-  scoped_ptr<views::Widget> background_widget_;
+  scoped_ptr<DockedBackgroundWidget> background_widget_;
 
   // Observers of dock bounds changes.
   ObserverList<DockedWindowLayoutManagerObserver> observer_list_;

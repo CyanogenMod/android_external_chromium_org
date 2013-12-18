@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -17,25 +18,24 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_core.h"
-#include "chrome/browser/policy/cloud/cloud_policy_refresh_scheduler.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/cloud_policy_validator.h"
-#include "chrome/browser/policy/cloud/message_util.h"
-#include "chrome/browser/policy/configuration_policy_handler_list.h"
-#include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/policy/schema_registry_service.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "components/policy/core/browser/cloud/message_util.h"
+#include "components/policy/core/browser/configuration_policy_handler_list.h"
+#include "components/policy/core/browser/policy_error_map.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/cloud_policy_validator.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_service.h"
 #include "components/policy/core/common/policy_types.h"
 #include "components/policy/core/common/schema.h"
 #include "components/policy/core/common/schema_map.h"
@@ -50,6 +50,7 @@
 #include "grit/browser_resources.h"
 #include "grit/component_strings.h"
 #include "policy/policy_constants.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
 
@@ -138,11 +139,12 @@ void GetStatusFromCore(const policy::CloudPolicyCore* core,
 
   bool no_error = store->status() == policy::CloudPolicyStore::STATUS_OK &&
                   client && client->status() == policy::DM_STATUS_SUCCESS;
-  string16 status = store->status() == policy::CloudPolicyStore::STATUS_OK &&
-                    client && client->status() != policy::DM_STATUS_SUCCESS ?
-                        policy::FormatDeviceManagementStatus(client->status()) :
-                        policy::FormatStoreStatus(store->status(),
-                                                  store->validation_status());
+  base::string16 status =
+      store->status() == policy::CloudPolicyStore::STATUS_OK &&
+      client && client->status() != policy::DM_STATUS_SUCCESS ?
+                policy::FormatDeviceManagementStatus(client->status()) :
+                policy::FormatStoreStatus(store->status(),
+                                          store->validation_status());
   const em::PolicyData* policy = store->policy();
   std::string client_id = policy ? policy->device_id() : std::string();
   std::string username = policy ? policy->username() : std::string();
@@ -170,6 +172,36 @@ void ExtractDomainFromUsername(base::DictionaryValue* dict) {
   dict->GetString("username", &username);
   if (!username.empty())
     dict->SetString("domain", gaia::ExtractDomainName(username));
+}
+
+// Utility function that returns a JSON serialization of the given |dict|.
+scoped_ptr<base::StringValue> DictionaryToJSONString(
+    const base::DictionaryValue* dict) {
+  std::string json_string;
+  base::JSONWriter::WriteWithOptions(dict,
+                                     base::JSONWriter::OPTIONS_DO_NOT_ESCAPE |
+                                         base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                                     &json_string);
+  return make_scoped_ptr(new base::StringValue(json_string));
+}
+
+// Returns a copy of |value| with some values converted to a representation that
+// i18n_template.js will display in a nicer way.
+scoped_ptr<base::Value> CopyAndConvert(const base::Value* value) {
+  const base::DictionaryValue* dict = NULL;
+  if (value->GetAsDictionary(&dict))
+    return DictionaryToJSONString(dict).PassAs<base::Value>();
+
+  scoped_ptr<base::Value> copy(value->DeepCopy());
+  base::ListValue* list = NULL;
+  if (copy->GetAsList(&list)) {
+    for (size_t i = 0; i < list->GetSize(); ++i) {
+      if (list->GetDictionary(i, &dict))
+        list->Set(i, DictionaryToJSONString(dict).release());
+    }
+  }
+
+  return copy.Pass();
 }
 
 }  // namespace
@@ -644,7 +676,7 @@ void PolicyUIHandler::GetPolicyValues(const policy::PolicyMap& map,
   for (policy::PolicyMap::const_iterator entry = map.begin();
        entry != map.end(); ++entry) {
     base::DictionaryValue* value = new base::DictionaryValue;
-    value->Set("value", entry->second.value->DeepCopy());
+    value->Set("value", CopyAndConvert(entry->second.value).release());
     if (entry->second.scope == policy::POLICY_SCOPE_USER)
       value->SetString("scope", "user");
     else
@@ -653,7 +685,7 @@ void PolicyUIHandler::GetPolicyValues(const policy::PolicyMap& map,
       value->SetString("level", "recommended");
     else
       value->SetString("level", "mandatory");
-    string16 error = errors->GetErrors(entry->first);
+    base::string16 error = errors->GetErrors(entry->first);
     if (!error.empty())
       value->SetString("error", error);
     values->Set(entry->first, value);

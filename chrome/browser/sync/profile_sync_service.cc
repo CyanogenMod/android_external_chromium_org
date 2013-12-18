@@ -45,9 +45,11 @@
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/sync_backend_host_impl.h"
+#include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/glue/typed_url_data_type_controller.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
+#include "chrome/browser/sync/sessions2/notification_service_sessions_router.h"
 #include "chrome/browser/sync/sessions2/sessions_sync_manager.h"
 #include "chrome/browser/sync/sync_global_error.h"
 #include "chrome/browser/sync/user_selectable_sync_type.h"
@@ -70,6 +72,8 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/configure_reason.h"
+#include "sync/internal_api/public/http_bridge_network_resources.h"
+#include "sync/internal_api/public/network_resources.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
@@ -91,6 +95,7 @@ using browser_sync::ChangeProcessor;
 using browser_sync::DataTypeController;
 using browser_sync::DataTypeManager;
 using browser_sync::FailedDataTypesHandler;
+using browser_sync::NotificationServiceSessionsRouter;
 using browser_sync::SyncBackendHost;
 using syncer::ModelType;
 using syncer::ModelTypeSet;
@@ -179,7 +184,8 @@ ProfileSyncService::ProfileSyncService(
       request_access_token_backoff_(&kRequestAccessTokenBackoffPolicy),
       weak_factory_(this),
       connection_status_(syncer::CONNECTION_NOT_ATTEMPTED),
-      last_get_token_error_(GoogleServiceAuthError::AuthErrorNone()) {
+      last_get_token_error_(GoogleServiceAuthError::AuthErrorNone()),
+      network_resources_(new syncer::HttpBridgeNetworkResources) {
   DCHECK(profile);
   // By default, dev, canary, and unbranded Chromium users will go to the
   // development servers. Development servers have more features than standard
@@ -196,7 +202,12 @@ ProfileSyncService::ProfileSyncService(
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableSyncSessionsV2)) {
-    sessions_sync_manager_.reset(new SessionsSyncManager(profile, this));
+    syncer::SyncableService::StartSyncFlare flare(
+        sync_start_util::GetFlareForSyncableService(profile->GetPath()));
+    scoped_ptr<browser_sync::LocalSessionEventRouter> router(
+        new NotificationServiceSessionsRouter(profile, flare));
+    sessions_sync_manager_.reset(
+        new SessionsSyncManager(profile, this, router.Pass()));
   }
 }
 
@@ -357,12 +368,8 @@ void ProfileSyncService::RegisterDataTypeController(
 
 browser_sync::SessionModelAssociator*
     ProfileSyncService::GetSessionModelAssociatorDeprecated() {
-  if (data_type_controllers_.find(syncer::SESSIONS) ==
-      data_type_controllers_.end() ||
-      data_type_controllers_.find(syncer::SESSIONS)->second->state() !=
-      DataTypeController::RUNNING) {
+  if (!IsSessionsDataTypeControllerRunning())
     return NULL;
-  }
 
   // If we're using sessions V2, there's no model associator.
   if (sessions_sync_manager_.get())
@@ -373,13 +380,16 @@ browser_sync::SessionModelAssociator*
       syncer::SESSIONS)->second.get())->GetModelAssociator();
 }
 
+bool ProfileSyncService::IsSessionsDataTypeControllerRunning() const {
+  return data_type_controllers_.find(syncer::SESSIONS) !=
+      data_type_controllers_.end() &&
+      data_type_controllers_.find(syncer::SESSIONS)->second->state() ==
+      DataTypeController::RUNNING;
+}
+
 browser_sync::OpenTabsUIDelegate* ProfileSyncService::GetOpenTabsUIDelegate() {
-  if (data_type_controllers_.find(syncer::SESSIONS) ==
-      data_type_controllers_.end() ||
-      data_type_controllers_.find(syncer::SESSIONS)->second->state() !=
-      DataTypeController::RUNNING) {
+  if (!IsSessionsDataTypeControllerRunning())
     return NULL;
-  }
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableSyncSessionsV2)) {
@@ -541,7 +551,8 @@ void ProfileSyncService::InitializeBackend(bool delete_stale_data) {
       scoped_ptr<syncer::SyncManagerFactory>(
           new syncer::SyncManagerFactory).Pass(),
       backend_unrecoverable_error_handler.Pass(),
-      &browser_sync::ChromeReportUnrecoverableError);
+      &browser_sync::ChromeReportUnrecoverableError,
+      network_resources_.get());
 }
 
 void ProfileSyncService::CreateBackend() {
@@ -1061,15 +1072,19 @@ void ProfileSyncService::OnBackendInitialized(
 
 void ProfileSyncService::OnSyncCycleCompleted() {
   UpdateLastSyncedTime();
-  if (GetSessionModelAssociatorDeprecated()) {
+  if (IsSessionsDataTypeControllerRunning()) {
     // Trigger garbage collection of old sessions now that we've downloaded
-    // any new session data. TODO(zea): Have this be a notification the session
-    // model associator listens too. Also consider somehow plumbing the current
-    // server time as last reported by CheckServerReachable, so we don't have to
-    // rely on the local clock, which may be off significantly.
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-        base::Bind(&browser_sync::SessionModelAssociator::DeleteStaleSessions,
-                   GetSessionModelAssociatorDeprecated()->AsWeakPtr()));
+    // any new session data.
+    if (sessions_sync_manager_) {
+      // Sessions V2.
+      base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+          &browser_sync::SessionsSyncManager::DoGarbageCollection,
+              base::AsWeakPtr(sessions_sync_manager_.get())));
+    } else {
+      base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+          &browser_sync::SessionModelAssociator::DeleteStaleSessions,
+              GetSessionModelAssociatorDeprecated()->AsWeakPtr()));
+    }
   }
   DVLOG(2) << "Notifying observers sync cycle completed";
   NotifySyncCycleCompleted();
@@ -1727,12 +1742,6 @@ bool ProfileSyncService::IsCryptographerReady(
   return backend_.get() && backend_->IsCryptographerReady(trans);
 }
 
-SyncBackendHost* ProfileSyncService::GetBackendForTest() {
-  // We don't check |backend_initialized_|; we assume the test class
-  // knows what it's doing.
-  return backend_.get();
-}
-
 void ProfileSyncService::ConfigurePriorityDataTypes() {
   const syncer::ModelTypeSet priority_types =
       Intersection(GetPreferredDataTypes(), syncer::PriorityUserTypes());
@@ -2258,4 +2267,9 @@ ProfileSyncService::GetSyncTokenStatus() const {
   if (request_access_token_retry_timer_.IsRunning())
     status.next_token_request_time = next_token_request_time_;
   return status;
+}
+
+void ProfileSyncService::OverrideNetworkResourcesForTest(
+    scoped_ptr<syncer::NetworkResources> network_resources) {
+  network_resources_ = network_resources.Pass();
 }

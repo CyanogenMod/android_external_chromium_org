@@ -28,6 +28,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	media/audio/android/audio_manager_android.cc \
+	media/audio/android/audio_record_input.cc \
 	media/audio/android/opensles_input.cc \
 	media/audio/android/opensles_output.cc \
 	media/audio/android/opensles_wrapper.cc \
@@ -50,6 +51,7 @@ LOCAL_SRC_FILES := \
 	media/audio/clockless_audio_sink.cc \
 	media/audio/fake_audio_consumer.cc \
 	media/audio/fake_audio_input_stream.cc \
+	media/audio/fake_audio_log_factory.cc \
 	media/audio/fake_audio_manager.cc \
 	media/audio/fake_audio_output_stream.cc \
 	media/audio/null_audio_sink.cc \
@@ -115,6 +117,7 @@ LOCAL_SRC_FILES := \
 	media/base/video_decoder.cc \
 	media/base/video_decoder_config.cc \
 	media/base/video_frame.cc \
+	media/base/video_frame_pool.cc \
 	media/base/video_renderer.cc \
 	media/base/video_util.cc \
 	media/base/yuv_convert.cc \
@@ -142,9 +145,12 @@ LOCAL_SRC_FILES := \
 	media/filters/video_renderer_impl.cc \
 	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
+	media/midi/midi_message_queue.cc \
+	media/midi/midi_message_util.cc \
 	media/midi/midi_port_info.cc \
 	media/video/capture/android/video_capture_device_android.cc \
 	media/video/capture/fake_video_capture_device.cc \
+	media/video/capture/file_video_capture_device.cc \
 	media/video/capture/video_capture_device.cc \
 	media/video/capture/video_capture_proxy.cc \
 	media/video/capture/video_capture_types.cc \
@@ -218,6 +224,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -227,9 +234,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
@@ -332,6 +341,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -341,9 +351,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \

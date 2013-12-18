@@ -17,6 +17,8 @@
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "cc/base/latency_info_swap_promise.h"
+#include "cc/base/latency_info_swap_promise_monitor.h"
 #include "cc/base/switches.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark.h"
@@ -65,26 +67,6 @@ bool GetSwitchValueAsInt(
   }
 }
 
-bool GetSwitchValueAsFloat(
-    const CommandLine& command_line,
-    const std::string& switch_string,
-    float min_value,
-    float max_value,
-    float* result) {
-  std::string string_value = command_line.GetSwitchValueASCII(switch_string);
-  double double_value;
-  if (base::StringToDouble(string_value, &double_value) &&
-      double_value >= min_value && double_value <= max_value) {
-    *result = static_cast<float>(double_value);
-    return true;
-  } else {
-    LOG(WARNING) << "Failed to parse switch " << switch_string  << ": " <<
-        string_value;
-    return false;
-  }
-}
-
-
 }  // namespace
 
 // static
@@ -115,8 +97,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kEnablePerTilePainting);
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
-  settings.force_direct_layer_drawing =
-      cmd->HasSwitch(cc::switches::kForceDirectLayerDrawing);
   settings.touch_hit_testing =
       !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
@@ -150,6 +130,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                                            max_untiled_layer_height);
 
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
+  settings.gpu_rasterization = cc::switches::IsGPURasterizationEnabled();
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -204,6 +185,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kShowCompositedLayerBorders);
   settings.initial_debug_state.show_fps_counter =
       cmd->HasSwitch(cc::switches::kShowFPSCounter);
+  settings.initial_debug_state.show_layer_animation_bounds_rects =
+      cmd->HasSwitch(cc::switches::kShowLayerAnimationBounds);
   settings.initial_debug_state.show_paint_rects =
       cmd->HasSwitch(switches::kShowPaintRects);
   settings.initial_debug_state.show_property_changed_rects =
@@ -241,15 +224,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                             kMinRasterThreads, kMaxRasterThreads,
                             &num_raster_threads))
       settings.num_raster_threads = num_raster_threads;
-  }
-
-  if (cmd->HasSwitch(cc::switches::kLowResolutionContentsScaleFactor)) {
-    const int kMinScaleFactor = settings.minimum_contents_scale;
-    const int kMaxScaleFactor = 1;
-    GetSwitchValueAsFloat(*cmd,
-                          cc::switches::kLowResolutionContentsScaleFactor,
-                          kMinScaleFactor, kMaxScaleFactor,
-                          &settings.low_res_contents_scale_factor);
   }
 
   if (cmd->HasSwitch(cc::switches::kMaxTilesForInterestArea)) {
@@ -389,9 +363,12 @@ void RenderWidgetCompositor::SetNeedsForcedRedraw() {
   setNeedsAnimate();
 }
 
-void RenderWidgetCompositor::SetLatencyInfo(
-    const ui::LatencyInfo& latency_info) {
-  layer_tree_host_->SetLatencyInfo(latency_info);
+scoped_ptr<cc::SwapPromiseMonitor>
+RenderWidgetCompositor::CreateLatencyInfoSwapPromiseMonitor(
+    ui::LatencyInfo* latency) {
+  return scoped_ptr<cc::SwapPromiseMonitor>(
+      new cc::LatencyInfoSwapPromiseMonitor(
+          latency, layer_tree_host_.get(), NULL));
 }
 
 int RenderWidgetCompositor::GetLayerTreeId() const {

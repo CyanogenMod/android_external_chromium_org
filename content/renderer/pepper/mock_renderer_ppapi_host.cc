@@ -35,6 +35,11 @@ PepperPluginInstance* MockRendererPpapiHost::GetPluginInstance(
   return plugin_instance_.get();
 }
 
+RenderFrame* MockRendererPpapiHost::GetRenderFrameForInstance(
+    PP_Instance instance) const {
+  return NULL;
+}
+
 RenderView* MockRendererPpapiHost::GetRenderViewForInstance(
     PP_Instance instance) const {
   if (instance == pp_instance_)
@@ -61,7 +66,7 @@ int MockRendererPpapiHost::GetRoutingIDForWidget(PP_Instance instance) const {
   return 0;
 }
 
-gfx::Point MockRendererPpapiHost::PluginPointToRenderView(
+gfx::Point MockRendererPpapiHost::PluginPointToRenderFrame(
     PP_Instance instance,
     const gfx::Point& pt) const {
   return gfx::Point();

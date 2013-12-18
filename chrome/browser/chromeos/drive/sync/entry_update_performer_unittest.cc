@@ -9,8 +9,8 @@
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -21,6 +21,7 @@ class EntryUpdatePerformerTest : public file_system::OperationTestBase {
   virtual void SetUp() OVERRIDE {
    OperationTestBase::SetUp();
    performer_.reset(new EntryUpdatePerformer(blocking_task_runner(),
+                                             observer(),
                                              scheduler(),
                                              metadata()));
   }
@@ -50,6 +51,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry) {
       new_last_modified.ToInternalValue());
   src_entry.mutable_file_info()->set_last_accessed(
       new_last_accessed.ToInternalValue());
+  src_entry.set_metadata_edit_state(ResourceEntry::DIRTY);
 
   FileError error = FILE_ERROR_FAILED;
   base::PostTaskAndReplyWithResult(

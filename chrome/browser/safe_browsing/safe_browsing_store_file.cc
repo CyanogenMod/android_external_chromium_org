@@ -135,7 +135,7 @@ void DeleteChunksFromSet(const base::hash_set<int32>& deleted,
 bool FileHeaderSanityCheck(const base::FilePath& filename,
                            const FileHeader& header) {
   int64 size = 0;
-  if (!file_util::GetFileSize(filename, &size))
+  if (!base::GetFileSize(filename, &size))
     return false;
 
   int64 expected_size = sizeof(FileHeader);
@@ -181,7 +181,7 @@ void SafeBrowsingStoreFile::CheckForOriginalAndDelete(
       current_filename.DirName().AppendASCII("Safe Browsing"));
   if (base::PathExists(original_filename)) {
     int64 size = 0;
-    if (file_util::GetFileSize(original_filename, &size)) {
+    if (base::GetFileSize(original_filename, &size)) {
       UMA_HISTOGRAM_COUNTS("SB2.OldDatabaseKilobytes",
                            static_cast<int>(size / 1024));
     }
@@ -230,7 +230,7 @@ bool SafeBrowsingStoreFile::CheckValidity() {
     return OnCorruptDatabase();
 
   int64 size = 0;
-  if (!file_util::GetFileSize(filename_, &size))
+  if (!base::GetFileSize(filename_, &size))
     return OnCorruptDatabase();
 
   base::MD5Context context;
@@ -292,7 +292,7 @@ bool SafeBrowsingStoreFile::WriteAddPrefix(int32 chunk_id, SBPrefix prefix) {
 bool SafeBrowsingStoreFile::GetAddPrefixes(SBAddPrefixes* add_prefixes) {
   add_prefixes->clear();
 
-  file_util::ScopedFILE file(file_util::OpenFile(filename_, "rb"));
+  file_util::ScopedFILE file(base::OpenFile(filename_, "rb"));
   if (file.get() == NULL) return false;
 
   FileHeader header;
@@ -314,7 +314,7 @@ bool SafeBrowsingStoreFile::GetAddFullHashes(
     std::vector<SBAddFullHash>* add_full_hashes) {
   add_full_hashes->clear();
 
-  file_util::ScopedFILE file(file_util::OpenFile(filename_, "rb"));
+  file_util::ScopedFILE file(base::OpenFile(filename_, "rb"));
   if (file.get() == NULL) return false;
 
   FileHeader header;
@@ -397,11 +397,11 @@ bool SafeBrowsingStoreFile::BeginUpdate() {
   corruption_seen_ = false;
 
   const base::FilePath new_filename = TemporaryFileForFilename(filename_);
-  file_util::ScopedFILE new_file(file_util::OpenFile(new_filename, "wb+"));
+  file_util::ScopedFILE new_file(base::OpenFile(new_filename, "wb+"));
   if (new_file.get() == NULL)
     return false;
 
-  file_util::ScopedFILE file(file_util::OpenFile(filename_, "rb"));
+  file_util::ScopedFILE file(base::OpenFile(filename_, "rb"));
   empty_ = (file.get() == NULL);
   if (empty_) {
     // If the file exists but cannot be opened, try to delete it (not
@@ -547,7 +547,7 @@ bool SafeBrowsingStoreFile::DoUpdate(
 
   // Get chunk file's size for validating counts.
   int64 size = 0;
-  if (!file_util::GetFileSize(TemporaryFileForFilename(filename_), &size))
+  if (!base::GetFileSize(TemporaryFileForFilename(filename_), &size))
     return OnCorruptDatabase();
 
   // Track update size to answer questions at http://crbug.com/72216 .
@@ -644,7 +644,7 @@ bool SafeBrowsingStoreFile::DoUpdate(
     return false;
 
   // Trim any excess left over from the temporary chunk data.
-  if (!file_util::TruncateFile(new_file_.get()))
+  if (!base::TruncateFile(new_file_.get()))
     return false;
 
   // Close the file handle and swizzle the file into place.

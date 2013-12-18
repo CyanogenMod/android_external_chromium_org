@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,6 +34,7 @@ public class ContentBrowserTestsActivity extends Activity {
             LibraryLoader.ensureInitialized();
         } catch (ProcessInitException e) {
             Log.i(TAG, "Cannot load content_browsertests:" +  e);
+            System.exit(-1);
         }
         BrowserStartupController.get(getApplicationContext()).initChromiumBrowserProcessForTests();
 

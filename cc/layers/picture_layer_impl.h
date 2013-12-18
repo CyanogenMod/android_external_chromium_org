@@ -55,12 +55,16 @@ class CC_EXPORT PictureLayerImpl
   // PictureLayerTilingClient overrides.
   virtual scoped_refptr<Tile> CreateTile(PictureLayerTiling* tiling,
                                          gfx::Rect content_rect) OVERRIDE;
+  virtual scoped_refptr<TileBundle> CreateTileBundle(int offset_x,
+                                                     int offset_y,
+                                                     int width,
+                                                     int height) OVERRIDE;
   virtual void UpdatePile(Tile* tile) OVERRIDE;
   virtual gfx::Size CalculateTileSize(
       gfx::Size content_bounds) const OVERRIDE;
   virtual const Region* GetInvalidation() OVERRIDE;
   virtual const PictureLayerTiling* GetTwinTiling(
-      const PictureLayerTiling* tiling) OVERRIDE;
+      const PictureLayerTiling* tiling) const OVERRIDE;
 
   // PushPropertiesTo active tree => pending tree.
   void SyncTiling(const PictureLayerTiling* tiling);
@@ -91,6 +95,13 @@ class CC_EXPORT PictureLayerImpl
   void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
+  bool MarkVisibleTilesAsRequired(
+      PictureLayerTiling* tiling,
+      const PictureLayerTiling* optional_twin_tiling,
+      float contents_scale,
+      gfx::Rect rect,
+      const Region& missing_region) const;
+
   void DoPostCommitInitializationIfNeeded() {
     if (needs_post_commit_initialization_)
       DoPostCommitInitialization();
@@ -100,6 +111,7 @@ class CC_EXPORT PictureLayerImpl
   bool CanHaveTilings() const;
   bool CanHaveTilingWithScale(float contents_scale) const;
   void SanityCheckTilingState() const;
+  bool ShouldUseGPURasterization() const;
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;

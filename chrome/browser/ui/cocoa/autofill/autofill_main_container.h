@@ -15,6 +15,7 @@
 @class AutofillDialogWindowController;
 @class AutofillNotificationContainer;
 @class AutofillSectionContainer;
+@class AutofillTooltipController;
 @class GTMWidthBasedTweaker;
 @class HyperlinkTextView;
 
@@ -31,7 +32,7 @@ namespace autofill {
   base::scoped_nsobject<GTMWidthBasedTweaker> buttonContainer_;
   base::scoped_nsobject<NSImageView> buttonStripImage_;
   base::scoped_nsobject<NSButton> saveInChromeCheckbox_;
-  base::scoped_nsobject<NSImageView> saveInChromeTooltip_;
+  base::scoped_nsobject<AutofillTooltipController> saveInChromeTooltip_;
   base::scoped_nsobject<AutofillDetailsContainer> detailsContainer_;
   base::scoped_nsobject<HyperlinkTextView> legalDocumentsView_;
   base::scoped_nsobject<AutofillNotificationContainer> notificationContainer_;
@@ -51,6 +52,10 @@ namespace autofill {
 
 // Designated initializer.
 - (id)initWithDelegate:(autofill::AutofillDialogViewDelegate*)delegate;
+
+// Returns the preferred size for the footer and notifications at the specfied
+// |width|.
+- (NSSize)decorationSizeForWidth:(CGFloat)width;
 
 // Sets the anchor point for the notificationView_.
 - (void)setAnchorView:(NSView*)anchorView;

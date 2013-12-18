@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "media_media_gyp_media_android_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/media/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['base/android/java/src/org/chromium/media/AudioManagerAndroid.java', 'base/android/java/src/org/chromium/media/MediaCodecBridge.java', 'base/android/java/src/org/chromium/media/MediaDrmBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerListener.java', 'base/android/java/src/org/chromium/media/WebAudioMediaCodecBridge.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/media/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/media/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['base/android/java/src/org/chromium/media/AudioManagerAndroid.java', 'base/android/java/src/org/chromium/media/AudioRecordInput.java', 'base/android/java/src/org/chromium/media/MediaCodecBridge.java', 'base/android/java/src/org/chromium/media/MediaDrmBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerListener.java', 'base/android/java/src/org/chromium/media/WebAudioMediaCodecBridge.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/media/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -25,6 +25,16 @@ $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: $(LOCAL_PATH
 
 .PHONY: media_media_android_jni_headers_gyp_rule_trigger
 media_media_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h
+
+$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h: $(LOCAL_PATH)/media/base/android/java/src/org/chromium/media/AudioRecordInput.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/media/jni; cd $(gyp_local_path)/media; ../base/android/jni_generator/jni_generator.py --input_file base/android/java/src/org/chromium/media/AudioRecordInput.java --output_dir "$(gyp_shared_intermediate_dir)/media/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+
+.PHONY: media_media_android_jni_headers_gyp_rule_trigger
+media_media_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h
 
 $(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -80,6 +90,7 @@ media_media_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaPlayerBridge_jni.h \
@@ -91,6 +102,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/media/jni/AudioRecordInput_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaPlayerBridge_jni.h \
@@ -140,6 +152,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -149,9 +162,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -222,6 +237,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -231,9 +247,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

@@ -9,7 +9,7 @@
 const char MockConfirmInfoBarDelegate::kMessage[] = "MockConfirmInfoBarMessage";
 
 MockConfirmInfoBarDelegate::MockConfirmInfoBarDelegate(Owner* owner)
-    : ConfirmInfoBarDelegate(NULL),
+    : ConfirmInfoBarDelegate(),
       owner_(owner),
       closes_on_action_(true),
       icon_accessed_(false),
@@ -52,7 +52,7 @@ bool MockConfirmInfoBarDelegate::Cancel() {
 
 string16 MockConfirmInfoBarDelegate::GetLinkText() const {
   link_text_accessed_ = true;
-  return string16();
+  return base::string16();
 }
 
 bool MockConfirmInfoBarDelegate::LinkClicked(

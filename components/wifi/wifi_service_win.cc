@@ -42,6 +42,7 @@ const char kWlanGetAvailableNetworkList[] = "WlanGetAvailableNetworkList";
 const char kWlanGetNetworkBssList[] = "WlanGetNetworkBssList";
 const char kWlanGetProfile[] = "WlanGetProfile";
 const char kWlanOpenHandle[] = "WlanOpenHandle";
+const char kWlanQueryInterface[] = "WlanQueryInterface";
 const char kWlanRegisterNotification[] = "WlanRegisterNotification";
 const char kWlanSaveTemporaryProfile[] = "WlanSaveTemporaryProfile";
 const char kWlanScan[] = "WlanScan";
@@ -101,6 +102,15 @@ typedef DWORD (WINAPI* WlanOpenHandleFunction)(
     PDWORD pdwNegotiatedVersion,
     PHANDLE phClientHandle);
 
+typedef DWORD (WINAPI* WlanQueryInterfaceFunction)(
+    HANDLE hClientHandle,
+    const GUID *pInterfaceGuid,
+    WLAN_INTF_OPCODE OpCode,
+    PVOID pReserved,
+    PDWORD pdwDataSize,
+    PVOID *ppData,
+    PWLAN_OPCODE_VALUE_TYPE pWlanOpcodeValueType);
+
 typedef DWORD (WINAPI* WlanRegisterNotificationFunction)(
     HANDLE hClientHandle,
     DWORD dwNotifSource,
@@ -142,38 +152,38 @@ class WiFiServiceImpl : public WiFiService, base::NonThreadSafe {
 
   virtual void UnInitialize() OVERRIDE;
 
-  // Get Properties of network identified by |network_guid|. Populates
-  // |properties| on success, |error| on failure.
   virtual void GetProperties(const std::string& network_guid,
                              DictionaryValue* properties,
                              std::string* error) OVERRIDE;
 
-  // Set Properties of network identified by |network_guid|. Populates |error|
-  // on failure.
+  virtual void GetManagedProperties(const std::string& network_guid,
+                                    DictionaryValue* managed_properties,
+                                    std::string* error) OVERRIDE;
+
+  virtual void GetState(const std::string& network_guid,
+                        DictionaryValue* properties,
+                        std::string* error) OVERRIDE;
+
   virtual void SetProperties(const std::string& network_guid,
                              scoped_ptr<base::DictionaryValue> properties,
                              std::string* error) OVERRIDE;
 
-  // Get list of visible networks of |network_type| (one of onc::network_type).
-  // Populates |network_list| on success.
+  virtual void CreateNetwork(bool shared,
+                             scoped_ptr<base::DictionaryValue> properties,
+                             std::string* network_guid,
+                             std::string* error) OVERRIDE;
+
   virtual void GetVisibleNetworks(const std::string& network_type,
                                    ListValue* network_list) OVERRIDE;
 
-  // Request network scan. Send |NetworkListChanged| event on completion.
   virtual void RequestNetworkScan() OVERRIDE;
 
-  // Start connect to network identified by |network_guid|. Populates |error|
-  // on failure.
   virtual void StartConnect(const std::string& network_guid,
                             std::string* error) OVERRIDE;
 
-  // Start disconnect from network identified by |network_guid|. Populates
-  // |error| on failure.
   virtual void StartDisconnect(const std::string& network_guid,
                                std::string* error) OVERRIDE;
 
-  // Set observers to run when |NetworksChanged| and |NetworksListChanged|
-  // events needs to be sent. Notifications are posted on |message_loop_proxy|.
   virtual void SetEventObservers(
       scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
       const NetworkGuidListCallback& networks_changed_observer,
@@ -293,11 +303,23 @@ class WiFiServiceImpl : public WiFiService, base::NonThreadSafe {
   // Disconnect from currently connected network if any.
   DWORD Disconnect();
 
+  // Get Frequency of currently connected network |network_guid|. If network is
+  // not connected, then return |kFrequencyUnknown|.
+  Frequency WiFiServiceImpl::GetConnectedFrequency(
+      const std::string& network_guid);
+
+  // Get desired connection freqency if it was set using |SetProperties|.
+  // Default to |kFrequencyAny|.
+  Frequency GetFrequencyToConnect(const std::string& network_guid) const;
+
   // Get DOT11_BSSID_LIST of desired BSSIDs to connect to |ssid| network on
   // given |frequency|.
   DWORD GetDesiredBssList(DOT11_SSID& ssid,
                           Frequency frequency,
                           scoped_ptr<DOT11_BSSID_LIST>* desired_list);
+
+  // Normalizes |frequency_in_mhz| into one of |Frequency| values.
+  Frequency GetNormalizedFrequency(int frequency_in_mhz) const;
 
   // Save temporary wireless profile for |network_guid|.
   DWORD SaveTempProfile(const std::string& network_guid);
@@ -331,6 +353,7 @@ class WiFiServiceImpl : public WiFiService, base::NonThreadSafe {
   WlanGetNetworkBssListFunction WlanGetNetworkBssList_function_;
   WlanGetProfileFunction WlanGetProfile_function_;
   WlanOpenHandleFunction WlanOpenHandle_function_;
+  WlanQueryInterfaceFunction WlanQueryInterface_function_;
   WlanRegisterNotificationFunction WlanRegisterNotification_function_;
   WlanScanFunction WlanScan_function_;
   // WlanSaveTemporaryProfile function may not be avaiable on Windows XP.
@@ -341,6 +364,9 @@ class WiFiServiceImpl : public WiFiService, base::NonThreadSafe {
   // GUID of the currently connected interface, if any, otherwise the GUID of
   // one of the WLAN interfaces.
   GUID interface_guid_;
+  // Temporary storage of network properties indexed by |network_guid|. Persist
+  // only in memory.
+  DictionaryValue connect_properties_;
   // Preserved WLAN profile xml.
   std::map<std::string, std::string> saved_profiles_xml_;
   // Observer to get notified when network(s) have changed (e.g. connect).
@@ -417,12 +443,39 @@ void WiFiServiceImpl::GetProperties(const std::string& network_guid,
   CheckError(error_code, kWiFiServiceError, error);
 }
 
+void WiFiServiceImpl::GetManagedProperties(const std::string& network_guid,
+                                           DictionaryValue* managed_properties,
+                                           std::string* error) {
+  CheckError(ERROR_CALL_NOT_IMPLEMENTED, kWiFiServiceError, error);
+}
+
+void WiFiServiceImpl::GetState(const std::string& network_guid,
+                               DictionaryValue* properties,
+                               std::string* error) {
+  CheckError(ERROR_CALL_NOT_IMPLEMENTED, kWiFiServiceError, error);
+}
+
 void WiFiServiceImpl::SetProperties(
     const std::string& network_guid,
     scoped_ptr<base::DictionaryValue> properties,
     std::string* error) {
-  // This method is not implemented in first version as it is not used by
-  // Google Cast extension.
+  // Temporary preserve WiFi properties (desired frequency, wifi password) to
+  // use in StartConnect.
+  DCHECK(properties.get());
+  if (!properties->HasKey(onc::network_type::kWiFi)) {
+    DVLOG(0) << "Missing WiFi properties:" << *properties;
+    *error = kWiFiServiceError;
+    return;
+  }
+  connect_properties_.SetWithoutPathExpansion(network_guid,
+                                              properties.release());
+}
+
+void WiFiServiceImpl::CreateNetwork(
+    bool shared,
+    scoped_ptr<base::DictionaryValue> properties,
+    std::string* network_guid,
+    std::string* error) {
   CheckError(ERROR_CALL_NOT_IMPLEMENTED, kWiFiServiceError, error);
 }
 
@@ -465,9 +518,15 @@ void WiFiServiceImpl::StartConnect(const std::string& network_guid,
     std::string connected_network_guid;
     error_code = SaveCurrentConnectedNetwork(&connected_network_guid);
     if (error_code == ERROR_SUCCESS) {
-      Frequency frequency = kFrequencyAny;
+      // Check, if the network is already connected on desired frequency.
+      bool already_connected = (network_guid == connected_network_guid);
+      Frequency frequency = GetFrequencyToConnect(network_guid);
+      if (already_connected && frequency != kFrequencyAny) {
+        Frequency connected_frequency = GetConnectedFrequency(network_guid);
+        already_connected = (frequency == connected_frequency);
+      }
       // Connect only if network |network_guid| is not connected already.
-      if (network_guid != connected_network_guid)
+      if (!already_connected)
         error_code = Connect(network_guid, frequency);
       if (error_code == ERROR_SUCCESS) {
         // Notify that previously connected network has changed.
@@ -680,6 +739,9 @@ DWORD WiFiServiceImpl::LoadWlanLibrary() {
   WlanOpenHandle_function_ =
       reinterpret_cast<WlanOpenHandleFunction>(
           ::GetProcAddress(wlan_api_library_, kWlanOpenHandle));
+  WlanQueryInterface_function_ =
+      reinterpret_cast<WlanQueryInterfaceFunction>(
+          ::GetProcAddress(wlan_api_library_, kWlanQueryInterface));
   WlanRegisterNotification_function_ =
       reinterpret_cast<WlanRegisterNotificationFunction>(
           ::GetProcAddress(wlan_api_library_, kWlanRegisterNotification));
@@ -698,6 +760,7 @@ DWORD WiFiServiceImpl::LoadWlanLibrary() {
       !WlanGetAvailableNetworkList_function_ ||
       !WlanGetProfile_function_ ||
       !WlanOpenHandle_function_ ||
+      !WlanQueryInterface_function_ ||
       !WlanRegisterNotification_function_ ||
       !WlanScan_function_) {
     DLOG(ERROR) << "Unable to find required WlanApi function.";
@@ -753,7 +816,7 @@ DWORD WiFiServiceImpl::OpenClientHandle() {
         error = ERROR_NOINTERFACE;
       }
     }
-    // Clean up.
+    // Clean up..
     if (interface_list != NULL)
       WlanFreeMemory_function_(interface_list);
   }
@@ -775,7 +838,7 @@ DWORD WiFiServiceImpl::ResetDHCP() {
 DWORD WiFiServiceImpl::FindAdapterIndexMapByGUID(
     const GUID& interface_guid,
     IP_ADAPTER_INDEX_MAP* adapter_index_map) {
-  string16 guid_string;
+  base::string16 guid_string;
   const int kGUIDSize = 39;
   ::StringFromGUID2(
       interface_guid, WriteInto(&guid_string, kGUIDSize), kGUIDSize);
@@ -936,10 +999,8 @@ void WiFiServiceImpl::NetworkPropertiesFromAvailableNetwork(
         0 == memcmp(bss_entry.dot11Ssid.ucSSID,
                     wlan.dot11Ssid.ucSSID,
                     bss_entry.dot11Ssid.uSSIDLength)) {
-      if (bss_entry.ulChCenterFrequency < 3000000)
-        properties->frequency = kFrequency2400;
-      else
-        properties->frequency = kFrequency5000;
+      properties->frequency = GetNormalizedFrequency(
+          bss_entry.ulChCenterFrequency / 1000);
       properties->frequency_list.push_back(properties->frequency);
       properties->bssid = NetworkProperties::MacAddressAsString(
           bss_entry.dot11Bssid);
@@ -1012,7 +1073,7 @@ DWORD WiFiServiceImpl::GetVisibleNetworkList(NetworkList* network_list) {
     }
   }
 
-  // clean up
+  // Clean up.
   if (available_network_list != NULL) {
     WlanFreeMemory_function_(available_network_list);
   }
@@ -1045,12 +1106,96 @@ DWORD WiFiServiceImpl::FindConnectedNetwork(
     }
   }
 
-  // clean up
+  // Clean up.
   if (available_network_list != NULL) {
     WlanFreeMemory_function_(available_network_list);
   }
 
   return error;
+}
+
+WiFiService::Frequency WiFiServiceImpl::GetConnectedFrequency(
+    const std::string& network_guid) {
+  if (client_ == NULL) {
+    NOTREACHED();
+    return kFrequencyUnknown;
+  }
+
+  // TODO(mef): WlanGetNetworkBssList is not available on XP. If XP support is
+  // needed, then different method of getting BSS (e.g. OID query) will have
+  // to be used.
+  if (WlanGetNetworkBssList_function_ == NULL)
+    return kFrequencyUnknown;
+
+  Frequency frequency = kFrequencyUnknown;
+  DWORD error = ERROR_SUCCESS;
+  DWORD data_size = 0;
+  PWLAN_CONNECTION_ATTRIBUTES wlan_connection_attributes = NULL;
+  PWLAN_BSS_LIST bss_list = NULL;
+  error = WlanQueryInterface_function_(
+      client_,
+      &interface_guid_,
+      wlan_intf_opcode_current_connection,
+      NULL,
+      &data_size,
+      reinterpret_cast<PVOID*>(&wlan_connection_attributes),
+      NULL);
+  if (error == ERROR_SUCCESS &&
+      wlan_connection_attributes != NULL &&
+      wlan_connection_attributes->isState == wlan_interface_state_connected) {
+    WLAN_ASSOCIATION_ATTRIBUTES& connected_wlan =
+        wlan_connection_attributes->wlanAssociationAttributes;
+    // Try to find connected frequency based on bss.
+    if (GUIDFromSSID(connected_wlan.dot11Ssid) == network_guid &&
+        WlanGetNetworkBssList_function_ != NULL) {
+      error = WlanGetNetworkBssList_function_(client_,
+                                              &interface_guid_,
+                                              &connected_wlan.dot11Ssid,
+                                              connected_wlan.dot11BssType,
+                                              FALSE,
+                                              NULL,
+                                              &bss_list);
+      if (error == ERROR_SUCCESS && NULL != bss_list) {
+        // Go through bss_list and find matching BSSID.
+        for (size_t bss = 0; bss < bss_list->dwNumberOfItems; ++bss) {
+          const WLAN_BSS_ENTRY& bss_entry(bss_list->wlanBssEntries[bss]);
+          if (0 == memcmp(bss_entry.dot11Bssid,
+                          connected_wlan.dot11Bssid,
+                          sizeof(bss_entry.dot11Bssid))) {
+            frequency = GetNormalizedFrequency(
+                bss_entry.ulChCenterFrequency / 1000);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Clean up.
+  if (wlan_connection_attributes != NULL) {
+    WlanFreeMemory_function_(wlan_connection_attributes);
+  }
+
+  if (bss_list != NULL) {
+    WlanFreeMemory_function_(bss_list);
+  }
+
+  return frequency;
+}
+
+WiFiService::Frequency WiFiServiceImpl::GetFrequencyToConnect(
+    const std::string& network_guid) const {
+  // Check whether desired frequency is set in |connect_properties_|.
+  const DictionaryValue* properties;
+  const DictionaryValue* wifi;
+  int frequency;
+  if (connect_properties_.GetDictionaryWithoutPathExpansion(
+          network_guid, &properties) &&
+      properties->GetDictionary(onc::network_type::kWiFi, &wifi) &&
+      wifi->GetInteger(onc::wifi::kFrequency, &frequency)) {
+    return GetNormalizedFrequency(frequency);
+  }
+  return kFrequencyAny;
 }
 
 DWORD WiFiServiceImpl::GetDesiredBssList(
@@ -1078,8 +1223,8 @@ DWORD WiFiServiceImpl::GetDesiredBssList(
 
   error = WlanGetNetworkBssList_function_(client_,
                                           &interface_guid_,
-                                          NULL,
-                                          dot11_BSS_type_any,
+                                          &ssid,
+                                          dot11_BSS_type_infrastructure,
                                           FALSE,
                                           NULL,
                                           &bss_list);
@@ -1097,11 +1242,8 @@ DWORD WiFiServiceImpl::GetDesiredBssList(
                       bss_entry.dot11Ssid.uSSIDLength))
         continue;
 
-      if (bss_entry.ulChCenterFrequency < 3000000)
-        bss_frequency = kFrequency2400;
-      else
-        bss_frequency = kFrequency5000;
-
+      bss_frequency = GetNormalizedFrequency(
+          bss_entry.ulChCenterFrequency / 1000);
       if (bss_frequency == frequency &&
           bss_entry.uLinkQuality > best_quality) {
         best_quality = bss_entry.uLinkQuality;
@@ -1130,13 +1272,21 @@ DWORD WiFiServiceImpl::GetDesiredBssList(
     }
   }
 
-  // clean up
+  // Clean up.
   if (bss_list != NULL) {
     WlanFreeMemory_function_(bss_list);
   }
   return error;
 }
 
+WiFiService::Frequency WiFiServiceImpl::GetNormalizedFrequency(
+    int frequency_in_mhz) const {
+  if (frequency_in_mhz == 0)
+    return kFrequencyAny;
+  if (frequency_in_mhz < 3000)
+    return kFrequency2400;
+  return kFrequency5000;
+}
 
 DWORD WiFiServiceImpl::Connect(const std::string& network_guid,
                                Frequency frequency) {
@@ -1237,7 +1387,7 @@ DWORD WiFiServiceImpl::GetProfile(const std::string& network_guid,
   if (error == ERROR_SUCCESS && str_profile_xml != NULL) {
     *profile_xml = base::UTF16ToUTF8(str_profile_xml);
   }
-  // clean up
+  // Clean up.
   if (str_profile_xml != NULL) {
     WlanFreeMemory_function_(str_profile_xml);
   }

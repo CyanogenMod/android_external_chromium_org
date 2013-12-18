@@ -11,14 +11,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google_apis/drive_api_url_generator.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util_interface.h"
 #include "net/base/network_change_notifier.h"
 #include "webkit/common/blob/scoped_file.h"
 
 class GURL;
 class Profile;
+class ProfileOAuth2TokenService;
 
 namespace drive { class DriveUploaderInterface; }
 
@@ -91,8 +90,6 @@ class APIUtil : public APIUtilInterface,
   virtual void DeleteFile(const std::string& resource_id,
                           const std::string& remote_file_md5,
                           const GDataErrorCallback& callback) OVERRIDE;
-  virtual GURL ResourceIdToResourceLink(const std::string& resource_id) const
-      OVERRIDE;
   virtual void EnsureSyncRootIsNotInMyDrive(
       const std::string& sync_root_resource_id) OVERRIDE;
 
@@ -115,8 +112,6 @@ class APIUtil : public APIUtilInterface,
 
   // Constructor for test use.
   APIUtil(const base::FilePath& temp_dir_path,
-          const GURL& base_url,
-          const GURL& base_download_url,
           scoped_ptr<drive::DriveServiceInterface> drive_service,
           scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
           const std::string& account_id);
@@ -246,8 +241,7 @@ class APIUtil : public APIUtilInterface,
   scoped_ptr<drive::DriveServiceInterface> drive_service_;
   scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
 
-  google_apis::GDataWapiUrlGenerator wapi_url_generator_;
-  google_apis::DriveApiUrlGenerator drive_api_url_generator_;
+  ProfileOAuth2TokenService* oauth_service_;
 
   UploadCallbackMap upload_callback_map_;
   UploadKey upload_next_key_;
@@ -255,6 +249,8 @@ class APIUtil : public APIUtilInterface,
   base::FilePath temp_dir_path_;
 
   std::string root_resource_id_;
+
+  bool has_initialized_token_;
 
   ObserverList<APIUtilObserver> observers_;
 

@@ -19,19 +19,20 @@
 
 namespace extensions {
 
-namespace {
-
-static base::LazyInstance<ChromeExtensionsBrowserClient> g_client =
-    LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-
 ChromeExtensionsBrowserClient::ChromeExtensionsBrowserClient() {}
 
 ChromeExtensionsBrowserClient::~ChromeExtensionsBrowserClient() {}
 
 bool ChromeExtensionsBrowserClient::IsShuttingDown() {
   return g_browser_process->IsShuttingDown();
+}
+
+bool ChromeExtensionsBrowserClient::AreExtensionsDisabled(
+    const CommandLine& command_line,
+    content::BrowserContext* context) {
+  Profile* profile = static_cast<Profile*>(context);
+  return command_line.HasSwitch(switches::kDisableExtensions) ||
+      profile->GetPrefs()->GetBoolean(prefs::kDisableExtensions);
 }
 
 bool ChromeExtensionsBrowserClient::IsValidContext(
@@ -60,6 +61,11 @@ content::BrowserContext* ChromeExtensionsBrowserClient::GetOffTheRecordContext(
 content::BrowserContext* ChromeExtensionsBrowserClient::GetOriginalContext(
     content::BrowserContext* context) {
   return static_cast<Profile*>(context)->GetOriginalProfile();
+}
+
+PrefService* ChromeExtensionsBrowserClient::GetPrefServiceForContext(
+    content::BrowserContext* context) {
+  return static_cast<Profile*>(context)->GetPrefs();
 }
 
 bool ChromeExtensionsBrowserClient::DeferLoadingBackgroundHosts(
@@ -121,11 +127,6 @@ scoped_ptr<AppSorting> ChromeExtensionsBrowserClient::CreateAppSorting() {
 
 bool ChromeExtensionsBrowserClient::IsRunningInForcedAppMode() {
   return chrome::IsRunningInForcedAppMode();
-}
-
-// static
-ChromeExtensionsBrowserClient* ChromeExtensionsBrowserClient::GetInstance() {
-  return g_client.Pointer();
 }
 
 }  // namespace extensions

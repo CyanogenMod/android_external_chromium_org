@@ -114,7 +114,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     // renderer code will think the second message is to go to next result, but
     // there are none so the plugin will assert.
 
-    string16 query = UTF8ToUTF16(
+    base::string16 query = UTF8ToUTF16(
         std::string("xyzxyz" + base::IntToString(next_dummy_search_value_++)));
     ASSERT_EQ(0, ui_test_utils::FindInPage(
         browser()->tab_strip_model()->GetActiveWebContents(),
@@ -130,10 +130,10 @@ class PDFBrowserTest : public InProcessBrowserTest,
         GetPDFTestDir(),
         base::FilePath().AppendASCII(expected_filename_));
     base::PlatformFileInfo info;
-    ASSERT_TRUE(file_util::GetFileInfo(reference, &info));
+    ASSERT_TRUE(base::GetFileInfo(reference, &info));
     int size = static_cast<size_t>(info.size);
     scoped_ptr<char[]> data(new char[size]);
-    ASSERT_EQ(size, file_util::ReadFile(reference, data.get(), size));
+    ASSERT_EQ(size, base::ReadFile(reference, data.get(), size));
 
     int w, h;
     std::vector<unsigned char> decoded;
@@ -181,7 +181,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     if (snapshot_different_) {
       std::vector<unsigned char> png_data;
       gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false, &png_data);
-      if (file_util::CreateTemporaryFile(&snapshot_filename_)) {
+      if (base::CreateTemporaryFile(&snapshot_filename_)) {
         file_util::WriteFile(snapshot_filename_,
             reinterpret_cast<char*>(&png_data[0]), png_data.size());
       }

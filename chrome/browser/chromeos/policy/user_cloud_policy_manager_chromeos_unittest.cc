@@ -17,12 +17,6 @@
 #include "base/test/test_simple_task_runner.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_token_forwarder.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/browser/policy/cloud/cloud_external_data_manager.h"
-#include "chrome/browser/policy/cloud/mock_cloud_external_data_manager.h"
-#include "chrome/browser/policy/cloud/mock_cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/mock_device_management_service.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
@@ -32,7 +26,12 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/policy/core/common/cloud/cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/mock_cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
+#include "components/policy/core/common/cloud/mock_device_management_service.h"
 #include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/schema_registry.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -43,6 +42,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 #include "policy/policy_constants.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -211,7 +211,7 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     // which triggers the registration request.
     MockDeviceManagementJob* register_request = NULL;
     EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
+                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION, _))
         .WillOnce(device_management_service_.CreateAsyncJob(&register_request));
 
     if (!has_request_token) {
@@ -271,7 +271,7 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
   void FetchPolicy(const base::Closure& trigger_fetch) {
     MockDeviceManagementJob* policy_request = NULL;
     EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+                CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
         .WillOnce(device_management_service_.CreateAsyncJob(&policy_request));
     trigger_fetch.Run();
     ASSERT_TRUE(policy_request);
@@ -467,7 +467,7 @@ TEST_F(UserCloudPolicyManagerChromeOSTest, BlockingFetchPolicyFetchError) {
   // fetch.
   MockDeviceManagementJob* policy_request = NULL;
   EXPECT_CALL(device_management_service_,
-              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
       .WillOnce(device_management_service_.CreateAsyncJob(&policy_request));
   register_request->SendResponse(DM_STATUS_SUCCESS, register_blob_);
   Mock::VerifyAndClearExpectations(&device_management_service_);

@@ -253,7 +253,7 @@ bool SyncExtensionHelper::ExtensionStatesMatch(
 }
 
 void SyncExtensionHelper::SetupProfile(Profile* profile) {
-  extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(true, false);
+  extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(true);
   profile_extensions_.insert(make_pair(profile, ExtensionNameMap()));
 }
 
@@ -308,12 +308,12 @@ scoped_refptr<Extension> CreateExtension(const base::FilePath& base_dir,
   const base::FilePath sub_dir = base::FilePath().AppendASCII(name);
   base::FilePath extension_dir;
   if (!base::PathExists(base_dir) &&
-      !file_util::CreateDirectory(base_dir)) {
+      !base::CreateDirectory(base_dir)) {
     ADD_FAILURE();
     return NULL;
   }
-  if (!file_util::CreateTemporaryDirInDir(
-          base_dir, sub_dir.value(), &extension_dir)) {
+  if (!base::CreateTemporaryDirInDir(base_dir, sub_dir.value(),
+                                     &extension_dir)) {
     ADD_FAILURE();
     return NULL;
   }

@@ -8,7 +8,6 @@
 #include "apps/shell_window_registry.h"
 #include "apps/ui/native_app_window.h"
 #include "base/command_line.h"
-#include "chrome/browser/extensions/api/app_window/app_window_api.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_current_window_internal.h"
 #include "chrome/common/extensions/api/app_window.h"
@@ -44,6 +43,12 @@ const char kNoAssociatedShellWindow[] =
 
 const char kDevChannelOnly[] =
     "This function is currently only available in the Dev channel.";
+
+const char kRequiresFramelessWindow[] =
+    "This function requires a frameless window (frame:none).";
+
+const char kAlwaysOnTopPermission[] =
+    "The \"alwaysOnTopWindows\" permission is required.";
 
 const int kUnboundedSize = apps::ShellWindow::SizeConstraints::kUnboundedSize;
 
@@ -227,6 +232,11 @@ bool AppCurrentWindowInternalSetIconFunction::RunWithWindow(
 bool AppCurrentWindowInternalSetShapeFunction::RunWithWindow(
     ShellWindow* window) {
 
+  if (!window->GetBaseWindow()->IsFrameless()) {
+    error_ = kRequiresFramelessWindow;
+    return false;
+  }
+
   const char* whitelist[] = {
     "0F42756099D914A026DADFA182871C015735DD95",  // http://crbug.com/323773
     "2D22CDB6583FD0A13758AEBE8B15E45208B4E9A7",  // http://crbug.com/323773
@@ -280,8 +290,9 @@ bool AppCurrentWindowInternalSetShapeFunction::RunWithWindow(
 
 bool AppCurrentWindowInternalSetAlwaysOnTopFunction::RunWithWindow(
     ShellWindow* window) {
-  if (!AppWindowCreateFunction::AllowAlwaysOnTopWindows(GetExtension()->id())) {
-    error_ = kDevChannelOnly;
+  if (!GetExtension()->HasAPIPermission(
+          extensions::APIPermission::kAlwaysOnTopWindows)) {
+    error_ = kAlwaysOnTopPermission;
     return false;
   }
 

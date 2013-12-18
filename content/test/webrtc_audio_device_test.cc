@@ -174,6 +174,10 @@ class MockRTCResourceContext : public ResourceContext {
     return false;
   }
 
+  virtual std::string GetMediaDeviceIDSalt() OVERRIDE {
+    return "";
+  }
+
  private:
   net::URLRequestContext* test_request_context_;
 
@@ -287,7 +291,7 @@ void MAYBE_WebRTCAudioDeviceTest::InitializeIOThread(const char* thread_name) {
   resource_context->set_request_context(test_request_context_.get());
 
   // Create our own AudioManager, AudioMirroringManager and MediaStreamManager.
-  audio_manager_.reset(media::AudioManager::Create());
+  audio_manager_.reset(media::AudioManager::CreateForTesting());
   mirroring_manager_.reset(new AudioMirroringManager());
   media_stream_manager_.reset(new MediaStreamManager(audio_manager_.get()));
 

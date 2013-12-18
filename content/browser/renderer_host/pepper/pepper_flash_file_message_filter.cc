@@ -194,7 +194,7 @@ int32_t PepperFlashFileMessageFilter::OnCreateDir(
         base::PLATFORM_FILE_ERROR_ACCESS_DENIED);
   }
 
-  bool result = file_util::CreateDirectory(full_path);
+  bool result = base::CreateDirectory(full_path);
   return ppapi::PlatformFileErrorToPepperError(result ?
       base::PLATFORM_FILE_OK : base::PLATFORM_FILE_ERROR_ACCESS_DENIED);
 }
@@ -210,7 +210,7 @@ int32_t PepperFlashFileMessageFilter::OnQueryFile(
   }
 
   base::PlatformFileInfo info;
-  bool result = file_util::GetFileInfo(full_path, &info);
+  bool result = base::GetFileInfo(full_path, &info);
   context->reply_msg = PpapiPluginMsg_FlashFile_QueryFileReply(info);
   return ppapi::PlatformFileErrorToPepperError(result ?
       base::PLATFORM_FILE_OK : base::PLATFORM_FILE_ERROR_ACCESS_DENIED);
@@ -253,13 +253,13 @@ int32_t PepperFlashFileMessageFilter::OnCreateTemporaryFile(
       dir_path, base::Bind(&CanCreateReadWrite));
   if (validated_dir_path.empty() ||
       (!base::DirectoryExists(validated_dir_path) &&
-       !file_util::CreateDirectory(validated_dir_path))) {
+       !base::CreateDirectory(validated_dir_path))) {
     return ppapi::PlatformFileErrorToPepperError(
         base::PLATFORM_FILE_ERROR_ACCESS_DENIED);
   }
 
   base::FilePath file_path;
-  if (!file_util::CreateTemporaryFileInDir(validated_dir_path, &file_path)) {
+  if (!base::CreateTemporaryFileInDir(validated_dir_path, &file_path)) {
     return ppapi::PlatformFileErrorToPepperError(
         base::PLATFORM_FILE_ERROR_FAILED);
   }

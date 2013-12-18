@@ -78,7 +78,8 @@ void WebstoreBindings::Install(
     if (args[0]->IsString()) {
       preferred_store_link_url = std::string(*v8::String::Utf8Value(args[0]));
     } else {
-      v8::ThrowException(v8::String::New(kPreferredStoreLinkUrlNotAString));
+      args.GetIsolate()->ThrowException(v8::String::NewFromUtf8(
+          args.GetIsolate(), kPreferredStoreLinkUrlNotAString));
       return;
     }
   }
@@ -87,18 +88,21 @@ void WebstoreBindings::Install(
   std::string error;
   if (!GetWebstoreItemIdFromFrame(
       frame, preferred_store_link_url, &webstore_item_id, &error)) {
-    v8::ThrowException(v8::String::New(error.c_str()));
+    args.GetIsolate()->ThrowException(
+        v8::String::NewFromUtf8(args.GetIsolate(), error.c_str()));
     return;
   }
 
   int install_id = g_next_install_id++;
   if (!args[1]->IsUndefined() && !args[1]->IsFunction()) {
-    v8::ThrowException(v8::String::New(kSuccessCallbackNotAFunctionError));
+    args.GetIsolate()->ThrowException(v8::String::NewFromUtf8(
+        args.GetIsolate(), kSuccessCallbackNotAFunctionError));
     return;
   }
 
   if (!args[2]->IsUndefined() && !args[2]->IsFunction()) {
-    v8::ThrowException(v8::String::New(kFailureCallbackNotAFunctionError));
+    args.GetIsolate()->ThrowException(v8::String::NewFromUtf8(
+        args.GetIsolate(), kFailureCallbackNotAFunctionError));
     return;
   }
 
@@ -212,12 +216,13 @@ void WebstoreBindings::OnInlineWebstoreInstallResponse(
     int install_id,
     bool success,
     const std::string& error) {
-  v8::HandleScope handle_scope(context()->isolate());
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(context()->v8_context());
   v8::Handle<v8::Value> argv[] = {
     v8::Integer::New(install_id),
-    v8::Boolean::New(success),
-    v8::String::New(error.c_str())
+    v8::Boolean::New(isolate, success),
+    v8::String::NewFromUtf8(isolate, error.c_str())
   };
   context()->module_system()->CallModuleMethod(
       "webstore", "onInstallResponse", arraysize(argv), argv);

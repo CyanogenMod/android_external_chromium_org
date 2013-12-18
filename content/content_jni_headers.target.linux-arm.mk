@@ -12,12 +12,11 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp \
-	$(call intermediates-dir-for,GYP,content_java_view_jni_headers_gyp)/java_view_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp
 
 
 ### Generated for rule "content_content_gyp_content_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java', 'public/android/java/src/org/chromium/content/browser/VibrationProvider.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java', 'public/android/java/src/org/chromium/content/browser/VibrationProvider.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java', 'public/android/java/src/org/chromium/content/browser/webcontents/WebContentsImpl.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -288,6 +287,26 @@ $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h: $(L
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h
 
+$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+
+.PHONY: content_content_jni_headers_gyp_rule_trigger
+content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h
+
+$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/webcontents/WebContentsImpl.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/webcontents/WebContentsImpl.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+
+.PHONY: content_content_jni_headers_gyp_rule_trigger
+content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h
+
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -338,6 +357,8 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h
 
@@ -372,6 +393,8 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/VibrationProvider_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/NavigationControllerImpl_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/WebContentsImpl_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/DeviceTelephonyInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TraceEvent_jni.h \
 	content_content_jni_headers_gyp_rule_trigger
@@ -417,6 +440,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -426,9 +450,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -497,6 +523,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -506,9 +533,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

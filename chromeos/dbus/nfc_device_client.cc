@@ -8,7 +8,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
-#include "chromeos/dbus/fake_nfc_device_client.h"
 #include "chromeos/dbus/nfc_adapter_client.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -70,7 +69,7 @@ class NfcDeviceClientImpl : public NfcDeviceClient,
   // NfcDeviceClient override.
   virtual void Push(
       const dbus::ObjectPath& object_path,
-      const NfcRecordClient::Attributes& attributes,
+      const base::DictionaryValue& attributes,
       const base::Closure& callback,
       const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE {
     dbus::ObjectProxy* object_proxy =
@@ -102,11 +101,12 @@ class NfcDeviceClientImpl : public NfcDeviceClient,
     dbus::MessageWriter array_writer(NULL);
     dbus::MessageWriter dict_entry_writer(NULL);
     writer.OpenArray("{sv}", &array_writer);
-    for (NfcRecordClient::Attributes::const_iterator iter = attributes.begin();
-         iter != attributes.end(); ++iter) {
+    for (DictionaryValue::Iterator iter(attributes);
+         !iter.IsAtEnd(); iter.Advance()) {
       array_writer.OpenDictEntry(&dict_entry_writer);
-      dict_entry_writer.AppendString(iter->first);
-      dict_entry_writer.AppendVariantOfString(iter->second);
+      dict_entry_writer.AppendString(iter.key());
+      nfc_client_helpers::AppendValueDataAsVariant(&dict_entry_writer,
+                                                   iter.value());
       array_writer.CloseContainer(&dict_entry_writer);
     }
     writer.CloseContainer(&array_writer);
@@ -233,12 +233,8 @@ NfcDeviceClient::NfcDeviceClient() {
 NfcDeviceClient::~NfcDeviceClient() {
 }
 
-NfcDeviceClient* NfcDeviceClient::Create(DBusClientImplementationType type,
-                                         NfcAdapterClient* adapter_client) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new NfcDeviceClientImpl(adapter_client);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeNfcDeviceClient();
+NfcDeviceClient* NfcDeviceClient::Create(NfcAdapterClient* adapter_client) {
+  return new NfcDeviceClientImpl(adapter_client);
 }
 
 }  // namespace chromeos

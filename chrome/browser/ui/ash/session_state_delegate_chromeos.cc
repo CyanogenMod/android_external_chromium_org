@@ -30,7 +30,14 @@ SessionStateDelegateChromeos::~SessionStateDelegateChromeos() {
 }
 
 int SessionStateDelegateChromeos::GetMaximumNumberOfLoggedInUsers() const {
-  return 3;
+  // TODO(nkostylev): Show some UI messages why no more users could be added
+  // to this session. http://crbug.com/230863
+  // We limit list of logged in users to 10 due to memory constraints.
+  // Note that 10 seems excessive, but we want to test how many users are
+  // actually added to a session.
+  // TODO(nkostylev): Adjust this limitation based on device capabilites.
+  // http://crbug.com/230865
+  return 10;
 }
 
 int SessionStateDelegateChromeos::NumberOfLoggedInUsers() const {
@@ -135,7 +142,7 @@ void SessionStateDelegateChromeos::SwitchActiveUser(
   chromeos::UserManager::Get()->SwitchActiveUser(user_id);
 }
 
-void SessionStateDelegateChromeos::SwitchActiveUserToNext() {
+void SessionStateDelegateChromeos::CycleActiveUser(CycleUser cycle_user) {
   // Make sure there is a user to switch to.
   if (NumberOfLoggedInUsers() <= 1)
     return;
@@ -157,11 +164,21 @@ void SessionStateDelegateChromeos::SwitchActiveUserToNext() {
   if (it == logged_in_users.end())
     return;
 
-  // Get the next user's email, wrapping to the start of the list if necessary.
-  if (++it == logged_in_users.end())
-    user_id = (*logged_in_users.begin())->email();
-  else
-    user_id = (*it)->email();
+  // Get the user's email to select, wrapping to the start/end of the list if
+  // necessary.
+  switch (cycle_user) {
+    case CYCLE_TO_NEXT_USER:
+      if (++it == logged_in_users.end())
+        user_id = (*logged_in_users.begin())->email();
+      else
+        user_id = (*it)->email();
+      break;
+    case CYCLE_TO_PREVIOUS_USER:
+      if (it == logged_in_users.begin())
+        it = logged_in_users.end();
+      user_id = (*(--it))->email();
+      break;
+  }
 
   // Switch using the transformed |user_id|.
   chromeos::UserManager::Get()->SwitchActiveUser(user_id);

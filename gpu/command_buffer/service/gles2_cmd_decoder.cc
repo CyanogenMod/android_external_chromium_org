@@ -19,6 +19,7 @@
 #include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "build/build_config.h"
 #define GLES2_GPU_SERVICE 1
 #include "gpu/command_buffer/common/debug_marker_manager.h"
@@ -543,6 +544,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   virtual GLES2Util* GetGLES2Util() OVERRIDE { return &util_; }
   virtual gfx::GLContext* GetGLContext() OVERRIDE { return context_.get(); }
   virtual ContextGroup* GetContextGroup() OVERRIDE { return group_.get(); }
+  virtual Capabilities GetCapabilities() OVERRIDE;
   virtual void RestoreState() const OVERRIDE;
 
   virtual void RestoreActiveTexture() const OVERRIDE {
@@ -761,6 +763,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   // Get the format of the currently bound frame buffer (either FBO or regular
   // back buffer)
+  GLenum GetBoundReadFrameBufferTextureType();
   GLenum GetBoundReadFrameBufferInternalFormat();
   GLenum GetBoundDrawFrameBufferInternalFormat();
 
@@ -2527,6 +2530,41 @@ bool GLES2DecoderImpl::Initialize(
   return true;
 }
 
+Capabilities GLES2DecoderImpl::GetCapabilities() {
+  DCHECK(initialized());
+
+  Capabilities caps;
+
+  caps.fast_npot_mo8_textures =
+      feature_info_->workarounds().enable_chromium_fast_npot_mo8_textures;
+  caps.egl_image_external =
+      feature_info_->feature_flags().oes_egl_image_external;
+  caps.texture_format_bgra8888 =
+      feature_info_->feature_flags().ext_texture_format_bgra8888;
+  caps.texture_format_etc1 =
+      feature_info_->feature_flags().oes_compressed_etc1_rgb8_texture;
+  caps.texture_rectangle = feature_info_->feature_flags().arb_texture_rectangle;
+  caps.texture_usage = feature_info_->feature_flags().angle_texture_usage;
+  caps.texture_storage = feature_info_->feature_flags().ext_texture_storage;
+  caps.discard_framebuffer =
+      feature_info_->feature_flags().ext_discard_framebuffer;
+
+#if defined(OS_MACOSX)
+  // This is unconditionally true on mac, no need to test for it at runtime.
+  caps.iosurface = true;
+#endif
+
+  // TODO(boliu): Expose this directly from GLSurface.
+  std::vector<std::string> extension_list;
+  base::SplitString(surface_->GetExtensions(), ' ', &extension_list);
+  std::set<std::string> extension_set(extension_list.begin(),
+                                      extension_list.end());
+  caps.post_sub_buffer =
+      extension_set.count("GL_CHROMIUM_post_sub_buffer") > 0;
+
+  return caps;
+}
+
 void GLES2DecoderImpl::UpdateCapabilities() {
   util_.set_num_compressed_texture_formats(
       validators_->compressed_texture_format.GetValues().size());
@@ -2806,10 +2844,10 @@ void GLES2DecoderImpl::DeleteTexturesHelper(
 // }  // anonymous namespace
 
 bool GLES2DecoderImpl::MakeCurrent() {
-  if (!context_.get() || !context_->MakeCurrent(surface_.get()))
+  if (!context_.get())
     return false;
 
-  if (WasContextLost()) {
+  if (!context_->MakeCurrent(surface_.get()) || WasContextLost()) {
     LOG(ERROR) << "  GLES2DecoderImpl: Context lost during MakeCurrent.";
 
     // Some D3D drivers cannot recover from device lost in the GPU process
@@ -2985,6 +3023,16 @@ gfx::Size GLES2DecoderImpl::GetBoundReadFrameBufferSize() {
     return offscreen_size_;
   } else {
     return surface_->GetSize();
+  }
+}
+
+GLenum GLES2DecoderImpl::GetBoundReadFrameBufferTextureType() {
+  Framebuffer* framebuffer =
+    GetFramebufferInfoForTarget(GL_READ_FRAMEBUFFER_EXT);
+  if (framebuffer != NULL) {
+    return framebuffer->GetColorAttachmentTextureType();
+  } else {
+    return GL_UNSIGNED_BYTE;
   }
 }
 
@@ -4057,13 +4105,16 @@ bool GLES2DecoderImpl::GetHelper(
       case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
         *num_written = 1;
         if (params) {
-          *params = GL_RGBA;  // We don't support other formats.
+          *params = GLES2Util::GetPreferredGLReadPixelsFormat(
+              GetBoundReadFrameBufferInternalFormat());
         }
         return true;
       case GL_IMPLEMENTATION_COLOR_READ_TYPE:
         *num_written = 1;
         if (params) {
-          *params = GL_UNSIGNED_BYTE;  // We don't support other types.
+          *params = GLES2Util::GetPreferredGLReadPixelsType(
+              GetBoundReadFrameBufferInternalFormat(),
+              GetBoundReadFrameBufferTextureType());
         }
         return true;
       case GL_MAX_FRAGMENT_UNIFORM_VECTORS:
@@ -7041,6 +7092,29 @@ error::Error GLES2DecoderImpl::HandleVertexAttribDivisorANGLE(
   return error::kNoError;
 }
 
+template <typename pixel_data_type>
+static void WriteAlphaData(
+    void *pixels, uint32 row_count, uint32 channel_count,
+    uint32 alpha_channel_index, uint32 unpadded_row_size,
+    uint32 padded_row_size, pixel_data_type alpha_value) {
+  DCHECK_GT(channel_count, 0U);
+  DCHECK_EQ(unpadded_row_size % sizeof(pixel_data_type), 0U);
+  uint32 unpadded_row_size_in_elements =
+      unpadded_row_size / sizeof(pixel_data_type);
+  DCHECK_EQ(padded_row_size % sizeof(pixel_data_type), 0U);
+  uint32 padded_row_size_in_elements =
+      padded_row_size / sizeof(pixel_data_type);
+  pixel_data_type* dst =
+      static_cast<pixel_data_type*>(pixels) + alpha_channel_index;
+  for (uint32 yy = 0; yy < row_count; ++yy) {
+    pixel_data_type* end = dst + unpadded_row_size_in_elements;
+    for (pixel_data_type* d = dst; d < end; d += channel_count) {
+      *d = alpha_value;
+    }
+    dst += padded_row_size_in_elements;
+  }
+}
+
 void GLES2DecoderImpl::FinishReadPixels(
     const cmds::ReadPixels& c,
     GLuint buffer) {
@@ -7109,29 +7183,39 @@ void GLES2DecoderImpl::FinishReadPixels(
             &unpadded_row_size, &padded_row_size)) {
       return;
     }
-    // NOTE: Assumes the type is GL_UNSIGNED_BYTE which was true at the time
-    // of this implementation.
-    if (type != GL_UNSIGNED_BYTE) {
-      return;
-    }
+
+    uint32 channel_count = 0;
+    uint32 alpha_channel = 0;
     switch (format) {
       case GL_RGBA:
       case GL_BGRA_EXT:
-      case GL_ALPHA: {
-        int offset = (format == GL_ALPHA) ? 0 : 3;
-        int step = (format == GL_ALPHA) ? 1 : 4;
-        uint8* dst = static_cast<uint8*>(pixels) + offset;
-        for (GLint yy = 0; yy < height; ++yy) {
-          uint8* end = dst + unpadded_row_size;
-          for (uint8* d = dst; d < end; d += step) {
-            *d = 255;
-          }
-          dst += padded_row_size;
-        }
+        channel_count = 4;
+        alpha_channel = 3;
         break;
+      case GL_ALPHA:
+        channel_count = 1;
+        alpha_channel = 0;
+        break;
+    }
+
+    if (channel_count > 0) {
+      switch (type) {
+        case GL_UNSIGNED_BYTE:
+          WriteAlphaData<uint8>(
+              pixels, height, channel_count, alpha_channel, unpadded_row_size,
+              padded_row_size, 0xFF);
+          break;
+        case GL_FLOAT:
+          WriteAlphaData<float>(
+              pixels, height, channel_count, alpha_channel, unpadded_row_size,
+              padded_row_size, 1.0f);
+          break;
+        case GL_HALF_FLOAT:
+          WriteAlphaData<uint16>(
+              pixels, height, channel_count, alpha_channel, unpadded_row_size,
+              padded_row_size, 0x3C00);
+          break;
       }
-      default:
-        break;
     }
   }
 }
@@ -7177,9 +7261,25 @@ error::Error GLES2DecoderImpl::HandleReadPixels(
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glReadPixels", format, "format");
     return error::kNoError;
   }
-  if (!validators_->pixel_type.IsValid(type)) {
+  if (!validators_->read_pixel_type.IsValid(type)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glReadPixels", type, "type");
     return error::kNoError;
+  }
+  if ((format != GL_RGBA && format != GL_BGRA_EXT && format != GL_RGB &&
+      format != GL_ALPHA) || type != GL_UNSIGNED_BYTE) {
+    // format and type are acceptable enums but not guaranteed to be supported
+    // for this framebuffer.  Have to ask gl if they are valid.
+    GLint preferred_format = 0;
+    DoGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &preferred_format);
+    GLint preferred_type = 0;
+    DoGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &preferred_type);
+    if (format != static_cast<GLenum>(preferred_format) ||
+        type != static_cast<GLenum>(preferred_type)) {
+      LOCAL_SET_GL_ERROR(
+          GL_INVALID_OPERATION, "glReadPixels", "format and type incompatible "
+          "with the current read framebuffer");
+      return error::kNoError;
+    }
   }
   if (width == 0 || height == 0) {
     return error::kNoError;

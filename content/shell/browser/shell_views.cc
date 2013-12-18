@@ -16,6 +16,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
@@ -110,7 +111,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 #endif
   }
 
-  void SetWindowTitle(const string16& title) { title_ = title; }
+  void SetWindowTitle(const base::string16& title) { title_ = title; }
   void EnableUIControl(UIControl control, bool is_enabled) {
     if (control == BACK_BUTTON) {
       back_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
@@ -215,7 +216,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
   // Overridden from TextfieldController
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE {
+                               const base::string16& new_contents) OVERRIDE {
   }
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE {
@@ -248,7 +249,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   // Overridden from WidgetDelegateView
   virtual bool CanResize() const OVERRIDE { return true; }
   virtual bool CanMaximize() const OVERRIDE { return true; }
-  virtual string16 GetWindowTitle() const OVERRIDE {
+  virtual base::string16 GetWindowTitle() const OVERRIDE {
     return title_;
   }
   virtual void WindowClosing() OVERRIDE {
@@ -272,7 +273,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   Shell* shell_;
 
   // Window title
-  string16 title_;
+  base::string16 title_;
 
   // Toolbar view contains forward/backward/reload button and URL entry
   View* toolbar_view_;
@@ -387,7 +388,7 @@ void Shell::Close() {
   window_widget_->CloseNow();
 }
 
-void Shell::PlatformSetTitle(const string16& title) {
+void Shell::PlatformSetTitle(const base::string16& title) {
   ShellWindowDelegateView* delegate_view =
     static_cast<ShellWindowDelegateView*>(window_widget_->widget_delegate());
   delegate_view->SetWindowTitle(title);

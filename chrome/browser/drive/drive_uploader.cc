@@ -12,9 +12,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task_runner_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/power_save_blocker.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 
 using content::BrowserThread;
 using google_apis::CancelCallback;
@@ -214,7 +214,7 @@ CancelCallback DriveUploader::StartUploadFile(
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&file_util::GetFileSize,
+      base::Bind(&base::GetFileSize,
                  info_ptr->file_path,
                  &info_ptr->content_length),
       base::Bind(&DriveUploader::StartUploadFileAfterGetFileSize,

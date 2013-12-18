@@ -11,20 +11,21 @@ class InfoBarService;
 
 class PopupBlockedInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a popup blocked infobar delegate and adds it to |infobar_service|.
+  // Creates a popup blocked infobar and delegate and adds the infobar to
+  // |infobar_service|.
   static void Create(InfoBarService* infobar_service, int num_popups);
 
   virtual ~PopupBlockedInfoBarDelegate();
 
  private:
-  PopupBlockedInfoBarDelegate(InfoBarService* infobar_service, int num_popups);
+  explicit PopupBlockedInfoBarDelegate(int num_popups);
 
   // ConfirmInfoBarDelegate:
   virtual int GetIconID() const OVERRIDE;
   virtual PopupBlockedInfoBarDelegate* AsPopupBlockedInfoBarDelegate() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   int num_popups_;

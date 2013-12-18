@@ -15,6 +15,7 @@ import android.widget.NumberPicker.OnValueChangeListener;
 import org.chromium.content.R;
 
 import java.util.Calendar;
+import java.util.TimeZone;
 
 /**
  * This class is heavily based on android.widget.DatePicker.
@@ -51,7 +52,7 @@ public abstract class TwoFieldDatePicker extends FrameLayout {
         void onMonthOrWeekChanged(TwoFieldDatePicker view, int year, int positionInYear);
     }
 
-    public TwoFieldDatePicker(Context context, long minValue, long maxValue) {
+    public TwoFieldDatePicker(Context context, double minValue, double maxValue) {
         super(context, null, android.R.attr.datePickerStyle);
 
         LayoutInflater inflater = (LayoutInflater) context
@@ -70,7 +71,7 @@ public abstract class TwoFieldDatePicker extends FrameLayout {
                         year += 1;
                         positionInYear = getMinPositionInYear(year);
                     } else if (oldVal == picker.getMinValue() && newVal == picker.getMaxValue()) {
-                        year -=1;
+                        year -= 1;
                         positionInYear = getMaxPositionInYear(year);
                     }
                 } else if (picker == mYearSpinner) {
@@ -86,15 +87,15 @@ public abstract class TwoFieldDatePicker extends FrameLayout {
             }
         };
 
-        mCurrentDate = Calendar.getInstance();
+        mCurrentDate = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
         if (minValue >= maxValue) {
-            mMinDate = Calendar.getInstance();
+            mMinDate = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
             mMinDate.set(0, 0, 1);
-            mMaxDate = Calendar.getInstance();
+            mMaxDate = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
             mMaxDate.set(9999, 0, 1);
         } else {
-            mMinDate = createDateFromValue(minValue);
-            mMaxDate = createDateFromValue(maxValue);
+            mMinDate = getDateForValue(minValue);
+            mMaxDate = getDateForValue(maxValue);
         }
 
         // month
@@ -114,7 +115,7 @@ public abstract class TwoFieldDatePicker extends FrameLayout {
      *
      * @param year The initial year.
      * @param positionInYear The initial month <strong>starting from zero</strong> or week in year.
-     * @param onMonthChangedListener How user is notified date is changed by
+     * @param onMonthOrWeekChangedListener How user is notified date is changed by
      *            user, can be null.
      */
     public void init(int year, int positionInYear,
@@ -132,7 +133,7 @@ public abstract class TwoFieldDatePicker extends FrameLayout {
      * Subclasses know the semantics of @value, and need to return
      * a Calendar corresponding to it.
      */
-    protected abstract Calendar createDateFromValue(long value);
+    protected abstract Calendar getDateForValue(double value);
 
     /**
      * Updates the current date.

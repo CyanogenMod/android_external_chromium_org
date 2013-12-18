@@ -25,7 +25,7 @@ class ExtensionCreatorFilterTest : public PlatformTest {
   base::FilePath CreateEmptyTestFile(const base::FilePath& file_path) {
     base::FilePath test_file(test_dir_.Append(file_path));
     base::FilePath temp_file;
-    EXPECT_TRUE(file_util::CreateTemporaryFileInDir(test_dir_, &temp_file));
+    EXPECT_TRUE(base::CreateTemporaryFileInDir(test_dir_, &temp_file));
     EXPECT_TRUE(base::Move(temp_file, test_file));
     return test_file;
   }
@@ -35,9 +35,9 @@ class ExtensionCreatorFilterTest : public PlatformTest {
       const base::FilePath::StringType& dir) {
     base::FilePath temp_sub_dir(test_dir_.Append(dir));
     base::FilePath test_file(temp_sub_dir.Append(file_name));
-    EXPECT_TRUE(file_util::CreateDirectory(temp_sub_dir));
+    EXPECT_TRUE(base::CreateDirectory(temp_sub_dir));
     base::FilePath temp_file;
-    EXPECT_TRUE(file_util::CreateTemporaryFileInDir(temp_sub_dir, &temp_file));
+    EXPECT_TRUE(base::CreateTemporaryFileInDir(temp_sub_dir, &temp_file));
     EXPECT_TRUE(base::Move(temp_file, test_file));
     return test_file;
   }

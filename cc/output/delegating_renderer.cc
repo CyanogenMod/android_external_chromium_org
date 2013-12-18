@@ -67,18 +67,11 @@ bool DelegatingRenderer::Initialize() {
     return true;
   }
 
-  WebGraphicsContext3D* context3d =
-      output_surface_->context_provider()->Context3d();
-
-  if (!context3d->makeContextCurrent())
-    return false;
-
   const ContextProvider::Capabilities& caps =
       output_surface_->context_provider()->ContextCapabilities();
 
   DCHECK(!caps.iosurface || caps.texture_rectangle);
 
-  capabilities_.using_set_visibility = caps.set_visibility;
   capabilities_.using_egl_image = caps.egl_image_external;
   capabilities_.using_map_image = settings_->use_map_image && caps.map_image;
 
@@ -103,6 +96,8 @@ static ResourceProvider::ResourceId AppendToArray(
 void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                    ContextProvider* offscreen_context_provider,
                                    float device_scale_factor,
+                                   gfx::Rect device_viewport_rect,
+                                   gfx::Rect device_clip_rect,
                                    bool allow_partial_swap,
                                    bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
@@ -162,13 +157,11 @@ void DelegatingRenderer::SetVisible(bool visible) {
     if (context_provider)
       context_provider->Context3d()->flush();
   }
-  if (capabilities_.using_set_visibility) {
-    // We loop visibility to the GPU process, since that's what manages memory.
-    // That will allow it to feed us with memory allocations that we can act
-    // upon.
-    DCHECK(context_provider);
-    context_provider->Context3d()->setVisibilityCHROMIUM(visible);
-  }
+  // We loop visibility to the GPU process, since that's what manages memory.
+  // That will allow it to feed us with memory allocations that we can act
+  // upon.
+  DCHECK(context_provider);
+  context_provider->ContextSupport()->SetSurfaceVisible(visible);
 }
 
 void DelegatingRenderer::SendManagedMemoryStats(size_t bytes_visible,

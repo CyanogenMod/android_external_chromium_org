@@ -42,6 +42,7 @@ class InputParamTraitsTest : public testing::Test {
     EXPECT_EQ(a->gesture_source_type, b->gesture_source_type);
     EXPECT_EQ(a->distance, b->distance);
     EXPECT_EQ(a->anchor, b->anchor);
+    EXPECT_EQ(a->prevent_fling, b->prevent_fling);
     EXPECT_EQ(a->speed_in_pixels_s, b->speed_in_pixels_s);
   }
 
@@ -53,6 +54,13 @@ class InputParamTraitsTest : public testing::Test {
     EXPECT_EQ(a->anchor, b->anchor);
     EXPECT_EQ(a->relative_pointer_speed_in_pixels_s,
               b->relative_pointer_speed_in_pixels_s);
+  }
+
+  static void Compare(const SyntheticTapGestureParams* a,
+                      const SyntheticTapGestureParams* b) {
+    EXPECT_EQ(a->gesture_source_type, b->gesture_source_type);
+    EXPECT_EQ(a->position, b->position);
+    EXPECT_EQ(a->duration_ms, b->duration_ms);
   }
 
   static void Compare(const SyntheticGesturePacket* a,
@@ -71,6 +79,10 @@ class InputParamTraitsTest : public testing::Test {
       case SyntheticGestureParams::PINCH_GESTURE:
         Compare(SyntheticPinchGestureParams::Cast(a->gesture_params()),
                 SyntheticPinchGestureParams::Cast(b->gesture_params()));
+        break;
+      case SyntheticGestureParams::TAP_GESTURE:
+        Compare(SyntheticTapGestureParams::Cast(a->gesture_params()),
+                SyntheticTapGestureParams::Cast(b->gesture_params()));
         break;
     }
   }
@@ -178,8 +190,9 @@ TEST_F(InputParamTraitsTest, SyntheticSmoothScrollGestureParams) {
   scoped_ptr<SyntheticSmoothScrollGestureParams> gesture_params(
       new SyntheticSmoothScrollGestureParams);
   gesture_params->gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  gesture_params->distance = 123;
-  gesture_params->anchor = gfx::Point(234, 345);
+  gesture_params->distance = gfx::Vector2d(123, -789);
+  gesture_params->anchor.SetPoint(234, 345);
+  gesture_params->prevent_fling = false;
   gesture_params->speed_in_pixels_s = 456;
   ASSERT_EQ(SyntheticGestureParams::SMOOTH_SCROLL_GESTURE,
             gesture_params->GetGestureType());
@@ -195,9 +208,23 @@ TEST_F(InputParamTraitsTest, SyntheticPinchGestureParams) {
   gesture_params->gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
   gesture_params->zoom_in = true;
   gesture_params->total_num_pixels_covered = 123;
-  gesture_params->anchor = gfx::Point(234, 345);
+  gesture_params->anchor.SetPoint(234, 345);
   gesture_params->relative_pointer_speed_in_pixels_s = 456;
   ASSERT_EQ(SyntheticGestureParams::PINCH_GESTURE,
+            gesture_params->GetGestureType());
+  SyntheticGesturePacket packet_in;
+  packet_in.set_gesture_params(gesture_params.PassAs<SyntheticGestureParams>());
+
+  Verify(packet_in);
+}
+
+TEST_F(InputParamTraitsTest, SyntheticTapGestureParams) {
+  scoped_ptr<SyntheticTapGestureParams> gesture_params(
+      new SyntheticTapGestureParams);
+  gesture_params->gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
+  gesture_params->position.SetPoint(798, 233);
+  gesture_params->duration_ms = 13;
+  ASSERT_EQ(SyntheticGestureParams::TAP_GESTURE,
             gesture_params->GetGestureType());
   SyntheticGesturePacket packet_in;
   packet_in.set_gesture_params(gesture_params.PassAs<SyntheticGestureParams>());

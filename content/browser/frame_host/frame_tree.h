@@ -16,6 +16,7 @@ namespace content {
 
 class FrameTreeNode;
 class Navigator;
+class RenderFrameHostDelegate;
 class RenderProcessHost;
 class RenderViewHostDelegate;
 class RenderViewHostImpl;
@@ -46,6 +47,7 @@ class CONTENT_EXPORT FrameTree {
   // TODO(creis): This set of delegates will change as we move things to
   // Navigator.
   FrameTree(Navigator* navigator,
+            RenderFrameHostDelegate* render_frame_delegate,
             RenderViewHostDelegate* render_view_delegate,
             RenderWidgetHostDelegate* render_widget_delegate,
             RenderFrameHostManager::Delegate* manager_delegate);
@@ -72,11 +74,13 @@ class CONTENT_EXPORT FrameTree {
 
   // Frame tree manipulation routines.
   // TODO(creis): These should take in RenderFrameHost routing IDs.
-  void AddFrame(int render_frame_host_id,
-                int64 parent_frame_tree_node_id,
-                int64 frame_id,
-                const std::string& frame_name);
-  void RemoveFrame(int64 parent_frame_id, int64 frame_id);
+  RenderFrameHostImpl* AddFrame(int render_frame_host_id,
+                                int64 parent_frame_tree_node_id,
+                                int64 frame_id,
+                                const std::string& frame_name);
+  void RemoveFrame(RenderFrameHostImpl* render_frame_host,
+                   int64 parent_frame_id,
+                   int64 frame_id);
   void SetFrameUrl(int64 frame_id, const GURL& url);
 
   // Resets the FrameTree and changes RenderFrameHost for the main frame.
@@ -113,11 +117,11 @@ class CONTENT_EXPORT FrameTree {
   scoped_ptr<FrameTreeNode> CreateNode(int64 frame_id,
                                        const std::string& frame_name,
                                        int render_frame_host_id,
-                                       Navigator* navigator,
-                                       RenderProcessHost* render_process_host);
+                                       FrameTreeNode* parent_node);
 
   // These delegates are installed into all the RenderViewHosts and
   // RenderFrameHosts that we create.
+  RenderFrameHostDelegate* render_frame_delegate_;
   RenderViewHostDelegate* render_view_delegate_;
   RenderWidgetHostDelegate* render_widget_delegate_;
   RenderFrameHostManager::Delegate* manager_delegate_;

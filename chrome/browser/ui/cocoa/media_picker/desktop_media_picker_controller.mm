@@ -32,7 +32,7 @@ const int kExcessButtonPadding = 6;
 @interface DesktopMediaPickerController (Private)
 
 // Populate the window with controls and views.
-- (void)initializeContentsWithAppName:(const string16&)appName;
+- (void)initializeContentsWithAppName:(const base::string16&)appName;
 
 // Create a |NSTextField| with label traits given |width|. Frame height is
 // automatically adjusted to fit.
@@ -54,9 +54,9 @@ const int kExcessButtonPadding = 6;
 
 @implementation DesktopMediaPickerController
 
-- (id)initWithModel:(scoped_ptr<DesktopMediaPickerModel>)model
-           callback:(const DesktopMediaPicker::DoneCallback&)callback
-            appName:(const string16&)appName {
+- (id)initWithMediaList:(scoped_ptr<DesktopMediaList>)media_list
+               callback:(const DesktopMediaPicker::DoneCallback&)callback
+                appName:(const base::string16&)appName {
   const NSUInteger kStyleMask =
       NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask;
   base::scoped_nsobject<NSWindow> window(
@@ -68,8 +68,8 @@ const int kExcessButtonPadding = 6;
   if ((self = [super initWithWindow:window])) {
     [window setDelegate:self];
     [self initializeContentsWithAppName:appName];
-    model_ = model.Pass();
-    model_->SetViewDialogWindowId([window windowNumber]);
+    media_list_ = media_list.Pass();
+    media_list_->SetViewDialogWindowId([window windowNumber]);
     doneCallback_ = callback;
     items_.reset([[NSMutableArray alloc] init]);
     bridge_.reset(new DesktopMediaPickerBridge(self));
@@ -83,7 +83,7 @@ const int kExcessButtonPadding = 6;
   [super dealloc];
 }
 
-- (void)initializeContentsWithAppName:(const string16&)appName {
+- (void)initializeContentsWithAppName:(const base::string16&)appName {
   // Use flipped coordinates to facilitate manual layout.
   const CGFloat kPaddedWidth = kInitialContentWidth - (kFramePadding * 2);
   base::scoped_nsobject<FlippedView> content(
@@ -159,10 +159,10 @@ const int kExcessButtonPadding = 6;
 }
 
 - (void)showWindow:(id)sender {
-  // Signal the model to start sending thumbnails. |bridge_| is used as the
+  // Signal the media_list to start sending thumbnails. |bridge_| is used as the
   // observer, and will forward notifications to this object.
-  model_->SetThumbnailSize(gfx::Size(kThumbnailWidth, kThumbnailHeight));
-  model_->StartUpdating(bridge_.get());
+  media_list_->SetThumbnailSize(gfx::Size(kThumbnailWidth, kThumbnailHeight));
+  media_list_->StartUpdating(bridge_.get());
 
   [self.window center];
   [super showWindow:sender];
@@ -257,7 +257,7 @@ const int kExcessButtonPadding = 6;
 #pragma mark DesktopMediaPickerObserver
 
 - (void)sourceAddedAtIndex:(int)index {
-  const DesktopMediaPickerModel::Source& source = model_->source(index);
+  const DesktopMediaList::Source& source = media_list_->GetSource(index);
   NSString* imageTitle = base::SysUTF16ToNSString(source.name);
   base::scoped_nsobject<DesktopMediaPickerItem> item(
       [[DesktopMediaPickerItem alloc] initWithSourceId:source.id
@@ -279,13 +279,13 @@ const int kExcessButtonPadding = 6;
 
 - (void)sourceNameChangedAtIndex:(int)index {
   DesktopMediaPickerItem* item = [items_ objectAtIndex:index];
-  const DesktopMediaPickerModel::Source& source = model_->source(index);
+  const DesktopMediaList::Source& source = media_list_->GetSource(index);
   [item setImageTitle:base::SysUTF16ToNSString(source.name)];
   [sourceBrowser_ reloadData];
 }
 
 - (void)sourceThumbnailChangedAtIndex:(int)index {
-  const DesktopMediaPickerModel::Source& source = model_->source(index);
+  const DesktopMediaList::Source& source = media_list_->GetSource(index);
   NSImage* image = gfx::NSImageFromImageSkia(source.thumbnail);
 
   DesktopMediaPickerItem* item = [items_ objectAtIndex:index];

@@ -10,6 +10,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/extension_prefs.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -177,7 +178,7 @@ IN_PROC_BROWSER_TEST_F(FileSystemApiTest,
     FileSystemApiGetDisplayPathPrettifyMac) {
   // On Mac, "test.localized" will be localized into just "test".
   base::FilePath test_path = TempFilePath("test.localized", false);
-  ASSERT_TRUE(file_util::CreateDirectory(test_path));
+  ASSERT_TRUE(base::CreateDirectory(test_path));
 
   base::FilePath test_file = test_path.AppendASCII("gold.txt");
   base::FilePath source = test_root_folder_.AppendASCII("gold.txt");

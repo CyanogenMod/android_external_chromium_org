@@ -18,6 +18,7 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/search/instant_tab.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/common/chrome_switches.h"
@@ -52,7 +53,7 @@ bool IsContentsFrom(const InstantPage* page,
 // supplied |search_terms|. Sets the |search_terms| on the transient entry for
 // search terms extraction to work correctly.
 void EnsureSearchTermsAreSet(content::WebContents* contents,
-                             const string16& search_terms) {
+                             const base::string16& search_terms) {
   content::NavigationController* controller = &contents->GetController();
 
   // If search terms are already correct or there is already a transient entry
@@ -98,9 +99,23 @@ void InstantController::SetOmniboxBounds(const gfx::Rect& bounds) {
 
 void InstantController::SetSuggestionToPrefetch(
     const InstantSuggestion& suggestion) {
-  if (instant_tab_ && search_mode_.is_search()) {
-    SearchTabHelper::FromWebContents(instant_tab_->contents())->
-        SetSuggestionToPrefetch(suggestion);
+  if (instant_tab_ &&
+      SearchTabHelper::FromWebContents(instant_tab_->contents())->
+          IsSearchResultsPage()) {
+    if (chrome::ShouldPrefetchSearchResultsOnSRP() ||
+        chrome::ShouldPrefetchSearchResults()) {
+      SearchTabHelper::FromWebContents(instant_tab_->contents())->
+          SetSuggestionToPrefetch(suggestion);
+    }
+  } else {
+    if (chrome::ShouldPrefetchSearchResults()) {
+      InstantService* instant_service = GetInstantService();
+      InstantSearchPrerenderer* prerenderer =
+          instant_service ? instant_service->instant_search_prerenderer() :
+              NULL;
+      if (prerenderer)
+        prerenderer->Prerender(suggestion);
+    }
   }
 }
 
@@ -127,7 +142,7 @@ void InstantController::InstantPageLoadFailed(content::WebContents* contents) {
   RedirectToLocalNTP(contents);
 }
 
-bool InstantController::SubmitQuery(const string16& search_terms) {
+bool InstantController::SubmitQuery(const base::string16& search_terms) {
   if (instant_tab_ && instant_tab_->supports_instant() &&
       search_mode_.is_origin_search()) {
     // Use |instant_tab_| to run the query if we're already on a search results
@@ -188,7 +203,7 @@ void InstantController::TabDeactivated(content::WebContents* contents) {
   // If user is deactivating an NTP tab, log the number of mouseovers for this
   // NTP session.
   if (chrome::IsInstantNTP(contents))
-    InstantTab::EmitMouseoverCount(contents);
+    InstantTab::EmitNtpStatistics(contents);
 }
 
 void InstantController::LogDebugEvent(const std::string& info) const {

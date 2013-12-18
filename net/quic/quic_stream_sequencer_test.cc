@@ -69,11 +69,11 @@ class MockStream : public ReliableQuicStream {
       : ReliableQuicStream(id, session) {
   }
 
-  MOCK_METHOD1(TerminateFromPeer, void(bool half_close));
+  MOCK_METHOD0(OnFinRead, void());
   MOCK_METHOD2(ProcessData, uint32(const char* data, uint32 data_len));
   MOCK_METHOD2(CloseConnectionWithDetails, void(QuicErrorCode error,
                                                 const string& details));
-  MOCK_METHOD1(Close, void(QuicRstStreamErrorCode error));
+  MOCK_METHOD1(Reset, void(QuicRstStreamErrorCode error));
   MOCK_METHOD0(OnCanWrite, void());
 };
 
@@ -194,7 +194,7 @@ TEST_F(QuicStreamSequencerTest, EmptyFrame) {
 }
 
 TEST_F(QuicStreamSequencerTest, EmptyFinFrame) {
-  EXPECT_CALL(stream_, TerminateFromPeer(true));
+  EXPECT_CALL(stream_, OnFinRead());
   EXPECT_TRUE(sequencer_->OnFinFrame(0, ""));
   EXPECT_EQ(0u, sequencer_->frames()->size());
   EXPECT_EQ(0u, sequencer_->num_bytes_consumed());
@@ -405,7 +405,7 @@ TEST_F(QuicStreamSequencerTest, MarkConsumedError) {
 
   // Now, attempt to mark consumed more data than was readable
   // and expect the stream to be closed.
-  EXPECT_CALL(stream_, Close(QUIC_ERROR_PROCESSING_STREAM));
+  EXPECT_CALL(stream_, Reset(QUIC_ERROR_PROCESSING_STREAM));
   EXPECT_DFATAL(sequencer_->MarkConsumed(4),
                 "Invalid argument to MarkConsumed.  num_bytes_consumed_: 3 "
                 "end_offset: 4 offset: 9 length: 17");
@@ -431,7 +431,7 @@ TEST_F(QuicStreamSequencerTest, BasicHalfCloseOrdered) {
   InSequence s;
 
   EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, TerminateFromPeer(true));
+  EXPECT_CALL(stream_, OnFinRead());
   EXPECT_TRUE(sequencer_->OnFinFrame(0, "abc"));
 
   EXPECT_EQ(3u, sequencer_->close_offset());
@@ -443,7 +443,7 @@ TEST_F(QuicStreamSequencerTest, BasicHalfCloseUnorderedWithFlush) {
   InSequence s;
   EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
   EXPECT_CALL(stream_, ProcessData(StrEq("def"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, TerminateFromPeer(true));
+  EXPECT_CALL(stream_, OnFinRead());
 
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
@@ -454,7 +454,7 @@ TEST_F(QuicStreamSequencerTest, BasicHalfUnordered) {
   EXPECT_EQ(3u, sequencer_->close_offset());
   InSequence s;
   EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, TerminateFromPeer(true));
+  EXPECT_CALL(stream_, OnFinRead());
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
 }
@@ -465,7 +465,7 @@ TEST_F(QuicStreamSequencerTest, TerminateWithReadv) {
   sequencer_->OnFinFrame(3, "");
   EXPECT_EQ(3u, sequencer_->close_offset());
 
-  EXPECT_FALSE(sequencer_->IsHalfClosed());
+  EXPECT_FALSE(sequencer_->IsClosed());
 
   EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(0));
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
@@ -473,18 +473,18 @@ TEST_F(QuicStreamSequencerTest, TerminateWithReadv) {
   iovec iov = { &buffer[0], 3 };
   int bytes_read = sequencer_->Readv(&iov, 1);
   EXPECT_EQ(3, bytes_read);
-  EXPECT_TRUE(sequencer_->IsHalfClosed());
+  EXPECT_TRUE(sequencer_->IsClosed());
 }
 
 TEST_F(QuicStreamSequencerTest, MutipleOffsets) {
   sequencer_->OnFinFrame(3, "");
   EXPECT_EQ(3u, sequencer_->close_offset());
 
-  EXPECT_CALL(stream_, Close(QUIC_MULTIPLE_TERMINATION_OFFSETS));
+  EXPECT_CALL(stream_, Reset(QUIC_MULTIPLE_TERMINATION_OFFSETS));
   sequencer_->OnFinFrame(5, "");
   EXPECT_EQ(3u, sequencer_->close_offset());
 
-  EXPECT_CALL(stream_, Close(QUIC_MULTIPLE_TERMINATION_OFFSETS));
+  EXPECT_CALL(stream_, Reset(QUIC_MULTIPLE_TERMINATION_OFFSETS));
   sequencer_->OnFinFrame(1, "");
   EXPECT_EQ(3u, sequencer_->close_offset());
 
@@ -539,7 +539,7 @@ TEST_F(QuicSequencerRandomTest, RandomFramesNoDroppingNoBackup) {
         .WillOnce(Return(data->size()));
   }
 
-  while (list_.size() != 0) {
+  while (!list_.empty()) {
     int index = OneToN(list_.size()) - 1;
     LOG(ERROR) << "Sending index " << index << " "
                << list_[index].second.data();
@@ -562,7 +562,7 @@ TEST_F(QuicSequencerRandomTest, RandomFramesDroppingNoBackup) {
         .WillOnce(Return(data->size()));
   }
 
-  while (list_.size() != 0) {
+  while (!list_.empty()) {
     int index = OneToN(list_.size()) - 1;
     LOG(ERROR) << "Sending index " << index << " "
                << list_[index].second.data();

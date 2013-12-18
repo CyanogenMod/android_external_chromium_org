@@ -351,6 +351,7 @@ BrowserPluginGuest::BrowserPluginGuest(
       mouse_locked_(false),
       pending_lock_request_(false),
       embedder_visible_(true),
+      copy_request_id_(0),
       next_permission_request_id_(browser_plugin::kInvalidPermissionRequestID),
       has_render_view_(has_render_view),
       last_seen_auto_size_enabled_(false),
@@ -365,9 +366,9 @@ BrowserPluginGuest::BrowserPluginGuest(
 
 bool BrowserPluginGuest::AddMessageToConsole(WebContents* source,
                                              int32 level,
-                                             const string16& message,
+                                             const base::string16& message,
                                              int32 line_no,
-                                             const string16& source_id) {
+                                             const base::string16& source_id) {
   if (!delegate_)
     return false;
 
@@ -507,6 +508,8 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
                         OnSwapBuffersACK)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CompositorFrameACK,
                         OnCompositorFrameACK)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
+                        OnCopyFromCompositingSurfaceAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_DragStatusUpdate,
                         OnDragStatusUpdate)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ExecuteEditCommand,
@@ -625,6 +628,9 @@ void BrowserPluginGuest::Initialize(
   ack_params.name = name_;
   SendMessageToEmbedder(
       new BrowserPluginMsg_Attach_ACK(instance_id_, ack_params));
+
+  if (delegate_)
+    delegate_->DidAttach();
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
@@ -681,6 +687,16 @@ RenderWidgetHostView* BrowserPluginGuest::GetEmbedderRenderWidgetHostView() {
 
 void BrowserPluginGuest::UpdateVisibility() {
   OnSetVisibility(instance_id_, visible());
+}
+
+void BrowserPluginGuest::CopyFromCompositingSurface(
+      gfx::Rect src_subrect,
+      gfx::Size dst_size,
+      const base::Callback<void(bool, const SkBitmap&)>& callback) {
+  copy_request_callbacks_.insert(std::make_pair(++copy_request_id_, callback));
+  SendMessageToEmbedder(
+      new BrowserPluginMsg_CopyFromCompositingSurface(instance_id(),
+          copy_request_id_, src_subrect, dst_size));
 }
 
 // screen.
@@ -758,6 +774,9 @@ void BrowserPluginGuest::HandleKeyboardEvent(
   if (delegate_ && delegate_->HandleKeyboardEvent(event))
     return;
 
+  if (!embedder_web_contents_->GetDelegate())
+    return;
+
   // Send the unhandled keyboard events back to the embedder to reprocess them.
   // TODO(fsamuel): This introduces the possibility of out-of-order keyboard
   // events because the guest may be arbitrarily delayed when responding to
@@ -796,7 +815,7 @@ WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
 
 void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
                                             int64 source_frame_id,
-                                            const string16& frame_name,
+                                            const base::string16& frame_name,
                                             const GURL& target_url,
                                             WebContents* new_contents) {
   WebContentsImpl* new_contents_impl =
@@ -828,6 +847,12 @@ void BrowserPluginGuest::RendererResponsive(WebContents* source) {
 
 void BrowserPluginGuest::RunFileChooser(WebContents* web_contents,
                                         const FileChooserParams& params) {
+  if (!attached())
+    return;
+
+  if (!embedder_web_contents_->GetDelegate())
+    return;
+
   embedder_web_contents_->GetDelegate()->RunFileChooser(web_contents, params);
 }
 
@@ -1028,7 +1053,7 @@ void BrowserPluginGuest::SendQueuedMessages() {
 
 void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
     int64 frame_id,
-    const string16& frame_unique_name,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& url,
     PageTransition transition_type,
@@ -1045,7 +1070,7 @@ void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
     const char script[] = "window.addEventListener('dragstart', function() { "
                           "  window.event.preventDefault(); "
                           "});";
-    render_view_host->ExecuteJavascriptInWebFrame(string16(),
+    render_view_host->ExecuteJavascriptInWebFrame(base::string16(),
                                                   ASCIIToUTF16(script));
   }
 }
@@ -1109,6 +1134,7 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
   switch (message.type()) {
     case BrowserPluginHostMsg_BuffersSwappedACK::ID:
     case BrowserPluginHostMsg_CompositorFrameACK::ID:
+    case BrowserPluginHostMsg_CopyFromCompositingSurfaceAck::ID:
     case BrowserPluginHostMsg_DragStatusUpdate::ID:
     case BrowserPluginHostMsg_ExecuteEditCommand::ID:
     case BrowserPluginHostMsg_HandleInputEvent::ID:
@@ -1377,7 +1403,8 @@ void BrowserPluginGuest::OnNavigateGuest(
   if (scheme_is_blocked || !url.is_valid()) {
     if (delegate_) {
       std::string error_type;
-      RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::", &error_type);
+      base::RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::",
+                        &error_type);
       delegate_->LoadAbort(true /* is_top_level */, url, error_type);
     }
     return;
@@ -1428,15 +1455,10 @@ void BrowserPluginGuest::OnResizeGuest(
   }
   // Invalid damage buffer means we are in HW compositing mode,
   // so just resize the WebContents and repaint if needed.
-  if (!base::SharedMemory::IsHandleValid(params.damage_buffer_handle)) {
-    if (!params.view_rect.size().IsEmpty())
-      GetWebContents()->GetView()->SizeContents(params.view_rect.size());
-    if (params.repaint)
-      Send(new ViewMsg_Repaint(routing_id(), params.view_rect.size()));
-    return;
-  }
-  SetDamageBuffer(params);
-  GetWebContents()->GetView()->SizeContents(params.view_rect.size());
+  if (base::SharedMemory::IsHandleValid(params.damage_buffer_handle))
+    SetDamageBuffer(params);
+  if (!params.view_rect.size().IsEmpty())
+    GetWebContents()->GetView()->SizeContents(params.view_rect.size());
   if (params.repaint)
     Send(new ViewMsg_Repaint(routing_id(), params.view_rect.size()));
 }
@@ -1556,6 +1578,18 @@ void BrowserPluginGuest::OnUpdateRectACK(
   OnSetSize(instance_id_, auto_size_params, resize_guest_params);
 }
 
+void BrowserPluginGuest::OnCopyFromCompositingSurfaceAck(
+    int instance_id,
+    int request_id,
+    const SkBitmap& bitmap) {
+  CHECK(copy_request_callbacks_.count(request_id));
+  if (!copy_request_callbacks_.count(request_id))
+    return;
+  const CopyRequestCallback& callback = copy_request_callbacks_[request_id];
+  callback.Run(!bitmap.empty() && !bitmap.isNull(), bitmap);
+  copy_request_callbacks_.erase(request_id);
+}
+
 void BrowserPluginGuest::OnUpdateGeometry(int instance_id,
                                           const gfx::Rect& view_rect) {
   // The plugin has moved within the embedder without resizing or the
@@ -1633,8 +1667,8 @@ void BrowserPluginGuest::RunJavaScriptDialog(
     const GURL& origin_url,
     const std::string& accept_lang,
     JavaScriptMessageType javascript_message_type,
-    const string16& message_text,
-    const string16& default_prompt_text,
+    const base::string16& message_text,
+    const base::string16& default_prompt_text,
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
   base::DictionaryValue request_info;
@@ -1659,18 +1693,18 @@ void BrowserPluginGuest::RunJavaScriptDialog(
 
 void BrowserPluginGuest::RunBeforeUnloadDialog(
     WebContents* web_contents,
-    const string16& message_text,
+    const base::string16& message_text,
     bool is_reload,
     const DialogClosedCallback& callback) {
   // This is called if the guest has a beforeunload event handler.
   // This callback allows navigation to proceed.
-  callback.Run(true, string16());
+  callback.Run(true, base::string16());
 }
 
 bool BrowserPluginGuest::HandleJavaScriptDialog(
     WebContents* web_contents,
     bool accept,
-    const string16* prompt_override) {
+    const base::string16* prompt_override) {
   return false;
 }
 

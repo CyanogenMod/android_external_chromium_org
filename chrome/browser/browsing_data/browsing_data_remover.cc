@@ -29,6 +29,7 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/media/media_device_id_salt.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/password_manager/password_store.h"
@@ -47,6 +48,7 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #if defined(OS_CHROMEOS)
@@ -352,7 +354,8 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
     // which these profiles and credit cards were learned.  These are a form of
     // history, so clear them as well.
     scoped_refptr<autofill::AutofillWebDataService> web_data_service =
-        autofill::AutofillWebDataService::FromBrowserContext(profile_);
+        WebDataServiceFactory::GetAutofillWebDataForProfile(
+            profile_, Profile::EXPLICIT_ACCESS);
     if (web_data_service.get()) {
       waiting_for_clear_autofill_origin_urls_ = true;
       web_data_service->RemoveOriginURLsModifiedBetween(
@@ -420,6 +423,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       }
     }
 #endif
+    MediaDeviceIDSalt::Reset(profile_->GetPrefs());
   }
 
   // Server bound certs are not separated for protected and unprotected web
@@ -493,7 +497,8 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
   if (remove_mask & REMOVE_FORM_DATA) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Autofill"));
     scoped_refptr<autofill::AutofillWebDataService> web_data_service =
-        autofill::AutofillWebDataService::FromBrowserContext(profile_);
+        WebDataServiceFactory::GetAutofillWebDataForProfile(
+            profile_, Profile::EXPLICIT_ACCESS);
 
     if (web_data_service.get()) {
       waiting_for_clear_form_ = true;

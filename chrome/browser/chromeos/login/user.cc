@@ -28,6 +28,10 @@ std::string GetUserName(const std::string& email) {
 
 }  // namespace
 
+const int User::kExternalImageIndex;
+const int User::kProfileImageIndex;
+const int User::kInvalidImageIndex;
+
 class RegularUser : public User {
  public:
   explicit RegularUser(const std::string& email);
@@ -150,7 +154,7 @@ bool UserContext::operator==(const UserContext& context) const {
          context.using_oauth == using_oauth;
 }
 
-string16 User::GetDisplayName() const {
+base::string16 User::GetDisplayName() const {
   // Fallback to the email account name in case display name haven't been set.
   return display_name_.empty() ?
       UTF8ToUTF16(GetAccountName(true)) :

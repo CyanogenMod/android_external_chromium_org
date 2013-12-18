@@ -11,7 +11,6 @@
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 
 namespace base {
 class DictionaryValue;
@@ -35,7 +34,7 @@ class CHROMEOS_EXPORT SMSClient : public DBusClient {
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static SMSClient* Create(DBusClientImplementationType type);
+  static SMSClient* Create();
 
   // Calls GetAll method.  |callback| is called after the method call succeeds.
   virtual void GetAll(const std::string& service_name,

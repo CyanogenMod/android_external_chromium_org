@@ -21,7 +21,7 @@ Tile::Tile(TileManager* tile_manager,
            float contents_scale,
            int layer_id,
            int source_frame_number,
-           bool can_use_lcd_text)
+           int flags)
   : RefCountedManaged<Tile>(tile_manager),
     tile_manager_(tile_manager),
     tile_size_(tile_size),
@@ -30,7 +30,9 @@ Tile::Tile(TileManager* tile_manager,
     opaque_rect_(opaque_rect),
     layer_id_(layer_id),
     source_frame_number_(source_frame_number),
-    can_use_lcd_text_(can_use_lcd_text),
+    flags_(flags),
+    required_for_activation_(false),
+    is_visible_(false),
     id_(s_next_id_++) {
   set_picture_pile(picture_pile);
 }
@@ -41,19 +43,11 @@ Tile::~Tile() {
       "cc::Tile", this);
 }
 
-void Tile::SetPriority(WhichTree tree, const TilePriority& priority) {
-  if (priority == priority_[tree])
-    return;
-
-  priority_[tree] = priority;
-  tile_manager_->DidChangeTilePriority(this);
-}
-
 void Tile::MarkRequiredForActivation() {
-  if (priority_[PENDING_TREE].required_for_activation)
+  if (required_for_activation_)
     return;
 
-  priority_[PENDING_TREE].required_for_activation = true;
+  required_for_activation_ = true;
   tile_manager_->DidChangeTilePriority(this);
 }
 
@@ -66,10 +60,10 @@ scoped_ptr<base::Value> Tile::AsValue() const {
   res->SetDouble("contents_scale", contents_scale_);
   res->Set("content_rect", MathUtil::AsValue(content_rect_).release());
   res->SetInteger("layer_id", layer_id_);
-  res->Set("active_priority", priority_[ACTIVE_TREE].AsValue().release());
-  res->Set("pending_priority", priority_[PENDING_TREE].AsValue().release());
   res->Set("managed_state", managed_state_.AsValue().release());
-  res->SetBoolean("can_use_lcd_text", can_use_lcd_text_);
+  res->SetBoolean("can_use_lcd_text", can_use_lcd_text());
+  res->SetBoolean("use_gpu_rasterization", use_gpu_rasterization());
+  res->SetBoolean("required_for_activation", required_for_activation_);
   return res.PassAs<base::Value>();
 }
 

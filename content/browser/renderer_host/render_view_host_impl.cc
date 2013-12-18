@@ -159,6 +159,7 @@ RenderViewHostImpl* RenderViewHostImpl::FromID(int render_process_id,
 RenderViewHostImpl::RenderViewHostImpl(
     SiteInstance* instance,
     RenderViewHostDelegate* delegate,
+    RenderFrameHostDelegate* frame_delegate,
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
     int main_frame_routing_id,
@@ -193,7 +194,11 @@ RenderViewHostImpl::RenderViewHostImpl(
     main_frame_routing_id = GetProcess()->GetNextRoutingID();
 
   main_render_frame_host_ = RenderFrameHostFactory::Create(
-      this, delegate_->GetFrameTree(), main_frame_routing_id, is_swapped_out_);
+      this, frame_delegate, delegate_->GetFrameTree(),
+      delegate_->GetFrameTree()->root(),
+      main_frame_routing_id, is_swapped_out_);
+  delegate_->GetFrameTree()->root()->set_render_frame_host(
+      main_render_frame_host_.get(), false);
 
   GetProcess()->EnableSendQueue();
 
@@ -243,7 +248,7 @@ SiteInstance* RenderViewHostImpl::GetSiteInstance() const {
 }
 
 bool RenderViewHostImpl::CreateRenderView(
-    const string16& frame_name,
+    const base::string16& frame_name,
     int opener_route_id,
     int32 max_page_id) {
   TRACE_EVENT0("renderer_host", "RenderViewHostImpl::CreateRenderView");
@@ -343,8 +348,13 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       !command_line.HasSwitch(switches::kDisableLocalStorage);
   prefs.databases_enabled =
       !command_line.HasSwitch(switches::kDisableDatabases);
+#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
+  prefs.webaudio_enabled =
+      command_line.HasSwitch(switches::kEnableWebAudio);
+#else
   prefs.webaudio_enabled =
       !command_line.HasSwitch(switches::kDisableWebAudio);
+#endif
 
   prefs.experimental_webgl_enabled =
       GpuProcessHost::gpu_enabled() &&
@@ -948,8 +958,9 @@ void RenderViewHostImpl::DesktopNotificationPostDisplay(int callback_context) {
                                               callback_context));
 }
 
-void RenderViewHostImpl::DesktopNotificationPostError(int notification_id,
-                                                      const string16& message) {
+void RenderViewHostImpl::DesktopNotificationPostError(
+    int notification_id,
+    const base::string16& message) {
   Send(new DesktopNotificationMsg_PostError(
       GetRoutingID(), notification_id, message));
 }
@@ -965,15 +976,15 @@ void RenderViewHostImpl::DesktopNotificationPostClick(int notification_id) {
 }
 
 void RenderViewHostImpl::ExecuteJavascriptInWebFrame(
-    const string16& frame_xpath,
-    const string16& jscript) {
+    const base::string16& frame_xpath,
+    const base::string16& jscript) {
   Send(new ViewMsg_ScriptEvalRequest(GetRoutingID(), frame_xpath, jscript,
                                      0, false));
 }
 
 void RenderViewHostImpl::ExecuteJavascriptInWebFrameCallbackResult(
-     const string16& frame_xpath,
-     const string16& jscript,
+     const base::string16& frame_xpath,
+     const base::string16& jscript,
      const JavascriptResultCallback& callback) {
   static int next_id = 1;
   int key = next_id++;
@@ -982,9 +993,10 @@ void RenderViewHostImpl::ExecuteJavascriptInWebFrameCallbackResult(
   javascript_callbacks_.insert(std::make_pair(key, callback));
 }
 
-void RenderViewHostImpl::JavaScriptDialogClosed(IPC::Message* reply_msg,
-                                                bool success,
-                                                const string16& user_input) {
+void RenderViewHostImpl::JavaScriptDialogClosed(
+    IPC::Message* reply_msg,
+    bool success,
+    const base::string16& user_input) {
   GetProcess()->SetIgnoreInputEvents(false);
   bool is_waiting =
       is_waiting_for_beforeunload_ack_ || is_waiting_for_unload_ack_;
@@ -1179,10 +1191,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
   if (delegate_->OnMessageReceived(this, msg))
     return true;
 
-  // TODO(jochen): Consider removing message handlers that only add a this
-  // pointer and forward the messages to the RenderViewHostDelegate. The
-  // respective delegates can handle the messages themselves in their
-  // OnMessageReceived implementation.
   bool handled = true;
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderViewHostImpl, msg, msg_is_ok)
@@ -1321,17 +1329,18 @@ void RenderViewHostImpl::CreateNewWindow(
   FilterURL(policy, GetProcess(), true,
             &validated_params.opener_security_origin);
 
-  delegate_->CreateNewWindow(route_id, main_frame_route_id,
-                             validated_params, session_storage_namespace);
+  delegate_->CreateNewWindow(
+      GetProcess()->GetID(), route_id, main_frame_route_id, validated_params,
+      session_storage_namespace);
 }
 
 void RenderViewHostImpl::CreateNewWidget(int route_id,
                                      blink::WebPopupType popup_type) {
-  delegate_->CreateNewWidget(route_id, popup_type);
+  delegate_->CreateNewWidget(GetProcess()->GetID(), route_id, popup_type);
 }
 
 void RenderViewHostImpl::CreateNewFullscreenWidget(int route_id) {
-  delegate_->CreateNewFullscreenWidget(route_id);
+  delegate_->CreateNewFullscreenWidget(GetProcess()->GetID(), route_id);
 }
 
 void RenderViewHostImpl::OnShowView(int route_id,
@@ -1410,8 +1419,7 @@ void RenderViewHostImpl::OnDidStartProvisionalLoadForFrame(
     int64 parent_frame_id,
     bool is_main_frame,
     const GURL& url) {
-  delegate_->DidStartProvisionalLoadForFrame(
-      this, frame_id, parent_frame_id, is_main_frame, url);
+  NOTREACHED();
 }
 
 void RenderViewHostImpl::OnDidRedirectProvisionalLoad(
@@ -1535,7 +1543,7 @@ void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
 
 void RenderViewHostImpl::OnUpdateTitle(
     int32 page_id,
-    const string16& title,
+    const base::string16& title,
     blink::WebTextDirection title_direction) {
   if (title.length() > kMaxTitleChars) {
     NOTREACHED() << "Renderer sent too many characters in title.";
@@ -1669,7 +1677,7 @@ void RenderViewHostImpl::OnDidChangeScrollOffsetPinningForMainFrame(
 void RenderViewHostImpl::OnDidChangeNumWheelEvents(int count) {
 }
 
-void RenderViewHostImpl::OnSelectionChanged(const string16& text,
+void RenderViewHostImpl::OnSelectionChanged(const base::string16& text,
                                             size_t offset,
                                             const gfx::Range& range) {
   if (view_)
@@ -1695,8 +1703,8 @@ void RenderViewHostImpl::OnRouteMessageEvent(
 }
 
 void RenderViewHostImpl::OnRunJavaScriptMessage(
-    const string16& message,
-    const string16& default_prompt,
+    const base::string16& message,
+    const base::string16& default_prompt,
     const GURL& frame_url,
     JavaScriptMessageType type,
     IPC::Message* reply_msg) {
@@ -1710,7 +1718,7 @@ void RenderViewHostImpl::OnRunJavaScriptMessage(
 }
 
 void RenderViewHostImpl::OnRunBeforeUnloadConfirm(const GURL& frame_url,
-                                                  const string16& message,
+                                                  const base::string16& message,
                                                   bool is_reload,
                                                   IPC::Message* reply_msg) {
   // While a JS before unload dialog is showing, tabs in the same process
@@ -1789,9 +1797,9 @@ void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
 
 void RenderViewHostImpl::OnAddMessageToConsole(
     int32 level,
-    const string16& message,
+    const base::string16& message,
     int32 line_no,
-    const string16& source_id) {
+    const base::string16& source_id) {
   if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
     return;
 
@@ -2076,12 +2084,12 @@ void RenderViewHostImpl::ReloadFrame() {
 }
 
 void RenderViewHostImpl::Find(int request_id,
-                              const string16& search_text,
+                              const base::string16& search_text,
                               const blink::WebFindOptions& options) {
   Send(new ViewMsg_Find(GetRoutingID(), request_id, search_text, options));
 }
 
-void RenderViewHostImpl::InsertCSS(const string16& frame_xpath,
+void RenderViewHostImpl::InsertCSS(const base::string16& frame_xpath,
                                    const std::string& css) {
   Send(new ViewMsg_CSSInsertRequest(GetRoutingID(), frame_xpath, css));
 }
@@ -2203,15 +2211,6 @@ void RenderViewHostImpl::OnRequestDesktopNotificationPermission(
 
 void RenderViewHostImpl::OnShowDesktopNotification(
     const ShowDesktopNotificationHostMsgParams& params) {
-  // Disallow HTML notifications from javascript: and file: schemes as this
-  // allows unwanted cross-domain access.
-  GURL url = params.contents_url;
-  if (params.is_html &&
-      (url.SchemeIs(kJavaScriptScheme) ||
-       url.SchemeIs(chrome::kFileScheme))) {
-    return;
-  }
-
   GetContentClient()->browser()->ShowDesktopNotification(
       params, GetProcess()->GetID(), GetRoutingID(), false);
 }

@@ -8,44 +8,33 @@
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
 
+class GURL;
+
 namespace content {
 
 class NavigationControllerImpl;
 class NavigatorDelegate;
+class RenderFrameHostImpl;
 
-// This class is responsible for performing navigations in a node of the
-// FrameTree. Its lifetime is bound to all FrameTreeNode objects that are
-// using it and will be released once all nodes that use it are freed.
-// The Navigator is bound to a single frame tree and cannot be used by multiple
-// instances of FrameTree.
+// Implementations of this interface are responsible for performing navigations
+// in a node of the FrameTree. Its lifetime is bound to all FrameTreeNode
+// objects that are using it and will be released once all nodes that use it are
+// freed. The Navigator is bound to a single frame tree and cannot be used by
+// multiple instances of FrameTree.
 // TODO(nasko): Move all navigation methods, such as didStartProvisionalLoad
-// from WebContentsImpl to this class.
+// from WebContentsImpl to this interface.
 class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
  public:
-  Navigator(NavigationControllerImpl* nav_controller,
-            NavigatorDelegate* delegate);
+  // The RenderFrameHostImpl started a provisional load.
+  virtual void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
+                                       int64 frame_id,
+                                       int64 parent_frame_id,
+                                       bool main_frame,
+                                       const GURL& url) {};
 
-  NavigationControllerImpl* controller() {
-    return controller_;
-  }
-
-  NavigatorDelegate* delegate() {
-    return delegate_;
-  }
-
- private:
+ protected:
   friend class base::RefCounted<Navigator>;
   virtual ~Navigator() {}
-
-  // The NavigationController that will keep track of session history for all
-  // RenderFrameHost objects using this Navigator.
-  // TODO(nasko): Move ownership of the NavigationController from
-  // WebContentsImpl to this class.
-  NavigationControllerImpl* controller_;
-
-  // Used to notify the object embedding this Navigator about navigation
-  // events. Can be NULL in tests.
-  NavigatorDelegate* delegate_;
 };
 
 }  // namespace content

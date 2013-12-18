@@ -10,8 +10,8 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 
 namespace drive {
 namespace internal {
@@ -142,9 +142,7 @@ FileError ChangeListProcessor::Apply(
     }
   }
 
-  FileError error = ApplyEntryMap(is_delta_update,
-                                  largest_changestamp,
-                                  about_resource.Pass());
+  FileError error = ApplyEntryMap(largest_changestamp, about_resource.Pass());
   if (error != FILE_ERROR_OK) {
     DLOG(ERROR) << "ApplyEntryMap failed: " << FileErrorToString(error);
     return error;
@@ -165,7 +163,6 @@ FileError ChangeListProcessor::Apply(
 }
 
 FileError ChangeListProcessor::ApplyEntryMap(
-    bool is_delta_update,
     int64 changestamp,
     scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(about_resource);

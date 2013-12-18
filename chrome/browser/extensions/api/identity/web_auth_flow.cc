@@ -76,8 +76,7 @@ void WebAuthFlow::Start() {
   // in OnShellWindowAdded.
   std::string random_bytes;
   crypto::RandBytes(WriteInto(&random_bytes, 33), 32);
-  bool success = base::Base64Encode(random_bytes, &shell_window_key_);
-  DCHECK(success);
+  base::Base64Encode(random_bytes, &shell_window_key_);
 
   // identityPrivate.onWebFlowRequest(shell_window_key, provider_url_, mode_)
   scoped_ptr<base::ListValue> args(new base::ListValue());
@@ -222,13 +221,14 @@ void WebAuthFlow::DidStartProvisionalLoadForFrame(
     BeforeUrlLoaded(validated_url);
 }
 
-void WebAuthFlow::DidFailProvisionalLoad(int64 frame_id,
-                                         const string16& frame_unique_name,
-                                         bool is_main_frame,
-                                         const GURL& validated_url,
-                                         int error_code,
-                                         const string16& error_description,
-                                         RenderViewHost* render_view_host) {
+void WebAuthFlow::DidFailProvisionalLoad(
+    int64 frame_id,
+    const base::string16& frame_unique_name,
+    bool is_main_frame,
+    const GURL& validated_url,
+    int error_code,
+    const base::string16& error_description,
+    RenderViewHost* render_view_host) {
   if (delegate_)
     delegate_->OnAuthFlowFailure(LOAD_FAILED);
 }

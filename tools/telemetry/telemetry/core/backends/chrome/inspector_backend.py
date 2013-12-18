@@ -7,9 +7,9 @@ import socket
 import sys
 import time
 
+from telemetry.core import bitmap
 from telemetry.core import exceptions
 from telemetry.core import util
-from telemetry.core.backends import png_bitmap
 from telemetry.core.backends.chrome import inspector_console
 from telemetry.core.backends.chrome import inspector_memory
 from telemetry.core.backends.chrome import inspector_network
@@ -139,7 +139,7 @@ class InspectorBackend(object):
       })()
     """)
     if snap:
-      return png_bitmap.PngBitmap.FromBase64(snap['data'])
+      return bitmap.Bitmap.FromBase64Png(snap['data'])
     return None
 
   # Console public methods.
@@ -266,12 +266,19 @@ class InspectorBackend(object):
     self._socket.close()
     self._socket = None
     def IsBack():
-      return self._browser_backend.tab_list_backend.DoesDebuggerUrlExist(
-        self._debugger_url)
+      if not self._browser_backend.tab_list_backend.DoesDebuggerUrlExist(
+        self._debugger_url):
+        return False
+      try:
+        self._Connect()
+      except exceptions.TabCrashException, ex:
+        if ex.message.message.find('Handshake Status 500') == 0:
+          return False
+        raise
+      return True
     util.WaitFor(IsBack, 512)
     sys.stderr.write('\n')
     sys.stderr.write('Inspector\'s UI closed. Telemetry will now resume.\n')
-    self._Connect()
 
   def SyncRequest(self, req, timeout=10):
     self._Connect(timeout)

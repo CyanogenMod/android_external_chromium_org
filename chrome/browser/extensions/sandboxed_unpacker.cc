@@ -72,7 +72,7 @@ void RecordSuccessfulUnpackTimeHistograms(
   // To get a sense of how CRX size impacts unpack time, record unpack
   // time for several increments of CRX size.
   int64 crx_file_size;
-  if (!file_util::GetFileSize(crx_path, &crx_file_size)) {
+  if (!base::GetFileSize(crx_path, &crx_file_size)) {
     UMA_HISTOGRAM_COUNTS("Extensions.SandboxUnpackSuccessCantGetCrxSize", 1);
     return;
   }
@@ -124,7 +124,7 @@ bool VerifyJunctionFreeLocation(base::FilePath* temp_dir) {
     return false;
 
   base::FilePath temp_file;
-  if (!file_util::CreateTemporaryFileInDir(*temp_dir, &temp_file)) {
+  if (!base::CreateTemporaryFileInDir(*temp_dir, &temp_file)) {
     LOG(ERROR) << temp_dir->value() << " is not writable";
     return false;
   }
@@ -135,8 +135,7 @@ bool VerifyJunctionFreeLocation(base::FilePath* temp_dir) {
     return false;
 
   base::FilePath normalized_temp_file;
-  bool normalized =
-      file_util::NormalizeFilePath(temp_file, &normalized_temp_file);
+  bool normalized = base::NormalizeFilePath(temp_file, &normalized_temp_file);
   if (!normalized) {
     // If |temp_file| contains a link, the sandbox will block al file system
     // operations, and the install will fail.
@@ -293,7 +292,7 @@ void SandboxedUnpacker::Start() {
   // will cause file system access outside the sandbox path, and the sandbox
   // will deny the operation.
   base::FilePath link_free_crx_path;
-  if (!file_util::NormalizeFilePath(temp_crx_path, &link_free_crx_path)) {
+  if (!base::NormalizeFilePath(temp_crx_path, &link_free_crx_path)) {
     LOG(ERROR) << "Could not get the normalized path of "
                << temp_crx_path.value();
     ReportFailure(
@@ -369,7 +368,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
   // Localize manifest now, so confirm UI gets correct extension name.
 
   // TODO(rdevlin.cronin): Continue removing std::string errors and replacing
-  // with string16
+  // with base::string16
   std::string utf8_error;
   if (!extension_l10n_util::LocalizeExtension(extension_root_,
                                               final_manifest.get(),
@@ -405,7 +404,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
   ReportSuccess(manifest, install_icon);
 }
 
-void SandboxedUnpacker::OnUnpackExtensionFailed(const string16& error) {
+void SandboxedUnpacker::OnUnpackExtensionFailed(const base::string16& error) {
   CHECK(unpacker_io_task_runner_->RunsTasksOnCurrentThread());
   got_response_ = true;
   ReportFailure(
@@ -416,7 +415,7 @@ void SandboxedUnpacker::OnUnpackExtensionFailed(const string16& error) {
 }
 
 bool SandboxedUnpacker::ValidateSignature() {
-  ScopedStdioHandle file(file_util::OpenFile(crx_path_, "rb"));
+  ScopedStdioHandle file(base::OpenFile(crx_path_, "rb"));
 
   if (!file.get()) {
     // Could not open crx file for reading.
@@ -578,7 +577,7 @@ bool SandboxedUnpacker::ValidateSignature() {
 }
 
 void SandboxedUnpacker::ReportFailure(FailureReason reason,
-                                      const string16& error) {
+                                      const base::string16& error) {
   UMA_HISTOGRAM_ENUMERATION("Extensions.SandboxUnpackFailureReason",
                             reason, NUM_FAILURE_REASONS);
   UMA_HISTOGRAM_TIMES("Extensions.SandboxUnpackFailureTime",

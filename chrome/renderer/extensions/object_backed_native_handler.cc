@@ -42,11 +42,11 @@ void ObjectBackedNativeHandler::Router(
   v8::Handle<v8::Object> data = args.Data().As<v8::Object>();
 
   v8::Handle<v8::Value> handler_function_value =
-      data->Get(v8::String::New(kHandlerFunction));
+      data->Get(v8::String::NewFromUtf8(args.GetIsolate(), kHandlerFunction));
   // See comment in header file for why we do this.
   if (handler_function_value.IsEmpty() ||
       handler_function_value->IsUndefined()) {
-    console::Error(v8::Context::GetCalling(),
+    console::Error(args.GetIsolate()->GetCallingContext(),
                    "Extension view no longer exists");
     return;
   }
@@ -65,11 +65,12 @@ void ObjectBackedNativeHandler::RouteFunction(
   v8::Persistent<v8::Object> data(isolate, v8::Object::New());
   v8::Local<v8::Object> local_data = v8::Local<v8::Object>::New(isolate, data);
   local_data->Set(
-      v8::String::New(kHandlerFunction),
+      v8::String::NewFromUtf8(isolate, kHandlerFunction),
       v8::External::New(isolate, new HandlerFunction(handler_function)));
   v8::Handle<v8::FunctionTemplate> function_template =
-      v8::FunctionTemplate::New(Router, local_data);
-  object_template_.NewHandle(isolate)->Set(name.c_str(), function_template);
+      v8::FunctionTemplate::New(isolate, Router, local_data);
+  object_template_.NewHandle(isolate)
+      ->Set(isolate, name.c_str(), function_template);
   router_data_.push_back(UnsafePersistent<v8::Object>(&data));
 }
 
@@ -84,11 +85,11 @@ void ObjectBackedNativeHandler::Invalidate() {
        it != router_data_.end(); ++it) {
     v8::Handle<v8::Object> data = it->newLocal(isolate);
     v8::Handle<v8::Value> handler_function_value =
-        data->Get(v8::String::New(kHandlerFunction));
+        data->Get(v8::String::NewFromUtf8(isolate, kHandlerFunction));
     CHECK(!handler_function_value.IsEmpty());
     delete static_cast<HandlerFunction*>(
         handler_function_value.As<v8::External>()->Value());
-    data->Delete(v8::String::New(kHandlerFunction));
+    data->Delete(v8::String::NewFromUtf8(isolate, kHandlerFunction));
     it->dispose();
   }
   object_template_.reset();

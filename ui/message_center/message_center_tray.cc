@@ -11,6 +11,7 @@
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/message_center/message_center_types.h"
+#include "ui/message_center/notification_blocker.h"
 
 namespace message_center {
 
@@ -52,6 +53,7 @@ void MessageCenterTray::MarkMessageCenterHidden() {
   if (!message_center_visible_)
     return;
   message_center_visible_ = false;
+  message_center_->SetVisibility(message_center::VISIBILITY_TRANSIENT);
 
   // Some notifications (like system ones) should appear as popups again
   // after the message center is closed.
@@ -59,8 +61,6 @@ void MessageCenterTray::MarkMessageCenterHidden() {
     ShowPopupBubble();
     return;
   }
-
-  message_center_->SetVisibility(message_center::VISIBILITY_TRANSIENT);
 
   NotifyMessageCenterTrayChanged();
 }
@@ -102,11 +102,8 @@ void MessageCenterTray::HidePopupBubbleInternal() {
   if (!popups_visible_)
     return;
 
-  // This is called before HidePopups so that we don't double-call this when we
-  // see the results of HidePopups via MessageCenterObserver.
-  popups_visible_ = false;
-
   delegate_->HidePopups();
+  popups_visible_ = false;
 }
 
 void MessageCenterTray::ShowNotifierSettingsBubble() {
@@ -155,6 +152,10 @@ void MessageCenterTray::OnNotificationDisplayed(
 
 void MessageCenterTray::OnQuietModeChanged(bool in_quiet_mode) {
   NotifyMessageCenterTrayChanged();
+}
+
+void MessageCenterTray::OnBlockingStateChanged(NotificationBlocker* blocker) {
+  OnMessageCenterChanged();
 }
 
 void MessageCenterTray::OnMessageCenterChanged() {

@@ -132,6 +132,7 @@
 #include "ui/views/window/dialog_delegate.h"
 
 #if defined(USE_ASH)
+#include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shell.h"
@@ -1199,21 +1200,23 @@ void BrowserView::ShowBookmarkPrompt() {
 
 void BrowserView::ShowTranslateBubble(
     content::WebContents* web_contents,
-    TranslateBubbleModel::ViewState view_state) {
+    TranslateBubbleModel::ViewState view_state,
+    TranslateErrors::Type error_type) {
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(web_contents);
   LanguageState& language_state = translate_tab_helper->language_state();
   language_state.SetTranslateEnabled(true);
 
   TranslateBubbleView::ShowBubble(GetToolbarView()->GetTranslateBubbleAnchor(),
-                                  web_contents, view_state, browser_.get());
+                                  web_contents, view_state, error_type,
+                                  browser_.get());
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserView::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
-    const string16& email,
-    const string16& error_message,
+    const base::string16& email,
+    const base::string16& error_message,
     const StartSyncCallback& start_sync_callback) {
   scoped_ptr<OneClickSigninBubbleDelegate> delegate;
   delegate.reset(new OneClickSigninBubbleLinksDelegate(browser()));
@@ -2321,7 +2324,12 @@ bool BrowserView::ShouldUseImmersiveFullscreenForUrl(const GURL& url) const {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
     return false;
   bool is_browser_fullscreen = url.is_empty();
-  return is_browser_fullscreen && IsBrowserTypeNormal();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          ash::switches::kAshEnableImmersiveFullscreenForAllWindows)) {
+    return is_browser_fullscreen;
+  } else {
+    return is_browser_fullscreen && IsBrowserTypeNormal();
+  }
 #else
   return false;
 #endif

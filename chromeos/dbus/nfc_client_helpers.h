@@ -11,6 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/values.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/nfc_property_set.h"
 #include "dbus/bus.h"
@@ -43,6 +44,12 @@ CHROMEOS_EXPORT void OnSuccess(const base::Closure& callback,
 // the resulting error name and error message.
 CHROMEOS_EXPORT void OnError(const ErrorCallback& error_callback,
                              dbus::ErrorResponse* response);
+
+// Appends any value (basic types and nested types) represented by |value| to
+// the writer |writer| as a variant type.
+// TODO(armansito): Consider moving this to dbus/values_util.h"
+CHROMEOS_EXPORT void AppendValueDataAsVariant(dbus::MessageWriter* writer,
+                                              const base::Value& value);
 
 // DBusObjectMap is a simple data structure that facilitates keeping track of
 // D-Bus object proxies and properties. It maintains a mapping from object
@@ -121,6 +128,10 @@ class CHROMEOS_EXPORT DBusObjectMap {
   // Invokes GetAll on the property structures belonging to all object paths
   // that are managed by this instance.
   void RefreshAllProperties();
+
+  // Returns a list containing the object paths of all remote objects that are
+  // managed by this instance.
+  ObjectPathVector GetObjectPaths();
 
  private:
   typedef std::pair<dbus::ObjectProxy*, NfcPropertySet*> ObjectPropertyPair;

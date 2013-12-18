@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "base/time/time.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/limits.h"
 #include "mojo/system/memory.h"
@@ -81,12 +82,8 @@ CoreImpl::HandleTableEntry::~HandleTableEntry() {
 }
 
 // static
-CoreImpl* CoreImpl::singleton_ = NULL;
-
-// static
 void CoreImpl::Init() {
-  CHECK(!singleton_);
-  singleton_ = new CoreImpl();
+  Core::Init(new CoreImpl());
 }
 
 MojoResult CoreImpl::Close(MojoHandle handle) {
@@ -344,6 +341,10 @@ MojoResult CoreImpl::ReadMessage(
   }
 
   return rv;
+}
+
+MojoTimeTicks CoreImpl::GetTimeTicksNow() {
+  return base::TimeTicks::Now().ToInternalValue();
 }
 
 CoreImpl::CoreImpl()

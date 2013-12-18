@@ -258,7 +258,7 @@ void DownloadItemView::OnDownloadUpdated(DownloadItem* download_item) {
     shelf_->Layout();
     SchedulePaint();
   } else {
-    string16 status_text = model_.GetStatusText();
+    base::string16 status_text = model_.GetStatusText();
     switch (download()->GetState()) {
       case DownloadItem::IN_PROGRESS:
         download()->IsPaused() ?
@@ -299,7 +299,7 @@ void DownloadItemView::OnDownloadUpdated(DownloadItem* download_item) {
     status_text_ = status_text;
   }
 
-  string16 new_tip = model_.GetTooltipText(font_list_, kTooltipMaxWidth);
+  base::string16 new_tip = model_.GetTooltipText(font_list_, kTooltipMaxWidth);
   if (new_tip != tooltip_text_) {
     tooltip_text_ = new_tip;
     TooltipTextChanged();
@@ -475,7 +475,7 @@ bool DownloadItemView::OnKeyPressed(const ui::KeyEvent& event) {
 }
 
 bool DownloadItemView::GetTooltipText(const gfx::Point& p,
-                                      string16* tooltip) const {
+                                      base::string16* tooltip) const {
   if (IsShowingWarningDialog()) {
     tooltip->clear();
     return false;
@@ -560,6 +560,12 @@ void DownloadItemView::AnimationProgressed(const gfx::Animation* animation) {
   SchedulePaint();
 }
 
+void DownloadItemView::OnPaint(gfx::Canvas* canvas) {
+  OnPaintBackground(canvas);
+  if (HasFocus())
+    canvas->DrawFocusRect(GetLocalBounds());
+}
+
 // The DownloadItemView can be in three major modes (NORMAL_MODE, DANGEROUS_MODE
 // and MALICIOUS_MODE).
 //
@@ -597,7 +603,7 @@ void DownloadItemView::AnimationProgressed(const gfx::Animation* animation) {
 //  |   \_ Warning icon.  No progress animation.
 //   \_ Body is static.  Doesn't respond to mouse hover or press. (NORMAL only)
 //
-void DownloadItemView::OnPaint(gfx::Canvas* canvas) {
+void DownloadItemView::OnPaintBackground(gfx::Canvas* canvas) {
   BodyImageSet* body_image_set = NULL;
   switch (mode_) {
     case NORMAL_MODE:
@@ -755,17 +761,18 @@ void DownloadItemView::OnPaint(gfx::Canvas* canvas) {
   // Last value of x was the end of the right image, just before the button.
   // Note that in dangerous mode we use a label (as the text is multi-line).
   if (!IsShowingWarningDialog()) {
-    string16 filename;
+    base::string16 filename;
     if (!disabled_while_opening_) {
       filename = gfx::ElideFilename(download()->GetFileNameToReportUser(),
                                    font_list_, kTextWidth);
     } else {
       // First, Calculate the download status opening string width.
-      string16 status_string =
-          l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_OPENING, string16());
+      base::string16 status_string =
+          l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_OPENING,
+                                     base::string16());
       int status_string_width = font_list_.GetStringWidth(status_string);
       // Then, elide the file name.
-      string16 filename_string =
+      base::string16 filename_string =
           gfx::ElideFilename(download()->GetFileNameToReportUser(), font_list_,
                             kTextWidth - status_string_width);
       // Last, concat the whole string.
@@ -857,6 +864,18 @@ void DownloadItemView::OnPaint(gfx::Canvas* canvas) {
       canvas->DrawImageInt(*icon, icon_x, icon_y, paint);
     }
   }
+}
+
+void DownloadItemView::OnFocus() {
+  View::OnFocus();
+  // We render differently when focused.
+  SchedulePaint();
+}
+
+void DownloadItemView::OnBlur() {
+  View::OnBlur();
+  // We render differently when focused.
+  SchedulePaint();
 }
 
 void DownloadItemView::OpenDownload() {
@@ -1145,7 +1164,8 @@ void DownloadItemView::ShowWarningDialog() {
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE:
       warning_icon_ = rb.GetImageSkiaNamed(IDR_WARNING);
   }
-  string16 dangerous_label = model_.GetWarningText(font_list_, kTextWidth);
+  base::string16 dangerous_label =
+      model_.GetWarningText(font_list_, kTextWidth);
   dangerous_download_label_ = new views::Label(dangerous_label);
   dangerous_download_label_->SetMultiLine(true);
   dangerous_download_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -1187,7 +1207,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
   if (dangerous_download_label_sized_)
     return;
 
-  string16 label_text = dangerous_download_label_->text();
+  base::string16 label_text = dangerous_download_label_->text();
   TrimWhitespace(label_text, TRIM_ALL, &label_text);
   DCHECK_EQ(string16::npos, label_text.find('\n'));
 
@@ -1197,7 +1217,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
 
   // Use a const string from here. BreakIterator requies that text.data() not
   // change during its lifetime.
-  const string16 original_text(label_text);
+  const base::string16 original_text(label_text);
   // Using BREAK_WORD can work in most cases, but it can also break
   // lines where it should not. Using BREAK_LINE is safer although
   // slower for Chinese/Japanese. This is not perf-critical at all, though.
@@ -1206,7 +1226,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
   bool status = iter.Init();
   DCHECK(status);
 
-  string16 prev_text = original_text;
+  base::string16 prev_text = original_text;
   gfx::Size size = dangerous_download_label_->GetPreferredSize();
   int min_width = size.width();
 
@@ -1219,7 +1239,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
     size_t pos = iter.pos();
     if (pos >= original_text.length())
       break;
-    string16 current_text = original_text;
+    base::string16 current_text = original_text;
     // This can be a low surrogate codepoint, but u_isUWhiteSpace will
     // return false and inserting a new line after a surrogate pair
     // is perfectly ok.
@@ -1262,7 +1282,7 @@ bool DownloadItemView::InDropDownButtonXCoordinateRange(int x) {
 }
 
 void DownloadItemView::UpdateAccessibleName() {
-  string16 new_name;
+  base::string16 new_name;
   if (IsShowingWarningDialog()) {
     new_name = dangerous_download_label_->text();
   } else {

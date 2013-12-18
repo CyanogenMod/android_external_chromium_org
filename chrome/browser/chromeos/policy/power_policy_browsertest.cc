@@ -21,21 +21,15 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/extensions/api/power/power_api_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/policy/cloud/cloud_policy_core.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
-#include "chrome/browser/policy/mock_policy_service.h"
-#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/power.h"
@@ -48,12 +42,18 @@
 #include "chromeos/dbus/fake_session_manager_client.h"
 #include "chromeos/dbus/power_manager/policy.pb.h"
 #include "chromeos/dbus/power_policy_controller.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_policy_service.h"
+#include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
 #include "crypto/rsa_private_key.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -181,7 +181,7 @@ void PowerPolicyBrowserTestBase::InstallUserKey() {
                    .AppendASCII("policy.pub");
   std::vector<uint8> user_key_bits;
   ASSERT_TRUE(user_policy_.GetSigningKey()->ExportPublicKey(&user_key_bits));
-  ASSERT_TRUE(file_util::CreateDirectory(user_key_file.DirName()));
+  ASSERT_TRUE(base::CreateDirectory(user_key_file.DirName()));
   ASSERT_EQ(file_util::WriteFile(
                 user_key_file,
                 reinterpret_cast<const char*>(user_key_bits.data()),

@@ -17,7 +17,6 @@
 #include "chrome/browser/chromeos/input_method/delayable_widget.h"
 #include "chrome/browser/chromeos/input_method/infolist_window_view.h"
 #include "chrome/browser/chromeos/input_method/mode_indicator_controller.h"
-#include "chrome/browser/chromeos/input_method/mode_indicator_widget.h"
 #include "ui/views/widget/widget.h"
 
 
@@ -32,13 +31,16 @@ const int kInfolistHideDelayMilliSeconds = 500;
 
 }  // namespace
 
-bool CandidateWindowControllerImpl::Init() {
-  // Create the candidate window view.
+CandidateWindowControllerImpl::CandidateWindowControllerImpl()
+    : candidate_window_view_(NULL),
+      latest_infolist_focused_index_(InfolistWindowView::InvalidFocusIndex()) {
+  IBusBridge::Get()->SetCandidateWindowHandler(this);
   CreateView();
-  return true;
 }
 
-void CandidateWindowControllerImpl::Shutdown() {
+CandidateWindowControllerImpl::~CandidateWindowControllerImpl() {
+  IBusBridge::Get()->SetCandidateWindowHandler(NULL);
+  candidate_window_view_->RemoveObserver(this);
 }
 
 void CandidateWindowControllerImpl::CreateView() {
@@ -80,18 +82,7 @@ void CandidateWindowControllerImpl::CreateView() {
 
   // Create the mode indicator controller.
   mode_indicator_controller_.reset(
-      new ModeIndicatorController(new ModeIndicatorWidget));
-}
-
-CandidateWindowControllerImpl::CandidateWindowControllerImpl()
-    : candidate_window_view_(NULL),
-      latest_infolist_focused_index_(InfolistWindowView::InvalidFocusIndex()) {
-  IBusBridge::Get()->SetCandidateWindowHandler(this);
-}
-
-CandidateWindowControllerImpl::~CandidateWindowControllerImpl() {
-  IBusBridge::Get()->SetCandidateWindowHandler(NULL);
-  candidate_window_view_->RemoveObserver(this);
+      new ModeIndicatorController(InputMethodManager::Get()));
 }
 
 void CandidateWindowControllerImpl::Hide() {
@@ -279,14 +270,9 @@ void CandidateWindowControllerImpl::UpdatePreeditText(
   candidate_window_view_->ShowPreeditText();
 }
 
-void CandidateWindowControllerImpl::OnCandidateCommitted(int index,
-                                                         int button,
-                                                         int flags) {
-  IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
-  if (engine)
-    engine->CandidateClicked(index,
-                             static_cast<ibus::IBusMouseButton>(button),
-                             flags);
+void CandidateWindowControllerImpl::OnCandidateCommitted(int index) {
+  FOR_EACH_OBSERVER(CandidateWindowController::Observer, observers_,
+                    CandidateClicked(index));
 }
 
 void CandidateWindowControllerImpl::OnCandidateWindowOpened() {

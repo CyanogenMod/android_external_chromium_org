@@ -1317,7 +1317,8 @@ bool RemoveShortcutFolderIfEmpty(ShellUtil::ShortcutLocation location,
                                  BrowserDistribution* dist,
                                  ShellUtil::ShellChange level) {
   // Explicitly whitelist locations, since accidental calls can be very harmful.
-  if (location != ShellUtil::SHORTCUT_LOCATION_START_MENU &&
+  if (location != ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR &&
+      location != ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR &&
       location != ShellUtil::SHORTCUT_LOCATION_APP_SHORTCUTS) {
     NOTREACHED();
     return false;
@@ -1328,7 +1329,7 @@ bool RemoveShortcutFolderIfEmpty(ShellUtil::ShortcutLocation location,
     LOG(WARNING) << "Cannot find path at location " << location;
     return false;
   }
-  if (file_util::IsDirectoryEmpty(shortcut_folder) &&
+  if (base::IsDirectoryEmpty(shortcut_folder) &&
       !base::DeleteFile(shortcut_folder, true)) {
     LOG(ERROR) << "Cannot remove folder " << shortcut_folder.value();
     return false;
@@ -1388,11 +1389,11 @@ bool ShellUtil::QuickIsChromeRegisteredInHKLM(BrowserDistribution* dist,
 bool ShellUtil::ShortcutLocationIsSupported(
     ShellUtil::ShortcutLocation location) {
   switch (location) {
-    case SHORTCUT_LOCATION_DESKTOP:
-      return true;
-    case SHORTCUT_LOCATION_QUICK_LAUNCH:
-      return true;
-    case SHORTCUT_LOCATION_START_MENU:
+    case SHORTCUT_LOCATION_DESKTOP:  // Falls through.
+    case SHORTCUT_LOCATION_QUICK_LAUNCH:  // Falls through.
+    case SHORTCUT_LOCATION_START_MENU_ROOT:  // Falls through.
+    case SHORTCUT_LOCATION_START_MENU_CHROME_DIR:  // Falls through.
+    case SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR:
       return true;
     case SHORTCUT_LOCATION_TASKBAR_PINS:
       return base::win::GetVersion() >= base::win::VERSION_WIN7;
@@ -1410,7 +1411,7 @@ bool ShellUtil::GetShortcutPath(ShellUtil::ShortcutLocation location,
                                 base::FilePath* path) {
   DCHECK(path);
   int dir_key = -1;
-  bool add_folder_for_dist = false;
+  base::string16 folder_to_append;
   switch (location) {
     case SHORTCUT_LOCATION_DESKTOP:
       dir_key = (level == CURRENT_USER) ? base::DIR_USER_DESKTOP :
@@ -1420,10 +1421,21 @@ bool ShellUtil::GetShortcutPath(ShellUtil::ShortcutLocation location,
       dir_key = (level == CURRENT_USER) ? base::DIR_USER_QUICK_LAUNCH :
                                           base::DIR_DEFAULT_USER_QUICK_LAUNCH;
       break;
-    case SHORTCUT_LOCATION_START_MENU:
+    case SHORTCUT_LOCATION_START_MENU_ROOT:
       dir_key = (level == CURRENT_USER) ? base::DIR_START_MENU :
                                           base::DIR_COMMON_START_MENU;
-      add_folder_for_dist = true;
+      break;
+    case SHORTCUT_LOCATION_START_MENU_CHROME_DIR:
+      dir_key = (level == CURRENT_USER) ? base::DIR_START_MENU :
+                                          base::DIR_COMMON_START_MENU;
+      folder_to_append = dist->GetStartMenuShortcutSubfolder(
+          BrowserDistribution::SUBFOLDER_CHROME);
+      break;
+    case SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR:
+      dir_key = (level == CURRENT_USER) ? base::DIR_START_MENU :
+                                          base::DIR_COMMON_START_MENU;
+      folder_to_append = dist->GetStartMenuShortcutSubfolder(
+          BrowserDistribution::SUBFOLDER_APPS);
       break;
     case SHORTCUT_LOCATION_TASKBAR_PINS:
       dir_key = base::DIR_TASKBAR_PINS;
@@ -1442,10 +1454,8 @@ bool ShellUtil::GetShortcutPath(ShellUtil::ShortcutLocation location,
     return false;
   }
 
-  if (add_folder_for_dist) {
-    *path = path->Append(dist->GetStartMenuShortcutSubfolder(
-        BrowserDistribution::SUBFOLDER_CHROME));
-  }
+  if (!folder_to_append.empty())
+    *path = path->Append(folder_to_append);
 
   return true;
 }
@@ -1458,7 +1468,9 @@ bool ShellUtil::CreateOrUpdateShortcut(
   // Explicitly whitelist locations to which this is applicable.
   if (location != SHORTCUT_LOCATION_DESKTOP &&
       location != SHORTCUT_LOCATION_QUICK_LAUNCH &&
-      location != SHORTCUT_LOCATION_START_MENU) {
+      location != SHORTCUT_LOCATION_START_MENU_ROOT &&
+      location != SHORTCUT_LOCATION_START_MENU_CHROME_DIR &&
+      location != SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR) {
     NOTREACHED();
     return false;
   }
@@ -1515,7 +1527,7 @@ bool ShellUtil::CreateOrUpdateShortcut(
   if (should_install_shortcut) {
     // Make sure the parent directories exist when creating the shortcut.
     if (shortcut_operation == base::win::SHORTCUT_CREATE_ALWAYS &&
-        !file_util::CreateDirectory(chosen_path->DirName())) {
+        !base::CreateDirectory(chosen_path->DirName())) {
       NOTREACHED();
       return false;
     }
@@ -1690,7 +1702,7 @@ string16 ShellUtil::BuildAppModelId(
     }
   }
   // No spaces are allowed in the AppUserModelId according to MSDN.
-  ReplaceChars(app_id, L" ", L"_", &app_id);
+  base::ReplaceChars(app_id, L" ", L"_", &app_id);
   return app_id;
 }
 
@@ -2070,7 +2082,8 @@ bool ShellUtil::RemoveShortcuts(ShellUtil::ShortcutLocation location,
                                      shortcut_operation, location, dist, level);
   // Remove chrome-specific shortcut folders if they are now empty.
   if (success &&
-      (location == SHORTCUT_LOCATION_START_MENU ||
+      (location == SHORTCUT_LOCATION_START_MENU_CHROME_DIR ||
+       location == SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR ||
        location == SHORTCUT_LOCATION_APP_SHORTCUTS)) {
     success = RemoveShortcutFolderIfEmpty(location, dist, level);
   }

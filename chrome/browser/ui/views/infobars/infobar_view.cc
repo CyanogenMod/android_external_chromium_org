@@ -41,6 +41,9 @@
 #include "ui/gfx/win/hwnd_util.h"
 #endif
 
+
+// InfoBar --------------------------------------------------------------------
+
 // static
 const int InfoBar::kSeparatorLineHeight =
     views::NonClientFrameView::kClientEdgeThickness;
@@ -50,12 +53,17 @@ const int InfoBar::kDefaultArrowTargetHalfWidth = kDefaultArrowTargetHeight;
 const int InfoBar::kMaximumArrowTargetHalfWidth = 14;
 const int InfoBar::kDefaultBarTargetHeight = 36;
 
+
+// InfoBarView ----------------------------------------------------------------
+
+// static
 const int InfoBarView::kButtonButtonSpacing = 10;
 const int InfoBarView::kEndOfLabelSpacing = 16;
 const int InfoBarView::kHorizontalPadding = 6;
+const int InfoBarView::kCloseButtonSpacing = kEndOfLabelSpacing;
 
-InfoBarView::InfoBarView(InfoBarService* owner, InfoBarDelegate* delegate)
-    : InfoBar(owner, delegate),
+InfoBarView::InfoBarView(scoped_ptr<InfoBarDelegate> delegate)
+    : InfoBar(delegate.Pass()),
       views::ExternalFocusTracker(this, NULL),
       icon_(NULL),
       close_button_(NULL) {
@@ -70,7 +78,7 @@ InfoBarView::~InfoBarView() {
   DCHECK(!menu_runner_.get());
 }
 
-views::Label* InfoBarView::CreateLabel(const string16& text) const {
+views::Label* InfoBarView::CreateLabel(const base::string16& text) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   views::Label* label = new views::Label(text,
       rb.GetFont(ui::ResourceBundle::MediumFont));
@@ -80,7 +88,7 @@ views::Label* InfoBarView::CreateLabel(const string16& text) const {
   return label;
 }
 
-views::Link* InfoBarView::CreateLink(const string16& text,
+views::Link* InfoBarView::CreateLink(const base::string16& text,
                                      views::LinkListener* listener) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   views::Link* link = new views::Link;
@@ -95,7 +103,7 @@ views::Link* InfoBarView::CreateLink(const string16& text,
 
 // static
 views::MenuButton* InfoBarView::CreateMenuButton(
-    const string16& text,
+    const base::string16& text,
     views::MenuButtonListener* menu_button_listener) {
   scoped_ptr<views::TextButtonDefaultBorder> menu_button_border(
       new views::TextButtonDefaultBorder());
@@ -126,7 +134,7 @@ views::MenuButton* InfoBarView::CreateMenuButton(
 // static
 views::LabelButton* InfoBarView::CreateLabelButton(
     views::ButtonListener* listener,
-    const string16& text,
+    const base::string16& text,
     bool needs_elevation) {
   scoped_ptr<views::LabelButtonBorder> label_button_border(
       new views::LabelButtonBorder(views::Button::STYLE_TEXTBUTTON));
@@ -231,10 +239,14 @@ void InfoBarView::Layout() {
                      icon_size.height());
   }
 
+  int content_minimum_width = ContentMinimumWidth();
   gfx::Size button_size = close_button_->GetPreferredSize();
-  close_button_->SetBounds(std::max(start_x + ContentMinimumWidth(),
-      width() - kHorizontalPadding - button_size.width()), OffsetY(button_size),
-      button_size.width(), button_size.height());
+  close_button_->SetBounds(
+      std::max(
+          start_x + content_minimum_width +
+              ((content_minimum_width > 0) ? kCloseButtonSpacing : 0),
+          width() - kHorizontalPadding - button_size.width()),
+      OffsetY(button_size), button_size.width(), button_size.height());
 }
 
 void InfoBarView::ViewHierarchyChanged(
@@ -317,8 +329,13 @@ int InfoBarView::StartX() const {
 }
 
 int InfoBarView::EndX() const {
-  const int kCloseButtonSpacing = 12;
   return close_button_->x() - kCloseButtonSpacing;
+}
+
+int InfoBarView::OffsetY(const gfx::Size& prefsize) const {
+  return arrow_height() +
+      std::max((bar_target_height() - prefsize.height()) / 2, 0) -
+      (bar_target_height() - bar_height());
 }
 
 const InfoBarContainer::Delegate* InfoBarView::container_delegate() const {
@@ -376,16 +393,20 @@ void InfoBarView::PlatformSpecificOnHeightsRecalculated() {
 }
 
 void InfoBarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  if (delegate()) {
-    state->name = l10n_util::GetStringUTF16(
-        (delegate()->GetInfoBarType() == InfoBarDelegate::WARNING_TYPE) ?
-            IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
-  }
+  state->name = l10n_util::GetStringUTF16(
+      (delegate()->GetInfoBarType() == InfoBarDelegate::WARNING_TYPE) ?
+          IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
   state->role = ui::AccessibilityTypes::ROLE_ALERT;
 }
 
 gfx::Size InfoBarView::GetPreferredSize() {
-  return gfx::Size(0, total_height());
+  return gfx::Size(
+      kHorizontalPadding +
+          ((icon_ == NULL) ?
+              0 : (icon_->GetPreferredSize().width() + kHorizontalPadding)) +
+          ContentMinimumWidth() + kCloseButtonSpacing +
+          close_button_->GetPreferredSize().width() + kHorizontalPadding,
+      total_height());
 }
 
 void InfoBarView::OnWillChangeFocus(View* focused_before, View* focused_now) {

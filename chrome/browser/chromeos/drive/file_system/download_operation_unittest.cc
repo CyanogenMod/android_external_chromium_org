@@ -11,7 +11,7 @@
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -197,7 +197,7 @@ TEST_F(DownloadOperationTest,
 
 TEST_F(DownloadOperationTest, EnsureFileDownloadedByPath_FromCache) {
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir(), &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir(), &temp_file));
 
   base::FilePath file_in_root(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   ResourceEntry src_entry;
@@ -356,7 +356,7 @@ TEST_F(DownloadOperationTest,
     // The content is available from the cache file.
     EXPECT_TRUE(get_content_callback.data().empty());
     int64 local_file_size = 0;
-    file_util::GetFileSize(local_path, &local_file_size);
+    base::GetFileSize(local_path, &local_file_size);
     EXPECT_EQ(entry->file_info().size(), local_file_size);
     EXPECT_EQ(FILE_ERROR_OK, completion_error);
   }
@@ -364,7 +364,7 @@ TEST_F(DownloadOperationTest,
 
 TEST_F(DownloadOperationTest, EnsureFileDownloadedByLocalId_FromCache) {
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir(), &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir(), &temp_file));
 
   base::FilePath file_in_root(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   ResourceEntry src_entry;

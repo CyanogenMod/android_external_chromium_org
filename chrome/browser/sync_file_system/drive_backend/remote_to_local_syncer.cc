@@ -12,14 +12,15 @@
 #include "base/task_runner_util.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "extensions/common/extension.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -73,11 +74,11 @@ scoped_ptr<FileMetadata> GetFileMetadata(MetadataDatabase* database,
 
 }  // namespace
 
-RemoteToLocalSyncer::RemoteToLocalSyncer(SyncEngineContext* sync_context,
-                                         int priorities)
+RemoteToLocalSyncer::RemoteToLocalSyncer(SyncEngineContext* sync_context)
     : sync_context_(sync_context),
-      priorities_(priorities),
       sync_action_(SYNC_ACTION_NONE),
+      prepared_(false),
+      sync_root_deletion_(false),
       weak_ptr_factory_(this) {
 }
 
@@ -93,23 +94,15 @@ void RemoteToLocalSyncer::Run(const SyncStatusCallback& callback) {
 
   SyncStatusCallback wrapped_callback = base::Bind(
       &RemoteToLocalSyncer::SyncCompleted, weak_ptr_factory_.GetWeakPtr(),
-      callback);
+      base::Bind(&RemoteToLocalSyncer::FinalizeSync,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
 
-  if (priorities_ & PRIORITY_NORMAL) {
-    dirty_tracker_ = make_scoped_ptr(new FileTracker);
-    if (metadata_database()->GetNormalPriorityDirtyTracker(
-            dirty_tracker_.get())) {
-      ResolveRemoteChange(wrapped_callback);
-      return;
-    }
-  }
-
-  if (priorities_ & PRIORITY_LOW) {
-    dirty_tracker_ = make_scoped_ptr(new FileTracker);
-    if (metadata_database()->GetLowPriorityDirtyTracker(dirty_tracker_.get())) {
-      ResolveRemoteChange(wrapped_callback);
-      return;
-    }
+  dirty_tracker_ = make_scoped_ptr(new FileTracker);
+  if (metadata_database()->GetNormalPriorityDirtyTracker(
+          dirty_tracker_.get())) {
+    ResolveRemoteChange(wrapped_callback);
+    return;
   }
 
   base::MessageLoopProxy::current()->PostTask(
@@ -158,6 +151,21 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
   DCHECK(dirty_tracker_->has_synced_details());
   const FileDetails& synced_details = dirty_tracker_->synced_details();
 
+  if (dirty_tracker_->tracker_id() ==
+      metadata_database()->GetSyncRootTrackerID()) {
+    if (remote_details.missing() ||
+        synced_details.title() != remote_details.title() ||
+        remote_details.parent_folder_ids_size()) {
+      HandleSyncRootDeletion(callback);
+      return;
+    }
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
+  DCHECK_NE(dirty_tracker_->tracker_id(),
+            metadata_database()->GetSyncRootTrackerID());
+
   if (remote_details.missing()) {
     if (!synced_details.missing()) {
       HandleDeletion(callback);
@@ -204,24 +212,21 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
   }
   DCHECK_EQ(synced_details.title(), remote_details.title());
 
-  if (dirty_tracker_->tracker_id() !=
-      metadata_database()->GetSyncRootTrackerID()) {
-    FileTracker parent_tracker;
-    if (!metadata_database()->FindTrackerByTrackerID(
-            dirty_tracker_->parent_tracker_id(), &parent_tracker)) {
-      LOG(ERROR) << "Missing parent tracker for a non sync-root tracker: "
-                 << dirty_tracker_->file_id();
-      NOTREACHED();
-      callback.Run(SYNC_STATUS_FAILED);
-      return;
-    }
+  FileTracker parent_tracker;
+  if (!metadata_database()->FindTrackerByTrackerID(
+          dirty_tracker_->parent_tracker_id(), &parent_tracker)) {
+    LOG(ERROR) << "Missing parent tracker for a non sync-root tracker: "
+               << dirty_tracker_->file_id();
+    NOTREACHED();
+    callback.Run(SYNC_STATUS_FAILED);
+    return;
+  }
 
-    if (!HasFolderAsParent(remote_details, parent_tracker.file_id())) {
-      // Handle reorganize as deletion + addition.
-      Prepare(base::Bind(&RemoteToLocalSyncer::DidPrepareForDeletion,
-                         weak_ptr_factory_.GetWeakPtr(), callback));
-      return;
-    }
+  if (!HasFolderAsParent(remote_details, parent_tracker.file_id())) {
+    // Handle reorganize as deletion + addition.
+    Prepare(base::Bind(&RemoteToLocalSyncer::DidPrepareForDeletion,
+                       weak_ptr_factory_.GetWeakPtr(), callback));
+    return;
   }
 
   if (synced_details.file_kind() == FILE_KIND_FILE) {
@@ -256,7 +261,6 @@ void RemoteToLocalSyncer::DidGetRemoteMetadata(
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceEntry> entry) {
   metadata_database()->UpdateByFileResource(
-      change_id,
       *drive::util::ConvertResourceEntryToFileResource(*entry),
       base::Bind(&RemoteToLocalSyncer::DidUpdateDatabaseForRemoteMetadata,
                  weak_ptr_factory_.GetWeakPtr(), callback));
@@ -381,6 +385,12 @@ void RemoteToLocalSyncer::DidPrepareForFolderUpdate(
   // Got a remote folder for existing local file.
   // Our policy prioritize folders in this case.
   CreateFolder(callback);
+}
+
+void RemoteToLocalSyncer::HandleSyncRootDeletion(
+    const SyncStatusCallback& callback) {
+  sync_root_deletion_ = true;
+  callback.Run(SYNC_STATUS_OK);
 }
 
 void RemoteToLocalSyncer::HandleDeletion(
@@ -508,6 +518,11 @@ void RemoteToLocalSyncer::DidListFolderContent(
 
 void RemoteToLocalSyncer::SyncCompleted(const SyncStatusCallback& callback,
                                         SyncStatusCode status) {
+  if (sync_root_deletion_) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
   if (status == SYNC_STATUS_RETRY) {
     callback.Run(SYNC_STATUS_OK);
     return;
@@ -538,6 +553,17 @@ void RemoteToLocalSyncer::SyncCompleted(const SyncStatusCallback& callback,
                                      callback);
 }
 
+void RemoteToLocalSyncer::FinalizeSync(const SyncStatusCallback& callback,
+                                       SyncStatusCode status) {
+  if (prepared_) {
+    remote_change_processor()->FinalizeRemoteSync(
+        url_, false /* clear_local_change */, base::Bind(callback, status));
+    return;
+  }
+
+  callback.Run(status);
+}
+
 void RemoteToLocalSyncer::Prepare(const SyncStatusCallback& callback) {
   bool should_success = BuildFileSystemURL(
       metadata_database(), *dirty_tracker_, &url_);
@@ -558,6 +584,7 @@ void RemoteToLocalSyncer::DidPrepare(const SyncStatusCallback& callback,
     callback.Run(status);
     return;
   }
+  prepared_ = true;
 
   local_metadata_.reset(new SyncFileMetadata(local_metadata));
   local_changes_.reset(new FileChangeList(local_changes));
@@ -566,21 +593,6 @@ void RemoteToLocalSyncer::DidPrepare(const SyncStatusCallback& callback,
 }
 
 void RemoteToLocalSyncer::DeleteLocalFile(const SyncStatusCallback& callback) {
-  if (dirty_tracker_->tracker_id() ==
-      metadata_database()->GetSyncRootTrackerID()) {
-    // TODO(tzik): Sync-root is deleted. Needs special handling.
-    NOTIMPLEMENTED();
-    callback.Run(SYNC_STATUS_FAILED);
-    return;
-  }
-
-  if (dirty_tracker_->tracker_kind() == TRACKER_KIND_APP_ROOT) {
-    // TODO(tzik): Active app-root is deleted. Needs special handling.
-    NOTIMPLEMENTED();
-    callback.Run(SYNC_STATUS_FAILED);
-    return;
-  }
-
   remote_change_processor()->ApplyRemoteChange(
       FileChange(FileChange::FILE_CHANGE_DELETE, SYNC_FILE_TYPE_UNKNOWN),
       base::FilePath(),
@@ -591,7 +603,8 @@ void RemoteToLocalSyncer::DeleteLocalFile(const SyncStatusCallback& callback) {
 void RemoteToLocalSyncer::DownloadFile(const SyncStatusCallback& callback) {
   base::PostTaskAndReplyWithResult(
       sync_context_->GetBlockingTaskRunner(), FROM_HERE,
-      base::Bind(&sync_file_system::drive_backend::CreateTemporaryFile),
+      base::Bind(&sync_file_system::drive_backend::CreateTemporaryFile,
+                 make_scoped_refptr(sync_context_->GetBlockingTaskRunner())),
       base::Bind(&RemoteToLocalSyncer::DidCreateTemporaryFileForDownload,
                  weak_ptr_factory_.GetWeakPtr(), callback));
 }
@@ -658,6 +671,8 @@ void RemoteToLocalSyncer::DidCalculateMD5ForDownload(
 void RemoteToLocalSyncer::DidApplyDownload(const SyncStatusCallback& callback,
                                            webkit_blob::ScopedFile,
                                            SyncStatusCode status) {
+  if (status != SYNC_STATUS_OK)
+    metadata_database()->LowerTrackerPriority(dirty_tracker_->tracker_id());
   callback.Run(status);
 }
 

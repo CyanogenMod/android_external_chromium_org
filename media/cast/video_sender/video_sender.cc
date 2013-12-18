@@ -129,8 +129,7 @@ void VideoSender::InitializeTimers() {
 
 void VideoSender::InsertRawVideoFrame(
     const scoped_refptr<media::VideoFrame>& video_frame,
-    const base::TimeTicks& capture_time,
-    const base::Closure& callback) {
+    const base::TimeTicks& capture_time) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   DCHECK(video_encoder_.get()) << "Invalid state";
   cast_environment_->Logging()->InsertFrameEvent(kVideoFrameReceived,
@@ -138,8 +137,7 @@ void VideoSender::InsertRawVideoFrame(
 
   if (!video_encoder_->EncodeVideoFrame(video_frame, capture_time,
       base::Bind(&VideoSender::SendEncodedVideoFrameMainThread,
-          weak_factory_.GetWeakPtr()), callback)) {
-    cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE, callback);
+          weak_factory_.GetWeakPtr()))) {
   }
 }
 
@@ -217,7 +215,7 @@ void VideoSender::IncomingRtcpPacket(const uint8* packet, size_t length,
 void VideoSender::ScheduleNextRtcpReport() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   base::TimeDelta time_to_next = rtcp_->TimeToSendNextRtcpReport() -
-     cast_environment_->Clock()->NowTicks();
+      cast_environment_->Clock()->NowTicks();
 
   time_to_next = std::max(time_to_next,
       base::TimeDelta::FromMilliseconds(kMinSchedulingDelayMs));
@@ -229,7 +227,54 @@ void VideoSender::ScheduleNextRtcpReport() {
 
 void VideoSender::SendRtcpReport() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  rtcp_->SendRtcpFromRtpSender(NULL);  // TODO(pwestin): add logging.
+
+  RtcpSenderLogMessage sender_log_message;
+  const FrameRawMap& frame_raw_map =
+      cast_environment_->Logging()->GetFrameRawData();
+
+  FrameRawMap::const_iterator it = frame_raw_map.begin();
+  while (it != frame_raw_map.end()) {
+    RtcpSenderFrameLogMessage frame_message;
+    frame_message.rtp_timestamp = it->first;
+    frame_message.frame_status = kRtcpSenderFrameStatusUnknown;
+    if (it->second.type.empty()) {
+      ++it;
+      continue;
+    }
+    CastLoggingEvent last_event = it->second.type.back();
+    switch (last_event) {
+      case kVideoFrameCaptured:
+        frame_message.frame_status = kRtcpSenderFrameStatusDroppedByFlowControl;
+        break;
+      case kVideoFrameSentToEncoder:
+        frame_message.frame_status = kRtcpSenderFrameStatusDroppedByEncoder;
+        break;
+      case kVideoFrameEncoded:
+        frame_message.frame_status = kRtcpSenderFrameStatusSentToNetwork;
+        break;
+      default:
+        ++it;
+        continue;
+    }
+    ++it;
+    if (it == frame_raw_map.end()) {
+      // Last message on our map; only send if it is kVideoFrameEncoded.
+      if (last_event != kVideoFrameEncoded) {
+        // For other events we will wait for it to finish and report the result
+        // in the next report.
+        break;
+      }
+    }
+    sender_log_message.push_back(frame_message);
+  }
+  rtcp_->SendRtcpFromRtpSender(&sender_log_message);
+  if (!sender_log_message.empty()) {
+    VLOG(1) << "Failed to send all log messages";
+  }
+
+  // TODO(pwestin): When we start pulling out the logging by other means we need
+  // to synchronize this.
+  cast_environment_->Logging()->Reset();
   ScheduleNextRtcpReport();
 }
 
@@ -258,7 +303,7 @@ void VideoSender::ResendCheck() {
     if (time_since_last_send > rtp_max_delay_) {
       if (last_acked_frame_id_ == -1) {
         // We have not received any ack, send a key frame.
-         video_encoder_controller_->GenerateKeyFrame();
+        video_encoder_controller_->GenerateKeyFrame();
         last_acked_frame_id_ = -1;
         last_sent_frame_id_ = -1;
         UpdateFramesInFlight();
@@ -282,8 +327,8 @@ void VideoSender::ScheduleNextSkippedFramesCheck() {
         base::TimeDelta::FromMilliseconds(kSkippedFramesCheckPeriodkMs);
   } else {
     time_to_next = last_checked_skip_count_time_ -
-         cast_environment_->Clock()->NowTicks() +
-         base::TimeDelta::FromMilliseconds(kSkippedFramesCheckPeriodkMs);
+        cast_environment_->Clock()->NowTicks() +
+        base::TimeDelta::FromMilliseconds(kSkippedFramesCheckPeriodkMs);
   }
   time_to_next = std::max(time_to_next,
       base::TimeDelta::FromMilliseconds(kMinSchedulingDelayMs));
@@ -367,7 +412,6 @@ void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
 
 void VideoSender::ReceivedAck(uint32 acked_frame_id) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  VLOG(1) << "ReceivedAck:" << acked_frame_id;
   last_acked_frame_id_ = static_cast<int>(acked_frame_id);
   cast_environment_->Logging()->InsertGenericEvent(kAckReceived,
                                                    acked_frame_id);

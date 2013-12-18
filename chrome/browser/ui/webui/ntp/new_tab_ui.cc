@@ -76,7 +76,7 @@ const char kLTRHtmlTextDirection[] = "ltr";
 
 static base::LazyInstance<std::set<const WebUIController*> > g_live_new_tabs;
 
-const char* GetHtmlTextDirection(const string16& text) {
+const char* GetHtmlTextDirection(const base::string16& text) {
   if (base::i18n::IsRTL() && base::i18n::StringContainsStrongRTLChars(text))
     return kRTLHtmlTextDirection;
   else
@@ -94,10 +94,6 @@ NewTabUI::NewTabUI(content::WebUI* web_ui)
       showing_sync_bubble_(false) {
   g_live_new_tabs.Pointer()->insert(this);
   web_ui->OverrideTitle(l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
-
-  NTPUserDataLogger::CreateForWebContents(web_contents());
-  NTPUserDataLogger::FromWebContents(web_contents())->set_ntp_url(
-      GURL(chrome::kChromeUINewTabURL));
 
   // We count all link clicks as AUTO_BOOKMARK, so that site can be ranked more
   // highly. Note this means we're including clicks on not only most visited
@@ -225,7 +221,7 @@ void NewTabUI::RenderViewReused(RenderViewHost* render_view_host) {
 }
 
 void NewTabUI::WasHidden() {
-  EmitMouseoverCount();
+  EmitNtpStatistics();
 }
 
 void NewTabUI::Observe(int type,
@@ -241,10 +237,9 @@ void NewTabUI::Observe(int type,
   }
 }
 
-void NewTabUI::EmitMouseoverCount() {
-  NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(web_contents());
-  if (data->ntp_url() == GURL(chrome::kChromeUINewTabURL))
-    data->EmitMouseoverCount();
+void NewTabUI::EmitNtpStatistics() {
+  NTPUserDataLogger::GetOrCreateFromWebContents(
+      web_contents())->EmitNtpStatistics();
 }
 
 void NewTabUI::OnShowBookmarkBarChanged() {
@@ -299,12 +294,12 @@ bool NewTabUI::IsDiscoveryInNTPEnabled() {
 
 // static
 void NewTabUI::SetUrlTitleAndDirection(DictionaryValue* dictionary,
-                                       const string16& title,
+                                       const base::string16& title,
                                        const GURL& gurl) {
   dictionary->SetString("url", gurl.spec());
 
   bool using_url_as_the_title = false;
-  string16 title_to_set(title);
+  base::string16 title_to_set(title);
   if (title_to_set.empty()) {
     using_url_as_the_title = true;
     title_to_set = UTF8ToUTF16(gurl.spec());
@@ -332,7 +327,7 @@ void NewTabUI::SetUrlTitleAndDirection(DictionaryValue* dictionary,
 }
 
 // static
-void NewTabUI::SetFullNameAndDirection(const string16& full_name,
+void NewTabUI::SetFullNameAndDirection(const base::string16& full_name,
                                        base::DictionaryValue* dictionary) {
   dictionary->SetString("full_name", full_name);
   dictionary->SetString("full_name_direction", GetHtmlTextDirection(full_name));

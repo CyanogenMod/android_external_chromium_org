@@ -37,21 +37,6 @@ using content::BrowserThread;
 
 namespace {
 
-// RAII for initializing and shutting down the TestBrowserProcess
-class InitBrowserProcess {
- public:
-  InitBrowserProcess() {
-    DCHECK(!g_browser_process);
-    g_browser_process = new TestingBrowserProcess;
-  }
-
-  ~InitBrowserProcess() {
-    DCHECK(g_browser_process);
-    delete g_browser_process;
-    g_browser_process = NULL;
-  }
-};
-
 // Probabilities of different word lengths, as measured from Darin's profile.
 //   kWordLengthProbabilities[n-1] = P(word of length n)
 const float kWordLengthProbabilities[] = { 0.069f, 0.132f, 0.199f,
@@ -205,7 +190,7 @@ void InsertURLBatch(Profile* profile,
 bool GenerateProfile(GenerateProfileTypes types,
                      int url_count,
                      const base::FilePath& dst_dir) {
-  if (!file_util::CreateDirectory(dst_dir)) {
+  if (!base::CreateDirectory(dst_dir)) {
     PLOG(ERROR) << "Unable to create directory " << dst_dir.value().c_str();
     return false;
   }
@@ -216,7 +201,7 @@ bool GenerateProfile(GenerateProfileTypes types,
 
   printf("Creating profiles for testing...\n");
 
-  InitBrowserProcess initialize_browser_process;
+  TestingBrowserProcessInitializer initialize_browser_process;
   base::MessageLoopForUI message_loop;
   content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
   content::TestBrowserThread db_thread(BrowserThread::DB, &message_loop);

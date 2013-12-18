@@ -43,7 +43,6 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -191,7 +190,7 @@ UserManagerImpl::UserManagerImpl()
       is_current_user_new_(false),
       is_current_user_ephemeral_regular_user_(false),
       ephemeral_users_enabled_(false),
-      user_image_manager_(new UserImageManagerImpl),
+      user_image_manager_(new UserImageManagerImpl(cros_settings_, this)),
       supervised_user_manager_(new SupervisedUserManagerImpl(this)),
       manager_creation_time_(base::TimeTicks::Now()),
       multi_profile_first_run_notification_(
@@ -377,11 +376,6 @@ void UserManagerImpl::UserLoggedIn(const std::string& user_id,
 
   UMA_HISTOGRAM_ENUMERATION("UserManager.LoginUserType",
                             active_user_->GetType(), User::NUM_USER_TYPES);
-
-  if (IsMultipleProfilesAllowed()) {
-    UMA_HISTOGRAM_COUNTS_100("MultiProfile.UserCount",
-                             GetLoggedInUsers().size());
-  }
 
   g_browser_process->local_state()->SetString(kLastLoggedInRegularUser,
     (active_user_->GetType() == User::USER_TYPE_REGULAR) ? user_id : "");
@@ -640,7 +634,7 @@ User::OAuthTokenStatus UserManagerImpl::LoadUserOAuthStatus(
 }
 
 void UserManagerImpl::SaveUserDisplayName(const std::string& user_id,
-                                          const string16& display_name) {
+                                          const base::string16& display_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (User* user = FindUserAndModify(user_id)) {
@@ -664,7 +658,7 @@ void UserManagerImpl::SaveUserDisplayName(const std::string& user_id,
 string16 UserManagerImpl::GetUserDisplayName(
     const std::string& user_id) const {
   const User* user = FindUser(user_id);
-  return user ? user->display_name() : string16();
+  return user ? user->display_name() : base::string16();
 }
 
 void UserManagerImpl::SaveUserDisplayEmail(const std::string& user_id,
@@ -704,7 +698,7 @@ void UserManagerImpl::UpdateUserAccountData(
   SaveUserDisplayName(user_id, account_data.display_name());
 
   if (User* user = FindUserAndModify(user_id)) {
-    string16 given_name = account_data.given_name();
+    base::string16 given_name = account_data.given_name();
     user->set_given_name(given_name);
     if (!IsUserNonCryptohomeDataEphemeral(user_id)) {
       PrefService* local_state = g_browser_process->local_state();
@@ -1051,13 +1045,13 @@ void UserManagerImpl::EnsureUsersLoaded() {
     user->set_oauth_token_status(LoadUserOAuthStatus(*it));
     users_.push_back(user);
 
-    string16 display_name;
+    base::string16 display_name;
     if (prefs_display_names->GetStringWithoutPathExpansion(*it,
                                                            &display_name)) {
       user->set_display_name(display_name);
     }
 
-    string16 given_name;
+    base::string16 given_name;
     if (prefs_given_names->GetStringWithoutPathExpansion(*it, &given_name)) {
       user->set_given_name(given_name);
     }
@@ -1597,9 +1591,8 @@ bool UserManagerImpl::AreLocallyManagedUsersAllowed() const {
   bool locally_managed_users_allowed = false;
   cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
                              &locally_managed_users_allowed);
-  return ManagedUserService::AreManagedUsersEnabled() &&
-        (locally_managed_users_allowed ||
-         !g_browser_process->browser_policy_connector()->IsEnterpriseManaged());
+  return locally_managed_users_allowed ||
+         !g_browser_process->browser_policy_connector()->IsEnterpriseManaged();
 }
 
 base::FilePath UserManagerImpl::GetUserProfileDir(
@@ -1611,20 +1604,10 @@ base::FilePath UserManagerImpl::GetUserProfileDir(
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(::switches::kMultiProfiles)) {
     const User* user = FindUser(user_id);
-    if (user && !user->username_hash().empty()) {
-      profile_dir = base::FilePath(
-          chrome::kProfileDirPrefix + user->username_hash());
-    }
+    if (user && !user->username_hash().empty())
+      profile_dir = ProfileHelper::GetUserProfileDir(user->username_hash());
   } else if (command_line.HasSwitch(chromeos::switches::kLoginProfile)) {
-    std::string login_profile_value =
-        command_line.GetSwitchValueASCII(chromeos::switches::kLoginProfile);
-    if (login_profile_value == chrome::kLegacyProfileDir ||
-        login_profile_value == chrome::kTestUserProfileDir) {
-      profile_dir = base::FilePath(login_profile_value);
-    } else {
-      profile_dir = base::FilePath(
-          chrome::kProfileDirPrefix + login_profile_value);
-    }
+    profile_dir = ProfileHelper::GetProfileDirByLegacyLoginProfileSwitch();
   } else {
     // We should never be logged in with no profile dir unless
     // multi-profiles are enabled.

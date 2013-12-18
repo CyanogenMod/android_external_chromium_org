@@ -14,7 +14,7 @@
 #include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 class PrefService;
 
@@ -159,7 +159,7 @@ class FileSystem : public FileSystemInterface,
       const base::FilePath& directory_path) OVERRIDE;
   virtual void OnCacheFileUploadNeededByOperation(
       const std::string& local_id) OVERRIDE;
-  virtual void OnEntryRemovedByOperation(const std::string& local_id) OVERRIDE;
+  virtual void OnEntryUpdatedByOperation(const std::string& local_id) OVERRIDE;
 
   // ChangeListLoader::Observer overrides.
   // Used to propagate events from ChangeListLoader.

@@ -6,7 +6,7 @@
 
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "content/browser/frame_host/navigator.h"
+#include "content/browser/frame_host/navigator_impl.h"
 #include "content/browser/frame_host/render_frame_host_factory.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -53,7 +53,7 @@ class FrameTreeTest : public RenderViewHostTestHarness {
 //  - Swapping back to NULL doesn't crash (easier tear-down for interstitials).
 //  - Main frame does not own RenderFrameHost.
 TEST_F(FrameTreeTest, RootNode) {
-  FrameTree frame_tree(new Navigator(NULL, NULL), NULL, NULL, NULL);
+  FrameTree frame_tree(new NavigatorImpl(NULL, NULL), NULL, NULL, NULL, NULL);
 
   // Initial state has empty node.
   FrameTreeNode* root = frame_tree.root();
@@ -80,7 +80,7 @@ TEST_F(FrameTreeTest, RootNode) {
 //  - On creation, frame id is unassigned.
 //  - After a swap, frame id is unassigned.
 TEST_F(FrameTreeTest, FirstNavigationAfterSwap) {
-  FrameTree frame_tree(new Navigator(NULL, NULL), NULL, NULL, NULL);
+  FrameTree frame_tree(new NavigatorImpl(NULL, NULL), NULL, NULL, NULL, NULL);
 
   EXPECT_TRUE(frame_tree.IsFirstNavigationAfterSwap());
   EXPECT_EQ(FrameTreeNode::kInvalidFrameId,
@@ -99,7 +99,7 @@ TEST_F(FrameTreeTest, FirstNavigationAfterSwap) {
 //  - Add a series of nodes and verify tree structure.
 //  - Remove a series of nodes and verify tree structure.
 TEST_F(FrameTreeTest, Shape) {
-  FrameTree frame_tree(new Navigator(NULL, NULL), NULL, NULL, NULL);
+  FrameTree frame_tree(new NavigatorImpl(NULL, NULL), NULL, NULL, NULL, NULL);
 
   std::string no_children_node("no children node");
   std::string deep_subtree("node with deep subtree");
@@ -108,7 +108,9 @@ TEST_F(FrameTreeTest, Shape) {
   // main frame swap here.
   scoped_ptr<RenderFrameHostImpl> render_frame_host =
       RenderFrameHostFactory::Create(static_cast<RenderViewHostImpl*>(rvh()),
+                                     NULL,
                                      &frame_tree,
+                                     frame_tree.root(),
                                      process()->GetNextRoutingID(),
                                      false);
   frame_tree.SwapMainFrame(render_frame_host.get());
@@ -150,7 +152,7 @@ TEST_F(FrameTreeTest, Shape) {
             GetTreeState(&frame_tree));
 
   // Test removing of nodes.
-  frame_tree.RemoveFrame(555, 655);
+  frame_tree.RemoveFrame(NULL, 555, 655);
   ASSERT_EQ("5: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
                 "16: [264: [], 265: [], 266: [], "
@@ -158,7 +160,7 @@ TEST_F(FrameTreeTest, Shape) {
                          "[365: [455: [555: []]]], 268: []]]",
             GetTreeState(&frame_tree));
 
-  frame_tree.RemoveFrame(16, 265);
+  frame_tree.RemoveFrame(NULL, 16, 265);
   ASSERT_EQ("5: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
                 "16: [264: [], 266: [], "
@@ -166,7 +168,7 @@ TEST_F(FrameTreeTest, Shape) {
                          "[365: [455: [555: []]]], 268: []]]",
             GetTreeState(&frame_tree));
 
-  frame_tree.RemoveFrame(5, 15);
+  frame_tree.RemoveFrame(NULL, 5, 15);
   ASSERT_EQ("5: [14: [244: [], 245: []], "
                 "16: [264: [], 266: [], "
                      "267 'node with deep subtree': "

@@ -8,7 +8,6 @@
 
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
@@ -82,8 +81,12 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
                          &address,
                          &network_prefix));
 
+    CHECK(network_tokenizer.GetNext());
+    uint32 index = 0;
+    CHECK(base::StringToUint(network_tokenizer.token(), &index));
+
     networks->push_back(
-        NetworkInterface(name, address, network_prefix));
+        NetworkInterface(name, index, address, network_prefix));
   }
   return true;
 #else
@@ -109,6 +112,7 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
     struct sockaddr* addr = interface->ifa_addr;
     if (!addr)
       continue;
+
     // Skip unspecified addresses (i.e. made of zeroes) and loopback addresses
     // configured on non-loopback interfaces.
     int addr_size = 0;
@@ -145,7 +149,9 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
         }
       }
 
-      networks->push_back(NetworkInterface(name, address.address(), net_mask));
+      networks->push_back(
+          NetworkInterface(name, if_nametoindex(name.c_str()),
+                           address.address(), net_mask));
     }
   }
 

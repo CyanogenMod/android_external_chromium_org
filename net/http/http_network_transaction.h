@@ -187,6 +187,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Called to handle a client certificate request.
   int HandleCertificateRequest(int error);
 
+  // Called to possibly handle a client authentication error.
+  void HandleClientAuthError(int error);
+
   // Called to possibly recover from an SSL handshake error.  Sets next_state_
   // and returns OK if recovering from the error.  Otherwise, the same error
   // code is returned.
@@ -285,6 +288,12 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
+  // fallback_error_code contains the error code that caused the last TLS
+  // fallback. If the fallback connection results in
+  // ERR_SSL_INAPPROPRIATE_FALLBACK (i.e. the server indicated that the
+  // fallback should not have been needed) then we use this value to return the
+  // original error that triggered the fallback.
+  int fallback_error_code_;
 
   HttpRequestHeaders request_headers_;
 

@@ -704,7 +704,7 @@ TEST_F(URLRequestTest, FileTest) {
     base::RunLoop().Run();
 
     int64 file_size = -1;
-    EXPECT_TRUE(file_util::GetFileSize(app_path, &file_size));
+    EXPECT_TRUE(base::GetFileSize(app_path, &file_size));
 
     EXPECT_TRUE(!r.is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -742,12 +742,12 @@ TEST_F(URLRequestTest, FileTestFullSpecifiedRange) {
   FillBuffer(buffer.get(), buffer_size);
 
   base::FilePath temp_path;
-  EXPECT_TRUE(file_util::CreateTemporaryFile(&temp_path));
+  EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
   GURL temp_url = FilePathToFileURL(temp_path);
   EXPECT_TRUE(file_util::WriteFile(temp_path, buffer.get(), buffer_size));
 
   int64 file_size;
-  EXPECT_TRUE(file_util::GetFileSize(temp_path, &file_size));
+  EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
 
   const size_t first_byte_position = 500;
   const size_t last_byte_position = buffer_size - first_byte_position;
@@ -786,12 +786,12 @@ TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
   FillBuffer(buffer.get(), buffer_size);
 
   base::FilePath temp_path;
-  EXPECT_TRUE(file_util::CreateTemporaryFile(&temp_path));
+  EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
   GURL temp_url = FilePathToFileURL(temp_path);
   EXPECT_TRUE(file_util::WriteFile(temp_path, buffer.get(), buffer_size));
 
   int64 file_size;
-  EXPECT_TRUE(file_util::GetFileSize(temp_path, &file_size));
+  EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
 
   const size_t first_byte_position = 500;
   const size_t last_byte_position = buffer_size - 1;
@@ -829,12 +829,12 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
   FillBuffer(buffer.get(), buffer_size);
 
   base::FilePath temp_path;
-  EXPECT_TRUE(file_util::CreateTemporaryFile(&temp_path));
+  EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
   GURL temp_url = FilePathToFileURL(temp_path);
   EXPECT_TRUE(file_util::WriteFile(temp_path, buffer.get(), buffer_size));
 
   int64 file_size;
-  EXPECT_TRUE(file_util::GetFileSize(temp_path, &file_size));
+  EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
 
   TestDelegate d;
   {
@@ -857,7 +857,7 @@ TEST_F(URLRequestTest, AllowFileURLs) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   base::FilePath test_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir.path(), &test_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.path(), &test_file));
   std::string test_data("monkey");
   file_util::WriteFile(test_file, test_data.data(), test_data.size());
   GURL test_file_url = net::FilePathToFileURL(test_file);
@@ -1008,7 +1008,7 @@ TEST_F(URLRequestTest, FileDirOutputSanity) {
   // Generate entry for the sentinel file.
   base::FilePath sentinel_path = path.AppendASCII(sentinel_name);
   base::PlatformFileInfo info;
-  EXPECT_TRUE(file_util::GetFileInfo(sentinel_path, &info));
+  EXPECT_TRUE(base::GetFileInfo(sentinel_path, &info));
   EXPECT_GT(info.size, 0);
   std::string sentinel_output = GetDirectoryListingEntry(
       base::string16(sentinel_name, sentinel_name + strlen(sentinel_name)),
@@ -3843,8 +3843,7 @@ class AsyncDelegateLogger : public base::RefCounted<AsyncDelegateLogger> {
   ~AsyncDelegateLogger() {}
 
   void Start() {
-    url_request_->SetDelegateInfo(kFirstDelegateInfo,
-                                  URLRequest::DELEGATE_INFO_DEBUG_ONLY);
+    url_request_->LogBlockedBy(kFirstDelegateInfo);
     LoadStateWithParam load_state = url_request_->GetLoadState();
     EXPECT_EQ(expected_first_load_state_, load_state.state);
     EXPECT_NE(ASCIIToUTF16(kFirstDelegateInfo), load_state.param);
@@ -3854,8 +3853,7 @@ class AsyncDelegateLogger : public base::RefCounted<AsyncDelegateLogger> {
   }
 
   void LogSecondDelegate() {
-    url_request_->SetDelegateInfo(kSecondDelegateInfo,
-                                  URLRequest::DELEGATE_INFO_DISPLAY_TO_USER);
+    url_request_->LogAndReportBlockedBy(kSecondDelegateInfo);
     LoadStateWithParam load_state = url_request_->GetLoadState();
     EXPECT_EQ(expected_second_load_state_, load_state.state);
     if (expected_second_load_state_ == LOAD_STATE_WAITING_FOR_DELEGATE) {
@@ -3869,8 +3867,7 @@ class AsyncDelegateLogger : public base::RefCounted<AsyncDelegateLogger> {
   }
 
   void LogComplete() {
-    url_request_->SetDelegateInfo(
-        NULL, URLRequest::DELEGATE_INFO_DISPLAY_TO_USER);
+    url_request_->LogUnblocked();
     LoadStateWithParam load_state = url_request_->GetLoadState();
     EXPECT_EQ(expected_third_load_state_, load_state.state);
     if (expected_second_load_state_ == LOAD_STATE_WAITING_FOR_DELEGATE)
@@ -4726,10 +4723,10 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
     base::RunLoop().Run();
 
     int64 size = 0;
-    ASSERT_EQ(true, file_util::GetFileSize(path, &size));
+    ASSERT_EQ(true, base::GetFileSize(path, &size));
     scoped_ptr<char[]> buf(new char[size]);
 
-    ASSERT_EQ(size, file_util::ReadFile(path, buf.get(), size));
+    ASSERT_EQ(size, base::ReadFile(path, buf.get(), size));
 
     ASSERT_EQ(1, d.response_started_count())
         << "request failed: " << r.status().status()
@@ -5688,7 +5685,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost307RedirectPost) {
 TEST_F(URLRequestTestHTTP, DefaultAcceptLanguage) {
   ASSERT_TRUE(test_server_.Start());
 
-  StaticHttpUserAgentSettings settings("en", EmptyString());
+  StaticHttpUserAgentSettings settings("en", std::string());
   TestNetworkDelegate network_delegate;  // Must outlive URLRequests.
   TestURLRequestContext context(true);
   context.set_network_delegate(&network_delegate);
@@ -5709,7 +5706,8 @@ TEST_F(URLRequestTestHTTP, DefaultAcceptLanguage) {
 TEST_F(URLRequestTestHTTP, EmptyAcceptLanguage) {
   ASSERT_TRUE(test_server_.Start());
 
-  StaticHttpUserAgentSettings settings(EmptyString(), EmptyString());
+  std::string empty_string;  // Avoid most vexing parse on line below.
+  StaticHttpUserAgentSettings settings(empty_string, empty_string);
   TestNetworkDelegate network_delegate;  // Must outlive URLRequests.
   TestURLRequestContext context(true);
   context.set_network_delegate(&network_delegate);
@@ -7067,7 +7065,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPGetTestAnonymous) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -7100,7 +7098,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPGetTest) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(test_server_.host_port_pair().host(),
@@ -7137,7 +7135,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongPassword) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -7169,7 +7167,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongPasswordRestart) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -7198,7 +7196,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongUser) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -7230,7 +7228,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongUserRestart) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -7261,7 +7259,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheURLCredentials) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d->response_started_count());
@@ -7282,7 +7280,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheURLCredentials) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d->response_started_count());
@@ -7315,7 +7313,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheLoginBoxCredentials) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d->response_started_count());
@@ -7339,7 +7337,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheLoginBoxCredentials) {
     base::RunLoop().Run();
 
     int64 file_size = 0;
-    file_util::GetFileSize(app_path, &file_size);
+    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r.is_pending());
     EXPECT_EQ(1, d->response_started_count());

@@ -88,8 +88,7 @@ ExtensionUpdater* GetExtensionUpdater(Profile* profile) {
 
 GURL GetImageURLFromData(std::string contents) {
   std::string contents_base64;
-  if (!base::Base64Encode(contents, &contents_base64))
-    return GURL();
+  base::Base64Encode(contents, &contents_base64);
 
   // TODO(dvh): make use of chrome::kDataScheme. Filed as crbug/297301.
   const char kDataURLPrefix[] = "data:image;base64,";
@@ -818,7 +817,7 @@ bool DeveloperPrivateInspectFunction::RunImpl() {
 DeveloperPrivateInspectFunction::~DeveloperPrivateInspectFunction() {}
 
 bool DeveloperPrivateLoadUnpackedFunction::RunImpl() {
-  string16 select_title =
+  base::string16 select_title =
       l10n_util::GetStringUTF16(IDS_EXTENSION_LOAD_FROM_DIRECTORY);
 
   // Balanced in FileSelected / FileSelectionCanceled.
@@ -849,7 +848,7 @@ void DeveloperPrivateLoadUnpackedFunction::FileSelectionCanceled() {
 bool DeveloperPrivateChooseEntryFunction::ShowPicker(
     ui::SelectFileDialog::Type picker_type,
     const base::FilePath& last_directory,
-    const string16& select_title,
+    const base::string16& select_title,
     const ui::SelectFileDialog::FileTypeInfo& info,
     int file_type_index) {
   ShellWindowRegistry* registry = ShellWindowRegistry::Get(GetProfile());
@@ -1093,7 +1092,7 @@ void DeveloperPrivateExportSyncfsFolderToLocalfsFunction::SnapshotFileCallback(
 void DeveloperPrivateExportSyncfsFolderToLocalfsFunction::CopyFile(
     const base::FilePath& src_path,
     const base::FilePath& target_path) {
-  if (!file_util::CreateDirectory(target_path.DirName())) {
+  if (!base::CreateDirectory(target_path.DirName())) {
     SetError("Error in copying files from sync filesystem.");
     success_ = false;
   }
@@ -1178,7 +1177,7 @@ bool DeveloperPrivateChoosePathFunction::RunImpl() {
   if (params->select_type == developer::SELECT_TYPE_FILE) {
     type = ui::SelectFileDialog::SELECT_OPEN_FILE;
   }
-  string16 select_title;
+  base::string16 select_title;
 
   int file_type_index = 0;
   if (params->file_type == developer::FILE_TYPE_LOAD)

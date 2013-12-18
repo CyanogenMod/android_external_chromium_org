@@ -19,7 +19,7 @@ std::string ContentRendererClient::GetDefaultEncoding() {
 }
 
 bool ContentRendererClient::OverrideCreatePlugin(
-    RenderView* render_view,
+    RenderFrame* render_frame,
     blink::WebFrame* frame,
     const blink::WebPluginParams& params,
     blink::WebPlugin** plugin) {
@@ -27,7 +27,7 @@ bool ContentRendererClient::OverrideCreatePlugin(
 }
 
 blink::WebPlugin* ContentRendererClient::CreatePluginReplacement(
-    RenderView* render_view,
+    RenderFrame* render_frame,
     const base::FilePath& plugin_path) {
   return NULL;
 }
@@ -41,7 +41,7 @@ bool ContentRendererClient::ShouldSuppressErrorPage(const GURL& url) {
   return false;
 }
 
-void ContentRendererClient::DeferMediaLoad(RenderView* render_view,
+void ContentRendererClient::DeferMediaLoad(RenderFrame* render_frame,
                                            const base::Closure& closure) {
   closure.Run();
 }
@@ -91,7 +91,11 @@ bool ContentRendererClient::AllowPopup() {
   return false;
 }
 
+#ifdef OS_ANDROID
 bool ContentRendererClient::HandleNavigation(
+    RenderView* view,
+    DocumentState* document_state,
+    int opener_id,
     blink::WebFrame* frame,
     const blink::WebURLRequest& request,
     blink::WebNavigationType type,
@@ -99,6 +103,7 @@ bool ContentRendererClient::HandleNavigation(
     bool is_redirect) {
   return false;
 }
+#endif
 
 bool ContentRendererClient::ShouldFork(blink::WebFrame* frame,
                                        const GURL& url,
@@ -137,7 +142,7 @@ ContentRendererClient::GetPrescientNetworking() {
 }
 
 bool ContentRendererClient::ShouldOverridePageVisibilityState(
-    const RenderView* render_view,
+    const RenderFrame* render_frame,
     blink::WebPageVisibilityState* override_state) {
   return false;
 }

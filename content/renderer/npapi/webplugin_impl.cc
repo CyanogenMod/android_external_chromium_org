@@ -24,6 +24,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -251,7 +252,7 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
 
     blink::WebPlugin* replacement_plugin =
         GetContentClient()->renderer()->CreatePluginReplacement(
-            render_view_.get(), file_path_);
+            render_frame_, file_path_);
     if (!replacement_plugin)
       return false;
 
@@ -481,10 +482,12 @@ WebPluginImpl::WebPluginImpl(
     WebFrame* webframe,
     const WebPluginParams& params,
     const base::FilePath& file_path,
-    const base::WeakPtr<RenderViewImpl>& render_view)
+    const base::WeakPtr<RenderViewImpl>& render_view,
+    RenderFrameImpl* render_frame)
     : windowless_(false),
       window_(gfx::kNullPluginWindow),
       accepts_input_events_(false),
+      render_frame_(render_frame),
       render_view_(render_view),
       webframe_(webframe),
       delegate_(NULL),
@@ -648,7 +651,8 @@ WebPluginDelegate* WebPluginImpl::CreatePluginDelegate() {
 #endif
   }
 
-  return new WebPluginDelegateProxy(this, mime_type_, render_view_);
+  return new WebPluginDelegateProxy(
+      this, mime_type_, render_view_, render_frame_);
 }
 
 WebPluginImpl::RoutingStatus WebPluginImpl::RouteToFrame(
@@ -968,7 +972,8 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
                                                    &upper_bound,
                                                    &instance_size);
     } else if (response.httpStatusCode() == kHttpResponseSuccessStatusCode) {
-      RenderThreadImpl::current()->RecordUserMetrics("Plugin_200ForByteRange");
+      RenderThreadImpl::current()->RecordAction(
+          UserMetricsAction("Plugin_200ForByteRange"));
       // If the client issued a byte range request and the server responds with
       // HTTP 200 OK, it indicates that the server does not support byte range
       // requests.

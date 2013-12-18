@@ -22,6 +22,7 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_util.h"
@@ -113,14 +114,14 @@ void AppLauncherHandler::CreateAppInfo(
 
   // The Extension class 'helpfully' wraps bidi control characters that
   // impede our ability to determine directionality.
-  string16 short_name = UTF8ToUTF16(extension->short_name());
+  base::string16 short_name = UTF8ToUTF16(extension->short_name());
   base::i18n::UnadjustStringForLocaleDirection(&short_name);
   NewTabUI::SetUrlTitleAndDirection(
       value,
       short_name,
       extensions::AppLaunchInfo::GetFullLaunchURL(extension));
 
-  string16 name = UTF8ToUTF16(extension->name());
+  base::string16 name = UTF8ToUTF16(extension->name());
   base::i18n::UnadjustStringForLocaleDirection(&name);
   NewTabUI::SetFullNameAndDirection(name, value);
 
@@ -154,8 +155,7 @@ void AppLauncherHandler::CreateAppInfo(
   value->SetInteger("launch_container",
                     extensions::AppLaunchInfo::GetLaunchContainer(extension));
   ExtensionPrefs* prefs = service->extension_prefs();
-  value->SetInteger("launch_type",
-      prefs->GetLaunchType(extension));
+  value->SetInteger("launch_type", extensions::GetLaunchType(prefs, extension));
   value->SetBoolean("is_component",
                     extension->location() == extensions::Manifest::COMPONENT);
   value->SetBoolean("is_webstore",
@@ -518,8 +518,8 @@ void AppLauncherHandler::HandleLaunchApp(const ListValue* args) {
     // TODO(jamescook): Proper support for background tabs.
     AppLaunchParams params(profile, extension,
                            disposition == NEW_WINDOW ?
-                               extensions::LAUNCH_WINDOW :
-                               extensions::LAUNCH_TAB,
+                               extensions::LAUNCH_CONTAINER_WINDOW :
+                               extensions::LAUNCH_CONTAINER_TAB,
                            disposition);
     params.override_url = GURL(url);
     OpenApplication(params);
@@ -559,9 +559,10 @@ void AppLauncherHandler::HandleSetLaunchType(const ListValue* args) {
   // Don't update the page; it already knows about the launch type change.
   base::AutoReset<bool> auto_reset(&ignore_changes_, true);
 
-  extension_service_->extension_prefs()->SetLaunchType(
+  extensions::SetLaunchType(
+      extension_service_->extension_prefs(),
       extension_id,
-      static_cast<ExtensionPrefs::LaunchType>(
+      static_cast<extensions::LaunchType>(
           static_cast<int>(launch_type)));
 }
 
@@ -656,7 +657,7 @@ void AppLauncherHandler::HandleSetPageIndex(const ListValue* args) {
 }
 
 void AppLauncherHandler::HandleSaveAppPageName(const ListValue* args) {
-  string16 name;
+  base::string16 name;
   CHECK(args->GetString(0, &name));
 
   double page_index;
@@ -674,7 +675,7 @@ void AppLauncherHandler::HandleGenerateAppForLink(const ListValue* args) {
   CHECK(args->GetString(0, &url));
   GURL launch_url(url);
 
-  string16 title;
+  base::string16 title;
   CHECK(args->GetString(1, &title));
 
   double page_index;

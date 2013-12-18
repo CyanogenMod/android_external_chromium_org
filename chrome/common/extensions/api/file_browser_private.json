@@ -88,6 +88,11 @@
             "type": "boolean",
             "optional": true,
             "description": "True if the entry is labeled as shared-with-me."
+          },
+          "shared": {
+            "type": "boolean",
+            "optional": true,
+            "description": "True if the entry is labeled as shared (either from me to others or to me by others.)"
           }
         }
       },
@@ -107,6 +112,21 @@
         }
       },
       {
+        "id": "ProfileInfo",
+        "type": "object",
+        "description": "Information about a profile.",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "description": "The name of the profile for display purpose."
+          },
+          "isCurrentProfile": {
+            "type": "boolean",
+            "description": "True if the profile is the one running the current file manager instance."
+          }
+        }
+      },
+      {
         "id": "VolumeMetadata",
         "type": "object",
         "description": "Mounted disk volume metadata.",
@@ -114,6 +134,10 @@
           "volumeId": {
             "type": "string",
             "description": "ID of the disk volume."
+          },
+          "profile": {
+            "$ref": "ProfileInfo",
+            "description": "Description of the profile where the volume belongs."
           },
           // TODO(satorux): Remove "mountPath". crbug.com/316077
           "mountPath": {
@@ -268,10 +292,12 @@
             "enum": ["changed", "error"],
             "description": "Specifies type of event that is raised."
           },
-          "directoryUrl": {
-            "type": "string",
-            "description": "URL of watched directory."
-          }
+          "entry": {
+            "type": "object",
+            "additionalProperties": { "type": "any" },
+            "isInstanceOf": "Entry",
+            "description": "An Entry object which represents a changed directory. The conversion into a kind of FileEntry object is done in file_browser_handler_custom_bindings.cc. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
+           }
         }
       }
     ],
@@ -928,10 +954,10 @@
                 "type": "object",
                 "properties": {
                   "type": {"type": "string"},
-                  "reasons": {
-                    "type": "array",
+                  "reason": {
+                    "type": "string",
                     "description": "Reasons of offline.",
-                    "items": { "type": "string" }
+                    "optional": true
                   }
                 }
               }

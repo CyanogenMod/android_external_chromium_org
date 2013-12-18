@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
@@ -50,10 +51,6 @@
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notifier_settings.h"
 
-#if defined(OS_CHROMEOS)
-#include "ash/system/system_notifier.h"
-#endif
-
 using content::BrowserThread;
 using content::RenderViewHost;
 using content::WebContents;
@@ -67,22 +64,21 @@ using blink::WebTextDirection;
 // permissions.
 class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a notification permission infobar delegate and adds it to
-  // |infobar_service|.
+  // Creates a notification permission infobar and delegate and adds the infobar
+  // to |infobar_service|.
   static void Create(InfoBarService* infobar_service,
                      DesktopNotificationService* notification_service,
                      const GURL& origin,
-                     const string16& display_name,
+                     const base::string16& display_name,
                      int process_id,
                      int route_id,
                      int callback_context);
 
  private:
   NotificationPermissionInfoBarDelegate(
-      InfoBarService* infobar_service,
       DesktopNotificationService* notification_service,
       const GURL& origin,
-      const string16& display_name,
+      const base::string16& display_name,
       int process_id,
       int route_id,
       int callback_context);
@@ -91,8 +87,8 @@ class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
   // ConfirmInfoBarDelegate:
   virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 
@@ -101,7 +97,7 @@ class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   // The display name for the origin to be displayed.  Will be different from
   // origin_ for extensions.
-  string16 display_name_;
+  base::string16 display_name_;
 
   // The notification service to be used.
   DesktopNotificationService* notification_service_;
@@ -123,25 +119,25 @@ void NotificationPermissionInfoBarDelegate::Create(
     InfoBarService* infobar_service,
     DesktopNotificationService* notification_service,
     const GURL& origin,
-    const string16& display_name,
+    const base::string16& display_name,
     int process_id,
     int route_id,
     int callback_context) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new NotificationPermissionInfoBarDelegate(
-          infobar_service, notification_service, origin, display_name,
-          process_id, route_id, callback_context)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new NotificationPermissionInfoBarDelegate(
+              notification_service, origin, display_name, process_id, route_id,
+              callback_context))));
 }
 
 NotificationPermissionInfoBarDelegate::NotificationPermissionInfoBarDelegate(
-    InfoBarService* infobar_service,
     DesktopNotificationService* notification_service,
     const GURL& origin,
-    const string16& display_name,
+    const base::string16& display_name,
     int process_id,
     int route_id,
     int callback_context)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       origin_(origin),
       display_name_(display_name),
       notification_service_(notification_service),
@@ -170,12 +166,12 @@ InfoBarDelegate::Type
   return PAGE_ACTION_TYPE;
 }
 
-string16 NotificationPermissionInfoBarDelegate::GetMessageText() const {
+base::string16 NotificationPermissionInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(IDS_NOTIFICATION_PERMISSIONS,
                                     display_name_);
 }
 
-string16 NotificationPermissionInfoBarDelegate::GetButtonLabel(
+base::string16 NotificationPermissionInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_NOTIFICATION_PERMISSION_YES : IDS_NOTIFICATION_PERMISSION_NO);
@@ -214,8 +210,10 @@ void DesktopNotificationService::RegisterProfilePrefs(
 }
 
 // static
-string16 DesktopNotificationService::CreateDataUrl(
-    const GURL& icon_url, const string16& title, const string16& body,
+base::string16 DesktopNotificationService::CreateDataUrl(
+    const GURL& icon_url,
+    const base::string16& title,
+    const base::string16& body,
     WebTextDirection dir) {
   int resource;
   std::vector<std::string> subst;
@@ -229,9 +227,9 @@ string16 DesktopNotificationService::CreateDataUrl(
                     "right" : "left");
   } else if (title.empty() || body.empty()) {
     resource = IDR_NOTIFICATION_1LINE_HTML;
-    string16 line = title.empty() ? body : title;
+    base::string16 line = title.empty() ? body : title;
     // Strings are div names in the template file.
-    string16 line_name = title.empty() ? ASCIIToUTF16("description")
+    base::string16 line_name = title.empty() ? ASCIIToUTF16("description")
                                        : ASCIIToUTF16("title");
     subst.push_back(net::EscapeForHTML(UTF16ToUTF8(line_name)));
     subst.push_back(net::EscapeForHTML(UTF16ToUTF8(line)));
@@ -248,7 +246,7 @@ string16 DesktopNotificationService::CreateDataUrl(
 }
 
 // static
-string16 DesktopNotificationService::CreateDataUrl(
+base::string16 DesktopNotificationService::CreateDataUrl(
     int resource, const std::vector<std::string>& subst) {
   const base::StringPiece template_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
@@ -256,7 +254,7 @@ string16 DesktopNotificationService::CreateDataUrl(
 
   if (template_html.empty()) {
     NOTREACHED() << "unable to load template. ID: " << resource;
-    return string16();
+    return base::string16();
   }
 
   std::string data = ReplaceStringPlaceholders(template_html, subst, NULL);
@@ -267,17 +265,17 @@ string16 DesktopNotificationService::CreateDataUrl(
 // static
 std::string DesktopNotificationService::AddNotification(
     const GURL& origin_url,
-    const string16& title,
-    const string16& message,
+    const base::string16& title,
+    const base::string16& message,
     const GURL& icon_url,
-    const string16& replace_id,
+    const base::string16& replace_id,
     NotificationDelegate* delegate,
     Profile* profile) {
   if (message_center::IsRichNotificationEnabled()) {
     // For message center create a non-HTML notification with |icon_url|.
     Notification notification(origin_url, icon_url, title, message,
                               blink::WebTextDirectionDefault,
-                              string16(), replace_id, delegate);
+                              base::string16(), replace_id, delegate);
     g_browser_process->notification_ui_manager()->Add(notification, profile);
     return notification.notification_id();
   }
@@ -286,7 +284,7 @@ std::string DesktopNotificationService::AddNotification(
   GURL content_url(CreateDataUrl(
       icon_url, title, message, blink::WebTextDirectionDefault));
   Notification notification(
-      GURL(), content_url, string16(), replace_id, delegate);
+      GURL(), content_url, base::string16(), replace_id, delegate);
   g_browser_process->notification_ui_manager()->Add(notification, profile);
   return notification.notification_id();
 }
@@ -294,17 +292,17 @@ std::string DesktopNotificationService::AddNotification(
 // static
 std::string DesktopNotificationService::AddIconNotification(
     const GURL& origin_url,
-    const string16& title,
-    const string16& message,
+    const base::string16& title,
+    const base::string16& message,
     const gfx::Image& icon,
-    const string16& replace_id,
+    const base::string16& replace_id,
     NotificationDelegate* delegate,
     Profile* profile) {
   if (message_center::IsRichNotificationEnabled()) {
     // For message center create a non-HTML notification with |icon|.
     Notification notification(origin_url, icon, title, message,
                               blink::WebTextDirectionDefault,
-                              string16(), replace_id, delegate);
+                              base::string16(), replace_id, delegate);
     g_browser_process->notification_ui_manager()->Add(notification, profile);
     return notification.notification_id();
   }
@@ -493,22 +491,20 @@ bool DesktopNotificationService::ShowDesktopNotification(
                                   params.notification_id,
                                   source == WorkerNotification);
 
-  string16 display_source = DisplayNameForOriginInProcessId(origin, process_id);
-  if (params.is_html) {
-    ShowNotification(Notification(origin, params.contents_url, display_source,
-        params.replace_id, proxy));
-  } else {
-    Notification notification(origin, params.icon_url, params.title,
-        params.body, params.direction, display_source, params.replace_id,
-        proxy);
-    // The webkit notification doesn't timeout.
-    notification.set_never_timeout(true);
-    ShowNotification(notification);
-  }
+  base::string16 display_source =
+      DisplayNameForOriginInProcessId(origin, process_id);
+  Notification notification(origin, params.icon_url, params.title,
+      params.body, params.direction, display_source, params.replace_id,
+      proxy);
+
+  // The webkit notification doesn't timeout.
+  notification.set_never_timeout(true);
+
+  ShowNotification(notification);
   return true;
 }
 
-string16 DesktopNotificationService::DisplayNameForOriginInProcessId(
+base::string16 DesktopNotificationService::DisplayNameForOriginInProcessId(
     const GURL& origin, int process_id) {
   // If the source is an extension, lookup the display name.
   // Message center prefers to use extension name if the notification
@@ -558,13 +554,11 @@ bool DesktopNotificationService::IsNotifierEnabled(
       return GetContentSetting(notifier_id.url) == CONTENT_SETTING_ALLOW;
     case NotifierId::SYSTEM_COMPONENT:
 #if defined(OS_CHROMEOS)
-      return disabled_system_component_ids_.find(
-          ash::system_notifier::SystemComponentTypeToString(
-              static_cast<ash::system_notifier::AshSystemComponentNotifierType>(
-                  notifier_id.system_component_type)))
-          == disabled_system_component_ids_.end();
+      return disabled_system_component_ids_.find(notifier_id.id) ==
+          disabled_system_component_ids_.end();
 #else
-      return false;
+      // We do not disable system component notifications.
+      return true;
 #endif
     case NotifierId::SYNCED_NOTIFICATION_SERVICE:
       return enabled_sync_notifier_ids_.find(notifier_id.id) !=
@@ -594,10 +588,7 @@ void DesktopNotificationService::SetNotifierEnabled(
 #if defined(OS_CHROMEOS)
       pref_name = prefs::kMessageCenterDisabledSystemComponentIds;
       add_new_item = !enabled;
-      id.reset(new base::StringValue(
-          ash::system_notifier::SystemComponentTypeToString(
-              static_cast<ash::system_notifier::AshSystemComponentNotifierType>(
-                  notifier_id.system_component_type))));
+      id.reset(new base::StringValue(notifier_id.id));
 #else
       return;
 #endif

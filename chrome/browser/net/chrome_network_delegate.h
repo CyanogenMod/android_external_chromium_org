@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "chrome/browser/net/chrome_network_data_saving_metrics.h"
 #include "net/base/network_delegate.h"
 
 class ClientHints;
@@ -155,7 +156,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual void OnCompleted(net::URLRequest* request, bool started) OVERRIDE;
   virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE;
+                                const base::string16& error) OVERRIDE;
   virtual net::NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       net::URLRequest* request,
       const net::AuthChallengeInfo& auth_info,
@@ -181,7 +182,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
 
   void AccumulateContentLength(
       int64 received_payload_byte_count, int64 original_payload_byte_count,
-      bool data_reduction_proxy_was_used);
+      chrome_browser_net::DataReductionRequestType data_reduction_type);
 
   scoped_refptr<extensions::EventRouterForwarder> event_router_;
   void* profile_;

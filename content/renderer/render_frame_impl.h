@@ -5,15 +5,40 @@
 #ifndef CONTENT_RENDERER_RENDER_FRAME_IMPL_H_
 #define CONTENT_RENDERER_RENDER_FRAME_IMPL_H_
 
+#include <set>
+#include <vector>
+
 #include "base/basictypes.h"
+#include "base/files/file_path.h"
+#include "base/observer_list.h"
+#include "base/process/process_handle.h"
+#include "base/strings/string16.h"
 #include "content/public/renderer/render_frame.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 
+class TransportDIB;
+
+namespace blink {
+class WebMouseEvent;
+struct WebCompositionUnderline;
+struct WebCursorInfo;
+}
+
+namespace gfx {
+class Range;
+class Rect;
+}
+
 namespace content {
 
+class PepperPluginInstanceImpl;
+class RendererPpapiHost;
+class RenderFrameObserver;
 class RenderViewImpl;
+class RenderWidget;
+class RenderWidgetFullscreenPepper;
 
 class CONTENT_EXPORT RenderFrameImpl
     : public RenderFrame,
@@ -30,11 +55,116 @@ class CONTENT_EXPORT RenderFrameImpl
 
   virtual ~RenderFrameImpl();
 
+  // TODO(jam): this is a temporary getter until all the code is transitioned
+  // to using RenderFrame instead of RenderView.
+  RenderViewImpl* render_view() { return render_view_; }
+
+  // Returns the RenderWidget associated with this frame.
+  RenderWidget* GetRenderWidget();
+
+#if defined(ENABLE_PLUGINS)
+  // Notification that a PPAPI plugin has been created.
+  void PepperPluginCreated(RendererPpapiHost* host);
+
+  // Indicates that the given instance has been created.
+  void PepperInstanceCreated(PepperPluginInstanceImpl* instance);
+
+  // Indicates that the given instance is being destroyed. This is called from
+  // the destructor, so it's important that the instance is not dereferenced
+  // from this call.
+  void PepperInstanceDeleted(PepperPluginInstanceImpl* instance);
+
+  // Notifies that |instance| has changed the cursor.
+  // This will update the cursor appearance if it is currently over the plugin
+  // instance.
+  void PepperDidChangeCursor(PepperPluginInstanceImpl* instance,
+                             const blink::WebCursorInfo& cursor);
+
+  // Notifies that |instance| has received a mouse event.
+  void PepperDidReceiveMouseEvent(PepperPluginInstanceImpl* instance);
+
+  // Notification that the given plugin is focused or unfocused.
+  void PepperFocusChanged(PepperPluginInstanceImpl* instance, bool focused);
+
+  // Informs the render view that a PPAPI plugin has changed text input status.
+  void PepperTextInputTypeChanged(PepperPluginInstanceImpl* instance);
+  void PepperCaretPositionChanged(PepperPluginInstanceImpl* instance);
+
+  // Cancels current composition.
+  void PepperCancelComposition(PepperPluginInstanceImpl* instance);
+
+  // Informs the render view that a PPAPI plugin has changed selection.
+  void PepperSelectionChanged(PepperPluginInstanceImpl* instance);
+
+  // Creates a fullscreen container for a pepper plugin instance.
+  RenderWidgetFullscreenPepper* CreatePepperFullscreenContainer(
+      PepperPluginInstanceImpl* plugin);
+
+  bool IsPepperAcceptingCompositionEvents() const;
+
+  // Notification that the given plugin has crashed.
+  void PluginCrashed(const base::FilePath& plugin_path,
+                     base::ProcessId plugin_pid);
+
+  // These map to virtual methods on RenderWidget that are used to call out to
+  // RenderView.
+  // TODO(jam): once we get rid of RenderView, RenderFrame will own RenderWidget
+  // and methods would be on a delegate interface.
+  void DidInitiatePaint();
+  void DidFlushPaint();
+  PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
+      const gfx::Rect& paint_bounds,
+      TransportDIB** dib,
+      gfx::Rect* location,
+      gfx::Rect* clip,
+      float* scale_factor);
+  void PageVisibilityChanged(bool shown);
+  void OnSetFocus(bool enable);
+  void WillHandleMouseEvent(const blink::WebMouseEvent& event);
+
+  // Simulates IME events for testing purpose.
+  void SimulateImeSetComposition(
+      const base::string16& text,
+      const std::vector<blink::WebCompositionUnderline>& underlines,
+      int selection_start,
+      int selection_end);
+  void SimulateImeConfirmComposition(const base::string16& text,
+                                     const gfx::Range& replacement_range);
+
+  // TODO(jam): remove these once the IPC handler moves from RenderView to
+  // RenderFrame.
+  void OnImeSetComposition(
+    const base::string16& text,
+    const std::vector<blink::WebCompositionUnderline>& underlines,
+    int selection_start,
+    int selection_end);
+ void OnImeConfirmComposition(
+    const base::string16& text,
+    const gfx::Range& replacement_range,
+    bool keep_selection);
+#endif  // ENABLE_PLUGINS
+
   // IPC::Sender
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+
+  // RenderFrame implementation:
+  virtual RenderView* GetRenderView() OVERRIDE;
+  virtual int GetRoutingID() OVERRIDE;
+  virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
+  virtual int ShowContextMenu(ContextMenuClient* client,
+                              const ContextMenuParams& params) OVERRIDE;
+  virtual void CancelContextMenu(int request_id) OVERRIDE;
+  virtual blink::WebPlugin* CreatePlugin(
+      blink::WebFrame* frame,
+      const WebPluginInfo& info,
+      const blink::WebPluginParams& params) OVERRIDE;
+  virtual void LoadURLExternally(
+      blink::WebFrame* frame,
+      const blink::WebURLRequest& request,
+      blink::WebNavigationPolicy policy) OVERRIDE;
 
   // blink::WebFrameClient implementation -------------------------------------
   virtual blink::WebPlugin* createPlugin(
@@ -185,12 +315,28 @@ class CONTENT_EXPORT RenderFrameImpl
   RenderFrameImpl(RenderViewImpl* render_view, int32 routing_id);
 
  private:
-  int GetRoutingID() const;
+  friend class RenderFrameObserver;
+
+  // Functions to add and remove observers for this object.
+  void AddObserver(RenderFrameObserver* observer);
+  void RemoveObserver(RenderFrameObserver* observer);
 
   RenderViewImpl* render_view_;
   int routing_id_;
   bool is_swapped_out_;
   bool is_detaching_;
+
+#if defined(ENABLE_PLUGINS)
+  typedef std::set<PepperPluginInstanceImpl*> PepperPluginSet;
+  PepperPluginSet active_pepper_instances_;
+
+  // Current text input composition text. Empty if no composition is in
+  // progress.
+  base::string16 pepper_composition_text_;
+#endif
+
+  // All the registered observers.
+  ObserverList<RenderFrameObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameImpl);
 };

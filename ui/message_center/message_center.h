@@ -15,8 +15,6 @@
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 
-class TrayViewControllerTest;
-
 namespace base {
 class DictionaryValue;
 }
@@ -89,6 +87,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   // Removes an existing notification.
   virtual void RemoveNotification(const std::string& id, bool by_user) = 0;
   virtual void RemoveAllNotifications(bool by_user) = 0;
+  virtual void RemoveAllVisibleNotifications(bool by_user) = 0;
 
   // Sets the icon image. Icon appears at the top-left of the notification.
   virtual void SetNotificationIcon(const std::string& notification_id,
@@ -155,7 +154,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual void SetVisibility(Visibility visible) = 0;
 
   // Allows querying the visibility of the center.
-  virtual bool IsMessageCenterVisible() = 0;
+  virtual bool IsMessageCenterVisible() const = 0;
 
   // UI classes should call this when there is cause to leave popups visible for
   // longer than the default (for example, when the mouse hovers over a popup).
@@ -166,7 +165,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual void RestartPopupTimers() = 0;
 
  protected:
-  friend class ::TrayViewControllerTest;
+  friend class TrayViewControllerTest;
   friend class test::MessagePopupCollectionTest;
   virtual void DisableTimersForTest() = 0;
 

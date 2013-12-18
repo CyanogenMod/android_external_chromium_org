@@ -52,6 +52,7 @@
 #include "extensions/common/extension_resource.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "media/audio/sounds/sounds_manager.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -182,7 +183,6 @@ void LoadChromeVoxExtension(Profile* profile, content::WebUI* login_web_ui) {
     }
     loader->Run();  // It cleans itself up when done.
   }
-  DLOG(INFO) << "ChromeVox was Loaded.";
 }
 
 void UnloadChromeVoxExtension(Profile* profile) {
@@ -190,7 +190,6 @@ void UnloadChromeVoxExtension(Profile* profile) {
       extensions::ExtensionSystem::Get(profile)->extension_service();
   base::FilePath path = base::FilePath(extension_misc::kChromeVoxExtensionPath);
   extension_service->component_loader()->Remove(path);
-  DLOG(INFO) << "ChromeVox was Unloaded.";
 }
 
 }  // namespace
@@ -304,11 +303,37 @@ AccessibilityManager::AccessibilityManager()
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED,
                               content::NotificationService::AllSources());
+  notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_EXTENSION_REMOVED,
+                              content::NotificationService::AllSources());
+  notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                              content::NotificationService::AllSources());
   GetBrailleController()->AddObserver(this);
+
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  std::vector<base::StringPiece> sound_resources(
+      media::SoundsManager::SOUND_COUNT);
+  sound_resources[media::SoundsManager::SOUND_STARTUP] =
+      bundle.GetRawDataResource(IDR_SOUND_STARTUP_WAV);
+  sound_resources[media::SoundsManager::SOUND_LOCK] =
+      bundle.GetRawDataResource(IDR_SOUND_LOCK_WAV);
+  sound_resources[media::SoundsManager::SOUND_UNLOCK] =
+      bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV);
+  sound_resources[media::SoundsManager::SOUND_SHUTDOWN] =
+      bundle.GetRawDataResource(IDR_SOUND_SHUTDOWN_WAV);
+  sound_resources[media::SoundsManager::SOUND_SPOKEN_FEEDBACK_ENABLED] =
+      bundle.GetRawDataResource(IDR_SOUND_SPOKEN_FEEDBACK_ENABLED_WAV);
+  sound_resources[media::SoundsManager::SOUND_SPOKEN_FEEDBACK_DISABLED] =
+      bundle.GetRawDataResource(IDR_SOUND_SPOKEN_FEEDBACK_DISABLED_WAV);
+  media::SoundsManager::Get()->Initialize(sound_resources);
 }
 
 AccessibilityManager::~AccessibilityManager() {
   CHECK(this == g_accessibility_manager);
+
+  // Component extensions don't always notify us when they're unloaded. Ensure
+  // we clean up ChromeVox observers here.
   if (profile_) {
     extensions::ExtensionSystem::Get(profile_)->
         event_router()->UnregisterObserver(this);
@@ -435,6 +460,8 @@ void AccessibilityManager::UpdateSpokenFeedbackFromPref() {
 }
 
 void AccessibilityManager::LoadChromeVox() {
+  SetUpPreLoadChromeVox(profile_);
+
   ScreenLocker* screen_locker = ScreenLocker::default_screen_locker();
   if (screen_locker && screen_locker->locked()) {
     // If on the lock screen, loads ChromeVox only to the lock screen as for
@@ -485,6 +512,8 @@ void AccessibilityManager::LoadChromeVoxToLockScreen() {
 }
 
 void AccessibilityManager::UnloadChromeVox() {
+  media::SoundsManager::Get()->Play(
+      media::SoundsManager::SOUND_SPOKEN_FEEDBACK_DISABLED);
   if (chrome_vox_loaded_on_lock_screen_)
     UnloadChromeVoxFromLockScreen();
 
@@ -672,10 +701,6 @@ void AccessibilityManager::SetProfile(Profile* profile) {
         base::Bind(
             &AccessibilityManager::UpdateChromeOSAccessibilityHistograms,
             base::Unretained(this)));
-
-    extensions::ExtensionSystem::Get(profile)->event_router()->RegisterObserver(
-        this, extensions::api::experimental_accessibility::
-            OnChromeVoxLoadStateChanged::kEventName);
   }
 
   large_cursor_pref_handler_.HandleProfileChanged(profile_, profile);
@@ -683,6 +708,14 @@ void AccessibilityManager::SetProfile(Profile* profile) {
   high_contrast_pref_handler_.HandleProfileChanged(profile_, profile);
   autoclick_pref_handler_.HandleProfileChanged(profile_, profile);
   autoclick_delay_pref_handler_.HandleProfileChanged(profile_, profile);
+
+  if (!profile && profile_) {
+    extensions::ExtensionSystem::Get(profile_)->
+        event_router()->UnregisterObserver(this);
+  }
+
+  if (profile && spoken_feedback_enabled_)
+    SetUpPreLoadChromeVox(profile);
 
   if (!profile_ && profile)
     CheckBrailleState();
@@ -772,15 +805,43 @@ void AccessibilityManager::Observe(
     }
     case chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED: {
       bool is_screen_locked = *content::Details<bool>(details).ptr();
-      if (is_screen_locked) {
-        if (spoken_feedback_enabled_)
+      if (spoken_feedback_enabled_) {
+        if (is_screen_locked) {
           LoadChromeVoxToLockScreen();
-      } else {
-        UnloadChromeVoxFromLockScreen();
 
-        if (spoken_feedback_enabled_)
+          // Status tray gets verbalized by user screen ChromeVox, so we need
+          // this as well.
           LoadChromeVoxToUserScreen();
+        } else {
+          // Lock screen destroys its resources; no need for us to explicitly
+          // unload ChromeVox.
+          chrome_vox_loaded_on_lock_screen_ = false;
+
+          // However, if spoken feedback was enabled, also enable it on the user
+          // screen.
+          LoadChromeVoxToUserScreen();
+        }
       }
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+      extensions::UnloadedExtensionInfo* info =
+          content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
+      const extensions::Extension* extension = info->extension;
+      if (extension->id() == extension_misc::kChromeVoxExtensionId) {
+        Profile* profile = content::Source<Profile>(source).ptr();
+        TearDownPostUnloadChromeVox(profile);
+      }
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_REMOVED: {
+      const extensions::Extension* extension =
+          content::Details<const extensions::Extension>(details).ptr();
+      if (extension->id() == extension_misc::kChromeVoxExtensionId) {
+        Profile* profile = content::Source<Profile>(source).ptr();
+        TearDownPostUnloadChromeVox(profile);
+      }
+      break;
     }
   }
 }
@@ -812,6 +873,32 @@ void AccessibilityManager::OnListenerRemoved(
     return;
 
   UnloadChromeVox();
+
+  // It's possible for a user to rapidly toggle ChromeVox on/off state. Load
+  // ChromeVox again if we've been enabled while disabling.
+  if (IsSpokenFeedbackEnabled())
+    LoadChromeVox();
+}
+
+void AccessibilityManager::SetUpPreLoadChromeVox(Profile* profile) {
+  // Do any setup work needed immediately before ChromeVox actually loads.
+  media::SoundsManager::Get()->Play(
+      media::SoundsManager::SOUND_SPOKEN_FEEDBACK_ENABLED);
+
+  if (profile) {
+    extensions::ExtensionSystem::Get(profile)->
+        event_router()->RegisterObserver(this,
+            extensions::api::experimental_accessibility::
+                OnChromeVoxLoadStateChanged::kEventName);
+  }
+}
+
+void AccessibilityManager::TearDownPostUnloadChromeVox(Profile* profile) {
+  // Do any teardown work needed immediately after ChromeVox actually unloads.
+  if (profile) {
+    extensions::ExtensionSystem::Get(profile)->
+        event_router()->UnregisterObserver(this);
+  }
 }
 
 }  // namespace chromeos

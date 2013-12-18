@@ -16,33 +16,30 @@
 #include "extensions/common/extension.h"
 
 ExtensionInfoBarDelegate::~ExtensionInfoBarDelegate() {
-  if (observer_)
-    observer_->OnDelegateDeleted();
 }
 
 // static
-void ExtensionInfoBarDelegate::Create(InfoBarService* infobar_service,
+void ExtensionInfoBarDelegate::Create(content::WebContents* web_contents,
                                       Browser* browser,
                                       const extensions::Extension* extension,
                                       const GURL& url,
                                       int height) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new ExtensionInfoBarDelegate(browser, infobar_service, extension, url,
-                                   infobar_service->web_contents(), height)));
+  InfoBarService::FromWebContents(web_contents)->AddInfoBar(
+      ExtensionInfoBarDelegate::CreateInfoBar(
+          scoped_ptr<ExtensionInfoBarDelegate>(new ExtensionInfoBarDelegate(
+              browser, extension, url, web_contents, height))));
 }
 
 ExtensionInfoBarDelegate::ExtensionInfoBarDelegate(
     Browser* browser,
-    InfoBarService* infobar_service,
     const extensions::Extension* extension,
     const GURL& url,
     content::WebContents* web_contents,
     int height)
-    : InfoBarDelegate(infobar_service),
+    : InfoBarDelegate(),
 #if defined(TOOLKIT_VIEWS)
       browser_(browser),
 #endif
-      observer_(NULL),
       extension_(extension),
       closing_(false) {
   extension_view_host_.reset(
@@ -54,20 +51,14 @@ ExtensionInfoBarDelegate::ExtensionInfoBarDelegate(
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::Source<Profile>(browser->profile()));
 
-#if defined(TOOLKIT_VIEWS) || defined(TOOLKIT_GTK) || defined(OS_ANDROID)
-  // TODO(dtrainor): On Android, this is not used.  Might need to pull this from
-  // Android UI level in the future.  Tracked via issue 115303.
-  int default_height = InfoBar::kDefaultBarTargetHeight;
-#elif defined(OS_MACOSX)
-  // TODO(pkasting): Once Infobars have been ported to Mac, we can remove the
-  // ifdefs and just use the Infobar constant below.
-  int default_height = 36;
-#endif
   height_ = std::max(0, height);
-  height_ = std::min(2 * default_height, height_);
+  height_ = std::min(2 * InfoBar::kDefaultBarTargetHeight, height_);
   if (height_ == 0)
-    height_ = default_height;
+    height_ = InfoBar::kDefaultBarTargetHeight;
 }
+
+// ExtensionInfoBarDelegate::CreateInfoBar() is implemented in platform-specific
+// files.
 
 bool ExtensionInfoBarDelegate::EqualsDelegate(InfoBarDelegate* delegate) const {
   ExtensionInfoBarDelegate* extension_delegate =
@@ -105,11 +96,11 @@ void ExtensionInfoBarDelegate::Observe(
   if (type == chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE) {
     if (extension_view_host_.get() ==
         content::Details<extensions::ExtensionHost>(details).ptr())
-      RemoveSelf();
+      infobar()->RemoveSelf();
   } else {
     DCHECK(type == chrome::NOTIFICATION_EXTENSION_UNLOADED);
     if (extension_ == content::Details<extensions::UnloadedExtensionInfo>(
         details)->extension)
-      RemoveSelf();
+      infobar()->RemoveSelf();
   }
 }

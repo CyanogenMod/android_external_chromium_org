@@ -13,6 +13,8 @@
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -110,7 +112,7 @@ class BackgroundColorHoverButton : public views::TextButton {
 
 BackgroundColorHoverButton::BackgroundColorHoverButton(
     views::ButtonListener* listener,
-    const string16& text,
+    const base::string16& text,
     const gfx::ImageSkia& normal_icon,
     const gfx::ImageSkia& hover_icon)
     : views::TextButton(listener, text) {
@@ -160,8 +162,11 @@ void BackgroundColorHoverButton::OnHighlightStateChanged() {
 // A custom Image control that shows a "change" button when moused over.
 class EditableProfilePhoto : public views::ImageView {
  public:
-  EditableProfilePhoto(views::ButtonListener* listener, const gfx::Image& icon)
-      : views::ImageView() {
+  EditableProfilePhoto(views::ButtonListener* listener,
+                       const gfx::Image& icon,
+                       bool is_editing_allowed)
+      : views::ImageView(),
+        change_photo_button_(NULL) {
     const int kLargeImageSide = 64;
     const SkColor kBackgroundColor = SkColorSetARGB(125, 0, 0, 0);
     const int kOverlayHeight = 20;
@@ -171,6 +176,10 @@ class EditableProfilePhoto : public views::ImageView {
         kLargeImageSide + profiles::kAvatarIconPadding,
         kLargeImageSide + profiles::kAvatarIconPadding);
     SetImage(image.ToImageSkia());
+
+    if (!is_editing_allowed)
+      return;
+
     set_notify_enter_exit_on_child(true);
 
     // Button overlay that appears when hovering over the image.
@@ -200,14 +209,17 @@ class EditableProfilePhoto : public views::ImageView {
  private:
   // views::View:
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE {
-    change_photo_button_->SetVisible(true);
+    if (change_photo_button_)
+      change_photo_button_->SetVisible(true);
   }
 
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE {
-    change_photo_button_->SetVisible(false);
+    if (change_photo_button_)
+      change_photo_button_->SetVisible(false);
   }
 
-  // Button that is shown when hovering over the image view.
+  // Button that is shown when hovering over the image view. Can be NULL if
+  // the photo isn't allowed to be edited (e.g. for guest profiles).
   views::TextButton* change_photo_button_;
 
   DISALLOW_COPY_AND_ASSIGN(EditableProfilePhoto);
@@ -221,15 +233,20 @@ class EditableProfileName : public views::TextButton,
                             public views::ButtonListener {
  public:
   EditableProfileName(views::TextfieldController* controller,
-                      const base::string16& text)
-      : views::TextButton(this, text) {
+                      const base::string16& text,
+                      bool is_editing_allowed)
+      : views::TextButton(this, text),
+        profile_name_textfield_(NULL) {
     ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
     gfx::Font medium_font = rb->GetFont(ui::ResourceBundle::MediumFont);
+    SetFont(medium_font);
+    set_border(NULL);
+
+    if (!is_editing_allowed)
+      return;
 
     SetIcon(*rb->GetImageSkiaNamed(IDR_INFOBAR_AUTOFILL));
     set_icon_placement(views::TextButton::ICON_ON_RIGHT);
-    SetFont(medium_font);
-    set_border(NULL);
 
     // Textfield that overlaps the button.
     profile_name_textfield_ = new views::Textfield();
@@ -246,15 +263,20 @@ class EditableProfileName : public views::TextButton,
   // Hide the editable textfield and show the button displaying the profile
   // name instead.
   void ShowReadOnlyView() {
-    profile_name_textfield_->SetVisible(false);
+    if (profile_name_textfield_)
+      profile_name_textfield_->SetVisible(false);
   }
 
  private:
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                             const ui::Event& event) OVERRIDE {
-    profile_name_textfield_->SetVisible(true);
-    profile_name_textfield_->SetText(text());
+    if (profile_name_textfield_) {
+      profile_name_textfield_->SetVisible(true);
+      profile_name_textfield_->SetText(text());
+      profile_name_textfield_->SelectAll(false);
+      profile_name_textfield_->RequestFocus();
+    }
   }
 
   // views::CustomButton:
@@ -267,11 +289,13 @@ class EditableProfileName : public views::TextButton,
 
   // views::View:
   virtual void Layout() OVERRIDE {
-    profile_name_textfield_->SetBounds(0, 0, width(), height());
+    if (profile_name_textfield_)
+      profile_name_textfield_->SetBounds(0, 0, width(), height());
     views::View::Layout();
   }
 
-  // Textfield that is shown when editing the profile name.
+  // Button that is shown when hovering over the image view. Can be NULL if
+  // the profile name isn't allowed to be edited (e.g. for guest profiles).
   views::Textfield* profile_name_textfield_;
 
   DISALLOW_COPY_AND_ASSIGN(EditableProfileName);
@@ -418,7 +442,9 @@ void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
     signin::Source source = (view_to_display == GAIA_SIGNIN_VIEW) ?
         signin::SOURCE_AVATAR_BUBBLE_SIGN_IN :
         signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT;
-    web_view->LoadInitialURL(GURL(signin::GetPromoURL(source, false)));
+    GURL url(signin::GetPromoURL(
+        source, false /* auto_close */, true /* is_constrained */));
+    web_view->LoadInitialURL(url);
     layout->StartRow(1, 0);
     layout->AddView(web_view);
     layout->set_minimum_size(
@@ -593,9 +619,11 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
                     views::kButtonVEdgeMarginNew,
                     views::kButtonHEdgeMarginNew);
 
-  current_profile_photo_ = new EditableProfilePhoto(this, avatar_item.icon);
+  current_profile_photo_ =
+      new EditableProfilePhoto(this, avatar_item.icon, !is_guest);
   view->SetBoundsRect(current_profile_photo_->bounds());
-  current_profile_name_ = new EditableProfileName(this, avatar_item.name);
+  current_profile_name_ =
+      new EditableProfileName(this, avatar_item.name, !is_guest);
 
   layout->StartRow(1, 0);
   layout->AddView(current_profile_photo_, 1, 3);
@@ -644,9 +672,11 @@ views::View* ProfileChooserView::CreateCurrentProfileEditableView(
                     views::kButtonVEdgeMarginNew,
                     views::kButtonHEdgeMarginNew);
 
-  current_profile_photo_ = new EditableProfilePhoto(this, avatar_item.icon);
+  current_profile_photo_ =
+      new EditableProfilePhoto(this, avatar_item.icon, true);
   view->SetBoundsRect(current_profile_photo_->bounds());
-  current_profile_name_ = new EditableProfileName(this, avatar_item.name);
+  current_profile_name_ =
+      new EditableProfileName(this, avatar_item.name, true);
 
   layout->StartRow(1, 0);
   layout->AddView(current_profile_photo_, 1, 3);
@@ -765,34 +795,24 @@ views::View* ProfileChooserView::CreateCurrentProfileAccountsView(
                     views::kButtonHEdgeMarginNew);
 
   Profile* profile = browser_->profile();
+  std::string primary_account =
+      SigninManagerFactory::GetForProfile(profile)->GetAuthenticatedUsername();
+  DCHECK(!primary_account.empty());
   std::vector<std::string> accounts(
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile)->GetAccounts());
-  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+  DCHECK_EQ(1, std::count_if(accounts.begin(), accounts.end(),
+                             std::bind1st(std::equal_to<std::string>(),
+                                          primary_account)));
+
+  // The primary account should always be listed first.  However, the vector
+  // returned by ProfileOAuth2TokenService::GetAccounts() will contain the
+  // primary account too.  Ignore it when it appears later.
+  // TODO(rogerta): we still need to further differentiate the primary account
+  // from the others, so more work is likely required here: crbug.com/311124.
+  CreateAccountButton(layout, primary_account, true);
   for (size_t i = 0; i < accounts.size(); ++i) {
-    bool is_primary_account = (i == 0);
-
-    // Use a MenuButtonListener and not a regular ButtonListener to be
-    // able to distinguish between the unnamed "other profile" buttons and the
-    // unnamed "multiple accounts" buttons.
-    views::MenuButton* email_button = new views::MenuButton(
-        NULL,
-        gfx::ElideEmail(UTF8ToUTF16(accounts[i]),
-                        rb->GetFontList(ui::ResourceBundle::BaseFont),
-                        width()),
-        is_primary_account ? NULL : this,  // Cannot delete the primary account.
-        !is_primary_account);
-    email_button->SetFont(rb->GetFont(ui::ResourceBundle::BaseFont));
-    email_button->set_border(views::Border::CreateEmptyBorder(0, 0, 0, 0));
-    if (!is_primary_account) {
-      email_button->set_menu_marker(
-          rb->GetImageNamed(IDR_CLOSE_1).ToImageSkia());
-      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-    }
-    layout->StartRow(1, 0);
-    layout->AddView(email_button);
-
-    // Save the original email address, as the button text could be elided.
-    current_profile_accounts_map_[email_button] = accounts[i];
+    if (primary_account != accounts[i])
+      CreateAccountButton(layout, accounts[i], false);
   }
 
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
@@ -804,4 +824,32 @@ views::View* ProfileChooserView::CreateCurrentProfileAccountsView(
   layout->StartRow(1, 0);
   layout->AddView(add_account_button_);
   return view;
+}
+
+void ProfileChooserView::CreateAccountButton(views::GridLayout* layout,
+                                             const std::string& account,
+                                             bool is_primary_account) {
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+  // Use a MenuButtonListener and not a regular ButtonListener to be
+  // able to distinguish between the unnamed "other profile" buttons and the
+  // unnamed "multiple accounts" buttons.
+  views::MenuButton* email_button = new views::MenuButton(
+      NULL,
+      gfx::ElideEmail(UTF8ToUTF16(account),
+                      rb->GetFontList(ui::ResourceBundle::BaseFont),
+                      width()),
+      is_primary_account ? NULL : this,  // Cannot delete the primary account.
+      !is_primary_account);
+  email_button->SetFont(rb->GetFont(ui::ResourceBundle::BaseFont));
+  email_button->set_border(views::Border::CreateEmptyBorder(0, 0, 0, 0));
+  if (!is_primary_account) {
+    email_button->set_menu_marker(
+        rb->GetImageNamed(IDR_CLOSE_1).ToImageSkia());
+    layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+  }
+  layout->StartRow(1, 0);
+  layout->AddView(email_button);
+
+  // Save the original email address, as the button text could be elided.
+  current_profile_accounts_map_[email_button] = account;
 }

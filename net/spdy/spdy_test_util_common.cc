@@ -228,6 +228,9 @@ class PriorityGetter : public BufferedSpdyFramerVisitorInterface {
   virtual void OnHeaders(SpdyStreamId stream_id,
                          bool fin,
                          const SpdyHeaderBlock& headers) OVERRIDE {}
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                 size_t length,
+                                 bool fin) OVERRIDE {}
   virtual void OnStreamFrameData(SpdyStreamId stream_id,
                                  const char* data,
                                  size_t len,
@@ -752,19 +755,19 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(
                                        header_info.priority,
                                        credential_slot,
                                        header_info.control_flags,
-                                       header_info.compressed, headers.get());
+                                       headers.get());
       }
       break;
     case SYN_REPLY:
       frame = framer.CreateSynReply(header_info.id, header_info.control_flags,
-                                    header_info.compressed, headers.get());
+                                    headers.get());
       break;
     case RST_STREAM:
       frame = framer.CreateRstStream(header_info.id, header_info.status);
       break;
     case HEADERS:
       frame = framer.CreateHeaders(header_info.id, header_info.control_flags,
-                                   header_info.compressed, headers.get());
+                                   headers.get());
       break;
     default:
       ADD_FAILURE();

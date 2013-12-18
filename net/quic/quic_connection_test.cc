@@ -15,6 +15,7 @@
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -274,6 +275,8 @@ class TestPacketWriter : public QuicPacketWriter {
         blocked_(false),
         is_write_blocked_data_buffered_(false),
         is_server_(true),
+        final_bytes_of_last_packet_(0),
+        final_bytes_of_previous_packet_(0),
         use_tagging_decrypter_(false),
         packets_write_attempts_(0) {
   }
@@ -288,6 +291,7 @@ class TestPacketWriter : public QuicPacketWriter {
     ++packets_write_attempts_;
 
     if (packet.length() >= sizeof(final_bytes_of_last_packet_)) {
+      final_bytes_of_previous_packet_ = final_bytes_of_last_packet_;
       memcpy(&final_bytes_of_last_packet_, packet.data() + packet.length() - 4,
              sizeof(final_bytes_of_last_packet_));
     }
@@ -346,6 +350,11 @@ class TestPacketWriter : public QuicPacketWriter {
   // a given packet.
   uint32 final_bytes_of_last_packet() { return final_bytes_of_last_packet_; }
 
+  // Returns the final bytes of the second to last packet.
+  uint32 final_bytes_of_previous_packet() {
+    return final_bytes_of_previous_packet_;
+  }
+
   void use_tagging_decrypter() {
     use_tagging_decrypter_ = true;
   }
@@ -359,6 +368,7 @@ class TestPacketWriter : public QuicPacketWriter {
   bool is_write_blocked_data_buffered_;
   bool is_server_;
   uint32 final_bytes_of_last_packet_;
+  uint32 final_bytes_of_previous_packet_;
   bool use_tagging_decrypter_;
   uint32 packets_write_attempts_;
 
@@ -557,6 +567,10 @@ class QuicConnectionTest : public ::testing::TestWithParam<bool> {
 
   uint32 final_bytes_of_last_packet() {
     return writer_->final_bytes_of_last_packet();
+  }
+
+  uint32 final_bytes_of_previous_packet() {
+    return writer_->final_bytes_of_previous_packet();
   }
 
   void use_tagging_decrypter() {
@@ -896,8 +910,8 @@ TEST_F(QuicConnectionTest, RejectPacketTooFarOut) {
 
 TEST_F(QuicConnectionTest, TruncatedAck) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  int num_packets = 256 * 2 + 1;
-  for (int i = 0; i < num_packets; ++i) {
+  QuicPacketSequenceNumber num_packets = 256 * 2 + 1;
+  for (QuicPacketSequenceNumber i = 0; i < num_packets; ++i) {
     SendStreamDataToPeer(1, "foo", i * 3, !kFin, NULL);
   }
 
@@ -913,7 +927,11 @@ TEST_F(QuicConnectionTest, TruncatedAck) {
   EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(10);
   ProcessAckPacket(&frame);
 
-  EXPECT_TRUE(QuicConnectionPeer::GetReceivedTruncatedAck(&connection_));
+  QuicReceivedPacketManager* received_packet_manager =
+      QuicConnectionPeer::GetReceivedPacketManager(&connection_);
+  // A truncated ack will not have the true largest observed.
+  EXPECT_GT(num_packets,
+            received_packet_manager->peer_largest_observed_packet());
 
   frame.received_info.missing_packets.erase(192);
 
@@ -922,7 +940,8 @@ TEST_F(QuicConnectionTest, TruncatedAck) {
   EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(10);
   EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(10);
   ProcessAckPacket(&frame);
-  EXPECT_FALSE(QuicConnectionPeer::GetReceivedTruncatedAck(&connection_));
+  EXPECT_EQ(num_packets,
+            received_packet_manager->peer_largest_observed_packet());
 }
 
 TEST_F(QuicConnectionTest, AckReceiptCausesAckSendBadEntropy) {
@@ -1309,7 +1328,9 @@ TEST_F(QuicConnectionTest, DontAbandonAckedFEC) {
 
   clock_.AdvanceTime(DefaultRetransmissionTime());
 
-  // Don't abandon the acked FEC packet.
+  // Don't abandon the acked FEC packet, but it will abandon 2 the subsequent
+  // FEC packets.
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(2);
   connection_.GetAbandonFecAlarm()->Fire();
 }
 
@@ -1909,16 +1930,22 @@ TEST_F(QuicConnectionTest, RTOWithSameEncryptionLevel) {
 
   EXPECT_EQ(default_retransmission_time,
             connection_.GetRetransmissionAlarm()->deadline());
+  {
+    InSequence s;
+    EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+    EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _));
+    EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(2, _));
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 3, _, RTO_RETRANSMISSION, _));
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 4, _, RTO_RETRANSMISSION, _));
+  }
+
   // Simulate the retransmission alarm firing.
   clock_.AdvanceTime(DefaultRetransmissionTime());
+  connection_.GetRetransmissionAlarm()->Fire();
 
-  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
-  connection_.RetransmitPacket(1, RTO_RETRANSMISSION);
   // Packet should have been sent with ENCRYPTION_NONE.
-  EXPECT_EQ(0x01010101u, final_bytes_of_last_packet());
+  EXPECT_EQ(0x01010101u, final_bytes_of_previous_packet());
 
-  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
-  connection_.RetransmitPacket(2, RTO_RETRANSMISSION);
   // Packet should have been sent with ENCRYPTION_INITIAL.
   EXPECT_EQ(0x02020202u, final_bytes_of_last_packet());
 }
@@ -1994,7 +2021,7 @@ TEST_F(QuicConnectionTest, RetransmitPacketsWithInitialEncryption) {
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
   EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(1);
 
-  connection_.RetransmitUnackedPackets(QuicConnection::INITIAL_ENCRYPTION_ONLY);
+  connection_.RetransmitUnackedPackets(INITIAL_ENCRYPTION_ONLY);
 }
 
 TEST_F(QuicConnectionTest, BufferNonDecryptablePackets) {
@@ -2165,7 +2192,7 @@ TEST_F(QuicConnectionTest, DelayRTOWithAckReceipt) {
   EXPECT_TRUE(retransmission_alarm->IsSet());
   QuicTime next_rto_time = retransmission_alarm->deadline();
   QuicTime::Delta expected_rto =
-      connection_.congestion_manager().GetRetransmissionDelay();
+      connection_.sent_packet_manager().GetRetransmissionDelay();
   EXPECT_EQ(next_rto_time, clock_.ApproximateNow().Add(expected_rto));
 }
 
@@ -2921,7 +2948,7 @@ TEST_F(QuicConnectionTest, CheckSendStats) {
   EXPECT_CALL(*send_algorithm_,
               OnPacketSent(_, _, _, NACK_RETRANSMISSION, _));
   EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(3);
-  EXPECT_CALL(visitor_, OnCanWrite()).Times(2).WillRepeatedly(Return(true));
+  EXPECT_CALL(visitor_, OnCanWrite()).WillRepeatedly(Return(true));
 
   // Retransmit due to RTO.
   clock_.AdvanceTime(QuicTime::Delta::FromSeconds(10));
@@ -3289,8 +3316,8 @@ TEST_F(QuicConnectionTest, Pacing) {
                         true);
   TestConnection client(guid_, IPEndPoint(), helper_.get(), writer_.get(),
                         false);
-  EXPECT_TRUE(client.congestion_manager().using_pacing());
-  EXPECT_FALSE(server.congestion_manager().using_pacing());
+  EXPECT_TRUE(client.sent_packet_manager().using_pacing());
+  EXPECT_FALSE(server.sent_packet_manager().using_pacing());
 }
 
 }  // namespace

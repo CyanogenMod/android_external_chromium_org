@@ -214,7 +214,7 @@ base::string16 ShellWindowLauncherItemController::GetTitle() {
   if (type() == TYPE_APP_PANEL && !shell_windows_.empty()) {
     ShellWindow* shell_window = shell_windows_.front();
     if (shell_window->web_contents()) {
-      string16 title = shell_window->web_contents()->GetTitle();
+      base::string16 title = shell_window->web_contents()->GetTitle();
       if (!title.empty())
         return title;
     }
@@ -229,8 +229,8 @@ ui::MenuModel* ShellWindowLauncherItemController::CreateContextMenu(
   return new LauncherContextMenu(launcher_controller(), &item, root_window);
 }
 
-ash::LauncherMenuModel*
-ShellWindowLauncherItemController::CreateApplicationMenu(int event_flags) {
+ash::ShelfMenuModel* ShellWindowLauncherItemController::CreateApplicationMenu(
+    int event_flags) {
   return new LauncherApplicationMenuItemModel(GetApplicationList(event_flags));
 }
 

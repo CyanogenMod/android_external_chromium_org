@@ -18,6 +18,7 @@ class GLInProcessContext;
 
 namespace mojo {
 namespace services {
+class GLES2Impl;
 
 class NativeViewportImpl : public NativeViewportStub,
                            public NativeViewportDelegate {
@@ -26,22 +27,29 @@ class NativeViewportImpl : public NativeViewportStub,
                      ScopedMessagePipeHandle pipe);
   virtual ~NativeViewportImpl();
 
+  // Overridden from NativeViewportStub:
   virtual void Open() OVERRIDE;
   virtual void Close() OVERRIDE;
+  virtual void CreateGLES2Context(
+      ScopedMessagePipeHandle gles2_client) OVERRIDE;
+  virtual void AckEvent(const Event& event) OVERRIDE;
 
  private:
   // Overridden from services::NativeViewportDelegate:
   virtual void OnResized(const gfx::Size& size) OVERRIDE;
   virtual void OnAcceleratedWidgetAvailable(
       gfx::AcceleratedWidget widget) OVERRIDE;
-  virtual bool OnEvent(ui::Event* event) OVERRIDE;
+  virtual bool OnEvent(ui::Event* ui_event) OVERRIDE;
   virtual void OnDestroyed() OVERRIDE;
 
-  void OnGLContextLost();
+  void CreateGLES2ContextIfNeeded();
 
   shell::Context* context_;
+  gfx::AcceleratedWidget widget_;
   scoped_ptr<services::NativeViewport> native_viewport_;
-  scoped_ptr<gpu::GLInProcessContext> gl_context_;
+  scoped_ptr<GLES2Impl> gles2_;
+  bool waiting_for_event_ack_;
+  int64 pending_event_timestamp_;
 
   RemotePtr<NativeViewportClient> client_;
 

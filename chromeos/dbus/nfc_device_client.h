@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "base/values.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "chromeos/dbus/nfc_client_helpers.h"
 #include "chromeos/dbus/nfc_property_set.h"
 #include "chromeos/dbus/nfc_record_client.h"
@@ -91,13 +91,12 @@ class CHROMEOS_EXPORT NfcDeviceClient : public DBusClient {
   //    etc.
   virtual void Push(
       const dbus::ObjectPath& object_path,
-      const NfcRecordClient::Attributes& attributes,
+      const base::DictionaryValue& attributes,
       const base::Closure& callback,
       const nfc_client_helpers::ErrorCallback& error_callback) = 0;
 
   // Creates the instance.
-  static NfcDeviceClient* Create(DBusClientImplementationType type,
-                                 NfcAdapterClient* adapter_client);
+  static NfcDeviceClient* Create(NfcAdapterClient* adapter_client);
 
  protected:
   friend class NfcClientTest;

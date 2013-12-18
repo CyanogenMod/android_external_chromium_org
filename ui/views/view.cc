@@ -22,6 +22,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/events/event_target_iterator.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/path.h"
@@ -35,6 +36,7 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/drag_controller.h"
 #include "ui/views/layout/layout_manager.h"
@@ -160,7 +162,6 @@ View::View()
       registered_for_visible_bounds_notification_(false),
       clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
-      focus_border_(FocusBorder::CreateDashedFocusBorder()),
       flip_canvas_on_paint_for_rtl_ui_(false),
       paint_to_layer_(false),
       accelerator_focus_manager_(NULL),
@@ -663,52 +664,38 @@ View* View::GetSelectedViewForGroup(int group) {
 void View::ConvertPointToTarget(const View* source,
                                 const View* target,
                                 gfx::Point* point) {
+  DCHECK(source);
+  DCHECK(target);
   if (source == target)
     return;
 
-  // |source| can be NULL.
   const View* root = GetHierarchyRoot(target);
-  if (source) {
-    CHECK_EQ(GetHierarchyRoot(source), root);
+  CHECK_EQ(GetHierarchyRoot(source), root);
 
-    if (source != root)
-      source->ConvertPointForAncestor(root, point);
-  }
+  if (source != root)
+    source->ConvertPointForAncestor(root, point);
 
   if (target != root)
     target->ConvertPointFromAncestor(root, point);
-
-  // API defines NULL |source| as returning the point in screen coordinates.
-  if (!source) {
-    *point -=
-        root->GetWidget()->GetClientAreaBoundsInScreen().OffsetFromOrigin();
-  }
 }
 
 // static
 void View::ConvertRectToTarget(const View* source,
                                const View* target,
                                gfx::RectF* rect) {
+  DCHECK(source);
+  DCHECK(target);
   if (source == target)
     return;
 
-  // |source| can be NULL.
   const View* root = GetHierarchyRoot(target);
-  if (source) {
-    CHECK_EQ(GetHierarchyRoot(source), root);
+  CHECK_EQ(GetHierarchyRoot(source), root);
 
-    if (source != root)
-      source->ConvertRectForAncestor(root, rect);
-  }
+  if (source != root)
+    source->ConvertRectForAncestor(root, rect);
 
   if (target != root)
     target->ConvertRectFromAncestor(root, rect);
-
-  // API defines NULL |source| as returning the point in screen coordinates.
-  if (!source) {
-    rect->set_origin(rect->origin() -
-        root->GetWidget()->GetClientAreaBoundsInScreen().OffsetFromOrigin());
-  }
 }
 
 // static
@@ -811,6 +798,14 @@ void View::Paint(gfx::Canvas* canvas) {
   canvas->Transform(GetTransform());
 
   PaintCommon(canvas);
+}
+
+void View::set_background(Background* b) {
+  background_.reset(b);
+}
+
+void View::set_border(Border* b) {
+  border_.reset(b);
 }
 
 ui::ThemeProvider* View::GetThemeProvider() const {
@@ -993,7 +988,7 @@ bool View::IsMouseHovered() {
 
   gfx::Point cursor_pos(gfx::Screen::GetScreenFor(
       GetWidget()->GetNativeView())->GetCursorScreenPoint());
-  ConvertPointToTarget(NULL, this, &cursor_pos);
+  ConvertPointFromScreen(this, &cursor_pos);
   return HitTestPoint(cursor_pos);
 }
 
@@ -1116,6 +1111,15 @@ bool View::CanAcceptEvent(const ui::Event& event) {
 
 ui::EventTarget* View::GetParentTarget() {
   return parent_;
+}
+
+scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
+  return scoped_ptr<ui::EventTargetIterator>(
+      new ui::EventTargetIteratorImpl<View>(children_));
+}
+
+ui::EventTargeter* View::GetEventTargeter() {
+  return NULL;
 }
 
 // Accelerators ----------------------------------------------------------------
@@ -1394,7 +1398,6 @@ void View::PaintChildren(gfx::Canvas* canvas) {
 void View::OnPaint(gfx::Canvas* canvas) {
   TRACE_EVENT1("views", "View::OnPaint", "class", GetClassName());
   OnPaintBackground(canvas);
-  OnPaintFocusBorder(canvas);
   OnPaintBorder(canvas);
 }
 
@@ -1413,15 +1416,6 @@ void View::OnPaintBorder(gfx::Canvas* canvas) {
                  "width", canvas->sk_canvas()->getDevice()->width(),
                  "height", canvas->sk_canvas()->getDevice()->height());
     border_->Paint(*this, canvas);
-  }
-}
-
-void View::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (focus_border_.get() && HasFocus()) {
-    TRACE_EVENT2("views", "views::OnPaintFocusBorder",
-                 "width", canvas->sk_canvas()->getDevice()->width(),
-                 "height", canvas->sk_canvas()->getDevice()->height());
-    focus_border_->Paint(*this, canvas);
   }
 }
 
@@ -1596,14 +1590,10 @@ void View::OnBlur() {
 }
 
 void View::Focus() {
-  if (focus_border_.get())
-    SchedulePaint();
   OnFocus();
 }
 
 void View::Blur() {
-  if (focus_border_.get())
-    SchedulePaint();
   OnBlur();
 }
 

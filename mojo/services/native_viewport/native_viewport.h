@@ -26,7 +26,7 @@ class NativeViewportDelegate {
 
   virtual void OnResized(const gfx::Size& size) = 0;
   virtual void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget) = 0;
-  virtual bool OnEvent(ui::Event* event) = 0;
+  virtual bool OnEvent(ui::Event* ui_event) = 0;
   virtual void OnDestroyed() = 0;
 };
 
@@ -37,9 +37,12 @@ class NativeViewport {
  public:
   virtual ~NativeViewport() {}
 
-  virtual gfx::Size GetSize() = 0;
   virtual void Init() = 0;
   virtual void Close() = 0;
+  virtual gfx::Size GetSize() = 0;
+
+  virtual void SetCapture() = 0;
+  virtual void ReleaseCapture() = 0;
 
   static scoped_ptr<NativeViewport> Create(shell::Context* context,
                                            NativeViewportDelegate* delegate);

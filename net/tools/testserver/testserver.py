@@ -35,15 +35,22 @@ import urllib
 import urlparse
 import zlib
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
+
 import echo_message
-import pyftpdlib.ftpserver
 import testserver_base
+
+# Append at the end of sys.path, it's fine to use the system library.
+sys.path.append(os.path.join(ROOT_DIR, 'third_party', 'pyftpdlib', 'src'))
+sys.path.append(os.path.join(ROOT_DIR, 'third_party', 'tlslite'))
+import pyftpdlib.ftpserver
 import tlslite
 import tlslite.api
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(
-    0, os.path.join(BASE_DIR, '..', '..', '..', 'third_party/pywebsocket/src'))
+# Insert at the beginning of the path, we want this to be used
+# unconditionally.
+sys.path.insert(0, os.path.join(ROOT_DIR, 'third_party', 'pywebsocket', 'src'))
 from mod_pywebsocket.standalone import WebSocketServer
 
 SERVER_HTTP = 0
@@ -128,7 +135,7 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
 
   def __init__(self, server_address, request_hander_class, pem_cert_and_key,
                ssl_client_auth, ssl_client_cas, ssl_bulk_ciphers,
-               record_resume_info, tls_intolerant):
+               record_resume_info, tls_intolerant, signed_cert_timestamps):
     self.cert_chain = tlslite.api.X509CertChain().parseChain(pem_cert_and_key)
     # Force using only python implementation - otherwise behavior is different
     # depending on whether m2crypto Python module is present (error is thrown
@@ -140,6 +147,7 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
     self.ssl_client_auth = ssl_client_auth
     self.ssl_client_cas = []
     self.tls_intolerant = tls_intolerant
+    self.signed_cert_timestamps = signed_cert_timestamps
 
     for ca_file in ssl_client_cas:
       s = open(ca_file).read()
@@ -171,7 +179,9 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
                                     reqCert=self.ssl_client_auth,
                                     settings=self.ssl_handshake_settings,
                                     reqCAs=self.ssl_client_cas,
-                                    tlsIntolerant=self.tls_intolerant)
+                                    tlsIntolerant=self.tls_intolerant,
+                                    signedCertTimestamps=
+                                    self.signed_cert_timestamps)
       tlsConnection.ignoreAbruptClose = True
       return True
     except tlslite.api.TLSAbruptCloseError:
@@ -1935,7 +1945,9 @@ class ServerRunner(testserver_base.TestServerRunner):
                              self.options.ssl_client_ca,
                              self.options.ssl_bulk_cipher,
                              self.options.record_resume,
-                             self.options.tls_intolerant)
+                             self.options.tls_intolerant,
+                             self.options.signed_cert_timestamps.decode(
+                                 "base64"))
         print 'HTTPS server started on %s:%d...' % (host, server.server_port)
       else:
         server = HTTPServer((host, port), TestPageHandler)
@@ -2073,6 +2085,13 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'aborted. 2 means TLS 1.1 or higher will be '
                                   'aborted. 3 means TLS 1.2 or higher will be '
                                   'aborted.')
+    self.option_parser.add_option('--signed-cert-timestamps',
+                                  dest='signed_cert_timestamps',
+                                  default='',
+                                  help='Base64 encoded SCT list. If set, '
+                                  'server will respond with a '
+                                  'signed_certificate_timestamp TLS extension '
+                                  'whenever the client supports it.')
     self.option_parser.add_option('--https-record-resume',
                                   dest='record_resume', const=True,
                                   default=False, action='store_const',

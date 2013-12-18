@@ -24,6 +24,8 @@
 #include "ui/events/gestures/gesture_sequence.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
 #include "win8/metro_driver/file_picker_ash.h"
+#include "win8/metro_driver/ime/input_source.h"
+#include "win8/metro_driver/ime/text_service.h"
 #include "win8/metro_driver/metro_driver.h"
 #include "win8/metro_driver/winrt_utils.h"
 #include "win8/viewer/metro_viewer_constants.h"
@@ -164,6 +166,10 @@ class ChromeChannelListener : public IPC::Listener {
       IPC_MESSAGE_HANDLER(MetroViewerHostMsg_DisplaySelectFolder,
                           OnDisplayFolderPicker)
       IPC_MESSAGE_HANDLER(MetroViewerHostMsg_SetCursorPos, OnSetCursorPos)
+      IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ImeCancelComposition,
+                          OnImeCancelComposition)
+      IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ImeTextInputClientUpdated,
+                          OnImeTextInputClientChanged)
       IPC_MESSAGE_UNHANDLED(__debugbreak())
     IPC_END_MESSAGE_MAP()
     return true;
@@ -180,11 +186,11 @@ class ChromeChannelListener : public IPC::Listener {
   }
 
  private:
-  void OnActivateDesktop(const base::FilePath& shortcut) {
+  void OnActivateDesktop(const base::FilePath& shortcut, bool ash_exit) {
     ui_proxy_->PostTask(FROM_HERE,
         base::Bind(&ChromeAppViewAsh::OnActivateDesktop,
         base::Unretained(app_view_),
-        shortcut));
+        shortcut, ash_exit));
   }
 
   void OnOpenURLOnDesktop(const base::FilePath& shortcut,
@@ -241,6 +247,23 @@ class ChromeChannelListener : public IPC::Listener {
                    x, y));
   }
 
+  void OnImeCancelComposition() {
+    ui_proxy_->PostTask(
+        FROM_HERE,
+        base::Bind(&ChromeAppViewAsh::OnImeCancelComposition,
+                   base::Unretained(app_view_)));
+  }
+
+  void OnImeTextInputClientChanged(
+      const std::vector<int32>& input_scopes,
+      const std::vector<metro_viewer::CharacterBounds>& character_bounds) {
+    ui_proxy_->PostTask(
+        FROM_HERE,
+        base::Bind(&ChromeAppViewAsh::OnImeUpdateTextInputClient,
+                   base::Unretained(app_view_),
+                   input_scopes,
+                   character_bounds));
+  }
 
   scoped_refptr<base::MessageLoopProxy> ui_proxy_;
   ChromeAppViewAsh* app_view_;
@@ -405,9 +428,8 @@ bool LaunchChromeBrowserProcess(const wchar_t* additional_parameters,
         mswrw::HString launch_args_str;
         launch_args->get_Arguments(launch_args_str.GetAddressOf());
         string16 actual_launch_args(MakeStdWString(launch_args_str.Get()));
-        if (actual_launch_args == L"test_open") {
-          DVLOG(1) << __FUNCTION__
-                  << "Not launching chrome server";
+        if (actual_launch_args == win8::kMetroViewerConnectVerb) {
+          DVLOG(1) << __FUNCTION__ << "Not launching chrome server";
           return true;
         }
       }
@@ -471,6 +493,8 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
   CheckHR(hr);
   hr = interop->get_WindowHandle(&core_window_hwnd_);
   CheckHR(hr);
+
+  text_service_ = metro_driver::CreateTextService(this, core_window_hwnd_);
 
   hr = window_->add_SizeChanged(mswr::Callback<SizeChangedHandler>(
       this, &ChromeAppViewAsh::OnSizeChanged).Get(),
@@ -608,6 +632,13 @@ ChromeAppViewAsh::Run() {
       new MetroViewerHostMsg_WindowSizeChanged(rect.right - rect.left,
                                                rect.bottom - rect.top));
 
+  input_source_ = metro_driver::InputSource::Create();
+  if (input_source_) {
+    input_source_->AddObserver(this);
+    // Send an initial input source.
+    OnInputSourceChanged();
+  }
+
   // And post the task that'll do the inner Metro message pumping to it.
   ui_loop_.PostTask(FROM_HERE, base::Bind(&RunMessageLoop, dispatcher.Get()));
   ui_loop_.Run();
@@ -619,6 +650,8 @@ ChromeAppViewAsh::Run() {
 IFACEMETHODIMP
 ChromeAppViewAsh::Uninitialize() {
   DVLOG(1) << __FUNCTION__;
+  input_source_.reset();
+  text_service_.reset();
   window_ = nullptr;
   view_ = nullptr;
   core_window_hwnd_ = NULL;
@@ -651,12 +684,15 @@ HRESULT ChromeAppViewAsh::Unsnap() {
   return hr;
 }
 
-void ChromeAppViewAsh::OnActivateDesktop(const base::FilePath& file_path) {
-  DLOG(INFO) << "ChannelAppViewAsh::OnActivateDesktop\n";
+void ChromeAppViewAsh::OnActivateDesktop(const base::FilePath& file_path,
+                                         bool ash_exit) {
+  DVLOG(1) << "ChannelAppViewAsh::OnActivateDesktop\n";
 
-  // As we are the top level window, the exiting is done async so we manage
-  // to execute  the entire function including the final Send().
-  MetroExit(core_window_hwnd());
+  if (ash_exit) {
+    // As we are the top level window, the exiting is done async so we manage
+    // to execute  the entire function including the final Send().
+    MetroExit(core_window_hwnd());
+  }
 
   // We are just executing delegate_execute here without parameters. Assumption
   // here is that this process will be reused by shell when asking for
@@ -670,7 +706,13 @@ void ChromeAppViewAsh::OnActivateDesktop(const base::FilePath& file_path) {
   sei.nShow = SW_SHOWNORMAL;
   sei.lpFile = file_path.value().c_str();
   sei.lpParameters = NULL;
+  if (!ash_exit)
+    sei.fMask |= SEE_MASK_NOCLOSEPROCESS;
   ::ShellExecuteExW(&sei);
+  if (!ash_exit) {
+    ::TerminateProcess(sei.hProcess, 0);
+    ::CloseHandle(sei.hProcess);
+  }
   ui_channel_->Send(new MetroViewerHostMsg_ActivateDesktopDone());
 }
 
@@ -785,6 +827,47 @@ void ChromeAppViewAsh::OnFolderPickerCompleted(
         base::FilePath(folder_picker->result())));
   }
   delete folder_picker;
+}
+
+void ChromeAppViewAsh::OnImeCancelComposition() {
+  if (!text_service_)
+    return;
+  text_service_->CancelComposition();
+}
+
+void ChromeAppViewAsh::OnImeUpdateTextInputClient(
+    const std::vector<int32>& input_scopes,
+    const std::vector<metro_viewer::CharacterBounds>& character_bounds) {
+  if (!text_service_)
+    return;
+  text_service_->OnDocumentChanged(input_scopes, character_bounds);
+}
+
+void ChromeAppViewAsh::OnInputSourceChanged() {
+  if (!input_source_)
+    return;
+
+  LANGID langid = 0;
+  bool is_ime = false;
+  if (!input_source_->GetActiveSource(&langid, &is_ime)) {
+    LOG(ERROR) << "GetActiveSource failed";
+    return;
+  }
+  ui_channel_->Send(new MetroViewerHostMsg_ImeInputSourceChanged(langid,
+                                                                 is_ime));
+}
+
+void ChromeAppViewAsh::OnCompositionChanged(
+    const string16& text,
+    int32 selection_start,
+    int32 selection_end,
+    const std::vector<metro_viewer::UnderlineInfo>& underlines) {
+  ui_channel_->Send(new MetroViewerHostMsg_ImeCompositionChanged(
+      text, selection_start, selection_end, underlines));
+}
+
+void ChromeAppViewAsh::OnTextCommitted(const string16& text) {
+  ui_channel_->Send(new MetroViewerHostMsg_ImeTextCommitted(text));
 }
 
 HRESULT ChromeAppViewAsh::OnActivate(
@@ -1033,6 +1116,8 @@ HRESULT ChromeAppViewAsh::OnWindowActivated(
   // clicked back in Ash after using another app on another monitor) the same.
   if (state == winui::Core::CoreWindowActivationState_CodeActivated ||
       state == winui::Core::CoreWindowActivationState_PointerActivated) {
+    if (text_service_)
+      text_service_->OnWindowActivated();
     ui_channel_->Send(new MetroViewerHostMsg_WindowActivated());
   }
   return S_OK;

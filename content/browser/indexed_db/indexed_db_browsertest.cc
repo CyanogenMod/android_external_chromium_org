@@ -66,7 +66,7 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
     if (hash)
       url = GURL(url.spec() + hash);
 
-    string16 expected_title16(ASCIIToUTF16(expected_string));
+    base::string16 expected_title16(ASCIIToUTF16(expected_string));
     TitleWatcher title_watcher(shell->web_contents(), expected_title16);
     NavigateToURL(shell, url);
     EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
@@ -234,7 +234,7 @@ static void CopyLevelDBToProfile(Shell* shell,
   // If we don't create the destination directory first, the contents of the
   // leveldb directory are copied directly into profile/IndexedDB instead of
   // profile/IndexedDB/file__0.xxx/
-  ASSERT_TRUE(file_util::CreateDirectory(dest));
+  ASSERT_TRUE(base::CreateDirectory(dest));
   const bool kRecursive = true;
   ASSERT_TRUE(base::CopyDirectory(test_data_dir,
                                   context->data_path(),
@@ -342,7 +342,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, LevelDBLogFileTest) {
   base::FilePath log_file_path =
       GetContext()->data_path().Append(leveldb_dir).Append(log_file);
   int64 size;
-  EXPECT_TRUE(file_util::GetFileSize(log_file_path, &size));
+  EXPECT_TRUE(base::GetFileSize(log_file_path, &size));
   EXPECT_GT(size, 0);
 }
 
@@ -399,7 +399,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ConnectionsClosedOnTabClose) {
   NavigateAndWaitForTitle(new_shell, "version_change_blocked.html", "#tab2",
                           "setVersion(3) blocked");
 
-  string16 expected_title16(ASCIIToUTF16("setVersion(3) complete"));
+  base::string16 expected_title16(ASCIIToUTF16("setVersion(3) complete"));
   TitleWatcher title_watcher(new_shell->web_contents(), expected_title16);
 
   base::KillProcess(
@@ -421,7 +421,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ForceCloseEventTest) {
                  GetContext(),
                  GURL("file:///")));
 
-  string16 expected_title16(ASCIIToUTF16("connection closed"));
+  base::string16 expected_title16(ASCIIToUTF16("connection closed"));
   TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
   EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
 }

@@ -7,7 +7,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "content/browser/frame_host/test_render_frame_host.h"
+#include "content/test/test_render_frame_host.h"
 
 namespace content {
 
@@ -22,12 +22,15 @@ TestRenderFrameHostFactory::~TestRenderFrameHostFactory() {
 scoped_ptr<RenderFrameHostImpl>
 TestRenderFrameHostFactory::CreateRenderFrameHost(
     RenderViewHostImpl* render_view_host,
+    RenderFrameHostDelegate* delegate,
     FrameTree* frame_tree,
+    FrameTreeNode* frame_tree_node,
     int routing_id,
     bool is_swapped_out) {
   return make_scoped_ptr(
       new TestRenderFrameHost(
-          render_view_host, frame_tree, routing_id, is_swapped_out))
+          render_view_host, delegate, frame_tree, frame_tree_node, routing_id,
+          is_swapped_out))
       .PassAs<RenderFrameHostImpl>();
 }
 

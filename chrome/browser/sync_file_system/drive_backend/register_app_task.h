@@ -7,9 +7,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_task.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace drive {
 class DriveServiceInterface;
@@ -24,6 +24,7 @@ namespace sync_file_system {
 namespace drive_backend {
 
 class FileTracker;
+class FolderCreator;
 class MetadataDatabase;
 class SyncEngineContext;
 class TrackerSet;
@@ -38,14 +39,8 @@ class RegisterAppTask : public SyncTask {
  private:
   void CreateAppRootFolder(const SyncStatusCallback& callback);
   void DidCreateAppRootFolder(const SyncStatusCallback& callback,
-                              int64 change_id,
-                              google_apis::GDataErrorCode error,
-                              scoped_ptr<google_apis::ResourceEntry> entry);
-  void DidUpdateDatabase(const SyncStatusCallback& callback,
-                         const std::string& file_id,
-                         SyncStatusCode status);
-  void DidPrepareForRegister(const SyncStatusCallback& callback,
-                             SyncStatusCode status);
+                              const std::string& file_id,
+                              SyncStatusCode status);
   bool FilterCandidates(const TrackerSet& trackers,
                         FileTracker* candidate);
   void RegisterAppIntoDatabase(const FileTracker& tracker,
@@ -58,6 +53,8 @@ class RegisterAppTask : public SyncTask {
 
   int create_folder_retry_count_;
   std::string app_id_;
+
+  scoped_ptr<FolderCreator> folder_creator_;
 
   base::WeakPtrFactory<RegisterAppTask> weak_ptr_factory_;
 

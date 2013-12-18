@@ -95,12 +95,14 @@ ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevelForWebContents(
 }
 
 // ToolbarModelImpl Implementation.
-string16 ToolbarModelImpl::GetText(bool allow_search_term_replacement) const {
-  if (allow_search_term_replacement) {
-    string16 search_terms(GetSearchTerms(false));
-    if (!search_terms.empty())
-      return search_terms;
-  }
+base::string16 ToolbarModelImpl::GetText() const {
+  base::string16 search_terms(GetSearchTerms(false));
+  if (!search_terms.empty())
+    return search_terms;
+
+  if (WouldOmitURLDueToOriginChip())
+    return base::string16();
+
   std::string languages;  // Empty if we don't have a |navigation_controller|.
   Profile* profile = GetProfile();
   if (profile)
@@ -117,9 +119,9 @@ string16 ToolbarModelImpl::GetText(bool allow_search_term_replacement) const {
                           net::UnescapeRule::NORMAL, NULL, NULL, NULL));
 }
 
-string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
+base::string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
   if (!WouldPerformSearchTermReplacement(false))
-    return string16();
+    return base::string16();
   GURL url(GetURL());
   // If there is a query in the url fragment look for the corpus name there,
   // otherwise look for the corpus name in the query parameters.
@@ -135,7 +137,7 @@ string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
           net::UnescapeRule::NORMAL, NULL);
     }
   }
-  return string16();
+  return base::string16();
 }
 
 GURL ToolbarModelImpl::GetURL() const {
@@ -147,6 +149,11 @@ GURL ToolbarModelImpl::GetURL() const {
   }
 
   return GURL(content::kAboutBlankURL);
+}
+
+bool ToolbarModelImpl::WouldOmitURLDueToOriginChip() const {
+  return chrome::ShouldDisplayOriginChip() && ShouldDisplayURL() &&
+      url_replacement_enabled();
 }
 
 bool ToolbarModelImpl::WouldPerformSearchTermReplacement(
@@ -199,7 +206,10 @@ int ToolbarModelImpl::GetIcon() const {
         chrome::DISPLAY_SEARCH_BUTTON_NEVER) ?
             IDR_OMNIBOX_SEARCH_SECURED : IDR_OMNIBOX_SEARCH;
   }
+  return GetIconForSecurityLevel(GetSecurityLevel(false));
+}
 
+int ToolbarModelImpl::GetIconForSecurityLevel(SecurityLevel level) const {
   static int icon_ids[NUM_SECURITY_LEVELS] = {
     IDR_LOCATION_BAR_HTTP,
     IDR_OMNIBOX_HTTPS_VALID,
@@ -209,10 +219,10 @@ int ToolbarModelImpl::GetIcon() const {
     IDR_OMNIBOX_HTTPS_INVALID,
   };
   DCHECK(arraysize(icon_ids) == NUM_SECURITY_LEVELS);
-  return icon_ids[GetSecurityLevel(false)];
+  return icon_ids[level];
 }
 
-string16 ToolbarModelImpl::GetEVCertName() const {
+base::string16 ToolbarModelImpl::GetEVCertName() const {
   DCHECK_EQ(EV_SECURE, GetSecurityLevel(false));
   scoped_refptr<net::X509Certificate> cert;
   // Note: Navigation controller and active entry are guaranteed non-NULL or
@@ -223,12 +233,13 @@ string16 ToolbarModelImpl::GetEVCertName() const {
 }
 
 // static
-string16 ToolbarModelImpl::GetEVCertName(const net::X509Certificate& cert) {
+base::string16 ToolbarModelImpl::GetEVCertName(
+    const net::X509Certificate& cert) {
   // EV are required to have an organization name and country.
   if (cert.subject().organization_names.empty() ||
       cert.subject().country_name.empty()) {
     NOTREACHED();
-    return string16();
+    return base::string16();
   }
 
   return l10n_util::GetStringFUTF16(
@@ -252,15 +263,16 @@ Profile* ToolbarModelImpl::GetProfile() const {
       NULL;
 }
 
-string16 ToolbarModelImpl::GetSearchTerms(bool ignore_editing) const {
-  if (!search_term_replacement_enabled() ||
-      (input_in_progress() && !ignore_editing))
-    return string16();
+base::string16 ToolbarModelImpl::GetSearchTerms(bool ignore_editing) const {
+  if (!url_replacement_enabled() || (input_in_progress() && !ignore_editing))
+    return base::string16();
 
   const WebContents* web_contents = delegate_->GetActiveWebContents();
-  string16 search_terms(chrome::GetSearchTerms(web_contents));
-  if (search_terms.empty())
-    return string16();  // We mainly do this to enforce the subsequent DCHECK.
+  base::string16 search_terms(chrome::GetSearchTerms(web_contents));
+  if (search_terms.empty()) {
+    // We mainly do this to enforce the subsequent DCHECK.
+    return base::string16();
+  }
 
   // If the page is still loading and the security style is unknown, consider
   // the page secure.  Without this, after the user hit enter on some search
@@ -284,5 +296,5 @@ string16 ToolbarModelImpl::GetSearchTerms(bool ignore_editing) const {
   // error.
   ToolbarModel::SecurityLevel security_level = GetSecurityLevel(ignore_editing);
   return ((security_level == NONE) || (security_level == SECURITY_ERROR)) ?
-      string16() : search_terms;
+      base::string16() : search_terms;
 }

@@ -56,14 +56,20 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   virtual ~ReliableQuicStream();
 
   bool WillAcceptStreamFrame(const QuicStreamFrame& frame) const;
+
+  // Called when a (potentially duplicate) stream frame has been received
+  // for this stream.  Returns false if this frame can not be accepted
+  // because there is too much data already buffered.
   virtual bool OnStreamFrame(const QuicStreamFrame& frame);
 
+  // Called when the connection becomes writeable to allow the stream
+  // to write any pending data.
   virtual void OnCanWrite();
 
   // Called by the session just before the stream is deleted.
   virtual void OnClose();
 
-  // Called when we get a stream reset from the client.
+  // Called when we get a stream reset from the peer.
   virtual void OnStreamReset(QuicRstStreamErrorCode error);
 
   // Called when we get or send a connection close, and should immediately
@@ -71,20 +77,18 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // but is handled immediately.
   virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer);
 
-  // Called when we should process a stream termination or
-  // stream close from the peer.
-  virtual void TerminateFromPeer(bool half_close);
+  // Called when the final data has been read.
+  virtual void OnFinRead();
 
   virtual uint32 ProcessRawData(const char* data, uint32 data_len);
-  virtual uint32 ProcessHeaderData();
 
   virtual uint32 ProcessData(const char* data, uint32 data_len) = 0;
 
   virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
   virtual void OnDecompressionError() OVERRIDE;
 
-  // Called to close the stream from this end.
-  virtual void Close(QuicRstStreamErrorCode error);
+  // Called to reset the stream from this end.
+  virtual void Reset(QuicRstStreamErrorCode error);
 
   // Called to close the entire connection from this end.
   virtual void CloseConnection(QuicErrorCode error);
@@ -96,7 +100,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // been fully processed.  Then they simply delegate to the sequencer.
   virtual size_t Readv(const struct iovec* iov, size_t iov_len);
   virtual int GetReadableRegions(iovec* iov, size_t iov_len);
-  virtual bool IsHalfClosed() const;
+  // Returns true when all data has been read from the peer, including the fin.
+  virtual bool IsDoneReading() const;
   virtual bool HasBytesToRead() const;
 
   // Called by the session when a decompression blocked stream
@@ -185,6 +190,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
  private:
   friend class test::ReliableQuicStreamPeer;
   friend class QuicStreamUtils;
+
+  uint32 ProcessHeaderData();
 
   uint32 StripPriorityAndHeaderId(const char* data, uint32 data_len);
 

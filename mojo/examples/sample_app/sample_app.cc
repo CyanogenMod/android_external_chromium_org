@@ -9,6 +9,7 @@
 #include "mojo/common/bindings_support_impl.h"
 #include "mojo/examples/sample_app/native_viewport_client_impl.h"
 #include "mojo/public/bindings/lib/bindings_support.h"
+#include "mojo/public/gles2/gles2.h"
 #include "mojo/public/system/core.h"
 #include "mojo/public/system/macros.h"
 
@@ -28,24 +29,24 @@ namespace examples {
 void Start(ScopedMessagePipeHandle pipe) {
   printf("Starting sample app.\n");
   NativeViewportClientImpl client(pipe.Pass());
-  printf("Opening native viewport.\n");
-  client.service()->Open();
-
+  client.Open();
   base::MessageLoop::current()->Run();
 }
 
-}  // examples
-}  // mojo
+}  // namespace examples
+}  // namespace mojo
 
 extern "C" SAMPLE_APP_EXPORT MojoResult CDECL MojoMain(MojoHandle pipe) {
   base::MessageLoop loop;
   mojo::common::BindingsSupportImpl bindings_support;
   mojo::BindingsSupport::Set(&bindings_support);
+  MojoGLES2Initialize();
 
   mojo::ScopedMessagePipeHandle scoped_handle;
   scoped_handle.reset(mojo::MessagePipeHandle(pipe));
   mojo::examples::Start(scoped_handle.Pass());
 
+  MojoGLES2Terminate();
   mojo::BindingsSupport::Set(NULL);
   return MOJO_RESULT_OK;
 }

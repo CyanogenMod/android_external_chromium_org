@@ -16,7 +16,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
 #include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
-#include "chrome/browser/chromeos/input_method/input_method_engine_ibus.h"
+#include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
@@ -58,10 +58,8 @@ InputMethodManagerImpl::InputMethodManagerImpl(
 }
 
 InputMethodManagerImpl::~InputMethodManagerImpl() {
-  if (candidate_window_controller_.get()) {
+  if (candidate_window_controller_.get())
     candidate_window_controller_->RemoveObserver(this);
-    candidate_window_controller_->Shutdown();
-  }
 }
 
 void InputMethodManagerImpl::AddObserver(
@@ -98,10 +96,8 @@ void InputMethodManagerImpl::SetState(State new_state) {
       OnScreenLocked();
       break;
     case STATE_TERMINATING: {
-      if (candidate_window_controller_.get()) {
-        candidate_window_controller_->Shutdown();
+      if (candidate_window_controller_.get())
         candidate_window_controller_.reset();
-      }
       break;
     }
   }
@@ -186,6 +182,13 @@ void InputMethodManagerImpl::EnableLayouts(const std::string& language_code,
   }
 
   active_input_method_ids_.swap(layouts);
+
+  // Initialize candidate window controller and widgets such as
+  // candidate window, infolist and mode indicator.  Note, mode
+  // indicator is used by only keyboard layout input methods.
+  if (active_input_method_ids_.size() > 1)
+    MaybeInitializeCandidateWindowController();
+
   ChangeInputMethod(initial_layout);  // you can pass empty |initial_layout|.
 }
 
@@ -314,10 +317,10 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     // Disable the current engine and enable the next engine.
     if (engine)
       engine->Disable();
-    IBusBridge::Get()->CreateEngine(input_method_id_to_switch);
+
     IBusEngineHandlerInterface* next_engine =
-        IBusBridge::Get()->GetEngineHandler();
-    IBusBridge::Get()->SetEngineHandler(next_engine);
+        IBusBridge::Get()->SetEngineHandlerById(input_method_id_to_switch);
+
     if (next_engine)
       next_engine->Enable();
   }
@@ -422,7 +425,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
     const std::vector<std::string>& languages,
     const GURL& options_url,
     const GURL& inputview_url,
-    InputMethodEngine* engine) {
+    InputMethodEngineInterface* engine) {
   if (state_ == STATE_TERMINATING)
     return;
 
@@ -447,9 +450,6 @@ void InputMethodManagerImpl::AddInputMethodExtension(
     // Ensure that the input method daemon is running.
     MaybeInitializeCandidateWindowController();
   }
-
-  extra_input_method_instances_[id] =
-      static_cast<InputMethodEngineIBus*>(engine);
 }
 
 void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
@@ -465,16 +465,6 @@ void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
   // If |current_input_method| is no longer in |active_input_method_ids_|,
   // switch to the first one in |active_input_method_ids_|.
   ChangeInputMethod(current_input_method_.id());
-
-  std::map<std::string, InputMethodEngineIBus*>::iterator ite =
-      extra_input_method_instances_.find(id);
-  if (ite == extra_input_method_instances_.end()) {
-    DVLOG(1) << "The engine instance of " << id << " has already gone.";
-  } else {
-    // Do NOT release the actual instance here. This class does not take an
-    // onwership of engine instance.
-    extra_input_method_instances_.erase(ite);
-  }
 }
 
 void InputMethodManagerImpl::GetInputMethodExtensions(
@@ -554,6 +544,7 @@ bool InputMethodManagerImpl::SwitchToNextInputMethod() {
     DVLOG(1) << "active input method is empty";
     return false;
   }
+
   if (current_input_method_.id().empty()) {
     DVLOG(1) << "current_input_method_ is unknown";
     return false;
@@ -729,7 +720,6 @@ void InputMethodManagerImpl::Init(base::SequencedTaskRunner* ui_task_runner) {
 void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(
     CandidateWindowController* candidate_window_controller) {
   candidate_window_controller_.reset(candidate_window_controller);
-  candidate_window_controller_->Init();
   candidate_window_controller_->AddObserver(this);
 }
 
@@ -746,6 +736,12 @@ void InputMethodManagerImpl::PropertyChanged() {
   FOR_EACH_OBSERVER(InputMethodManager::Observer,
                     observers_,
                     InputMethodPropertyChanged(this));
+}
+
+void InputMethodManagerImpl::CandidateClicked(int index) {
+  IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+  if (engine)
+    engine->CandidateClicked(index);
 }
 
 void InputMethodManagerImpl::CandidateWindowOpened() {
@@ -816,10 +812,7 @@ void InputMethodManagerImpl::MaybeInitializeCandidateWindowController() {
 
   candidate_window_controller_.reset(
       CandidateWindowController::CreateCandidateWindowController());
-  if (candidate_window_controller_->Init())
-    candidate_window_controller_->AddObserver(this);
-  else
-    DVLOG(1) << "Failed to initialize the candidate window controller";
+  candidate_window_controller_->AddObserver(this);
 }
 
 }  // namespace input_method

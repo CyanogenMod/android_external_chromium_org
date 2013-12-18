@@ -17,7 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
-#include "chrome/browser/extensions/external_component_loader.h"
+#include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
 #include "chrome/browser/flags_storage.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
@@ -319,6 +319,28 @@ const Experiment::Choice kMapImageChoices[] = {
     cc::switches::kDisableMapImage, ""}
 };
 
+#if defined(OS_ANDROID)
+const Experiment::Choice kZeroSuggestExperimentsChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_ZERO_SUGGEST_MOST_VISITED,
+    switches::kEnableZeroSuggestMostVisited, ""},
+  { IDS_FLAGS_ZERO_SUGGEST_ETHER_SERP,
+    switches::kEnableZeroSuggestEtherSerp, ""},
+  { IDS_FLAGS_ZERO_SUGGEST_ETHER_NO_SERP,
+    switches::kEnableZeroSuggestEtherNoSerp, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableZeroSuggest, ""}
+};
+#endif
+
+const Experiment::Choice kNumRasterThreadsChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_ONE, cc::switches::kNumRasterThreads, "1" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_TWO, cc::switches::kNumRasterThreads, "2" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_THREE, cc::switches::kNumRasterThreads, "3" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_FOUR, cc::switches::kNumRasterThreads, "4" }
+};
+
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
 // The first line of the experiment is the internal name. If you'd like to
@@ -326,9 +348,9 @@ const Experiment::Choice kMapImageChoices[] = {
 // comment to the end of the feature name, like so:
 //   "my-special-feature",  // FLAGS:RECORD_UMA
 //
-// After doing that, run //chrome/tools/extract_actions.py (see instructions at
-// the top of that file for details) to update the chromeactions.txt file, which
-// will enable UMA to record your feature flag.
+// After doing that, run //tools/metrics/actions/extract_actions.py (see
+// instructions at the top of that file for details) to update the
+// chromeactions.txt file, which will enable UMA to record your feature flag.
 //
 // After your feature has shipped under a flag, you can locate the metrics under
 // the action name AboutFlags_internal-action-name. Actions are recorded once
@@ -429,6 +451,15 @@ const Experiment kExperiments[] = {
     kOsWin,
     MULTI_VALUE_TYPE(kGDIPresentChoices)
   },
+#if defined(OS_WIN)
+  {
+    "enable-direct-write",
+    IDS_FLAGS_ENABLE_DIRECT_WRITE_NAME,
+    IDS_FLAGS_ENABLE_DIRECT_WRITE_DESCRIPTION,
+    kOsWin,
+    SINGLE_VALUE_TYPE(switches::kEnableDirectWrite)
+  },
+#endif
   {
     "enable-experimental-canvas-features",
     IDS_FLAGS_ENABLE_EXPERIMENTAL_CANVAS_FEATURES_NAME,
@@ -515,18 +546,27 @@ const Experiment kExperiments[] = {
     "disable-webrtc-hw-decoding",
     IDS_FLAGS_DISABLE_WEBRTC_HW_DECODING_NAME,
     IDS_FLAGS_DISABLE_WEBRTC_HW_DECODING_DESCRIPTION,
-    kOsCrOS,
+    kOsAndroid | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kDisableWebRtcHWDecoding)
   },
   {
     "disable-webrtc-hw-encoding",
     IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_NAME,
     IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_DESCRIPTION,
-    kOsCrOS,
+    kOsAndroid | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kDisableWebRtcHWEncoding)
   },
 #endif
 #if defined(OS_ANDROID)
+#if defined(ARCH_CPU_X86)
+  {
+      "enable-webaudio",
+      IDS_FLAGS_ENABLE_WEBAUDIO_NAME,
+      IDS_FLAGS_ENABLE_WEBAUDIO_DESCRIPTION,
+      kOsAndroid,
+      SINGLE_VALUE_TYPE(switches::kEnableWebAudio)
+  },
+#else
   {
     "disable-webaudio",
     IDS_FLAGS_DISABLE_WEBAUDIO_NAME,
@@ -534,6 +574,7 @@ const Experiment kExperiments[] = {
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kDisableWebAudio)
   },
+#endif
 #endif
   {
     "fixed-position-creates-stacking-context",
@@ -833,13 +874,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_VP8_ALPHA_PLAYBACK_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kDisableVp8AlphaPlayback)
-  },
-  {
-    "enable-managed-users",
-    IDS_FLAGS_ENABLE_LOCALLY_MANAGED_USERS_NAME,
-    IDS_FLAGS_ENABLE_LOCALLY_MANAGED_USERS_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux | kOsCrOSOwnerOnly,
-    SINGLE_VALUE_TYPE(switches::kEnableManagedUsers)
   },
   {
     "per-tile-painting",
@@ -1249,11 +1283,11 @@ const Experiment kExperiments[] = {
                               autofill::switches::kDisablePasswordGeneration)
   },
   {
-    "enable-password-manager-reauthentication",
+    "password-manager-reauthentication",
     IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_NAME,
     IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION,
-    kOsMac,
-    SINGLE_VALUE_TYPE(switches::kEnablePasswordManagerReauthentication)
+    kOsMac | kOsWin,
+    SINGLE_VALUE_TYPE(switches::kDisablePasswordManagerReauthentication)
   },
   {
     "password-autofill-public-suffix-domain-matching",
@@ -1391,7 +1425,7 @@ const Experiment kExperiments[] = {
     "impl-side-painting",
     IDS_FLAGS_IMPL_SIDE_PAINTING_NAME,
     IDS_FLAGS_IMPL_SIDE_PAINTING_DESCRIPTION,
-    kOsLinux | kOsCrOS,
+    kOsAll,
     MULTI_VALUE_TYPE(kImplSidePaintingChoices)
   },
   {
@@ -1439,7 +1473,7 @@ const Experiment kExperiments[] = {
     "max-tiles-for-interest-area",
     IDS_FLAGS_MAX_TILES_FOR_INTEREST_AREA_NAME,
     IDS_FLAGS_MAX_TILES_FOR_INTEREST_AREA_DESCRIPTION,
-    kOsAndroid | kOsLinux | kOsCrOS,
+    kOsAll,
     MULTI_VALUE_TYPE(kMaxTilesForInterestAreaChoices)
   },
   {
@@ -1554,11 +1588,18 @@ const Experiment kExperiments[] = {
                               switches::kDisableDeviceDiscoveryNotifications)
   },
   {
-    "enable-privet-local-printing",
-    IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_NAME,
-    IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_DESCRIPTION,
+    "disable-privet-local-printing",
+    IDS_FLAGS_DISABLE_PRIVET_LOCAL_PRINTING_NAME,
+    IDS_FLAGS_DISABLE_PRIVET_LOCAL_PRINTING_DESCRIPTION,
     kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnablePrivetLocalPrinting)
+    SINGLE_VALUE_TYPE(switches::kDisablePrivetLocalPrinting)
+  },
+  {
+    "enable-print-preview-register-promos",
+    IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_NAME,
+    IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_DESCRIPTION,
+    kOsWin | kOsLinux | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnablePrintPreviewRegisterPromos)
   },
 #endif  // ENABLE_MDNS
 #if defined(OS_MACOSX)
@@ -1653,14 +1694,14 @@ const Experiment kExperiments[] = {
     "enable-web-midi",
     IDS_FLAGS_ENABLE_WEB_MIDI_NAME,
     IDS_FLAGS_ENABLE_WEB_MIDI_DESCRIPTION,
-    kOsMac,
+    kOsMac | kOsWin,
     SINGLE_VALUE_TYPE(switches::kEnableWebMIDI)
   },
   {
     "enable-new-profile-management",
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_NAME,
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_DESCRIPTION,
-    kOsWin,
+    kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kNewProfileManagement)
   },
   {
@@ -1716,6 +1757,14 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_DESCRIPTION,
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kEnableAccessibilityTabSwitcher)
+  },
+  {
+    "disable-accessibility-script-injection",
+    IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_NAME,
+    IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_DESCRIPTION,
+    kOsAndroid,
+    // Java-only switch: ContentSwitches.DISABLE_ACCESSIBILITY_SCRIPT_INJECTION.
+    SINGLE_VALUE_TYPE("disable-accessibility-script-injection")
   },
 #endif
   {
@@ -1784,13 +1833,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableEphemeralApps)
   },
   {
-    "enable-linkable-ephemeral-apps",
-    IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_NAME,
-    IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_DESCRIPTION,
-    kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableLinkableEphemeralApps)
-  },
-  {
     "enable-service-worker",
     IDS_FLAGS_ENABLE_SERVICE_WORKER_NAME,
     IDS_FLAGS_ENABLE_SERVICE_WORKER_DESCRIPTION,
@@ -1855,6 +1897,22 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(switches::kEnableEnhancedBookmarks, "1",
                                         switches::kEnableEnhancedBookmarks, "0")
   },
+#if defined(OS_ANDROID)
+  {
+    "enable-zero-suggest-experiment",
+    IDS_FLAGS_ZERO_SUGGEST_EXPERIMENT_NAME,
+    IDS_FLAGS_ZERO_SUGGEST_EXPERIMENT_DESCRIPTION,
+    kOsAndroid,
+    MULTI_VALUE_TYPE(kZeroSuggestExperimentsChoices)
+  },
+#endif
+  {
+    "num-raster-threads",
+    IDS_FLAGS_NUM_RASTER_THREADS_NAME,
+    IDS_FLAGS_NUM_RASTER_THREADS_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kNumRasterThreadsChoices)
+  }
 };
 
 const Experiment* experiments = kExperiments;
@@ -1959,8 +2017,7 @@ void GetSanitizedEnabledFlags(
 
 bool SkipConditionalExperiment(const Experiment& experiment) {
   if (experiment.internal_name == std::string("enable-enhanced-bookmarks")) {
-    return !extensions::ExternalComponentLoader::
-        IsEnhancedBookmarksExperimentEnabled();
+    return !IsEnhancedBookmarksExperimentEnabled();
   }
   return false;
 }
@@ -2022,7 +2079,7 @@ std::string Experiment::NameForChoice(int index) const {
          base::IntToString(index);
 }
 
-string16 Experiment::DescriptionForChoice(int index) const {
+base::string16 Experiment::DescriptionForChoice(int index) const {
   DCHECK(type == Experiment::MULTI_VALUE ||
          type == Experiment::ENABLE_DISABLE_VALUE);
   DCHECK_LT(index, num_choices);

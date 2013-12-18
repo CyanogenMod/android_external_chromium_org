@@ -97,7 +97,7 @@ class ExtensionImpl : public ChromeV8Extension {
     CHECK_EQ(1, args.Length());
     CHECK(args[0]->IsString());
 
-    std::string event_name = *v8::String::AsciiValue(args[0]->ToString());
+    std::string event_name = *v8::String::Utf8Value(args[0]->ToString());
 
     if (!dispatcher_->CheckContextAccessToExtensionAPI(event_name, context()))
       return;
@@ -124,7 +124,7 @@ class ExtensionImpl : public ChromeV8Extension {
     CHECK(args[0]->IsString());
     CHECK(args[1]->IsBoolean());
 
-    std::string event_name = *v8::String::AsciiValue(args[0]);
+    std::string event_name = *v8::String::Utf8Value(args[0]);
     bool is_manual = args[1]->BooleanValue();
 
     std::string extension_id = context()->GetExtensionID();
@@ -157,7 +157,7 @@ class ExtensionImpl : public ChromeV8Extension {
     CHECK(args[0]->IsString());
     CHECK(args[1]->IsObject());
 
-    std::string event_name = *v8::String::AsciiValue(args[0]);
+    std::string event_name = *v8::String::Utf8Value(args[0]);
 
     // This method throws an exception if it returns false.
     if (!dispatcher_->CheckContextAccessToExtensionAPI(event_name, context()))
@@ -268,13 +268,15 @@ class ExtensionImpl : public ChromeV8Extension {
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     typedef std::set<EventFilter::MatcherID> MatcherIDs;
     EventFilter& event_filter = g_event_filter.Get();
-    std::string event_name = *v8::String::AsciiValue(args[0]->ToString());
-    EventFilteringInfo info = ParseFromObject(args[1]->ToObject());
+    std::string event_name = *v8::String::Utf8Value(args[0]->ToString());
+    EventFilteringInfo info =
+        ParseFromObject(args[1]->ToObject(), args.GetIsolate());
     // Only match events routed to this context's RenderView or ones that don't
     // have a routingId in their filter.
     MatcherIDs matched_event_filters = event_filter.MatchEvent(
         event_name, info, context()->GetRenderView()->GetRoutingID());
-    v8::Handle<v8::Array> array(v8::Array::New(matched_event_filters.size()));
+    v8::Handle<v8::Array> array(
+        v8::Array::New(args.GetIsolate(), matched_event_filters.size()));
     int i = 0;
     for (MatcherIDs::iterator it = matched_event_filters.begin();
          it != matched_event_filters.end(); ++it) {
@@ -283,22 +285,25 @@ class ExtensionImpl : public ChromeV8Extension {
     args.GetReturnValue().Set(array);
   }
 
-  static EventFilteringInfo ParseFromObject(v8::Handle<v8::Object> object) {
+  static EventFilteringInfo ParseFromObject(v8::Handle<v8::Object> object,
+                                            v8::Isolate* isolate) {
     EventFilteringInfo info;
-    v8::Handle<v8::String> url(v8::String::New("url"));
+    v8::Handle<v8::String> url(v8::String::NewFromUtf8(isolate, "url"));
     if (object->Has(url)) {
       v8::Handle<v8::Value> url_value(object->Get(url));
-      info.SetURL(GURL(*v8::String::AsciiValue(url_value)));
+      info.SetURL(GURL(*v8::String::Utf8Value(url_value)));
     }
-    v8::Handle<v8::String> instance_id(v8::String::New("instanceId"));
+    v8::Handle<v8::String> instance_id(
+        v8::String::NewFromUtf8(isolate, "instanceId"));
     if (object->Has(instance_id)) {
       v8::Handle<v8::Value> instance_id_value(object->Get(instance_id));
       info.SetInstanceID(instance_id_value->IntegerValue());
     }
-    v8::Handle<v8::String> service_type(v8::String::New("serviceType"));
+    v8::Handle<v8::String> service_type(
+        v8::String::NewFromUtf8(isolate, "serviceType"));
     if (object->Has(service_type)) {
       v8::Handle<v8::Value> service_type_value(object->Get(service_type));
-      info.SetServiceType(*v8::String::AsciiValue(service_type_value));
+      info.SetServiceType(*v8::String::Utf8Value(service_type_value));
     }
     return info;
   }

@@ -84,6 +84,7 @@ class VIEWS_EXPORT DesktopRootWindowHost {
   virtual bool IsVisible() const = 0;
 
   virtual void SetSize(const gfx::Size& size) = 0;
+  virtual void StackAtTop() = 0;
   virtual void CenterWindow(const gfx::Size& size) = 0;
   virtual void GetWindowPlacement(gfx::Rect* bounds,
                                   ui::WindowShowState* show_state) const = 0;
@@ -111,7 +112,8 @@ class VIEWS_EXPORT DesktopRootWindowHost {
   virtual void SetAlwaysOnTop(bool always_on_top) = 0;
   virtual bool IsAlwaysOnTop() const = 0;
 
-  virtual void SetWindowTitle(const string16& title) = 0;
+  // Returns true if the title changed.
+  virtual bool SetWindowTitle(const string16& title) = 0;
 
   virtual void ClearNativeFocus() = 0;
 

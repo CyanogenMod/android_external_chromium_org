@@ -27,6 +27,7 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -69,9 +70,9 @@ class PDFEnableAdobeReaderPromptDelegate
   virtual ~PDFEnableAdobeReaderPromptDelegate();
 
   // OpenPDFInReaderPromptDelegate
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetAcceptButtonText() const OVERRIDE;
-  virtual string16 GetCancelButtonText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetCancelButtonText() const OVERRIDE;
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void Accept() OVERRIDE;
@@ -141,9 +142,9 @@ void OpenReaderUpdateURL(WebContents* web_contents) {
 void OpenUsingReader(WebContents* web_contents,
                      const WebPluginInfo& reader_plugin,
                      OpenPDFInReaderPromptDelegate* delegate) {
-  ChromePluginServiceFilter::GetInstance()->OverridePluginForTab(
+  ChromePluginServiceFilter::GetInstance()->OverridePluginForFrame(
       web_contents->GetRenderProcessHost()->GetID(),
-      web_contents->GetRenderViewHost()->GetRoutingID(),
+      web_contents->GetMainFrame()->GetRoutingID(),
       web_contents->GetURL(),
       reader_plugin);
   web_contents->GetRenderViewHost()->ReloadFrame();
@@ -250,9 +251,9 @@ class PDFUnsupportedFeaturePromptDelegate
   virtual ~PDFUnsupportedFeaturePromptDelegate();
 
   // OpenPDFInReaderPromptDelegate:
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetAcceptButtonText() const OVERRIDE;
-  virtual string16 GetCancelButtonText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetCancelButtonText() const OVERRIDE;
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void Accept() OVERRIDE;

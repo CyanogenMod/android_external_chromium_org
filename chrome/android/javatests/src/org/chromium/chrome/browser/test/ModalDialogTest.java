@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,9 +18,9 @@ import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.JavascriptAppModalDialog;
+import org.chromium.chrome.test.util.TabBaseTabUtils;
+import org.chromium.chrome.test.util.TabBaseTabUtils.TestCallbackHelperContainerForTab;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.chrome.testshell.TabShellTabUtils;
-import org.chromium.chrome.testshell.TabShellTabUtils.TestCallbackHelperContainerForTab;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
@@ -34,10 +34,10 @@ import java.util.concurrent.TimeoutException;
  * Test suite for displaying and functioning of modal dialogs.
  */
 public class ModalDialogTest extends ChromiumTestShellTestBase {
-    private final static String TAG = "ModalDialogTest";
-    private final static String EMPTY_PAGE = UrlUtils.encodeHtmlDataUri(
+    private static final String TAG = "ModalDialogTest";
+    private static final String EMPTY_PAGE = UrlUtils.encodeHtmlDataUri(
             "<html><title>Modal Dialog Test</title><p>Testcase.</p></title></html>");
-    private final static String BEFORE_UNLOAD_URL = UrlUtils.encodeHtmlDataUri(
+    private static final String BEFORE_UNLOAD_URL = UrlUtils.encodeHtmlDataUri(
             "<html>" +
             "<head><script>window.onbeforeunload=function() {" +
             "return 'Are you sure?';" +
@@ -419,6 +419,6 @@ public class ModalDialogTest extends ChromiumTestShellTestBase {
     }
 
     private TestCallbackHelperContainerForTab getActiveTabTestCallbackHelperContainer() {
-        return TabShellTabUtils.getTestCallbackHelperContainer(getActivity().getActiveTab());
+        return TabBaseTabUtils.getTestCallbackHelperContainer(getActivity().getActiveTab());
     }
 }

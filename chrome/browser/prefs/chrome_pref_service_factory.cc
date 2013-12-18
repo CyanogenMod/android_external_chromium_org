@@ -29,7 +29,7 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/configuration_policy_pref_store.h"
+#include "components/policy/core/browser/configuration_policy_pref_store.h"
 #include "components/policy/core/common/policy_types.h"
 #endif
 
@@ -63,7 +63,9 @@ void HandleReadError(PersistentPrefStore::PrefReadError error) {
 
     if (message_id) {
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                              base::Bind(&ShowProfileErrorDialog, message_id));
+                              base::Bind(&ShowProfileErrorDialog,
+                                         PROFILE_ERROR_PREFERENCES,
+                                         message_id));
     }
 #else
     // On ChromeOS error screen with message about broken local state

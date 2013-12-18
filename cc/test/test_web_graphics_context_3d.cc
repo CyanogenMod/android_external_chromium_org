@@ -61,7 +61,6 @@ scoped_ptr<TestWebGraphicsContext3D> TestWebGraphicsContext3D::Create() {
 TestWebGraphicsContext3D::TestWebGraphicsContext3D()
     : FakeWebGraphicsContext3D(),
       context_id_(s_context_id++),
-      times_make_current_succeeds_(-1),
       times_bind_texture_succeeds_(-1),
       times_end_query_succeeds_(-1),
       times_gen_mailbox_succeeds_(-1),
@@ -69,7 +68,6 @@ TestWebGraphicsContext3D::TestWebGraphicsContext3D()
       times_map_image_chromium_succeeds_(-1),
       times_map_buffer_chromium_succeeds_(-1),
       context_lost_callback_(NULL),
-      swap_buffers_callback_(NULL),
       next_program_id_(1000),
       next_shader_id_(2000),
       max_texture_size_(2048),
@@ -79,11 +77,12 @@ TestWebGraphicsContext3D::TestWebGraphicsContext3D()
       scale_factor_(-1.f),
       test_support_(NULL),
       last_update_type_(NoUpdate),
+      next_insert_sync_point_(1),
+      last_waited_sync_point_(0),
       bound_buffer_(0),
       peak_transfer_buffer_memory_used_bytes_(0),
       weak_ptr_factory_(this) {
   CreateNamespace();
-  test_capabilities_.swapbuffers_complete_callback = true;
 }
 
 TestWebGraphicsContext3D::~TestWebGraphicsContext3D() {
@@ -103,17 +102,6 @@ void TestWebGraphicsContext3D::CreateNamespace() {
   } else {
     namespace_ = new Namespace;
   }
-}
-
-bool TestWebGraphicsContext3D::makeContextCurrent() {
-  if (times_make_current_succeeds_ >= 0) {
-    if (!times_make_current_succeeds_) {
-      loseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
-                          GL_INNOCENT_CONTEXT_RESET_ARB);
-    }
-    --times_make_current_succeeds_;
-  }
-  return !context_lost_;
 }
 
 void TestWebGraphicsContext3D::reshapeWithScaleFactor(
@@ -447,42 +435,12 @@ void TestWebGraphicsContext3D::loseContextCHROMIUM(WGC3Denum current,
   shared_contexts_.clear();
 }
 
-void TestWebGraphicsContext3D::setSwapBuffersCompleteCallbackCHROMIUM(
-    WebGraphicsSwapBuffersCompleteCallbackCHROMIUM* callback) {
-  if (test_capabilities_.swapbuffers_complete_callback)
-    swap_buffers_callback_ = callback;
-}
-
-void TestWebGraphicsContext3D::prepareTexture() {
-  update_rect_ = gfx::Rect(width_, height_);
-  last_update_type_ = PrepareTexture;
-
-  // TODO(jamesr): This should implemented as ContextSupport::SwapBuffers().
-  if (swap_buffers_callback_) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE, base::Bind(&TestWebGraphicsContext3D::SwapBuffersComplete,
-                              weak_ptr_factory_.GetWeakPtr()));
-  }
-  test_support_->CallAllSyncPointCallbacks();
-}
-
-void TestWebGraphicsContext3D::postSubBufferCHROMIUM(
-    int x, int y, int width, int height) {
-  update_rect_ = gfx::Rect(x, y, width, height);
-  last_update_type_ = PostSubBuffer;
-}
-
 void TestWebGraphicsContext3D::finish() {
   test_support_->CallAllSyncPointCallbacks();
 }
 
 void TestWebGraphicsContext3D::flush() {
   test_support_->CallAllSyncPointCallbacks();
-}
-
-void TestWebGraphicsContext3D::SwapBuffersComplete() {
-  if (swap_buffers_callback_)
-    swap_buffers_callback_->onSwapBuffersComplete();
 }
 
 void TestWebGraphicsContext3D::bindBuffer(blink::WGC3Denum target,
@@ -603,6 +561,15 @@ void TestWebGraphicsContext3D::unmapImageCHROMIUM(
     blink::WGC3Duint image_id) {
   base::AutoLock lock(namespace_->lock);
   DCHECK_GT(namespace_->images.count(image_id), 0u);
+}
+
+unsigned TestWebGraphicsContext3D::insertSyncPoint() {
+  return next_insert_sync_point_++;
+}
+
+void TestWebGraphicsContext3D::waitSyncPoint(unsigned sync_point) {
+  if (sync_point)
+    last_waited_sync_point_ = sync_point;
 }
 
 size_t TestWebGraphicsContext3D::NumTextures() const {

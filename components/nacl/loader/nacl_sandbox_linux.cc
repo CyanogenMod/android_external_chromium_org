@@ -8,16 +8,19 @@
 #include <signal.h>
 #include <sys/ptrace.h>
 
+#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "content/public/common/sandbox_init.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+#include "sandbox/linux/seccomp-bpf/sandbox_bpf_policy.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
-using playground2::ErrorCode;
-using playground2::Sandbox;
+using sandbox::ErrorCode;
+using sandbox::SandboxBPF;
+using sandbox::SandboxBPFPolicy;
 
 namespace {
 
@@ -49,10 +52,23 @@ bool IsSystemVIpc(int sysno) {
 }
 #endif
 
-ErrorCode NaClBpfSandboxPolicy(
-    playground2::Sandbox* sb, int sysno, void* aux) {
-  const playground2::BpfSandboxPolicyCallback baseline_policy =
-      content::GetBpfSandboxBaselinePolicy();
+class NaClBPFSandboxPolicy : public SandboxBPFPolicy {
+ public:
+  NaClBPFSandboxPolicy()
+      : baseline_policy_(content::GetBPFSandboxBaselinePolicy()) {}
+  virtual ~NaClBPFSandboxPolicy() {}
+
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
+                                    int system_call_number) const OVERRIDE;
+
+ private:
+  scoped_ptr<SandboxBPFPolicy> baseline_policy_;
+  DISALLOW_COPY_AND_ASSIGN(NaClBPFSandboxPolicy);
+};
+
+ErrorCode NaClBPFSandboxPolicy::EvaluateSyscall(
+    sandbox::SandboxBPF* sb, int sysno) const {
+  DCHECK(baseline_policy_);
   switch (sysno) {
     // TODO(jln): NaCl's GDB debug stub uses the following socket system calls,
     // see if it can be restricted a bit.
@@ -117,7 +133,7 @@ ErrorCode NaClBpfSandboxPolicy(
       if (IsSystemVIpc(sysno))
         return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
-      return baseline_policy.Run(sb, sysno, aux);
+      return baseline_policy_->EvaluateSyscall(sb, sysno);
   }
   NOTREACHED();
   // GCC wants this.
@@ -135,9 +151,9 @@ void RunSandboxSanityChecks() {
 
 }  // namespace
 
-bool InitializeBpfSandbox() {
-  bool sandbox_is_initialized =
-      content::InitializeSandbox(NaClBpfSandboxPolicy);
+bool InitializeBPFSandbox() {
+  bool sandbox_is_initialized = content::InitializeSandbox(
+      scoped_ptr<SandboxBPFPolicy>(new NaClBPFSandboxPolicy()));
   if (sandbox_is_initialized) {
     RunSandboxSanityChecks();
     return true;

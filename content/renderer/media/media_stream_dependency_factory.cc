@@ -12,6 +12,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_source_extra_data.h"
 #include "content/renderer/media/media_stream_track_extra_data.h"
+#include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/peer_connection_identity_service.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
@@ -46,6 +47,10 @@
 
 #if defined(GOOGLE_TV)
 #include "content/renderer/media/rtc_video_decoder_factory_tv.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "media/base/android/media_codec_bridge.h"
 #endif
 
 namespace content {
@@ -426,7 +431,7 @@ MediaStreamDependencyFactory::CreateNativeAudioMediaStreamTrack(
                             webaudio_source.get(),
                             source_data->local_audio_source(),
                             &track_constraints));
-  AddNativeTrackToBlinkTrack(audio_track.get(), track);
+  AddNativeTrackToBlinkTrack(audio_track.get(), track, true);
 
   audio_track->set_enabled(track.isEnabled());
 
@@ -456,7 +461,7 @@ MediaStreamDependencyFactory::CreateNativeVideoMediaStreamTrack(
   std::string track_id = UTF16ToUTF8(track.id());
   scoped_refptr<webrtc::VideoTrackInterface> video_track(
       CreateLocalVideoTrack(track_id, source_data->video_source()));
-  AddNativeTrackToBlinkTrack(video_track.get(), track);
+  AddNativeTrackToBlinkTrack(video_track.get(), track, true);
 
   video_track->set_enabled(track.isEnabled());
 
@@ -541,7 +546,7 @@ bool MediaStreamDependencyFactory::AddNativeVideoMediaTrack(
   webkit_source.initialize(webkit_track_id, type, webkit_track_id);
 
   webkit_track.initialize(webkit_track_id, webkit_source);
-  AddNativeTrackToBlinkTrack(native_track.get(), webkit_track);
+  AddNativeTrackToBlinkTrack(native_track.get(), webkit_track, true);
 
   // Add the track to WebMediaStream.
   stream->addTrack(webkit_track);
@@ -593,6 +598,13 @@ bool MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
     if (gpu_factories)
       encoder_factory.reset(new RTCVideoEncoderFactory(gpu_factories));
   }
+
+#if defined(OS_ANDROID)
+  if (!media::MediaCodecBridge::IsAvailable() ||
+      !media::MediaCodecBridge::SupportsSetParameters()) {
+    encoder_factory.reset();
+  }
+#endif
 
   scoped_refptr<WebRtcAudioDeviceImpl> audio_device(
       new WebRtcAudioDeviceImpl());
@@ -911,10 +923,19 @@ MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
 
 void MediaStreamDependencyFactory::AddNativeTrackToBlinkTrack(
     webrtc::MediaStreamTrackInterface* native_track,
-    const blink::WebMediaStreamTrack& webkit_track) {
+    const blink::WebMediaStreamTrack& webkit_track,
+    bool is_local_track) {
   DCHECK(!webkit_track.isNull() && !webkit_track.extraData());
   blink::WebMediaStreamTrack track = webkit_track;
-  track.setExtraData(new MediaStreamTrackExtraData(native_track));
+
+  if (track.source().type() == blink::WebMediaStreamSource::TypeVideo) {
+    track.setExtraData(new MediaStreamVideoTrack(
+        static_cast<webrtc::VideoTrackInterface*>(native_track),
+        is_local_track));
+  } else {
+    track.setExtraData(new MediaStreamTrackExtraData(native_track,
+                                                     is_local_track));
+  }
 }
 
 webrtc::MediaStreamInterface*

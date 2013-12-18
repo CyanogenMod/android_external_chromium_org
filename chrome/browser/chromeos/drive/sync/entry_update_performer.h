@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -25,14 +25,21 @@ namespace drive {
 class JobScheduler;
 class ResourceEntry;
 
+namespace file_system {
+class OperationObserver;
+}  // namespace file_system
+
 namespace internal {
 
+class EntryRevertPerformer;
+class RemovePerformer;
 class ResourceMetadata;
 
 // This class is responsible to perform server side update of an entry.
 class EntryUpdatePerformer {
  public:
   EntryUpdatePerformer(base::SequencedTaskRunner* blocking_task_runner,
+                       file_system::OperationObserver* observer,
                        JobScheduler* scheduler,
                        ResourceMetadata* metadata);
   ~EntryUpdatePerformer();
@@ -54,12 +61,15 @@ class EntryUpdatePerformer {
   // Part of UpdateEntry(). Called after UpdateResource is completed.
   void UpdateEntryAfterUpdateResource(
       const FileOperationCallback& callback,
+      const std::string& local_id,
       google_apis::GDataErrorCode status,
       scoped_ptr<google_apis::ResourceEntry> resource_entry);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   JobScheduler* scheduler_;
   ResourceMetadata* metadata_;
+  scoped_ptr<RemovePerformer> remove_performer_;
+  scoped_ptr<EntryRevertPerformer> entry_revert_performer_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.

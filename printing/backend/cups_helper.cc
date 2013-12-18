@@ -99,7 +99,7 @@ void MarkLpOptions(const std::string& printer_name, ppd_file_t** ppd) {
   std::vector<base::FilePath> file_locations;
   file_locations.push_back(base::FilePath(kSystemLpOptionPath));
   file_locations.push_back(base::FilePath(
-      file_util::GetHomeDir().Append(kUserLpOptionPath)));
+      base::GetHomeDir().Append(kUserLpOptionPath)));
 
   for (std::vector<base::FilePath>::const_iterator it = file_locations.begin();
        it != file_locations.end(); ++it) {
@@ -341,7 +341,7 @@ bool ParsePpdCapabilities(
     const std::string& printer_capabilities,
     PrinterSemanticCapsAndDefaults* printer_info) {
   base::FilePath ppd_file_path;
-  if (!file_util::CreateTemporaryFile(&ppd_file_path))
+  if (!base::CreateTemporaryFile(&ppd_file_path))
     return false;
 
   int data_size = printer_capabilities.length();

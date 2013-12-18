@@ -193,10 +193,13 @@ LOCAL_SRC_FILES := \
 	content/browser/frame_host/frame_tree.cc \
 	content/browser/frame_host/frame_tree_node.cc \
 	content/browser/frame_host/interstitial_page_impl.cc \
+	content/browser/frame_host/interstitial_page_navigator_impl.cc \
+	content/browser/frame_host/navigation_controller_android.cc \
 	content/browser/frame_host/navigation_controller_impl.cc \
 	content/browser/frame_host/navigation_entry_impl.cc \
 	content/browser/frame_host/navigation_entry_screenshot_manager.cc \
-	content/browser/frame_host/navigator.cc \
+	content/browser/frame_host/navigator_impl.cc \
+	content/browser/frame_host/render_frame_host_delegate.cc \
 	content/browser/frame_host/render_frame_host_factory.cc \
 	content/browser/frame_host/render_frame_host_impl.cc \
 	content/browser/frame_host/render_frame_host_manager.cc \
@@ -271,6 +274,7 @@ LOCAL_SRC_FILES := \
 	content/browser/media/android/browser_media_player_manager.cc \
 	content/browser/media/android/media_drm_credential_manager.cc \
 	content/browser/media/android/media_resource_getter_impl.cc \
+	content/browser/media/media_devices_monitor.cc \
 	content/browser/media/media_internals.cc \
 	content/browser/media/media_internals_handler.cc \
 	content/browser/media/media_internals_proxy.cc \
@@ -280,7 +284,6 @@ LOCAL_SRC_FILES := \
 	content/browser/media/webrtc_internals.cc \
 	content/browser/media/webrtc_internals_message_handler.cc \
 	content/browser/media/webrtc_internals_ui.cc \
-	content/browser/media_devices_monitor.cc \
 	content/browser/message_port_message_filter.cc \
 	content/browser/message_port_service.cc \
 	content/browser/mime_registry_message_filter.cc \
@@ -308,16 +311,18 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/gesture_event_filter.cc \
-	content/browser/renderer_host/input/immediate_input_router.cc \
+	content/browser/renderer_host/input/input_router_impl.cc \
 	content/browser/renderer_host/input/synthetic_gesture.cc \
 	content/browser/renderer_host/input/synthetic_gesture_controller.cc \
 	content/browser/renderer_host/input/synthetic_gesture_target_android.cc \
 	content/browser/renderer_host/input/synthetic_gesture_target_base.cc \
 	content/browser/renderer_host/input/synthetic_pinch_gesture.cc \
 	content/browser/renderer_host/input/synthetic_smooth_scroll_gesture.cc \
-	content/browser/renderer_host/input/synthetic_web_input_event_builders.cc \
+	content/browser/renderer_host/input/synthetic_tap_gesture.cc \
 	content/browser/renderer_host/input/tap_suppression_controller.cc \
+	content/browser/renderer_host/input/timeout_monitor.cc \
 	content/browser/renderer_host/input/touch_event_queue.cc \
+	content/browser/renderer_host/input/touch_action_filter.cc \
 	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
 	content/browser/renderer_host/input/touchscreen_tap_suppression_controller.cc \
 	content/browser/renderer_host/input/web_input_event_builders_android.cc \
@@ -376,11 +381,15 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/websocket_host.cc \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
+	content/browser/service_worker/embedded_worker_instance.cc \
+	content/browser/service_worker/embedded_worker_registry.cc \
 	content/browser/service_worker/service_worker_context_core.cc \
 	content/browser/service_worker/service_worker_context_wrapper.cc \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_provider_host.cc \
+	content/browser/service_worker/service_worker_register_job.cc \
 	content/browser/service_worker/service_worker_registration.cc \
+	content/browser/service_worker/service_worker_storage.cc \
 	content/browser/service_worker/service_worker_version.cc \
 	content/browser/signed_certificate_timestamp_store_impl.cc \
 	content/browser/site_instance_impl.cc \
@@ -404,14 +413,13 @@ LOCAL_SRC_FILES := \
 	content/browser/storage_partition_impl.cc \
 	content/browser/storage_partition_impl_map.cc \
 	content/browser/tcmalloc_internals_request_job.cc \
-	content/browser/tracing/trace_controller_impl.cc \
 	content/browser/tracing/trace_message_filter.cc \
-	content/browser/tracing/trace_subscriber_stdio.cc \
 	content/browser/tracing/tracing_controller_impl.cc \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
 	content/browser/vibration/vibration_message_filter.cc \
 	content/browser/vibration/vibration_provider_android.cc \
+	content/browser/web_contents/web_contents_android.cc \
 	content/browser/web_contents/web_contents_impl.cc \
 	content/browser/web_contents/web_contents_view_android.cc \
 	content/browser/web_contents/web_contents_view_guest.cc \
@@ -469,6 +477,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -478,9 +487,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -499,6 +510,9 @@ MY_DEFS_Debug := \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -522,6 +536,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
@@ -550,6 +565,12 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -603,6 +624,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -612,9 +634,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -633,6 +657,9 @@ MY_DEFS_Release := \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -657,6 +684,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
@@ -685,6 +713,12 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

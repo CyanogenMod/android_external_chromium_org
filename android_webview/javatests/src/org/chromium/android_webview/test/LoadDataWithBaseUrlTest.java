@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@ package org.chromium.android_webview.test;
 import android.graphics.Bitmap;
 import android.test.suitebuilder.annotation.SmallTest;
 
-import org.chromium.android_webview.AndroidProtocolHandler;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.util.CommonResources;
@@ -25,6 +24,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Tests for the {@link android.webkit.WebView#loadDataWithBaseURL(String, String, String, String,
+ * String)} method.
+ */
 public class LoadDataWithBaseUrlTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
@@ -196,6 +199,19 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
 
     @SmallTest
     @Feature({"AndroidWebView"})
+    public void testloadDataWithBaseUrlCallsOnPageStarted() throws Throwable {
+        final String baseUrl = "http://base.com/";
+        TestCallbackHelperContainer.OnPageStartedHelper onPageStartedHelper =
+                mContentsClient.getOnPageStartedHelper();
+        final int callCount = onPageStartedHelper.getCallCount();
+        loadDataWithBaseUrlAsync(CommonResources.ABOUT_HTML, "text/html", false, baseUrl,
+                "about:blank");
+        onPageStartedHelper.waitForCallback(callCount);
+        assertEquals(baseUrl, onPageStartedHelper.getUrl());
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView"})
     public void testHistoryUrl() throws Throwable {
 
         final String pageHtml = "<html><body>Hello, world!</body></html>";
@@ -360,7 +376,7 @@ public class LoadDataWithBaseUrlTest extends AwTestBase {
             assertTrue(canAccessFileFromData(NON_DATA_BASE_URL,
                   "file://" + imagePath + "?" + token));
         } finally {
-          if (!tempImage.delete()) throw new AssertionError();
+            if (!tempImage.delete()) throw new AssertionError();
         }
     }
 }

@@ -202,7 +202,7 @@ class RemoveLocalStorageTester {
     // stores data in the host file system.
     base::FilePath storage_path =
         profile_->GetPath().AppendASCII("Local Storage");
-    file_util::CreateDirectory(storage_path);
+    base::CreateDirectory(storage_path);
 
     // Write some files.
     file_util::WriteFile(storage_path.Append(kDomStorageOrigin1), NULL, 0);
@@ -210,12 +210,16 @@ class RemoveLocalStorageTester {
     file_util::WriteFile(storage_path.Append(kDomStorageOrigin3), NULL, 0);
 
     // Tweak their dates.
-    file_util::SetLastModifiedTime(storage_path.Append(kDomStorageOrigin1),
-        base::Time::Now());
-    file_util::SetLastModifiedTime(storage_path.Append(kDomStorageOrigin2),
-        base::Time::Now() - base::TimeDelta::FromDays(1));
-    file_util::SetLastModifiedTime(storage_path.Append(kDomStorageOrigin3),
-        base::Time::Now() - base::TimeDelta::FromDays(60));
+    base::Time now = base::Time::Now();
+    base::TouchFile(storage_path.Append(kDomStorageOrigin1), now, now);
+
+    base::Time one_day_ago = now - base::TimeDelta::FromDays(1);
+    base::TouchFile(storage_path.Append(kDomStorageOrigin2),
+                    one_day_ago, one_day_ago);
+
+    base::Time sixty_days_ago = now - base::TimeDelta::FromDays(60);
+    base::TouchFile(storage_path.Append(kDomStorageOrigin3),
+                    sixty_days_ago, sixty_days_ago);
   }
 
  private:

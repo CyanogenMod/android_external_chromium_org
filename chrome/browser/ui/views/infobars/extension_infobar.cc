@@ -29,8 +29,11 @@
 
 // ExtensionInfoBarDelegate ----------------------------------------------------
 
-InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  return new ExtensionInfoBar(owner, this, browser_);
+// static
+scoped_ptr<InfoBar> ExtensionInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<ExtensionInfoBarDelegate> delegate) {
+  Browser* browser = delegate->browser_;
+  return scoped_ptr<InfoBar>(new ExtensionInfoBar(delegate.Pass(), browser));
 }
 
 
@@ -78,25 +81,20 @@ class MenuImageSource: public gfx::CanvasImageSource {
 
 }  // namespace
 
-ExtensionInfoBar::ExtensionInfoBar(InfoBarService* owner,
-                                   ExtensionInfoBarDelegate* delegate,
-                                   Browser* browser)
-    : InfoBarView(owner, delegate),
-      delegate_(delegate),
+ExtensionInfoBar::ExtensionInfoBar(
+    scoped_ptr<ExtensionInfoBarDelegate> delegate,
+    Browser* browser)
+    : InfoBarView(delegate.PassAs<InfoBarDelegate>()),
       browser_(browser),
       infobar_icon_(NULL),
       icon_as_menu_(NULL),
       icon_as_image_(NULL),
       weak_ptr_factory_(this) {
-  GetDelegate()->set_observer(this);
-
   int height = GetDelegate()->height();
   SetBarTargetHeight((height > 0) ? (height + kSeparatorLineHeight) : 0);
 }
 
 ExtensionInfoBar::~ExtensionInfoBar() {
-  if (GetDelegate())
-    GetDelegate()->set_observer(NULL);
 }
 
 void ExtensionInfoBar::Layout() {
@@ -124,7 +122,7 @@ void ExtensionInfoBar::ViewHierarchyChanged(
       GetDelegate()->extension_view_host();
 
   if (extension_view_host->extension()->ShowConfigureContextMenus()) {
-    icon_as_menu_ = new views::MenuButton(NULL, string16(), this, false);
+    icon_as_menu_ = new views::MenuButton(NULL, base::string16(), this, false);
     icon_as_menu_->set_focusable(true);
     infobar_icon_ = icon_as_menu_;
   } else {
@@ -164,10 +162,6 @@ void ExtensionInfoBar::ViewHierarchyChanged(
 int ExtensionInfoBar::ContentMinimumWidth() const {
   return infobar_icon_->GetPreferredSize().width() + kIconHorizontalMargin;
 
-}
-
-void ExtensionInfoBar::OnDelegateDeleted() {
-  delegate_ = NULL;
 }
 
 void ExtensionInfoBar::OnMenuButtonClicked(views::View* source,
@@ -215,5 +209,5 @@ void ExtensionInfoBar::OnImageLoaded(const gfx::Image& image) {
 }
 
 ExtensionInfoBarDelegate* ExtensionInfoBar::GetDelegate() {
-  return delegate_ ? delegate_->AsExtensionInfoBarDelegate() : NULL;
+  return delegate()->AsExtensionInfoBarDelegate();
 }

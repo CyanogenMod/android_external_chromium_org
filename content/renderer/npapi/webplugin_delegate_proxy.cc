@@ -31,6 +31,7 @@
 #include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
@@ -202,8 +203,10 @@ class ResourceClientProxy : public WebPluginResourceClient {
 WebPluginDelegateProxy::WebPluginDelegateProxy(
     WebPluginImpl* plugin,
     const std::string& mime_type,
-    const base::WeakPtr<RenderViewImpl>& render_view)
+    const base::WeakPtr<RenderViewImpl>& render_view,
+    RenderFrameImpl* render_frame)
     : render_view_(render_view),
+      render_frame_(render_frame),
       plugin_(plugin),
       uses_shared_bitmaps_(false),
 #if defined(OS_MACOSX)
@@ -305,8 +308,8 @@ bool WebPluginDelegateProxy::Initialize(
 #endif
 
     IPC::ChannelHandle channel_handle;
-    if (!RenderThreadImpl::current()->Send(new ViewHostMsg_OpenChannelToPlugin(
-            render_view_->routing_id(), url, page_url_, mime_type_,
+    if (!RenderThreadImpl::current()->Send(new FrameHostMsg_OpenChannelToPlugin(
+            render_frame_->GetRoutingID(), url, page_url_, mime_type_,
             &channel_handle, &info_))) {
       continue;
     }
@@ -316,7 +319,8 @@ bool WebPluginDelegateProxy::Initialize(
       // shouldn't happen, since if we got here the plugin should exist) or the
       // plugin crashed on initialization.
       if (!info_.path.empty()) {
-        render_view_->PluginCrashed(info_.path, base::kNullProcessId);
+        render_view_->main_render_frame()->PluginCrashed(
+            info_.path, base::kNullProcessId);
         LOG(ERROR) << "Plug-in crashed on start";
 
         // Return true so that the plugin widget is created and we can paint the
@@ -488,8 +492,10 @@ void WebPluginDelegateProxy::OnChannelError() {
     }
     plugin_->Invalidate();
   }
-  if (!channel_host_->expecting_shutdown())
-    render_view_->PluginCrashed(info_.path, channel_host_->peer_pid());
+  if (!channel_host_->expecting_shutdown()) {
+    render_view_->main_render_frame()->PluginCrashed(
+        info_.path, channel_host_->peer_pid());
+  }
 
 #if defined(OS_MACOSX) || defined(OS_WIN)
   // Ensure that the renderer doesn't think the plugin still has focus.
@@ -746,7 +752,7 @@ NPP WebPluginDelegateProxy::GetPluginNPP() {
   return npp_.get();
 }
 
-bool WebPluginDelegateProxy::GetFormValue(string16* value) {
+bool WebPluginDelegateProxy::GetFormValue(base::string16* value) {
   bool success = false;
   Send(new PluginMsg_GetFormValue(instance_id_, value, &success));
   return success;
@@ -797,7 +803,7 @@ void WebPluginDelegateProxy::SetContentAreaFocus(bool has_focus) {
 
 #if defined(OS_WIN)
 void WebPluginDelegateProxy::ImeCompositionUpdated(
-    const string16& text,
+    const base::string16& text,
     const std::vector<int>& clauses,
     const std::vector<int>& target,
     int cursor_position,
@@ -812,7 +818,7 @@ void WebPluginDelegateProxy::ImeCompositionUpdated(
   Send(msg);
 }
 
-void WebPluginDelegateProxy::ImeCompositionCompleted(const string16& text,
+void WebPluginDelegateProxy::ImeCompositionCompleted(const base::string16& text,
                                                      int plugin_id) {
   // Dispatch the IME text if this plug-in is the focused one.
   if (instance_id_ != plugin_id)
@@ -861,7 +867,7 @@ void WebPluginDelegateProxy::WindowFrameChanged(gfx::Rect window_frame,
   msg->set_unblock(true);
   Send(msg);
 }
-void WebPluginDelegateProxy::ImeCompositionCompleted(const string16& text,
+void WebPluginDelegateProxy::ImeCompositionCompleted(const base::string16& text,
                                                      int plugin_id) {
   // If the message isn't intended for this plugin, there's nothing to do.
   if (instance_id_ != plugin_id)
@@ -1206,7 +1212,8 @@ bool WebPluginDelegateProxy::UseSynchronousGeometryUpdates() {
   // Need to update geometry synchronously with WMP, otherwise if a site
   // scripts the plugin to start playing while it's in the middle of handling
   // an update geometry message, videos don't play.  See urls in bug 20260.
-  if (info_.name.find(ASCIIToUTF16("Windows Media Player")) != string16::npos)
+  if (info_.name.find(ASCIIToUTF16("Windows Media Player")) !=
+      base::string16::npos)
     return true;
 
   // The move networks plugin needs to be informed of geometry updates

@@ -205,12 +205,12 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
 
  bool MenuHasExtensionItemWithLabel(TestRenderViewContextMenu* menu,
                                      const std::string& label) {
-    string16 label16 = UTF8ToUTF16(label);
+    base::string16 label16 = UTF8ToUTF16(label);
     std::map<int, MenuItem::Id>::iterator i;
     for (i = menu->extension_items().extension_item_map_.begin();
          i != menu->extension_items().extension_item_map_.end(); ++i) {
       const MenuItem::Id& id = i->second;
-      string16 tmp_label;
+      base::string16 tmp_label;
       EXPECT_TRUE(GetItemLabel(menu, id, &tmp_label));
       if (tmp_label == label16)
         return true;
@@ -223,7 +223,7 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
   // false.
   bool GetItemLabel(TestRenderViewContextMenu* menu,
                     const MenuItem::Id& id,
-                    string16* result) {
+                    base::string16* result) {
     int command_id = 0;
     if (!FindCommandId(menu, id, &command_id))
       return false;
@@ -333,7 +333,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, LongTitle) {
   scoped_ptr<TestRenderViewContextMenu> menu(
       CreateMenu(browser(), url, GURL(), GURL()));
 
-  string16 label;
+  base::string16 label;
   ASSERT_TRUE(GetItemLabel(menu.get(), item->id(), &label));
   ASSERT_TRUE(label.size() <= limit);
 }
@@ -472,7 +472,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Separators) {
   // name.
   MenuModel* model = NULL;
   int index = 0;
-  string16 label;
+  base::string16 label;
   ASSERT_TRUE(menu->GetMenuModelAndItemIndex(
       IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST, &model, &index));
   EXPECT_EQ(UTF8ToUTF16(extension->name()), model->GetLabelAt(index));
@@ -609,7 +609,7 @@ class ExtensionContextMenuBrowserLazyTest :
     ExtensionContextMenuBrowserTest::SetUpCommandLine(command_line);
     // Set shorter delays to prevent test timeouts.
     command_line->AppendSwitchASCII(
-        extensions::switches::kEventPageIdleTime, "0");
+        extensions::switches::kEventPageIdleTime, "1");
     command_line->AppendSwitchASCII(
         extensions::switches::kEventPageSuspendingTime, "0");
   }

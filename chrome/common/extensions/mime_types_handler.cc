@@ -24,6 +24,7 @@ namespace errors = extensions::manifest_errors;
 namespace {
 
 const char* const kMIMETypeHandlersWhitelist[] = {
+  extension_misc::kPdfExtensionId,
   extension_misc::kQuickOfficeComponentExtensionId,
   extension_misc::kQuickOfficeDevExtensionId,
   extension_misc::kQuickOfficeExtensionId,
@@ -85,7 +86,7 @@ MimeTypesHandlerParser::~MimeTypesHandlerParser() {
 }
 
 bool MimeTypesHandlerParser::Parse(extensions::Extension* extension,
-                                   string16* error) {
+                                   base::string16* error) {
   const base::ListValue* mime_types_value = NULL;
   if (!extension->manifest()->GetList(keys::kMIMETypes,
                                       &mime_types_value)) {

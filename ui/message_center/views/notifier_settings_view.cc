@@ -21,7 +21,6 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
 #include "ui/message_center/message_center_style.h"
-#include "ui/message_center/views/message_center_focus_border.h"
 #include "ui/message_center/views/message_center_view.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -39,6 +38,7 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/grid_layout.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -124,6 +124,11 @@ const int kComputedTitleTopMargin =
 const int kComputedTitleElementSpacing =
     settings::kDescriptionToSwitcherSpace - kButtonPainterInsets - 1;
 
+// A function to create a focus border.
+scoped_ptr<views::Painter> CreateFocusPainter() {
+  return views::Painter::CreateSolidFocusPainter(kFocusBorderColor,
+                                                 gfx::Insets(1, 2, 3, 2));
+}
 
 // EntryView ------------------------------------------------------------------
 
@@ -131,7 +136,7 @@ const int kComputedTitleElementSpacing =
 // middle. It also guarantee the left margin.
 class EntryView : public views::View {
  public:
-  EntryView(views::View* contents);
+  explicit EntryView(views::View* contents);
   virtual ~EntryView();
 
   // views::View:
@@ -141,13 +146,17 @@ class EntryView : public views::View {
   virtual void OnFocus() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
 
  private:
+  scoped_ptr<views::Painter> focus_painter_;
+
   DISALLOW_COPY_AND_ASSIGN(EntryView);
 };
 
-EntryView::EntryView(views::View* contents) {
-  set_focus_border(new MessageCenterFocusBorder());
+EntryView::EntryView(views::View* contents)
+    : focus_painter_(CreateFocusPainter()) {
   AddChildView(contents);
 }
 
@@ -177,6 +186,8 @@ void EntryView::GetAccessibleState(ui::AccessibleViewState* state) {
 void EntryView::OnFocus() {
   views::View::OnFocus();
   ScrollRectToVisible(GetLocalBounds());
+  // We render differently when focused.
+  SchedulePaint();
 }
 
 bool EntryView::OnKeyPressed(const ui::KeyEvent& event) {
@@ -185,6 +196,17 @@ bool EntryView::OnKeyPressed(const ui::KeyEvent& event) {
 
 bool EntryView::OnKeyReleased(const ui::KeyEvent& event) {
   return child_at(0)->OnKeyReleased(event);
+}
+
+void EntryView::OnPaint(gfx::Canvas* canvas) {
+  View::OnPaint(canvas);
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+}
+
+void EntryView::OnBlur() {
+  View::OnBlur();
+  // We render differently when focused.
+  SchedulePaint();
 }
 
 }  // namespace
@@ -290,7 +312,7 @@ NotifierSettingsView::NotifierButton::NotifierButton(
   if (ShouldHaveLearnMoreButton()) {
     // Create a more-info button that will be right-aligned.
     learn_more_ = new views::ImageButton(this);
-    learn_more_->set_focus_border(new MessageCenterFocusBorder());
+    learn_more_->SetFocusPainter(CreateFocusPainter());
     learn_more_->set_request_focus_on_press(false);
     learn_more_->set_focusable(true);
 
@@ -462,7 +484,6 @@ NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
     provider_->AddObserver(this);
 
   set_focusable(true);
-  set_focus_border(NULL);
   set_background(
       views::Background::CreateSolidBackground(kMessageCenterBackgroundColor));
   if (get_use_acceleration_when_possible())
@@ -578,7 +599,7 @@ void NotifierSettingsView::UpdateContentsView(
         kMenuButtonVerticalPadding, kMenuButtonLeftPadding,
         kMenuButtonVerticalPadding, kMenuButtonRightPadding));
     notifier_group_selector_->set_border(selector_border.release());
-    notifier_group_selector_->set_focus_border(NULL);
+    notifier_group_selector_->SetFocusPainter(scoped_ptr<views::Painter>());
     notifier_group_selector_->set_animate_on_state_change(false);
     notifier_group_selector_->set_focusable(true);
     contents_title_view->AddChildView(notifier_group_selector_);

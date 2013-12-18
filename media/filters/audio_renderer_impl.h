@@ -53,14 +53,10 @@ class MEDIA_EXPORT AudioRendererImpl
   //
   // |set_decryptor_ready_cb| is fired when the audio decryptor is available
   // (only applicable if the stream is encrypted and we have a decryptor).
-  //
-  // |increase_preroll_on_underflow| Set to true if the preroll duration
-  // should be increased when ResumeAfterUnderflow() is called.
   AudioRendererImpl(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                     AudioRendererSink* sink,
                     ScopedVector<AudioDecoder> decoders,
-                    const SetDecryptorReadyCB& set_decryptor_ready_cb,
-                    bool increase_preroll_on_underflow);
+                    const SetDecryptorReadyCB& set_decryptor_ready_cb);
   virtual ~AudioRendererImpl();
 
   // AudioRenderer implementation.
@@ -97,9 +93,11 @@ class MEDIA_EXPORT AudioRendererImpl
  private:
   friend class AudioRendererImplTest;
 
+  // TODO(acolwell): Add a state machine graph.
   enum State {
     kUninitialized,
     kPaused,
+    kFlushing,
     kPrerolling,
     kPlaying,
     kStopped,
@@ -173,7 +171,16 @@ class MEDIA_EXPORT AudioRendererImpl
       scoped_ptr<AudioDecoder> decoder,
       scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream);
 
-  void ResetDecoder(const base::Closure& callback);
+  // Used to initiate the flush operation once all pending reads have
+  // completed.
+  void DoFlush_Locked();
+
+  // Calls |decoder_|.Reset() and arranges for ResetDecoderDone() to get
+  // called when the reset completes.
+  void ResetDecoder();
+
+  // Called when the |decoder_|.Reset() has completed.
+  void ResetDecoderDone();
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   base::WeakPtrFactory<AudioRendererImpl> weak_factory_;
@@ -204,8 +211,8 @@ class MEDIA_EXPORT AudioRendererImpl
   base::Closure disabled_cb_;
   PipelineStatusCB error_cb_;
 
-  // Callback provided to Pause().
-  base::Closure pause_cb_;
+  // Callback provided to Flush().
+  base::Closure flush_cb_;
 
   // Callback provided to Preroll().
   PipelineStatusCB preroll_cb_;
@@ -258,7 +265,6 @@ class MEDIA_EXPORT AudioRendererImpl
   size_t total_frames_filled_;
 
   bool underflow_disabled_;
-  bool increase_preroll_on_underflow_;
 
   // True if the renderer receives a buffer with kAborted status during preroll,
   // false otherwise. This flag is cleared on the next Preroll() call.

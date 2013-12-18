@@ -37,12 +37,7 @@
       <structure name="IDR_DOWNLOADS_HTML" file="resources\downloads\downloads.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
       <structure name="IDR_EXTENSIONS_HTML" file="resources\extensions\extensions.html" flattenhtml="true" type="chrome_html" />
       <if expr="pp_ifdef('chromeos')">
-        <if expr="not pp_ifdef('_google_chrome')">
-          <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html" variables="GREETING_IMAGE=disabled" expand_variables="true"/>
-        </if>
-        <if expr="pp_ifdef('_google_chrome')">
-          <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html" variables="GREETING_IMAGE=enabled" expand_variables="true"/>
-        </if>
+        <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html"/>
         <structure name="IDR_FIRST_RUN_JS" file="resources\chromeos\first_run\first_run.js" flattenhtml="true" type="chrome_html" />
       </if>
       <structure name="IDR_HELP_CSS" file="resources\help\help.css" flattenhtml="true" type="chrome_html" />
@@ -172,10 +167,13 @@
         <include name="IDR_NOTIFICATION_ICON_HTML" file="resources\notification_icon.html" type="BINDATA" />
       </if>
 
-      <include name="IDR_LOCAL_DISCOVERY_HTML" file="resources\local_discovery\local_discovery.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      <include name="IDR_LOCAL_DISCOVERY_CSS" file="resources\local_discovery\local_discovery.css" type="BINDATA" />
-      <include name="IDR_LOCAL_DISCOVERY_JS" file="resources\local_discovery\local_discovery.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_LOCAL_DISCOVERY_PRINTER_PNG" file="resources\local_discovery\printer.png" type="BINDATA" />
+      <if expr="pp_ifdef('enable_mdns')">
+        <include name="IDR_LOCAL_DISCOVERY_HTML" file="resources\local_discovery\local_discovery.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_LOCAL_DISCOVERY_CSS" file="resources\local_discovery\local_discovery.css" type="BINDATA" />
+        <include name="IDR_LOCAL_DISCOVERY_JS" file="resources\local_discovery\local_discovery.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_LOCAL_DISCOVERY_PRINTER_PNG" file="resources\local_discovery\printer.png" type="BINDATA" />
+      </if>
+
       <include name="IDR_INSTANT_IFRAME_VALIDATION_JS" file="resources\local_ntp\instant_iframe_validation.js" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_HTML" file="resources\local_ntp\local_ntp.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_CSS" file="resources\local_ntp\local_ntp.css" type="BINDATA" />
@@ -201,6 +199,9 @@
       <if expr="not is_android or pp_ifdef('google_tv')">
         <include name="IDR_COMPONENTS_HTML" file="resources\components.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_COMPONENTS_JS" file="resources\components.js" type="BINDATA" />
+      </if>
+      <if expr="pp_ifdef('enable_plugins')">
+        <include name="IDR_PDF_MANIFEST" file="resources\pdf\manifest.json" type="BINDATA" />
       </if>
       <if expr="is_android and pp_ifdef('google_tv')">
         <include name="IDR_PLUGIN_DB_JSON" file="resources\plugin_metadata\plugins_tv.json" type="BINDATA" />
@@ -304,7 +305,7 @@
         <include name="IDR_CRYPTOHOME_HTML" file="resources\chromeos\cryptohome.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_CRYPTOHOME_JS" file="resources\chromeos\cryptohome.js" type="BINDATA" />
         <!-- manifest file of ChromeVox accessibility extension -->
-        <include name="IDR_CHROMEVOX_MANIFEST" file="resources\chromeos\access_chromevox\manifest.json" type="BINDATA" />
+        <include name="IDR_CHROMEVOX_MANIFEST" file="resources\chromeos\chromevox\manifest.json" type="BINDATA" />
         <!-- manifest file of Connectivity Diagnostics app -->
         <include name="IDR_CONNECTIVITY_DIAGNOSTICS_MANIFEST" file="resources\chromeos\connectivity_diagnostics\manifest.json" type="BINDATA" />
         <include name="IDR_CONNECTIVITY_DIAGNOSTICS_LAUNCHER_MANIFEST" file="resources\chromeos\connectivity_diagnostics_launcher\manifest.json" type="BINDATA" />
@@ -347,6 +348,7 @@
       </if>
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_WALLPAPERMANAGER_MANIFEST" file="resources\chromeos\wallpaper_manager\manifest.json" type="BINDATA" />
+        <include name="IDR_FIRST_RUN_DIALOG_MANIFEST" file="resources\chromeos\first_run\app/manifest.json" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_NETWORK_CONFIGURATION_MANIFEST" file="resources\chromeos\network_configuration\manifest.json" type="BINDATA" />
@@ -407,6 +409,9 @@
         <include name="IDR_SOUND_LOCK_WAV" file="resources\chromeos\sounds\lock.wav" type="BINDATA" />
         <include name="IDR_SOUND_UNLOCK_WAV" file="resources\chromeos\sounds\unlock.wav" type="BINDATA" />
         <include name="IDR_SOUND_SHUTDOWN_WAV" file="resources\chromeos\sounds\shutdown.wav" type="BINDATA" />
+        <include name="IDR_SOUND_SPOKEN_FEEDBACK_ENABLED_WAV" file="resources\chromeos\sounds\spoken_feedback_enabled.wav" type="BINDATA" />
+        <include name="IDR_SOUND_SPOKEN_FEEDBACK_DISABLED_WAV" file="resources\chromeos\sounds\spoken_feedback_disabled.wav" type="BINDATA" />
+        <include name="IDR_SOUND_VOLUME_ADJUST_WAV" file="resources\chromeos\sounds\volume_adjust.wav" type="BINDATA" />
       </if>
     </includes>
   </release>

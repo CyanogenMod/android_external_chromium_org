@@ -49,13 +49,17 @@ function Background() {
   this.progressCenter = new ProgressCenter();
 
   /**
+   * File operation manager.
+   * @type {FileOperationManager}
+   */
+  this.fileOperationManager = FileOperationManager.getInstance();
+
+  /**
    * Event handler for progress center.
-   * @type {ProgressCenter}
+   * @type {FileOperationHandler}
    * @private
    */
-  this.progressCenterHandler_ = new ProgressCenterHandler(
-      FileOperationManager.getInstance(),
-      this.progressCenter);
+  this.fileOperationHandler_ = new FileOperationHandler(this);
 
   /**
    * String assets.
@@ -71,6 +75,14 @@ function Background() {
    * @private
    */
   this.initializeCallbacks_ = [];
+
+  /**
+   * Last time when the background page can close.
+   *
+   * @type {number}
+   * @private
+   */
+  this.lastTimeCanClose_ = null;
 
   // Seal self.
   Object.seal(this);
@@ -102,6 +114,15 @@ function Background() {
 }
 
 /**
+ * A number of delay milliseconds from the first call of tryClose to the actual
+ * close action.
+ * @type {number}
+ * @const
+ * @private
+ */
+Background.CLOSE_DELAY_MS_ = 5000;
+
+/**
  * Register callback to be invoked after initialization.
  * If the initialization is already done, the callback is invoked immediately.
  *
@@ -112,6 +133,43 @@ Background.prototype.ready = function(callback) {
     this.initializeCallbacks_.push(callback);
   else
     callback();
+};
+
+/**
+ * Checks the current condition of background page and closes it if possible.
+ */
+Background.prototype.tryClose = function() {
+  // If the file operation is going, the background page cannot close.
+  if (this.fileOperationManager.hasQueuedTasks()) {
+    this.lastTimeCanClose_ = null;
+    return;
+  }
+
+  var views = chrome.extension.getViews();
+  var closing = false;
+  for (var i = 0; i < views.length; i++) {
+    // If the window that is not the background page itself and it is not
+    // closing, the background page cannot close.
+    if (views[i] !== window && !views[i].closing) {
+      this.lastTimeCanClose_ = null;
+      return;
+    }
+    closing = closing || views[i].closing;
+  }
+
+  // If some windows are closing, or the background page can close but could not
+  // 5 seconds ago, We need more time for sure.
+  if (closing ||
+      this.lastTimeCanClose_ === null ||
+      Date.now() - this.lastTimeCanClose_ < Background.CLOSE_DELAY_MS_) {
+    if (this.lastTimeCanClose_ === null)
+      this.lastTimeCanClose_ = Date.now();
+    setTimeout(this.tryClose.bind(this), Background.CLOSE_DELAY_MS_);
+    return;
+  }
+
+  // Otherwise we can close the background page.
+  close();
 };
 
 /**
@@ -248,7 +306,7 @@ AppWindowWrapper.prototype.launch = function(appState, opt_callback) {
       chrome.storage.local.remove(this.id_);  // Forget the persisted state.
       this.window_ = null;
       this.openingOrOpened_ = false;
-      maybeCloseBackgroundPage();
+      background.tryClose();
     }.bind(this));
 
     if (opt_callback)
@@ -353,8 +411,7 @@ var FILE_MANAGER_WINDOW_CREATE_OPTIONS = Object.freeze({
   minHeight: 240,
   frame: 'none',
   hidden: true,
-  transparentBackground: true,
-  singleton: false
+  transparentBackground: true
 });
 
 /**
@@ -374,6 +431,9 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
         type == LaunchType.FOCUS_ANY_OR_CREATE) {
       if (opt_appState && opt_appState.defaultPath) {
         for (var key in background.appWindows) {
+          if (!key.match(FILES_ID_PATTERN))
+            continue;
+
           var contentWindow = background.appWindows[key].contentWindow;
           if (contentWindow.appState &&
               opt_appState.defaultPath == contentWindow.appState.defaultPath) {
@@ -391,6 +451,9 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
     if (type == LaunchType.FOCUS_ANY_OR_CREATE) {
       // If there is already a focused window, then finish.
       for (var key in background.appWindows) {
+        if (!key.match(FILES_ID_PATTERN))
+          continue;
+
         // The isFocused() method should always be available, but in case
         // Files.app's failed on some error, wrap it with try catch.
         try {
@@ -406,6 +469,9 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
       }
       // Try to focus the first non-minimized window.
       for (var key in background.appWindows) {
+        if (!key.match(FILES_ID_PATTERN))
+          continue;
+
         if (!background.appWindows[key].isMinimized()) {
           background.appWindows[key].focus();
           if (opt_callback)
@@ -416,6 +482,9 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
       }
       // Restore and focus any window.
       for (var key in background.appWindows) {
+        if (!key.match(FILES_ID_PATTERN))
+          continue;
+
         background.appWindows[key].focus();
         if (opt_callback)
           opt_callback(key);
@@ -515,8 +584,7 @@ var AUDIO_PLAYER_CREATE_OPTIONS = Object.freeze({
   minHeight: 35 + 58,
   minWidth: 280,
   height: 35 + 58,
-  width: 280,
-  singleton: false
+  width: 280
 });
 
 var audioPlayer = new SingletonAppWindowWrapper('mediaplayer.html',
@@ -618,24 +686,6 @@ Background.prototype.onContextMenuClicked_ = function(info) {
     launchFileManager();
   }
 };
-
-/**
- * Closes the background page, if it is not needed.
- */
-function maybeCloseBackgroundPage() {
-  if (FileOperationManager.getInstance().hasQueuedTasks())
-    return;
-  var views = chrome.extension.getViews();
-  for (var i = 0; i < views.length; i++) {
-    if (views[i] !== window && !views[i].closing)
-      return;
-    if (views[i].closing) {
-      setTimeout(maybeCloseBackgroundPage, 1000);
-      return;
-    }
-  }
-  close();
-}
 
 /**
  * Initializes the context menu. Recreates if already exists.

@@ -12,6 +12,8 @@
         'some.gyp:*',
         '../base/base.gyp:*',
         '../chrome/chrome.gyp:*',
+        '../components/components.gyp:*',
+        '../components/components_tests.gyp:*',
         '../content/content.gyp:*',
         '../content/content_shell_and_tests.gyp:*',
         '../crypto/crypto.gyp:*',
@@ -34,8 +36,6 @@
         ['OS!="ios"', {
           'dependencies': [
             '../cc/cc_tests.gyp:*',
-            '../components/components.gyp:*',
-            '../components/components_tests.gyp:*',
             '../device/bluetooth/bluetooth.gyp:*',
             '../device/device_tests.gyp:*',
             '../device/usb/usb.gyp:*',
@@ -124,6 +124,11 @@
                 '../third_party/mtpd/mtpd.gyp:*',
               ],
             }],
+            ['enable_ipc_fuzzer==1', {
+              'dependencies': [
+                '../tools/ipc_fuzzer/ipc_fuzzer.gyp:*',
+              ],
+            }],
           ],
         }],
         ['use_x11==1', {
@@ -154,6 +159,7 @@
             }],
           ],
           'dependencies': [
+            '../chrome_elf/chrome_elf.gyp:*',
             '../cloud_print/cloud_print.gyp:*',
             '../courgette/courgette.gyp:*',
             '../rlz/rlz.gyp:*',
@@ -221,9 +227,11 @@
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_unittests',
+        '../components/components_tests.gyp:components_unittests',
         '../crypto/crypto.gyp:crypto_unittests',
         '../net/net.gyp:net_unittests',
         '../sql/sql.gyp:sql_unittests',
+        '../sync/sync.gyp:sync_unit_tests',
         '../ui/ui_unittests.gyp:ui_unittests',
         '../url/url.gyp:url_unittests',
       ],
@@ -240,7 +248,6 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
@@ -255,7 +262,6 @@
             '../mojo/mojo.gyp:mojo',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
-            '../sync/sync.gyp:sync_unit_tests',
             '../third_party/WebKit/public/all.gyp:all_blink',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
@@ -271,6 +277,7 @@
             # mini_installer_tests depends on mini_installer. This should be
             # defined in installer.gyp.
             '../chrome/installer/mini_installer.gyp:mini_installer',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf_unittests',
             '../chrome_frame/chrome_frame.gyp:npchrome_frame',
             '../courgette/courgette.gyp:courgette_unittests',
             '../sandbox/sandbox.gyp:sbox_integration_tests',
@@ -457,6 +464,16 @@
                 '../chrome/chrome.gyp:linux_symbols'
               ],
             }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
           ],
         }, # target_name: chromium_builder_perf
         {
@@ -468,15 +485,11 @@
             '../chrome/chrome.gyp:performance_ui_tests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_gl_tests',
+            '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
             '../gpu/gpu.gyp:gl_tests',
             '../gpu/gpu.gyp:angle_unittests',
           ],
           'conditions': [
-            ['internal_gles2_conform_tests', {
-              'dependencies': [
-                '../gpu/gles2_conform_test/gles2_conform_test.gyp:gles2_conform_test',
-              ],
-            }], # internal_gles2_conform
             ['OS!="ios" and OS!="win"', {
               'dependencies': [
                 '../breakpad/breakpad.gyp:minidump_stackwalk',
@@ -506,15 +519,11 @@
             '../chrome/chrome.gyp:chrome',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_gl_tests',
+            '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
             '../gpu/gpu.gyp:gl_tests',
             '../gpu/gpu.gyp:angle_unittests',
           ],
           'conditions': [
-            ['internal_gles2_conform_tests', {
-              'dependencies': [
-                '../gpu/gles2_conform_test/gles2_conform_test.gyp:gles2_conform_test',
-              ],
-            }], # internal_gles2_conform
             ['OS!="ios" and OS!="win"', {
               'dependencies': [
                 '../breakpad/breakpad.gyp:minidump_stackwalk',

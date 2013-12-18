@@ -26,12 +26,11 @@
 #include "ui/compositor/layer_owner.h"
 #include "ui/events/event.h"
 #include "ui/events/event_target.h"
+#include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
-#include "ui/views/background.h"
-#include "ui/views/border.h"
-#include "ui/views/focus_border.h"
+#include "ui/views/views_export.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_comptr.h"
@@ -62,7 +61,6 @@ class Background;
 class Border;
 class ContextMenuController;
 class DragController;
-class FocusBorder;
 class FocusManager;
 class FocusTraversable;
 class InputMethod;
@@ -456,7 +454,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   //
   // |source| and |target| must be in the same widget, but doesn't need to be in
   // the same view hierarchy.
-  // |source| can be NULL in which case it means the screen coordinate system.
+  // Neither |source| nor |target| can be NULL.
   static void ConvertPointToTarget(const View* source,
                                    const View* target,
                                    gfx::Point* point);
@@ -466,7 +464,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   //
   // |source| and |target| must be in the same widget, but doesn't need to be in
   // the same view hierarchy.
-  // |source| can be NULL in which case it means the screen coordinate system.
+  // Neither |source| nor |target| can be NULL.
   static void ConvertRectToTarget(const View* source,
                                   const View* target,
                                   gfx::RectF* rect);
@@ -510,19 +508,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual void Paint(gfx::Canvas* canvas);
 
   // The background object is owned by this object and may be NULL.
-  void set_background(Background* b) { background_.reset(b); }
+  void set_background(Background* b);
   const Background* background() const { return background_.get(); }
   Background* background() { return background_.get(); }
 
   // The border object is owned by this object and may be NULL.
-  void set_border(Border* b) { border_.reset(b); }
+  void set_border(Border* b);
   const Border* border() const { return border_.get(); }
   Border* border() { return border_.get(); }
-
-  // The focus_border object is owned by this object and may be NULL.
-  void set_focus_border(FocusBorder* b) { focus_border_.reset(b); }
-  const FocusBorder* focus_border() const { return focus_border_.get(); }
-  FocusBorder* focus_border() { return focus_border_.get(); }
 
   // Get the theme provider from the parent widget.
   virtual ui::ThemeProvider* GetThemeProvider() const;
@@ -722,6 +715,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Overridden from ui::EventTarget:
   virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
   virtual ui::EventTarget* GetParentTarget() OVERRIDE;
+  virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
+  virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -1090,10 +1085,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Override to paint a border not specified by SetBorder().
   virtual void OnPaintBorder(gfx::Canvas* canvas);
 
-  // Override to paint a focus border not specified by set_focus_border() around
-  // relevant contents.  The focus border is usually a dotted rectangle.
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas);
-
   // Accelerated painting ------------------------------------------------------
 
   // Returns the offset from this view to the nearest ancestor with a layer. If
@@ -1111,12 +1102,11 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // recurses through all children. This is used when adding a layer to an
   // existing view to make sure all descendants that have layers are parented to
   // the right layer.
-  virtual void MoveLayerToParent(ui::Layer* parent_layer,
-                                 const gfx::Point& point);
+  void MoveLayerToParent(ui::Layer* parent_layer, const gfx::Point& point);
 
   // Called to update the bounds of any child layers within this View's
   // hierarchy when something happens to the hierarchy.
-  virtual void UpdateChildLayerBounds(const gfx::Vector2d& offset);
+  void UpdateChildLayerBounds(const gfx::Vector2d& offset);
 
   // Overridden from ui::LayerDelegate:
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
@@ -1513,9 +1503,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Border.
   scoped_ptr<Border> border_;
-
-  // Focus border.
-  scoped_ptr<FocusBorder> focus_border_;
 
   // RTL painting --------------------------------------------------------------
 

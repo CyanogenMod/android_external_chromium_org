@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "chrome/browser/ui/translate/language_combobox_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_model.h"
+#include "chrome/common/translate/translate_errors.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
@@ -41,6 +42,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   static void ShowBubble(views::View* anchor_view,
                          content::WebContents* web_contents,
                          TranslateBubbleModel::ViewState type,
+                         TranslateErrors::Type error_type,
                          Browser* browser);
 
   // If true, the Translate bubble is being shown.
@@ -63,8 +65,9 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
-  // views::CombboxListener method.
+  // views::CombboxListener methods.
   virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
+  virtual void OnComboboxTextButtonClicked(views::Combobox* combobox) OVERRIDE;
 
   // views::LinkListener method.
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -107,6 +110,8 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   FRIEND_TEST_ALL_PREFIXES(TranslateBubbleViewTest,
                            AlwaysTranslateCheckboxAndDoneButton);
   FRIEND_TEST_ALL_PREFIXES(TranslateBubbleViewTest, DoneButton);
+  FRIEND_TEST_ALL_PREFIXES(TranslateBubbleViewTest,
+                           DoneButtonWithoutTranslating);
   FRIEND_TEST_ALL_PREFIXES(TranslateBubbleViewTest,
                            CancelButtonReturningBeforeTranslate);
   FRIEND_TEST_ALL_PREFIXES(TranslateBubbleViewTest,
@@ -173,6 +178,9 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   views::Combobox* target_language_combobox_;
 
   views::Checkbox* always_translate_checkbox_;
+
+  views::LabelButton* advanced_cancel_button_;
+  views::LabelButton* advanced_done_button_;
 
   scoped_ptr<TranslateBubbleModel> model_;
 

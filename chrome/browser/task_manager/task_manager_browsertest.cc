@@ -14,6 +14,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
@@ -147,8 +148,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeTabContentsChanges) {
   // Check that the last entry is a tab contents resource whose title starts
   // starts with "Tab:".
   ASSERT_TRUE(model()->GetResourceWebContents(resource_count) != NULL);
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_TAB_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_TAB_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count), prefix,
                          true));
 
@@ -189,8 +190,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, MAYBE_NoticePanelChanges) {
   // Check that the fourth entry is a resource with the panel's web contents
   // and whose title starts with "Extension:".
   ASSERT_EQ(panel->GetWebContents(), model()->GetResourceWebContents(3));
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_EXTENSION_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_EXTENSION_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(3), prefix, true));
 
   // Close the panel and verify that we notice.
@@ -261,8 +262,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeExtensionTabs) {
       resource_count));
   ASSERT_TRUE(model()->GetResourceWebContents(resource_count) == NULL);
   ASSERT_TRUE(model()->GetResourceExtension(resource_count) != NULL);
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_EXTENSION_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_EXTENSION_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          prefix, true));
 
@@ -303,8 +304,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeAppTabs) {
       resource_count));
   ASSERT_TRUE(model()->GetResourceWebContents(resource_count) != NULL);
   ASSERT_TRUE(model()->GetResourceExtension(resource_count) == extension);
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_APP_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_APP_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          prefix, true));
 
@@ -339,8 +340,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeHostedAppTabs) {
   Refresh();
 
   // Check that the third entry's title starts with "Tab:".
-  string16 tab_prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_TAB_PREFIX, string16());
+  base::string16 tab_prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_TAB_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          tab_prefix, true));
 
@@ -357,8 +358,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeHostedAppTabs) {
   ui_test_utils::NavigateToURL(browser(), url);
   // Force the TaskManager to query the title.
   Refresh();
-  string16 app_prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_APP_PREFIX, string16());
+  base::string16 app_prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_APP_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          app_prefix, true));
 
@@ -399,7 +400,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest,
       browser()->tab_strip_model()->GetActiveWebContents());
   ASSERT_EQ(1U, infobar_service->infobar_count());
   ConfirmInfoBarDelegate* delegate =
-      infobar_service->infobar_at(0)->AsConfirmInfoBarDelegate();
+      infobar_service->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate();
   ASSERT_TRUE(delegate);
   delegate->Accept();
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(3);

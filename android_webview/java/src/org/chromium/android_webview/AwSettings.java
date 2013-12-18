@@ -1,23 +1,21 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
-import android.content.pm.PackageManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Process;
 import android.provider.Settings;
-import android.webkit.WebSettings.PluginState;
 import android.webkit.WebSettings;
-import android.webkit.WebView;
+import android.webkit.WebSettings.PluginState;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
-import org.chromium.content.browser.ContentViewCore;
 
 /**
  * Stores Android WebView specific settings that does not need to be synced to WebKit.
@@ -114,7 +112,7 @@ public class AwSettings {
     private static boolean sAppCachePathIsSet = false;
 
     // The native side of this object. It's lifetime is bounded by the WebContent it is attached to.
-    private int mNativeAwSettings = 0;
+    private long mNativeAwSettings = 0;
 
     // A flag to avoid sending superfluous synchronization messages.
     private boolean mIsUpdateWebkitPrefsMessagePending = false;
@@ -137,19 +135,19 @@ public class AwSettings {
         void bindUiThread() {
             if (mHandler != null) return;
             mHandler = new Handler(ThreadUtils.getUiThreadLooper()) {
-                    @Override
-                    public void handleMessage(Message msg) {
-                        switch (msg.what) {
-                            case UPDATE_WEBKIT_PREFERENCES:
-                                synchronized (mAwSettingsLock) {
-                                    updateWebkitPreferencesOnUiThreadLocked();
-                                    mIsUpdateWebkitPrefsMessagePending = false;
-                                    mAwSettingsLock.notifyAll();
-                                }
-                                break;
-                        }
+                @Override
+                public void handleMessage(Message msg) {
+                    switch (msg.what) {
+                        case UPDATE_WEBKIT_PREFERENCES:
+                            synchronized (mAwSettingsLock) {
+                                updateWebkitPreferencesOnUiThreadLocked();
+                                mIsUpdateWebkitPrefsMessagePending = false;
+                                mAwSettingsLock.notifyAll();
+                            }
+                            break;
                     }
-                };
+                }
+            };
         }
 
         void maybeRunOnUiThreadBlocking(Runnable r) {
@@ -224,7 +222,7 @@ public class AwSettings {
     }
 
     @CalledByNative
-    private void nativeAwSettingsGone(int nativeAwSettings) {
+    private void nativeAwSettingsGone(long nativeAwSettings) {
         assert mNativeAwSettings != 0 && mNativeAwSettings == nativeAwSettings;
         mNativeAwSettings = 0;
     }
@@ -396,7 +394,7 @@ public class AwSettings {
      * See {@link android.webkit.WebSettings#setNeedInitialFocus}.
      */
     public boolean shouldFocusFirstNode() {
-        synchronized(mAwSettingsLock) {
+        synchronized (mAwSettingsLock) {
             return mShouldFocusFirstNode;
         }
     }
@@ -1188,9 +1186,9 @@ public class AwSettings {
      * See {@link android.webkit.WebSettings#getDomStorageEnabled}.
      */
     public boolean getDomStorageEnabled() {
-       synchronized (mAwSettingsLock) {
-           return mDomStorageEnabled;
-       }
+        synchronized (mAwSettingsLock) {
+            return mDomStorageEnabled;
+        }
     }
 
     @CalledByNative
@@ -1214,9 +1212,9 @@ public class AwSettings {
      * See {@link android.webkit.WebSettings#getDatabaseEnabled}.
      */
     public boolean getDatabaseEnabled() {
-       synchronized (mAwSettingsLock) {
-           return mDatabaseEnabled;
-       }
+        synchronized (mAwSettingsLock) {
+            return mDatabaseEnabled;
+        }
     }
 
     @CalledByNative
@@ -1418,21 +1416,21 @@ public class AwSettings {
         }
     }
 
-    private native int nativeInit(int webContentsPtr);
+    private native long nativeInit(long webContentsPtr);
 
-    private native void nativeDestroy(int nativeAwSettings);
+    private native void nativeDestroy(long nativeAwSettings);
 
-    private native void nativeResetScrollAndScaleState(int nativeAwSettings);
+    private native void nativeResetScrollAndScaleState(long nativeAwSettings);
 
-    private native void nativeUpdateEverythingLocked(int nativeAwSettings);
+    private native void nativeUpdateEverythingLocked(long nativeAwSettings);
 
-    private native void nativeUpdateInitialPageScaleLocked(int nativeAwSettings);
+    private native void nativeUpdateInitialPageScaleLocked(long nativeAwSettings);
 
-    private native void nativeUpdateUserAgentLocked(int nativeAwSettings);
+    private native void nativeUpdateUserAgentLocked(long nativeAwSettings);
 
-    private native void nativeUpdateWebkitPreferencesLocked(int nativeAwSettings);
+    private native void nativeUpdateWebkitPreferencesLocked(long nativeAwSettings);
 
     private static native String nativeGetDefaultUserAgent();
 
-    private native void nativeUpdateFormDataPreferencesLocked(int nativeAwSettings);
+    private native void nativeUpdateFormDataPreferencesLocked(long nativeAwSettings);
 }

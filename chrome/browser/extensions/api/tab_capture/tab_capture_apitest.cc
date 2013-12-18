@@ -92,7 +92,8 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, ApiTestsAudio) {
 }
 
 // http://crbug.com/177163
-#if defined(OS_WIN) && !defined(NDEBUG)
+// http://crbug.com/326328
+#if (defined(OS_WIN) && !defined(NDEBUG)) || defined(OS_MACOSX)
 #define MAYBE_EndToEnd DISABLED_EndToEnd
 #else
 #define MAYBE_EndToEnd EndToEnd
@@ -244,8 +245,16 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_FullscreenEvents) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
+// Times out on Win dbg bots: http://crbug.com/177163
+// #if defined(OS_WIN) && !defined(NDEBUG)
+// Times out on all Win bots: http://crbug.com/294431
+#if defined(OS_WIN)
+#define MAYBE_GrantForChromePages DISABLED_GrantForChromePages
+#else
+#define MAYBE_GrantForChromePages GrantForChromePages
+#endif
 // Make sure tabCapture API can be granted for Chrome:// pages.
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, GrantForChromePages) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GrantForChromePages) {
   ExtensionTestMessageListener before_open_tab("ready1", true);
   ASSERT_TRUE(RunExtensionSubtest("tab_capture/experimental",
                                   "active_tab_chrome_pages.html")) << message_;
@@ -269,7 +278,8 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, GrantForChromePages) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-#if defined(OS_WIN) && !defined(NDEBUG)
+#if (defined(OS_WIN) && !defined(NDEBUG)) || defined(OS_MACOSX)
+// http://crbug.com/326319
 #define MAYBE_CaptureInSplitIncognitoMode DISABLED_CaptureInSplitIncognitoMode
 #else
 #define MAYBE_CaptureInSplitIncognitoMode CaptureInSplitIncognitoMode

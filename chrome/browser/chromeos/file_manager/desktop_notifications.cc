@@ -91,25 +91,25 @@ int GetIconId(DesktopNotifications::NotificationType type) {
   return kNotificationTypes[type].icon_id;
 }
 
-string16 GetTitle(DesktopNotifications::NotificationType type) {
+base::string16 GetTitle(DesktopNotifications::NotificationType type) {
   DCHECK_GE(type, 0);
   DCHECK_LT(static_cast<size_t>(type), arraysize(kNotificationTypes));
   DCHECK(kNotificationTypes[type].type == type);
 
   int id = kNotificationTypes[type].title_id;
   if (id < 0)
-    return string16();
+    return base::string16();
   return l10n_util::GetStringUTF16(id);
 }
 
-string16 GetMessage(DesktopNotifications::NotificationType type) {
+base::string16 GetMessage(DesktopNotifications::NotificationType type) {
   DCHECK_GE(type, 0);
   DCHECK_LT(static_cast<size_t>(type), arraysize(kNotificationTypes));
   DCHECK(kNotificationTypes[type].type == type);
 
   int id = kNotificationTypes[type].message_id;
   if (id < 0)
-    return string16();
+    return base::string16();
   return l10n_util::GetStringUTF16(id);
 }
 
@@ -162,13 +162,13 @@ class DesktopNotifications::NotificationMessage {
                       Profile* profile,
                       NotificationType type,
                       const std::string& notification_id,
-                      const string16& message)
+                      const base::string16& message)
       : message_(message) {
     const gfx::Image& icon =
         ResourceBundle::GetSharedInstance().GetNativeImageNamed(
             GetIconId(type));
     // TODO(mukai): refactor here to invoke NotificationUIManager directly.
-    const string16 replace_id = UTF8ToUTF16(notification_id);
+    const base::string16 replace_id = UTF8ToUTF16(notification_id);
     DesktopNotificationService::AddIconNotification(
         util::GetFileManagerBaseUrl(), GetTitle(type),
         message, icon, replace_id,
@@ -178,10 +178,10 @@ class DesktopNotifications::NotificationMessage {
   ~NotificationMessage() {}
 
   // Used in test.
-  string16 message() { return message_; }
+  base::string16 message() { return message_; }
 
  private:
-  string16 message_;
+  base::string16 message_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationMessage);
 };
@@ -299,7 +299,7 @@ void DesktopNotifications::ShowNotification(NotificationType type,
 void DesktopNotifications::ShowNotificationWithMessage(
     NotificationType type,
     const std::string& path,
-    const string16& message) {
+    const base::string16& message) {
   std::string notification_id = GetNotificationId(type, path);
   hidden_notifications_.erase(notification_id);
   ShowNotificationById(type, notification_id, message);
@@ -336,7 +336,7 @@ void DesktopNotifications::HideNotificationDelayed(
 void DesktopNotifications::ShowNotificationById(
     NotificationType type,
     const std::string& notification_id,
-    const string16& message) {
+    const base::string16& message) {
   if (hidden_notifications_.find(notification_id) !=
       hidden_notifications_.end()) {
     // Notification was hidden after a delayed show was requested.
@@ -381,7 +381,7 @@ string16 DesktopNotifications::GetNotificationMessageForTest(
     const std::string& id) const {
   NotificationMap::const_iterator it = notification_map_.find(id);
   if (it == notification_map_.end())
-    return string16();
+    return base::string16();
   return it->second->message();
 }
 

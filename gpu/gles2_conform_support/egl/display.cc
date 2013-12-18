@@ -123,8 +123,6 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
   gpu_scheduler_.reset(new gpu::GpuScheduler(command_buffer.get(),
                                              decoder_.get(),
                                              NULL));
-  gpu_control_.reset(
-      new gpu::GpuControlService(NULL, NULL, group->mailbox_manager(), NULL));
 
   decoder_->set_engine(gpu_scheduler_.get());
   gfx::Size size(create_offscreen_width_, create_offscreen_height_);
@@ -171,6 +169,9 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
                             attribs)) {
     return EGL_NO_SURFACE;
   }
+
+  gpu_control_.reset(new gpu::GpuControlService(
+      NULL, NULL, group->mailbox_manager(), NULL, decoder_->GetCapabilities()));
 
   command_buffer->SetPutOffsetChangeCallback(
       base::Bind(&gpu::GpuScheduler::PutChanged,
@@ -226,11 +227,16 @@ EGLContext Display::CreateContext(EGLConfig config,
 
   DCHECK(command_buffer_ != NULL);
   DCHECK(transfer_buffer_.get());
+
+  bool bind_generates_resources = true;
+  bool free_everything_when_invisible = false;
+
   context_.reset(new gpu::gles2::GLES2Implementation(
       gles2_cmd_helper_.get(),
       NULL,
       transfer_buffer_.get(),
-      true,
+      bind_generates_resources,
+      free_everything_when_invisible,
       gpu_control_.get()));
 
   if (!context_->Initialize(

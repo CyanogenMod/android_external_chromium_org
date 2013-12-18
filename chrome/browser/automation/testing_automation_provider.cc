@@ -58,11 +58,13 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/notifications/balloon.h"
@@ -112,6 +114,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -149,7 +152,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/policy_service.h"
+#include "components/policy/core/common/policy_service.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -900,7 +903,7 @@ void TestingAutomationProvider::DragAndDropFilePaths(
   // Emulate drag and drop to set the file paths to the file upload control.
   content::DropData drop_data;
   for (size_t path_index = 0; path_index < paths->GetSize(); ++path_index) {
-    string16 path;
+    base::string16 path;
     if (!paths->GetString(path_index, &path)) {
       AutomationJSONReply(this, reply_message)
           .SendError("'paths' contains a non-string type");
@@ -908,7 +911,7 @@ void TestingAutomationProvider::DragAndDropFilePaths(
     }
 
     drop_data.filenames.push_back(
-        content::DropData::FileInfo(path, string16()));
+        content::DropData::FileInfo(path, base::string16()));
   }
 
   const gfx::Point client(x, y);
@@ -1001,8 +1004,8 @@ void TestingAutomationProvider::GetTabURL(int handle,
 }
 
 void TestingAutomationProvider::ExecuteJavascriptInRenderViewFrame(
-    const string16& frame_xpath,
-    const string16& script,
+    const base::string16& frame_xpath,
+    const base::string16& script,
     IPC::Message* reply_message,
     RenderViewHost* render_view_host) {
   // Set the routing id of this message with the controller.
@@ -1041,7 +1044,7 @@ void TestingAutomationProvider::OpenNewBrowserWindowWithNewProfile(
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   new BrowserOpenedWithNewProfileNotificationObserver(this, reply_message);
   profile_manager->CreateMultiProfileAsync(
-      string16(), string16(), ProfileManager::CreateCallback(), std::string());
+      base::string16(), base::string16(), ProfileManager::CreateCallback(), std::string());
 }
 
 // Sample json input: { "command": "GetMultiProfileInfo" }
@@ -1298,7 +1301,7 @@ void TestingAutomationProvider::AddBookmark(
   AutomationJSONReply reply(this, reply_message);
   Browser* browser;
   std::string error_msg, url;
-  string16 title;
+  base::string16 title;
   int parent_id, index;
   bool folder;
   if (!GetBrowserFromJSONArgs(args, &browser, &error_msg)) {
@@ -1396,7 +1399,7 @@ void TestingAutomationProvider::SetBookmarkTitle(DictionaryValue* args,
   AutomationJSONReply reply(this, reply_message);
   Browser* browser;
   std::string error_msg;
-  string16 title;
+  base::string16 title;
   int id;
   if (!GetBrowserFromJSONArgs(args, &browser, &error_msg)) {
     reply.SendError(error_msg);
@@ -1998,7 +2001,7 @@ ListValue* TestingAutomationProvider::GetInfobarsInfo(WebContents* wc) {
   InfoBarService* infobar_service = InfoBarService::FromWebContents(wc);
   for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
     DictionaryValue* infobar_item = new DictionaryValue;
-    InfoBarDelegate* infobar = infobar_service->infobar_at(i);
+    InfoBarDelegate* infobar = infobar_service->infobar_at(i)->delegate();
     switch (infobar->GetInfoBarAutomationType()) {
       case InfoBarDelegate::CONFIRM_INFOBAR:
         infobar_item->SetString("type", "confirm_infobar");
@@ -2079,12 +2082,12 @@ void TestingAutomationProvider::PerformActionOnInfobar(
                                        infobar_index));
     return;
   }
-  InfoBarDelegate* infobar_delegate =
-      infobar_service->infobar_at(infobar_index);
+  InfoBar* infobar = infobar_service->infobar_at(infobar_index);
+  InfoBarDelegate* infobar_delegate = infobar->delegate();
 
   if (action == "dismiss") {
     infobar_delegate->InfoBarDismissed();
-    infobar_service->RemoveInfoBar(infobar_delegate);
+    infobar_service->RemoveInfoBar(infobar);
     reply.SendSuccess(NULL);
     return;
   }
@@ -2097,7 +2100,7 @@ void TestingAutomationProvider::PerformActionOnInfobar(
     }
     if ((action == "accept") ?
         confirm_infobar_delegate->Accept() : confirm_infobar_delegate->Cancel())
-      infobar_service->RemoveInfoBar(infobar_delegate);
+      infobar_service->RemoveInfoBar(infobar);
     reply.SendSuccess(NULL);
     return;
   }
@@ -2417,7 +2420,7 @@ void TestingAutomationProvider::GetHistoryInfo(Browser* browser,
                                                IPC::Message* reply_message) {
   consumer_.CancelAllRequests();
 
-  string16 search_text;
+  base::string16 search_text;
   args->GetString("search_text", &search_text);
 
   // Fetch history.
@@ -2706,8 +2709,8 @@ void TestingAutomationProvider::AddOrEditSearchEngine(
     IPC::Message* reply_message) {
   TemplateURLService* url_model =
       TemplateURLServiceFactory::GetForProfile(browser->profile());
-  string16 new_title;
-  string16 new_keyword;
+  base::string16 new_title;
+  base::string16 new_keyword;
   std::string new_url;
   std::string keyword;
   if (!args->GetString("new_title", &new_title) ||
@@ -2923,7 +2926,7 @@ void TestingAutomationProvider::GetOmniboxInfo(Browser* browser,
 void TestingAutomationProvider::SetOmniboxText(Browser* browser,
                                                DictionaryValue* args,
                                                IPC::Message* reply_message) {
-  string16 text;
+  base::string16 text;
   AutomationJSONReply reply(this, reply_message);
   if (!args->GetString("text", &text)) {
     reply.SendError("text missing");
@@ -3162,16 +3165,16 @@ autofill::PasswordForm GetPasswordFormFromDict(
     time = base::Time::FromDoubleT(dt);
 
   std::string signon_realm;
-  string16 username_value;
-  string16 password_value;
-  string16 origin_url_text;
-  string16 username_element;
-  string16 password_element;
-  string16 submit_element;
-  string16 action_target_text;
+  base::string16 username_value;
+  base::string16 password_value;
+  base::string16 origin_url_text;
+  base::string16 username_element;
+  base::string16 password_element;
+  base::string16 submit_element;
+  base::string16 action_target_text;
   bool blacklist;
-  string16 old_password_element;
-  string16 old_password_value;
+  base::string16 old_password_element;
+  base::string16 old_password_value;
 
   // We don't care if any of these fail - they are either optional or checked
   // before this function is called.
@@ -3351,7 +3354,7 @@ void TestingAutomationProvider::FindInPage(
     AutomationJSONReply(this, reply_message).SendError(error_message);
     return;
   }
-  string16 search_string;
+  base::string16 search_string;
   bool forward;
   bool match_case;
   bool find_next;
@@ -4077,7 +4080,7 @@ bool TestingAutomationProvider::BuildWebKeyEventFromArgs(
     NativeWebKeyboardEvent* event) {
   int type, modifiers;
   bool is_system_key;
-  string16 unmodified_text, text;
+  base::string16 unmodified_text, text;
   std::string key_identifier;
   if (!args->GetInteger("type", &type)) {
     *error = "'type' missing or invalid.";
@@ -4129,12 +4132,12 @@ bool TestingAutomationProvider::BuildWebKeyEventFromArgs(
     return false;
   }
 
-  string16 unmodified_text_truncated = unmodified_text.substr(
+  base::string16 unmodified_text_truncated = unmodified_text.substr(
       0, blink::WebKeyboardEvent::textLengthCap - 1);
   memcpy(event->unmodifiedText,
          unmodified_text_truncated.c_str(),
          unmodified_text_truncated.length() + 1);
-  string16 text_truncated = text.substr(
+  base::string16 text_truncated = text.substr(
       0, blink::WebKeyboardEvent::textLengthCap - 1);
   memcpy(event->text, text_truncated.c_str(), text_truncated.length() + 1);
 
@@ -4319,22 +4322,23 @@ void TestingAutomationProvider::SetAppLaunchType(
     return;
   }
 
-  extensions::ExtensionPrefs::LaunchType launch_type;
+  extensions::LaunchType launch_type;
   if (launch_type_str == "pinned") {
-    launch_type = extensions::ExtensionPrefs::LAUNCH_TYPE_PINNED;
+    launch_type = extensions::LAUNCH_TYPE_PINNED;
   } else if (launch_type_str == "regular") {
-    launch_type = extensions::ExtensionPrefs::LAUNCH_TYPE_REGULAR;
+    launch_type = extensions::LAUNCH_TYPE_REGULAR;
   } else if (launch_type_str == "fullscreen") {
-    launch_type = extensions::ExtensionPrefs::LAUNCH_TYPE_FULLSCREEN;
+    launch_type = extensions::LAUNCH_TYPE_FULLSCREEN;
   } else if (launch_type_str == "window") {
-    launch_type = extensions::ExtensionPrefs::LAUNCH_TYPE_WINDOW;
+    launch_type = extensions::LAUNCH_TYPE_WINDOW;
   } else {
     reply.SendError(base::StringPrintf(
         "Unexpected launch type '%s'.", launch_type_str.c_str()));
     return;
   }
 
-  service->extension_prefs()->SetLaunchType(extension->id(), launch_type);
+  extensions::SetLaunchType(
+      service->extension_prefs(), extension->id(), launch_type);
   reply.SendSuccess(NULL);
 }
 
@@ -4721,7 +4725,7 @@ void TestingAutomationProvider::ExecuteJavascriptJSON(
   if (SendErrorIfModalDialogActive(this, reply_message))
     return;
 
-  string16 frame_xpath, javascript;
+  base::string16 frame_xpath, javascript;
   std::string error;
   RenderViewHost* render_view;
   if (!GetRenderViewFromJSONArgs(args, profile(), &render_view, &error)) {
@@ -4747,7 +4751,7 @@ void TestingAutomationProvider::ExecuteJavascriptJSON(
 void TestingAutomationProvider::ExecuteJavascriptInRenderView(
     DictionaryValue* args,
     IPC::Message* reply_message) {
-  string16 frame_xpath, javascript, extension_id, url_text;
+  base::string16 frame_xpath, javascript, extension_id, url_text;
   int render_process_id, render_view_id;
   if (!args->GetString("frame_xpath", &frame_xpath)) {
     AutomationJSONReply(this, reply_message)

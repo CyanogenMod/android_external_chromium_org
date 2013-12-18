@@ -70,6 +70,7 @@
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/search_provider_install_state_message_filter.h"
+#include "chrome/browser/signin/principals_message_filter.h"
 #include "chrome/browser/speech/chrome_speech_recognition_manager_delegate.h"
 #include "chrome/browser/speech/tts_message_filter.h"
 #include "chrome/browser/ssl/ssl_add_certificate.h"
@@ -936,6 +937,10 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
 #if defined(OS_ANDROID)
   host->AddFilter(new EncryptedMediaMessageFilterAndroid());
 #endif
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kNewProfileManagement)) {
+    host->AddFilter(new PrincipalsMessageFilter(id));
+  }
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(
       profile->IsOffTheRecord()));
@@ -943,7 +948,12 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   SendExtensionWebRequestStatusToHost(host);
 
   RendererContentSettingRules rules;
-  GetRendererContentSettingRules(profile->GetHostContentSettingsMap(), &rules);
+  if (host->IsGuest()) {
+    GuestView::GetDefaultContentSettingRules(&rules, profile->IsOffTheRecord());
+  } else {
+    GetRendererContentSettingRules(
+        profile->GetHostContentSettingsMap(), &rules);
+  }
   host->Send(new ChromeViewMsg_SetContentSettingRules(rules));
 }
 
@@ -1326,26 +1336,8 @@ bool ChromeContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
     SiteInstance* site_instance,
     const GURL& current_url,
     const GURL& new_url) {
-  if (current_url.is_empty()) {
-    // Always choose a new process when navigating to extension URLs. The
-    // process grouping logic will combine all of a given extension's pages
-    // into the same process.
-    if (new_url.SchemeIs(extensions::kExtensionScheme))
-      return true;
-
-    return false;
-  }
-
-  // Also, we must switch if one is an extension and the other is not the exact
-  // same extension.
-  if (current_url.SchemeIs(extensions::kExtensionScheme) ||
-      new_url.SchemeIs(extensions::kExtensionScheme)) {
-    if (current_url.GetOrigin() != new_url.GetOrigin())
-      return true;
-  }
-
-  // The checks below only matter if we can retrieve which extensions are
-  // installed.
+  // If we don't have an ExtensionService, then rely on the SiteInstance logic
+  // in RenderFrameHostManager to decide when to swap.
   Profile* profile =
       Profile::FromBrowserContext(site_instance->GetBrowserContext());
   ExtensionService* service =
@@ -1353,23 +1345,41 @@ bool ChromeContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
   if (!service)
     return false;
 
-  // We must swap if the URL is for an extension and we are not using an
-  // extension process.
+  // We must use a new BrowsingInstance (forcing a process swap and disabling
+  // scripting by existing tabs) if one of the URLs is an extension and the
+  // other is not the exact same extension.
+  //
+  // We ignore hosted apps here so that other tabs in their BrowsingInstance can
+  // use postMessage with them.  (The exception is the Chrome Web Store, which
+  // is a hosted app that requires its own BrowsingInstance.)  Navigations
+  // to/from a hosted app will still trigger a SiteInstance swap in
+  // RenderFrameHostManager.
+  const Extension* current_extension =
+      service->extensions()->GetExtensionOrAppByURL(current_url);
+  if (current_extension &&
+      current_extension->is_hosted_app() &&
+      current_extension->id() != extension_misc::kWebStoreAppId)
+    current_extension = NULL;
+
   const Extension* new_extension =
       service->extensions()->GetExtensionOrAppByURL(new_url);
-  // Ignore all hosted apps except the Chrome Web Store, since they do not
-  // require their own BrowsingInstance (e.g., postMessage is ok).
   if (new_extension &&
       new_extension->is_hosted_app() &&
       new_extension->id() != extension_misc::kWebStoreAppId)
     new_extension = NULL;
+
+  // First do a process check.  We should force a BrowsingInstance swap if the
+  // current process doesn't know about new_extension, even if current_extension
+  // is somehow the same as new_extension.
   if (new_extension &&
       site_instance->HasProcess() &&
       !service->process_map()->Contains(new_extension->id(),
                                         site_instance->GetProcess()->GetID()))
     return true;
 
-  return false;
+  // Otherwise, swap BrowsingInstances if current_extension and new_extension
+  // differ.
+  return current_extension != new_extension;
 }
 
 bool ChromeContentBrowserClient::ShouldSwapProcessesForRedirect(
@@ -1417,6 +1427,14 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
   };
   command_line->CopySwitchesFrom(browser_command_line, kCommonSwitchNames,
                                  arraysize(kCommonSwitchNames));
+
+#if defined(ENABLE_IPC_FUZZER)
+  static const char* const kIpcFuzzerSwitches[] = {
+    switches::kIpcFuzzerTestcase,
+  };
+  command_line->CopySwitchesFrom(browser_command_line, kIpcFuzzerSwitches,
+                                 arraysize(kIpcFuzzerSwitches));
+#endif
 
   if (process_type == switches::kRendererProcess) {
 #if defined(OS_CHROMEOS)
@@ -1517,7 +1535,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableBenchmarking,
       switches::kEnableNaCl,
       switches::kEnableNetBenchmarking,
-      switches::kEnableProxyPreconnectHints,
       switches::kEnableWatchdog,
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
@@ -1667,8 +1684,8 @@ bool ChromeContentBrowserClient::AllowSaveLocalState(
 
 bool ChromeContentBrowserClient::AllowWorkerDatabase(
     const GURL& url,
-    const string16& name,
-    const string16& display_name,
+    const base::string16& name,
+    const base::string16& display_name,
     unsigned long estimated_size,
     content::ResourceContext* context,
     const std::vector<std::pair<int, int> >& render_views) {
@@ -1712,7 +1729,7 @@ bool ChromeContentBrowserClient::AllowWorkerFileSystem(
 
 bool ChromeContentBrowserClient::AllowWorkerIndexedDB(
     const GURL& url,
-    const string16& name,
+    const base::string16& name,
     content::ResourceContext* context,
     const std::vector<std::pair<int, int> >& render_views) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -2482,6 +2499,7 @@ void ChromeContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
     std::vector<std::string>* additional_allowed_schemes) {
   ContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
       additional_allowed_schemes);
+  additional_allowed_schemes->push_back(kChromeDevToolsScheme);
   additional_allowed_schemes->push_back(kChromeUIScheme);
   additional_allowed_schemes->push_back(extensions::kExtensionScheme);
 }

@@ -13,7 +13,6 @@
 #include "base/run_loop.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/list_changes_task.h"
@@ -25,6 +24,7 @@
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/gdata_errorcode.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace sync_file_system {
@@ -79,7 +79,8 @@ class RemoteToLocalSyncerTest : public testing::Test,
   }
 
   void InitializeMetadataDatabase() {
-    SyncEngineInitializer initializer(base::MessageLoopProxy::current(),
+    SyncEngineInitializer initializer(this,
+                                      base::MessageLoopProxy::current(),
                                       fake_drive_service_.get(),
                                       database_dir_.path());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -128,11 +129,11 @@ class RemoteToLocalSyncerTest : public testing::Test,
   }
 
   std::string CreateRemoteFolder(const std::string& parent_folder_id,
-                                 const std::string& app_id) {
+                                 const std::string& title) {
     std::string folder_id;
     EXPECT_EQ(google_apis::HTTP_CREATED,
               fake_drive_helper_->AddFolder(
-                  parent_folder_id, app_id, &folder_id));
+                  parent_folder_id, title, &folder_id));
     return folder_id;
   }
 
@@ -165,8 +166,7 @@ class RemoteToLocalSyncerTest : public testing::Test,
 
   SyncStatusCode RunSyncer() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    scoped_ptr<RemoteToLocalSyncer> syncer(
-        new RemoteToLocalSyncer(this, RemoteToLocalSyncer::PRIORITY_NORMAL));
+    scoped_ptr<RemoteToLocalSyncer> syncer(new RemoteToLocalSyncer(this));
     syncer->Run(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
@@ -250,23 +250,26 @@ TEST_F(RemoteToLocalSyncerTest, AddNewFile) {
 
   // Create expected changes.
   // TODO(nhiroki): Clean up creating URL part.
-  AppendExpectedChange(URL(kOrigin, "/"),
+  AppendExpectedChange(URL(kOrigin, ""),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/folder1"),
+  AppendExpectedChange(URL(kOrigin, "folder1"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/file1"),
+  AppendExpectedChange(URL(kOrigin, "file1"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_FILE);
-  AppendExpectedChange(URL(kOrigin, "/folder1/folder2"),
+  AppendExpectedChange(URL(kOrigin, "folder1/folder2"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/folder1/file2"),
+  AppendExpectedChange(URL(kOrigin, "folder1/file2"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_FILE);
 
   VerifyConsistency();
+
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
 }
 
 TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
@@ -279,13 +282,13 @@ TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
   const std::string folder = CreateRemoteFolder(app_root, "folder");
   const std::string file = CreateRemoteFile(app_root, "file", "data");
 
-  AppendExpectedChange(URL(kOrigin, "/"),
+  AppendExpectedChange(URL(kOrigin, ""),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/folder"),
+  AppendExpectedChange(URL(kOrigin, "folder"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/file"),
+  AppendExpectedChange(URL(kOrigin, "file"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_FILE);
 
@@ -295,16 +298,19 @@ TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
   DeleteRemoteFile(folder);
   DeleteRemoteFile(file);
 
-  AppendExpectedChange(URL(kOrigin, "/folder"),
+  AppendExpectedChange(URL(kOrigin, "folder"),
                        FileChange::FILE_CHANGE_DELETE,
                        SYNC_FILE_TYPE_UNKNOWN);
-  AppendExpectedChange(URL(kOrigin, "/file"),
+  AppendExpectedChange(URL(kOrigin, "file"),
                        FileChange::FILE_CHANGE_DELETE,
                        SYNC_FILE_TYPE_UNKNOWN);
 
-  ListChanges();
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunSyncerUntilIdle();
   VerifyConsistency();
+
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
 }
 
 TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
@@ -319,19 +325,19 @@ TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
   const std::string folder2 = CreateRemoteFolder(folder1, "folder2");
   const std::string file2 = CreateRemoteFile(folder1, "file2", "data2");
 
-  AppendExpectedChange(URL(kOrigin, "/"),
+  AppendExpectedChange(URL(kOrigin, ""),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/folder1"),
+  AppendExpectedChange(URL(kOrigin, "folder1"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/file1"),
+  AppendExpectedChange(URL(kOrigin, "file1"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_FILE);
-  AppendExpectedChange(URL(kOrigin, "/folder1/folder2"),
+  AppendExpectedChange(URL(kOrigin, "folder1/folder2"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
-  AppendExpectedChange(URL(kOrigin, "/folder1/file2"),
+  AppendExpectedChange(URL(kOrigin, "folder1/file2"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_FILE);
 
@@ -340,14 +346,17 @@ TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
 
   DeleteRemoteFile(folder1);
 
-  AppendExpectedChange(URL(kOrigin, "/folder1"),
+  AppendExpectedChange(URL(kOrigin, "folder1"),
                        FileChange::FILE_CHANGE_DELETE,
                        SYNC_FILE_TYPE_UNKNOWN);
   // Changes for descendant files ("folder2" and "file2") should be ignored.
 
-  ListChanges();
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunSyncerUntilIdle();
   VerifyConsistency();
+
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
@@ -357,18 +366,22 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
   InitializeMetadataDatabase();
   RegisterApp(kOrigin.host(), app_root);
 
-  AppendExpectedChange(URL(kOrigin, "/"),
+  AppendExpectedChange(URL(kOrigin, ""),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
 
-  CreateLocalFolder(URL(kOrigin, "/folder"));
+  CreateLocalFolder(URL(kOrigin, "folder"));
   CreateRemoteFile(app_root, "folder", "data");
 
   // Folder-File conflict happens. File creation should be ignored.
 
-  ListChanges();
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunSyncerUntilIdle();
   VerifyConsistency();
+
+  // Tracker for the remote file should be lowered.
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
@@ -378,27 +391,79 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
   InitializeMetadataDatabase();
   RegisterApp(kOrigin.host(), app_root);
 
-  AppendExpectedChange(URL(kOrigin, "/"),
+  AppendExpectedChange(URL(kOrigin, ""),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
 
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  CreateLocalFile(URL(kOrigin, "/file"));
+  CreateLocalFile(URL(kOrigin, "file"));
   CreateRemoteFolder(app_root, "file");
 
   // File-Folder conflict happens. Folder should override the existing file.
-  AppendExpectedChange(URL(kOrigin, "/file"),
+  AppendExpectedChange(URL(kOrigin, "file"),
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
 
-  ListChanges();
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunSyncerUntilIdle();
   VerifyConsistency();
+
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFolder) {
+  const GURL kOrigin("chrome-extension://example");
+  const std::string sync_root = CreateSyncRoot();
+  const std::string app_root = CreateRemoteFolder(sync_root, kOrigin.host());
+  InitializeMetadataDatabase();
+  RegisterApp(kOrigin.host(), app_root);
+
+  AppendExpectedChange(URL(kOrigin, ""),
+                       FileChange::FILE_CHANGE_ADD_OR_UPDATE,
+                       SYNC_FILE_TYPE_DIRECTORY);
+
+  CreateLocalFolder(URL(kOrigin, "folder"));
+  CreateRemoteFolder(app_root, "folder");
+
+  // Folder-Folder conflict happens. Folder creation should be ignored.
+
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
+  RunSyncerUntilIdle();
+  VerifyConsistency();
+
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+}
+
+TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
+  const GURL kOrigin("chrome-extension://example");
+  const std::string sync_root = CreateSyncRoot();
+  const std::string app_root = CreateRemoteFolder(sync_root, kOrigin.host());
+  InitializeMetadataDatabase();
+  RegisterApp(kOrigin.host(), app_root);
+
+  AppendExpectedChange(URL(kOrigin, ""),
+                       FileChange::FILE_CHANGE_ADD_OR_UPDATE,
+                       SYNC_FILE_TYPE_DIRECTORY);
+
+  CreateLocalFile(URL(kOrigin, "file"));
+  CreateRemoteFile(app_root, "file", "data");
+
+  // File-File conflict happens. File creation should be ignored.
+
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
+  RunSyncerUntilIdle();
+  VerifyConsistency();
+
+  // Tracker for the remote file should be lowered.
+  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+}
+
+TEST_F(RemoteToLocalSyncerTest, Conflict_CreateNestedFolderOnFile) {
   const GURL kOrigin("chrome-extension://example");
   const std::string sync_root = CreateSyncRoot();
   const std::string app_root = CreateRemoteFolder(sync_root, kOrigin.host());
@@ -409,17 +474,57 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFolder) {
                        FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                        SYNC_FILE_TYPE_DIRECTORY);
 
-  CreateLocalFolder(URL(kOrigin, "/folder"));
-  CreateRemoteFolder(app_root, "folder");
+  RunSyncerUntilIdle();
+  VerifyConsistency();
 
-  // Folder-Folder conflict happens. Folder creation should be ignored.
+  const std::string folder = CreateRemoteFolder(app_root, "folder");
 
-  ListChanges();
+  AppendExpectedChange(URL(kOrigin, "/folder"),
+                       FileChange::FILE_CHANGE_ADD_OR_UPDATE,
+                       SYNC_FILE_TYPE_DIRECTORY);
+
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
+  RunSyncerUntilIdle();
+
+  CreateLocalFile(URL(kOrigin, "/folder"));
+  CreateRemoteFile(folder, "file", "data");
+
+  // File-Folder conflict happens. Folder should override the existing file.
+  AppendExpectedChange(URL(kOrigin, "/folder"),
+                       FileChange::FILE_CHANGE_ADD_OR_UPDATE,
+                       SYNC_FILE_TYPE_DIRECTORY);
+
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunSyncerUntilIdle();
   VerifyConsistency();
 }
 
-// TODO(nhiroki): Add file-file conflict case.
+TEST_F(RemoteToLocalSyncerTest, AppRootDeletion) {
+  const GURL kOrigin("chrome-extension://example");
+  const std::string sync_root = CreateSyncRoot();
+  const std::string app_root = CreateRemoteFolder(sync_root, kOrigin.host());
+  InitializeMetadataDatabase();
+  RegisterApp(kOrigin.host(), app_root);
+
+  AppendExpectedChange(URL(kOrigin, "/"),
+                       FileChange::FILE_CHANGE_ADD_OR_UPDATE,
+                       SYNC_FILE_TYPE_DIRECTORY);
+
+  RunSyncerUntilIdle();
+  VerifyConsistency();
+
+  DeleteRemoteFile(app_root);
+
+  AppendExpectedChange(URL(kOrigin, "/"),
+                       FileChange::FILE_CHANGE_DELETE,
+                       SYNC_FILE_TYPE_UNKNOWN);
+
+  EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
+  RunSyncerUntilIdle();
+  VerifyConsistency();
+
+  // SyncEngine will re-register the app and resurrect the app root later.
+}
 
 }  // namespace drive_backend
 }  // namespace sync_file_system

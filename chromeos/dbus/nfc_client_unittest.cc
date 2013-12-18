@@ -72,6 +72,7 @@ class MockNfcRecordObserver : public NfcRecordClient::Observer {
   MOCK_METHOD1(RecordRemoved, void(const dbus::ObjectPath&));
   MOCK_METHOD2(RecordPropertyChanged, void(const dbus::ObjectPath&,
                                            const std::string&));
+  MOCK_METHOD1(RecordPropertiesReceived, void(const dbus::ObjectPath&));
 };
 
 class MockNfcTagObserver : public NfcTagClient::Observer {
@@ -201,20 +202,12 @@ class NfcClientTest : public testing::Test {
     EXPECT_CALL(*mock_bus_.get(), ShutdownAndBlock()).WillOnce(Return());
 
     // Create the clients.
-    manager_client_.reset(
-        NfcManagerClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION));
-    adapter_client_.reset(
-        NfcAdapterClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION,
-                                 manager_client_.get()));
-    device_client_.reset(
-        NfcDeviceClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION,
-                                adapter_client_.get()));
-    tag_client_.reset(
-        NfcTagClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION,
-                             adapter_client_.get()));
+    manager_client_.reset(NfcManagerClient::Create());
+    adapter_client_.reset(NfcAdapterClient::Create(manager_client_.get()));
+    device_client_.reset(NfcDeviceClient::Create(adapter_client_.get()));
+    tag_client_.reset(NfcTagClient::Create(adapter_client_.get()));
     record_client_.reset(
-        NfcRecordClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION,
-                               device_client_.get(), tag_client_.get()));
+        NfcRecordClient::Create(device_client_.get(), tag_client_.get()));
     manager_client_->Init(mock_bus_.get());
     adapter_client_->Init(mock_bus_.get());
     device_client_->Init(mock_bus_.get());
@@ -515,8 +508,8 @@ TEST_F(NfcClientTest, TagsAddedAndRemoved) {
   // Invoking methods on tags that haven't been added should fail.
   EXPECT_CALL(*this,
               ErrorCallback(nfc_client_helpers::kUnknownObjectError, _));
-  NfcRecordClient::Attributes write_data;
-  write_data[nfc_record::kTypeProperty] = nfc_record::kTypeText;
+  base::DictionaryValue write_data;
+  write_data.SetString(nfc_record::kTypeProperty, nfc_record::kTypeText);
   tag_client_->Write(dbus::ObjectPath(kTestTagPath0), write_data,
                      base::Bind(&NfcClientTest::SuccessCallback,
                                 base::Unretained(this)),
@@ -644,8 +637,8 @@ TEST_F(NfcClientTest, DevicesAddedAndRemoved) {
   // Invoking methods on devices that haven't been added should fail.
   EXPECT_CALL(*this,
               ErrorCallback(nfc_client_helpers::kUnknownObjectError, _));
-  NfcRecordClient::Attributes write_data;
-  write_data[nfc_record::kTypeProperty] = nfc_record::kTypeText;
+  base::DictionaryValue write_data;
+  write_data.SetString(nfc_record::kTypeProperty, nfc_record::kTypeText);
   device_client_->Push(dbus::ObjectPath(kTestDevicePath0), write_data,
                        base::Bind(&NfcClientTest::SuccessCallback,
                                   base::Unretained(this)),

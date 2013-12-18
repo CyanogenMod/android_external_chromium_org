@@ -25,6 +25,7 @@ class ScopedHandleBase {
 
  public:
   ScopedHandleBase() {}
+  explicit ScopedHandleBase(HandleType handle) : handle_(handle) {}
   ~ScopedHandleBase() { CloseIfNecessary(); }
 
   // Move-only constructor and operator=.
@@ -34,7 +35,6 @@ class ScopedHandleBase {
     return *this;
   }
 
-  operator HandleType() const { return handle_; }
   const HandleType& get() const { return handle_; }
 
   void swap(ScopedHandleBase& other) {
@@ -66,6 +66,11 @@ class ScopedHandleBase {
 
   HandleType handle_;
 };
+
+template <typename HandleType>
+inline ScopedHandleBase<HandleType> MakeScopedHandle(HandleType handle) {
+  return ScopedHandleBase<HandleType>(handle);
+}
 
 // Handle ----------------------------------------------------------------------
 
@@ -210,6 +215,10 @@ inline MojoResult ReadMessageRaw(MessagePipeHandle message_pipe,
                          bytes, num_bytes,
                          handles, num_handles,
                          flags);
+}
+
+inline MojoTimeTicks GetTimeTicksNow() {
+  return MojoGetTimeTicksNow();
 }
 
 }  // namespace mojo

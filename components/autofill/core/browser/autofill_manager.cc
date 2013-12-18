@@ -43,8 +43,6 @@
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/user_prefs/pref_registry_syncable.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
 #include "grit/component_strings.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -56,8 +54,6 @@ namespace autofill {
 typedef PersonalDataManager::GUIDPair GUIDPair;
 
 using base::TimeTicks;
-using content::RenderViewHost;
-using blink::WebFormElement;
 
 namespace {
 
@@ -147,7 +143,8 @@ void DeterminePossibleFieldTypesForUpload(
     if (field->form_control_type == "password") {
       matching_types.insert(autofill::PASSWORD);
     } else {
-      base::string16 value = CollapseWhitespace(field->value, false);
+      base::string16 value;
+      TrimWhitespace(field->value, TRIM_ALL, &value);
       for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
            it != profiles.end(); ++it) {
         it->GetMatchingTypes(value, app_locale, &matching_types);
@@ -310,8 +307,7 @@ void AutofillManager::OnFormsSeen(const std::vector<FormData>& forms,
   if (is_post_document_load)
     Reset();
 
-  RenderViewHost* host = driver_->GetWebContents()->GetRenderViewHost();
-  if (!host)
+  if (!driver_->RendererIsAvailable())
     return;
 
   bool enabled = IsAutofillEnabled();
@@ -370,11 +366,10 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
                               field,
                               bounding_box,
                               display_warning);
-
-  RenderViewHost* host = NULL;
   FormStructure* form_structure = NULL;
   AutofillField* autofill_field = NULL;
-  if (GetHost(&host) &&
+  if (RefreshDataModels() &&
+      driver_->RendererIsAvailable() &&
       GetCachedFormAndField(form, field, &form_structure, &autofill_field) &&
       // Don't send suggestions for forms that aren't auto-fillable.
       form_structure->IsAutofillable(false)) {
@@ -448,20 +443,19 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
                                              const FormData& form,
                                              const FormFieldData& field,
                                              int unique_id) {
-  RenderViewHost* host = NULL;
   const AutofillDataModel* data_model = NULL;
   size_t variant = 0;
   FormStructure* form_structure = NULL;
   AutofillField* autofill_field = NULL;
-  // NOTE: GetHost may invalidate |data_model| because it causes the
-  // PersonalDataManager to reload Mac address book entries. Thus it must
-  // come before GetProfileOrCreditCard.
-  if (!GetHost(&host) ||
+  // NOTE: RefreshDataModels may invalidate |data_model| because it causes the
+  // PersonalDataManager to reload Mac address book entries. Thus it must come
+  // before GetProfileOrCreditCard.
+  if (!RefreshDataModels() ||
+      !driver_->RendererIsAvailable() ||
       !GetProfileOrCreditCard(unique_id, &data_model, &variant) ||
       !GetCachedFormAndField(form, field, &form_structure, &autofill_field))
     return;
 
-  DCHECK(host);
   DCHECK(form_structure);
   DCHECK(autofill_field);
 
@@ -630,47 +624,6 @@ void AutofillManager::OnSetDataList(const std::vector<base::string16>& values,
   external_delegate_->SetCurrentDataListValues(values, labels);
 }
 
-void AutofillManager::OnRequestAutocomplete(
-    const FormData& form,
-    const GURL& frame_url) {
-  if (!IsAutofillEnabled()) {
-    ReturnAutocompleteResult(WebFormElement::AutocompleteResultErrorDisabled,
-                             FormData());
-    return;
-  }
-
-  base::Callback<void(const FormStructure*)> callback =
-      base::Bind(&AutofillManager::ReturnAutocompleteData,
-                 weak_ptr_factory_.GetWeakPtr());
-  ShowRequestAutocompleteDialog(form, frame_url, callback);
-}
-
-void AutofillManager::ReturnAutocompleteResult(
-    WebFormElement::AutocompleteResult result, const FormData& form_data) {
-  // driver_->GetWebContents() will be NULL when the interactive autocomplete
-  // is closed due to a tab or browser window closing.
-  if (!driver_->GetWebContents())
-    return;
-
-  RenderViewHost* host = driver_->GetWebContents()->GetRenderViewHost();
-  if (!host)
-    return;
-
-  host->Send(new AutofillMsg_RequestAutocompleteResult(host->GetRoutingID(),
-                                                       result,
-                                                       form_data));
-}
-
-void AutofillManager::ReturnAutocompleteData(const FormStructure* result) {
-  if (!result) {
-    ReturnAutocompleteResult(WebFormElement::AutocompleteResultErrorCancel,
-                             FormData());
-  } else {
-    ReturnAutocompleteResult(WebFormElement::AutocompleteResultSuccess,
-                             result->ToFormData());
-  }
-}
-
 void AutofillManager::OnLoadedServerPredictions(
     const std::string& response_xml) {
   // Parse and store the server predictions.
@@ -833,7 +786,6 @@ AutofillManager::AutofillManager(AutofillDriver* driver,
       test_delegate_(NULL),
       weak_ptr_factory_(this) {
   DCHECK(driver_);
-  DCHECK(driver_->GetWebContents());
   DCHECK(manager_delegate_);
 }
 
@@ -841,7 +793,7 @@ void AutofillManager::set_metric_logger(const AutofillMetrics* metric_logger) {
   metric_logger_.reset(metric_logger);
 }
 
-bool AutofillManager::GetHost(RenderViewHost** host) const {
+bool AutofillManager::RefreshDataModels() const {
   if (!IsAutofillEnabled())
     return false;
 
@@ -851,10 +803,6 @@ bool AutofillManager::GetHost(RenderViewHost** host) const {
     return false;
   }
 
-  if (!driver_->RendererIsAvailable())
-    return false;
-
-  *host = driver_->GetWebContents()->GetRenderViewHost();
   return true;
 }
 
@@ -1135,14 +1083,6 @@ void AutofillManager::UnpackGUIDs(int id,
 
   *cc_guid = IDToGUID(cc_id);
   *profile_guid = IDToGUID(profile_id);
-}
-
-void AutofillManager::ShowRequestAutocompleteDialog(
-    const FormData& form,
-    const GURL& source_url,
-    const base::Callback<void(const FormStructure*)>& callback) {
-  manager_delegate_->ShowRequestAutocompleteDialog(
-      form, source_url, callback);
 }
 
 void AutofillManager::UpdateInitialInteractionTimestamp(

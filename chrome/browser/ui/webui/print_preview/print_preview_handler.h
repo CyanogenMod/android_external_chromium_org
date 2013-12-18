@@ -86,6 +86,7 @@ class PrintPreviewHandler
   virtual void LocalPrinterChanged(
       bool added,
       const std::string& name,
+      bool has_local_printing,
       const local_discovery::DeviceDescription& description) OVERRIDE;
   virtual void LocalPrinterRemoved(const std::string& name) OVERRIDE;
   virtual void LocalPrinterCacheFlushed() OVERRIDE;
@@ -241,7 +242,7 @@ class PrintPreviewHandler
   void GetNumberFormatAndMeasurementSystem(base::DictionaryValue* settings);
 
   bool GetPreviewDataAndTitle(scoped_refptr<base::RefCountedBytes>* data,
-                              string16* title) const;
+                              base::string16* title) const;
 
 #if defined(USE_CUPS)
   void SaveCUPSColorSetting(const base::DictionaryValue* settings);
@@ -273,6 +274,7 @@ class PrintPreviewHandler
   void FillPrinterDescription(
       const std::string& name,
       const local_discovery::DeviceDescription& description,
+      bool has_local_printing,
       base::DictionaryValue* printer_value);
 #endif
 

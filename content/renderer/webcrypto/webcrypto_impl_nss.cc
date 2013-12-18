@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "content/renderer/webcrypto/webcrypto_util.h"
 #include "crypto/nss_util.h"
 #include "crypto/scoped_nss_types.h"
 #include "crypto/secure_util.h"
@@ -170,7 +171,7 @@ bool AesCbcEncryptDecrypt(
     return false;
   }
 
-  WebCryptoImpl::ShrinkBuffer(buffer, final_output_chunk_len + output_len);
+  webcrypto::ShrinkBuffer(buffer, final_output_chunk_len + output_len);
   return true;
 }
 
@@ -324,6 +325,30 @@ bool ImportKeyInternalRaw(
   return true;
 }
 
+bool ExportKeyInternalRaw(
+    const blink::WebCryptoKey& key,
+    blink::WebArrayBuffer* buffer) {
+
+  DCHECK(key.handle());
+  DCHECK(buffer);
+
+  if (key.type() != blink::WebCryptoKeyTypeSecret || !key.extractable())
+    return false;
+
+  SymKeyHandle* sym_key = reinterpret_cast<SymKeyHandle*>(key.handle());
+
+  if (PK11_ExtractKeyValue(sym_key->key()) != SECSuccess)
+    return false;
+
+  const SECItem* key_data = PK11_GetKeyData(sym_key->key());
+  if (!key_data)
+    return false;
+
+  *buffer = webcrypto::CreateArrayBuffer(key_data->data, key_data->len);
+
+  return true;
+}
+
 typedef scoped_ptr<CERTSubjectPublicKeyInfo,
                    crypto::NSSDestroyer<CERTSubjectPublicKeyInfo,
                                         SECKEY_DestroySubjectPublicKeyInfo> >
@@ -423,8 +448,7 @@ bool ExportKeyInternalSpki(
   DCHECK(spki_der->data);
   DCHECK(spki_der->len);
 
-  *buffer = blink::WebArrayBuffer::create(spki_der->len, 1);
-  memcpy(buffer->data(), spki_der->data, spki_der->len);
+  *buffer = webcrypto::CreateArrayBuffer(spki_der->data, spki_der->len);
 
   return true;
 }
@@ -584,7 +608,7 @@ bool WebCryptoImpl::DecryptInternal(
       return false;
     }
     DCHECK_LE(output_length_bytes, max_output_length_bytes);
-    WebCryptoImpl::ShrinkBuffer(buffer, output_length_bytes);
+    webcrypto::ShrinkBuffer(buffer, output_length_bytes);
     return true;
   }
 
@@ -754,16 +778,10 @@ bool WebCryptoImpl::GenerateKeyPairInternal(
         return false;
       }
 
-      // One extractable input parameter is provided, and the Web Crypto API
-      // spec at this time says it applies to both members of the key pair.
-      // This is probably not correct: it makes more operational sense to have
-      // extractable apply only to the private key and make the public key
-      // always extractable. For now implement what the spec says and track the
-      // spec bug here: https://www.w3.org/Bugs/Public/show_bug.cgi?id=23695
       *public_key = blink::WebCryptoKey::create(
           new PublicKeyHandle(crypto::ScopedSECKEYPublicKey(sec_public_key)),
           blink::WebCryptoKeyTypePublic,
-          extractable,  // probably should be 'true' always
+          true,
           algorithm,
           usage_mask);
       *private_key = blink::WebCryptoKey::create(
@@ -826,8 +844,7 @@ bool WebCryptoImpl::ExportKeyInternal(
     blink::WebArrayBuffer* buffer) {
   switch (format) {
     case blink::WebCryptoKeyFormatRaw:
-      // TODO(padolph): Implement raw export
-      return false;
+      return ExportKeyInternalRaw(key, buffer);
     case blink::WebCryptoKeyFormatSpki:
       return ExportKeyInternalSpki(key, buffer);
     case blink::WebCryptoKeyFormatPkcs8:
@@ -932,6 +949,64 @@ bool WebCryptoImpl::VerifySignatureInternal(
       return false;
   }
 
+  return true;
+}
+
+bool WebCryptoImpl::ImportRsaPublicKeyInternal(
+    const unsigned char* modulus_data,
+    unsigned modulus_size,
+    const unsigned char* exponent_data,
+    unsigned exponent_size,
+    const blink::WebCryptoAlgorithm& algorithm,
+    bool extractable,
+    blink::WebCryptoKeyUsageMask usage_mask,
+    blink::WebCryptoKey* key) {
+
+  if (!modulus_size || !exponent_size)
+    return false;
+  DCHECK(modulus_data);
+  DCHECK(exponent_data);
+
+  // NSS does not provide a way to create an RSA public key directly from the
+  // modulus and exponent values, but it can import an DER-encoded ASN.1 blob
+  // with these values and create the public key from that. The code below
+  // follows the recommendation described in
+  // https://developer.mozilla.org/en-US/docs/NSS/NSS_Tech_Notes/nss_tech_note7
+
+  // Pack the input values into a struct compatible with NSS ASN.1 encoding, and
+  // set up an ASN.1 encoder template for it.
+  struct RsaPublicKeyData {
+    SECItem modulus;
+    SECItem exponent;
+  };
+  const RsaPublicKeyData pubkey_in = {
+      {siUnsignedInteger, const_cast<unsigned char*>(modulus_data),
+       modulus_size},
+      {siUnsignedInteger, const_cast<unsigned char*>(exponent_data),
+       exponent_size}};
+  const SEC_ASN1Template rsa_public_key_template[] = {
+      {SEC_ASN1_SEQUENCE, 0, NULL, sizeof(RsaPublicKeyData)},
+      {SEC_ASN1_INTEGER, offsetof(RsaPublicKeyData, modulus), },
+      {SEC_ASN1_INTEGER, offsetof(RsaPublicKeyData, exponent), },
+      {0, }};
+
+  // DER-encode the public key.
+  crypto::ScopedSECItem pubkey_der(SEC_ASN1EncodeItem(
+      NULL, NULL, &pubkey_in, rsa_public_key_template));
+  if (!pubkey_der)
+    return false;
+
+  // Import the DER-encoded public key to create an RSA SECKEYPublicKey.
+  crypto::ScopedSECKEYPublicKey pubkey(
+      SECKEY_ImportDERPublicKey(pubkey_der.get(), CKK_RSA));
+  if (!pubkey)
+    return false;
+
+  *key = blink::WebCryptoKey::create(new PublicKeyHandle(pubkey.Pass()),
+                                     blink::WebCryptoKeyTypePublic,
+                                     extractable,
+                                     algorithm,
+                                     usage_mask);
   return true;
 }
 

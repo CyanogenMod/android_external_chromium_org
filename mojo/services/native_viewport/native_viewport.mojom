@@ -4,18 +4,35 @@
 
 module mojo {
 
+struct Point {
+  float x;
+  float y;
+};
+
+struct TouchData {
+  int32 pointer_id;
+};
+
+struct Event {
+  int32 action;
+  int64 time_stamp;
+  Point location;
+  TouchData touch_data;
+};
+
 [Peer=NativeViewportClient]
 interface NativeViewport {
   void Open();
   void Close();
+  void CreateGLES2Context(handle<message_pipe> gles2_client);
+  void AckEvent(Event event);
 };
 
 [Peer=NativeViewport]
 interface NativeViewportClient {
-  void DidOpen();
-
-  // Rather than send a uint64, we should send an opaque handle to a GL service.
-  void DidCreateGLContext(uint64 gl);
+  void OnCreated();
+  void OnDestroyed();
+  void OnEvent(Event event);
 };
 
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,9 +45,11 @@ public abstract class AwBrowserProcess {
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
-                if( !BrowserStartupController.get(context).startBrowserProcessesSync(
-                            BrowserStartupController.MAX_RENDERERS_SINGLE_PROCESS)) {
-                    throw new RuntimeException("Cannot initialize WebView");
+                try {
+                    BrowserStartupController.get(context).startBrowserProcessesSync(
+                                BrowserStartupController.MAX_RENDERERS_SINGLE_PROCESS);
+                } catch (ProcessInitException e) {
+                    throw new RuntimeException("Cannot initialize WebView", e);
                 }
             }
         });

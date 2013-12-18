@@ -40,7 +40,7 @@ BurnManager* g_burn_manager = NULL;
 // Cretes a directory and calls |callback| with the result on UI thread.
 void CreateDirectory(const base::FilePath& path,
                      base::Callback<void(bool success)> callback) {
-  const bool success = file_util::CreateDirectory(path);
+  const bool success = base::CreateDirectory(path);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(callback, success));
 }
@@ -120,12 +120,12 @@ const std::string& ConfigFile::GetProperty(
       if (property != block_it->properties.end()) {
         return property->second;
       } else {
-        return EmptyString();
+        return base::EmptyString();
       }
     }
   }
 
-  return EmptyString();
+  return base::EmptyString();
 }
 
 // Check if last block has a hwid associated with it, and erase it if it

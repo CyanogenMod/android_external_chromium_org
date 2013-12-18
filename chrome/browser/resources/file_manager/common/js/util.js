@@ -1072,12 +1072,12 @@ util.EntryChangedKind = {
 };
 
 /**
- * @param {DirectoryEntry|Object} entry DirectoryEntry to be checked.
+ * Obtains whether an entry is fake or not.
+ * @param {Entry|Object} entry Entry of fake entry.
  * @return {boolean} True if the given entry is fake.
  */
-util.isFakeDirectoryEntry = function(entry) {
-  // Currently, fake entry doesn't support createReader.
-  return !('createReader' in entry);
+util.isFakeEntry = function(entry) {
+  return !('getParent' in entry);
 };
 
 /**
@@ -1094,14 +1094,17 @@ util.createFileError = function(code) {
 };
 
 /**
+ * Compares two entries.
  * @param {Entry|Object} entry1 The entry to be compared. Can be a fake.
  * @param {Entry|Object} entry2 The entry to be compared. Can be a fake.
- * @return {boolean} True if the both entry represents a same file or directory.
+ * @return {boolean} True if the both entry represents a same file or
+ *     directory. Returns true if both entries are null.
  */
 util.isSameEntry = function(entry1, entry2) {
   // Currently, we can assume there is only one root.
   // When we support multi-file system, we need to look at filesystem, too.
-  return entry1 === null ? entry2 === null : entry1.fullPath == entry2.fullPath;
+  return (entry1 && entry2 && entry1.fullPath === entry2.fullPath) ||
+      (!entry1 && !entry2);
 };
 
 /**
@@ -1154,6 +1157,46 @@ util.getCurrentLocaleOrDefault = function() {
 };
 
 /**
+ * Converts array of entries to an array of corresponding URLs.
+ * @param {Array.<Entry>} entries Input array of entries.
+ * @return {Array.<string>} Output array of URLs.
+ */
+util.entriesToURLs = function(entries) {
+  // TODO(mtomasz): Make all callers use entries instead of URLs, and then
+  // remove this utility function.
+  console.warn('Converting entries to URLs is deprecated.');
+  return entries.map(function(entry) {
+     return entry.toURL();
+  });
+};
+
+/**
+ * Converts array of URLs to an array of corresponding Entries.
+ *
+ * @param {Array.<string>} urls Input array of URLs.
+ * @param {function(Array.<Entry>)} callback Completion callback with array of
+ *     Entries.
+ */
+util.URLsToEntries = function(urls, callback) {
+  var result = [];
+  AsyncUtil.forEach(
+      urls,
+      function(forEachCallback, url) {
+        webkitResolveLocalFileSystemURL(url, function(entry) {
+          result.push(entry);
+          forEachCallback();
+        }, function() {
+          // Not an error. Possibly, the file is not accessible anymore.
+          console.warn('Failed to resolve the file with url: ' + url + '.');
+          forEachCallback();
+        });
+      },
+      function() {
+        callback(result);
+      });
+};
+
+/**
  * Error type of VolumeManager.
  * @enum {string}
  * @const
@@ -1177,7 +1220,7 @@ util.VolumeError = Object.freeze({
  * List of connection types of drive.
  *
  * Keep this in sync with the kDriveConnectionType* constants in
- * file_browser_private_api.cc.
+ * private_api_dirve.cc.
  *
  * @enum {string}
  * @const
@@ -1192,7 +1235,7 @@ util.DriveConnectionType = Object.freeze({
  * List of reasons of DriveConnectionType.
  *
  * Keep this in sync with the kDriveConnectionReason constants in
- * file_browser_private_api.cc.
+ * private_api_drive.cc.
  *
  * @enum {string}
  * @const

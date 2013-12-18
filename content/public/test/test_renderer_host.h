@@ -7,6 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -69,7 +70,7 @@ class RenderViewHostTester {
   virtual ~RenderViewHostTester() {}
 
   // Gives tests access to RenderViewHostImpl::CreateRenderView.
-  virtual bool CreateRenderView(const string16& frame_name,
+  virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
                                 int32 max_page_id) = 0;
 
@@ -131,6 +132,7 @@ class RenderViewHostTestHarness : public testing::Test {
   RenderViewHost* rvh();
   RenderViewHost* pending_rvh();
   RenderViewHost* active_rvh();
+  RenderFrameHost* main_rfh();
   BrowserContext* browser_context();
   MockRenderProcessHost* process();
 

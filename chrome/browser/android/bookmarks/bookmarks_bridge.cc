@@ -280,7 +280,7 @@ int BookmarksBridge::GetBookmarkType(const BookmarkNode* node) {
     return kBookmarkTypeNormal;
 }
 
-string16 BookmarksBridge::GetTitle(const BookmarkNode* node) const {
+base::string16 BookmarksBridge::GetTitle(const BookmarkNode* node) const {
   if (partner_bookmarks_shim_->IsPartnerBookmark(node))
     return partner_bookmarks_shim_->GetTitle(node);
   return node->GetTitle();
@@ -298,10 +298,11 @@ bool BookmarksBridge::IsLoaded() const {
 
 bool BookmarksBridge::IsFolderAvailable(
     const BookmarkNode* folder) const {
+  SigninManager* signin = SigninManagerFactory::GetForProfile(
+      profile_->GetOriginalProfile());
   return (folder->type() != BookmarkNode::BOOKMARK_BAR &&
       folder->type() != BookmarkNode::OTHER_NODE) ||
-      !SigninManagerFactory::GetForProfile(
-          profile_)->GetAuthenticatedUsername().empty();
+      (signin && !signin->GetAuthenticatedUsername().empty());
 }
 
 void BookmarksBridge::NotifyIfDoneLoading() {

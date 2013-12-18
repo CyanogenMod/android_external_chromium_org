@@ -165,12 +165,12 @@ GpuCommandBufferStub::~GpuCommandBufferStub() {
   gpu_channel_manager->Send(new GpuHostMsg_DestroyCommandBuffer(surface_id()));
 }
 
-GpuMemoryManager* GpuCommandBufferStub::GetMemoryManager() {
+GpuMemoryManager* GpuCommandBufferStub::GetMemoryManager() const {
     return channel()->gpu_channel_manager()->gpu_memory_manager();
 }
 
 bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
-  devtools_gpu_instrumentation::ScopedGpuTask task(channel());
+  devtools_gpu_instrumentation::ScopedGpuTask task(this);
   FastSetActiveURL(active_url_, active_url_hash_);
 
   // Ensure the appropriate GL context is current before handling any IPC
@@ -390,7 +390,8 @@ void GpuCommandBufferStub::Destroy() {
 
 void GpuCommandBufferStub::OnInitializeFailed(IPC::Message* reply_message) {
   Destroy();
-  GpuCommandBufferMsg_Initialize::WriteReplyParams(reply_message, false);
+  GpuCommandBufferMsg_Initialize::WriteReplyParams(
+      reply_message, false, gpu::Capabilities());
   Send(reply_message);
 }
 
@@ -411,12 +412,6 @@ void GpuCommandBufferStub::OnInitialize(
     OnInitializeFailed(reply_message);
     return;
   }
-
-  gpu_control_.reset(
-      new gpu::GpuControlService(context_group_->image_manager(),
-                                 NULL,
-                                 context_group_->mailbox_manager(),
-                                 NULL));
 
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group_.get()));
 
@@ -519,6 +514,13 @@ void GpuCommandBufferStub::OnInitialize(
     return;
   }
 
+  gpu_control_.reset(
+      new gpu::GpuControlService(context_group_->image_manager(),
+                                 NULL,
+                                 context_group_->mailbox_manager(),
+                                 NULL,
+                                 decoder_->GetCapabilities()));
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableGPUServiceLogging)) {
     decoder_->set_log_commands(true);
@@ -557,7 +559,8 @@ void GpuCommandBufferStub::OnInitialize(
     return;
   }
 
-  GpuCommandBufferMsg_Initialize::WriteReplyParams(reply_message, true);
+  GpuCommandBufferMsg_Initialize::WriteReplyParams(
+      reply_message, true, gpu_control_->GetCapabilities());
   Send(reply_message);
 
   if (handle_.is_null() && !active_url_.is_empty()) {
@@ -988,6 +991,10 @@ void GpuCommandBufferStub::MarkContextLost() {
   if (decoder_)
     decoder_->LoseContext(GL_UNKNOWN_CONTEXT_RESET_ARB);
   command_buffer_->SetParseError(gpu::error::kLostContext);
+}
+
+uint64 GpuCommandBufferStub::GetMemoryUsage() const {
+  return GetMemoryManager()->GetClientMemoryUsage(this);
 }
 
 }  // namespace content

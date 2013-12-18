@@ -41,8 +41,7 @@ class BrowserShortcutLauncherItemController : public LauncherItemController {
   virtual base::string16 GetTitle() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(
       aura::Window* root_window) OVERRIDE;
-  virtual ash::LauncherMenuModel* CreateApplicationMenu(
-      int event_flags) OVERRIDE;
+  virtual ash::ShelfMenuModel* CreateApplicationMenu(int event_flags) OVERRIDE;
   virtual bool IsDraggable() OVERRIDE;
   virtual bool ShouldShowTooltip() OVERRIDE;
 
@@ -53,7 +52,7 @@ class BrowserShortcutLauncherItemController : public LauncherItemController {
 
   // Get the title for the browser list entry for |web_contents|.
   // If |web_contents| has not loaded, returns "Net Tab".
-  string16 GetBrowserListTitle(content::WebContents* web_contents) const;
+  base::string16 GetBrowserListTitle(content::WebContents* web_contents) const;
 
   // Check if the given |web_contents| is in incognito mode.
   bool IsIncognito(content::WebContents* web_contents) const;

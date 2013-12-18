@@ -147,7 +147,7 @@ class IMEDetailedView : public TrayDetailsView,
   virtual void OnViewClicked(views::View* sender) OVERRIDE {
     SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
     if (sender == footer()->content()) {
-      owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+      TransitionToDefaultView();
     } else if (sender == settings_) {
       delegate->ShowIMESettings();
     } else {
@@ -231,7 +231,9 @@ void TrayIME::UpdateOrCreateNotification() {
       base::string16(),  // message
       bundle.GetImageNamed(IDR_AURA_UBER_TRAY_IME),
       base::string16(),  // display_source
-      message_center::NotifierId(system_notifier::NOTIFIER_INPUT_METHOD),
+      message_center::NotifierId(
+          message_center::NotifierId::SYSTEM_COMPONENT,
+          system_notifier::kNotifierInputMethod),
       message_center::RichNotificationData(),
       new message_center::HandleNotificationClickedDelegate(
           base::Bind(&TrayIME::PopupDetailedView,

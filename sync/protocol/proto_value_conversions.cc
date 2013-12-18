@@ -54,9 +54,7 @@ base::StringValue* MakeInt64Value(int64 x) {
 // that instead of a StringValue.
 base::StringValue* MakeBytesValue(const std::string& bytes) {
   std::string bytes_base64;
-  if (!base::Base64Encode(bytes, &bytes_base64)) {
-    NOTREACHED();
-  }
+  base::Base64Encode(bytes, &bytes_base64);
   return new base::StringValue(bytes_base64);
 }
 
@@ -413,6 +411,14 @@ base::DictionaryValue* AutofillProfileSpecificsToValue(
   return value;
 }
 
+base::DictionaryValue* MetaInfoToValue(
+    const sync_pb::MetaInfo& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(key);
+  SET_STR(value);
+  return value;
+}
+
 base::DictionaryValue* BookmarkSpecificsToValue(
     const sync_pb::BookmarkSpecifics& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -421,6 +427,7 @@ base::DictionaryValue* BookmarkSpecificsToValue(
   SET_STR(title);
   SET_INT64(creation_time_us);
   SET_STR(icon_url);
+  SET_REP(meta_info, &MetaInfoToValue);
   return value;
 }
 

@@ -3,7 +3,10 @@
 # found in the LICENSE file.
 
 import logging
+import subprocess
+import tempfile
 
+from telemetry.core import bitmap
 from telemetry.core import exceptions
 from telemetry.core import platform
 from telemetry.core import util
@@ -11,6 +14,7 @@ from telemetry.core.platform import proc_supporting_platform_backend
 
 # Get build/android scripts into our path.
 util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
+from pylib import screenshot  # pylint: disable=F0401
 from pylib.perf import cache_control  # pylint: disable=F0401
 from pylib.perf import perf_control  # pylint: disable=F0401
 from pylib.perf import thermal_throttle  # pylint: disable=F0401
@@ -22,6 +26,7 @@ except Exception:
 
 
 _HOST_APPLICATIONS = [
+    'avconv',
     'ipfw',
     ]
 
@@ -39,6 +44,8 @@ class AndroidPlatformBackend(
     self._host_platform_backend = platform.CreatePlatformBackendForCurrentOS()
     self._can_access_protected_file_contents = \
         self._adb.CanAccessProtectedFileContents()
+    self._video_recorder = None
+    self._video_output = None
     if self._no_performance_mode:
       logging.warning('CPU governor will not be set!')
 
@@ -135,6 +142,9 @@ class AndroidPlatformBackend(
   def GetOSName(self):
     return 'android'
 
+  def GetOSVersionName(self):
+    return self._adb.GetBuildId()[0]
+
   def CanFlushIndividualFilesFromSystemCache(self):
     return False
 
@@ -170,11 +180,85 @@ class AndroidPlatformBackend(
     raise NotImplementedError(
         'Please teach Telemetry how to install ' + application)
 
+  def CanCaptureVideo(self):
+    return self.GetOSVersionName() >= 'K'
+
+  def StartVideoCapture(self, min_bitrate_mbps):
+    assert not self._video_recorder, 'Already started video capture'
+    min_bitrate_mbps = max(min_bitrate_mbps, 0.1)
+    if min_bitrate_mbps > 100:
+      raise ValueError('Android video capture cannot capture at %dmbps. '
+                       'Max capture rate is 100mbps.' % min_bitrate_mbps)
+    self._video_output = tempfile.mkstemp()[1]
+    self._video_recorder = screenshot.VideoRecorder(
+        self._adb, self._video_output, megabits_per_second=min_bitrate_mbps)
+    self._video_recorder.Start()
+    util.WaitFor(self._video_recorder.IsStarted, 5)
+
+  def StopVideoCapture(self):
+    assert self._video_recorder, 'Must start video capture first'
+    self._video_recorder.Stop()
+    self._video_output = self._video_recorder.Pull()
+    self._video_recorder = None
+    for frame in self._FramesFromMp4(self._video_output):
+      yield frame
+
+  def _FramesFromMp4(self, mp4_file):
+    if not self.CanLaunchApplication('avconv'):
+      self.InstallApplication('avconv')
+
+    def GetDimensions(video):
+      proc = subprocess.Popen(['avconv', '-i', video], stderr=subprocess.PIPE)
+      for line in proc.stderr.readlines():
+        if 'Video:' in line:
+          dimensions = line.split(',')[2]
+          dimensions = map(int, dimensions.split()[0].split('x'))
+          break
+      proc.wait()
+      assert dimensions, 'Failed to determine video dimensions'
+      return dimensions
+
+    def GetFrameTimestampMs(stderr):
+      """Returns the frame timestamp in integer milliseconds from the dump log.
+
+      The expected line format is:
+      '  dts=1.715  pts=1.715\n'
+
+      We have to be careful to only read a single timestamp per call to avoid
+      deadlock because avconv interleaves its writes to stdout and stderr.
+      """
+      while True:
+        line = ''
+        next_char = ''
+        while next_char != '\n':
+          next_char = stderr.read(1)
+          line += next_char
+        if 'pts=' in line:
+          return int(1000 * float(line.split('=')[-1]))
+
+    dimensions = GetDimensions(mp4_file)
+    frame_length = dimensions[0] * dimensions[1] * 3
+    frame_data = bytearray(frame_length)
+
+    # Use rawvideo so that we don't need any external library to parse frames.
+    proc = subprocess.Popen(['avconv', '-i', mp4_file, '-vcodec',
+                             'rawvideo', '-pix_fmt', 'rgb24', '-dump',
+                             '-loglevel', 'debug', '-f', 'rawvideo', '-'],
+                            stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+    while True:
+      num_read = proc.stdout.readinto(frame_data)
+      if not num_read:
+        raise StopIteration
+      assert num_read == len(frame_data), 'Unexpected frame size: %d' % num_read
+      yield (GetFrameTimestampMs(proc.stderr),
+             bitmap.Bitmap(3, dimensions[0], dimensions[1], frame_data))
+
   def _GetFileContents(self, fname):
     if not self._can_access_protected_file_contents:
       logging.warning('%s cannot be retrieved on non-rooted device.' % fname)
       return ''
-    return ''.join(self._adb.GetProtectedFileContents(fname, log_result=False))
+    return '\n'.join(
+        self._adb.GetProtectedFileContents(fname, log_result=False))
 
   def _GetPsOutput(self, columns, pid=None):
     assert columns == ['pid', 'name'] or columns == ['pid'], \

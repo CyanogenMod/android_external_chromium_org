@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@ import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.ContentViewCore;
-import org.chromium.content.browser.NavigationEntry;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.net.test.util.TestWebServer;
 
@@ -44,14 +43,14 @@ public class SaveRestoreStateTest extends AwTestBase {
 
     private static final int NUM_NAVIGATIONS = 3;
     private static final String TITLES[] = {
-            "page 1 title foo",
-            "page 2 title bar",
-            "page 3 title baz"
+        "page 1 title foo",
+        "page 2 title bar",
+        "page 3 title baz"
     };
     private static final String PATHS[] = {
-            "/p1foo.html",
-            "/p2bar.html",
-            "/p3baz.html",
+        "/p1foo.html",
+        "/p2bar.html",
+        "/p3baz.html",
     };
 
     private String mUrls[];
@@ -86,7 +85,7 @@ public class SaveRestoreStateTest extends AwTestBase {
     }
 
     private NavigationHistory getNavigationHistoryOnUiThread(
-            final TestVars vars) throws Throwable{
+            final TestVars vars) throws Throwable {
         return runTestOnUiThreadAndGetResult(new Callable<NavigationHistory>() {
             @Override
             public NavigationHistory call() throws Exception {

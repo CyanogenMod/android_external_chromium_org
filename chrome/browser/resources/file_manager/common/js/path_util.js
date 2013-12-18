@@ -38,6 +38,7 @@ var RootType = Object.freeze({
 
 /**
  * Top directory for each root type.
+ * TODO(mtomasz): Deprecated. Remove this.
  * @enum {string}
  * @const
  */
@@ -65,11 +66,12 @@ var DriveSubRootDirectory = Object.freeze({
 var PathUtil = {};
 
 /**
- * The path to the default directory.
+ * The default mount point.
+ * TODO(mtomasz): Deprecated. Use the volume manager instead.
  * @type {string}
  * @const
  */
-PathUtil.DEFAULT_DIRECTORY = RootDirectory.DOWNLOADS;
+PathUtil.DEFAULT_MOUNT_POINT = '/Downloads';
 
 /**
  * Checks if the given path represents a special search. Fake entries in
@@ -324,7 +326,7 @@ PathUtil.getRootLabel = function(path) {
 
   // TODO(haruki): Add support for "drive/root" and "drive/other".
   if (path === RootDirectory.DRIVE + '/' + DriveSubRootDirectory.ROOT)
-    return str('DRIVE_DIRECTORY_LABEL');
+    return str('DRIVE_MY_DRIVE_LABEL');
 
   if (path === RootDirectory.DRIVE_OFFLINE)
     return str('DRIVE_OFFLINE_COLLECTION_LABEL');
@@ -420,7 +422,7 @@ PathUtil.getLocationInfo = function(volumeInfo, fullPath) {
       rootPath = volumeInfo.mountPath + '/other';
       rootType = RootType.DRIVE_OTHER;
     } else {
-      throw new Exception(fullPath + ' is an invalid drive path.');
+      throw new Error(fullPath + ' is an invalid drive path.');
     }
   } else {
     // Otherwise, root path is same with a mount path of the volume.
@@ -429,15 +431,12 @@ PathUtil.getLocationInfo = function(volumeInfo, fullPath) {
       case util.VolumeType.DOWNLOADS: rootType = RootType.DOWNLOADS; break;
       case util.VolumeType.REMOVABLE: rootType = RootType.REMOVABLE; break;
       case util.VolumeType.ARCHIVE: rootType = RootType.ARCHIVE; break;
-      default: throw new Exception(
+      default: throw new Error(
           'Invalid volume type: ' + volumeInfo.volumeType);
     }
   }
-  return new EntryLocation(volumeInfo,
-                           fullPath,
-                           rootType,
-                           rootPath,
-                           fullPath.substr(rootPath.length) || '/');
+  var isRootEntry = (fullPath.substr(0, rootPath.length) || '/') === fullPath;
+  return new EntryLocation(volumeInfo, rootType, isRootEntry);
 };
 
 /**
@@ -445,25 +444,16 @@ PathUtil.getLocationInfo = function(volumeInfo, fullPath) {
  * file system.
  *
  * @param {!VolumeInfo} volumeInfo Volume information.
- * @param {string} path Full path.
  * @param {RootType} rootType Root type.
- * @param {string} rootPath Root path.
- * @param {string} virtualPath Virtual path. See also
- *     EntryLocation#vierutalPath.
+ * @param {boolean} isRootEntry Whether the entry is root entry or not.
  * @constructor
  */
-function EntryLocation(volumeInfo, path, rootType, rootPath, virtualPath) {
+function EntryLocation(volumeInfo, rootType, isRootEntry) {
   /**
    * Volume information.
    * @type {!VolumeInfo}
    */
   this.volumeInfo = volumeInfo;
-
-  /**
-   * Full path of the location.
-   * @type {string}
-   */
-  this.path = path;
 
   /**
    * Root type.
@@ -472,25 +462,10 @@ function EntryLocation(volumeInfo, path, rootType, rootPath, virtualPath) {
   this.rootType = rootType;
 
   /**
-   * Root path.
-   * @type {string}
-   */
-  this.rootPath = rootPath;
-
-  /**
-   * Virtual path.
-   *
-   * Part of full path that follows root path.
-   * e.g. Virtual path of /drive/root/A/B is /A/B.
-   * @type {string}
-   */
-  this.virtualPath = virtualPath;
-
-  /**
    * Whether the entry is root entry or not.
    * @type {boolean}
    */
-  this.isRootEntry = virtualPath === '/';
+  this.isRootEntry = isRootEntry;
 
   Object.freeze(this);
 }

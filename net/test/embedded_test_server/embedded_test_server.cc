@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -99,6 +100,10 @@ HttpListenSocket::~HttpListenSocket() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
+void HttpListenSocket::DetachFromThread() {
+  thread_checker_.DetachFromThread();
+}
+
 EmbeddedTestServer::EmbeddedTestServer()
     : port_(-1),
       weak_factory_(this) {
@@ -114,19 +119,45 @@ EmbeddedTestServer::~EmbeddedTestServer() {
 }
 
 bool EmbeddedTestServer::InitializeAndWaitUntilReady() {
-  base::Thread::Options thread_options;
-  thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
-  io_thread_.reset(new base::Thread("EmbeddedTestServer io thread"));
-  CHECK(io_thread_->StartWithOptions(thread_options));
-
+  StartThread();
   DCHECK(thread_checker_.CalledOnValidThread());
-
   if (!PostTaskToIOThreadAndWait(base::Bind(
           &EmbeddedTestServer::InitializeOnIOThread, base::Unretained(this)))) {
     return false;
   }
-
   return Started() && base_url_.is_valid();
+}
+
+void EmbeddedTestServer::StopThread() {
+  DCHECK(io_thread_ && io_thread_->IsRunning());
+
+#if defined(OS_LINUX)
+  const int thread_count =
+      base::GetNumberOfThreads(base::GetCurrentProcessHandle());
+#endif
+
+  io_thread_->Stop();
+  io_thread_.reset();
+  thread_checker_.DetachFromThread();
+  listen_socket_->DetachFromThread();
+
+#if defined(OS_LINUX)
+  // Busy loop to wait for thread count to decrease. This is needed because
+  // pthread_join does not guarantee that kernel stat is updated when it
+  // returns. Thus, GetNumberOfThreads does not immediately reflect the stopped
+  // thread and hits the thread number DCHECK in render_sandbox_host_linux.cc
+  // in browser_tests.
+  while (thread_count ==
+         base::GetNumberOfThreads(base::GetCurrentProcessHandle())) {
+    base::PlatformThread::YieldCurrentThread();
+  }
+#endif
+}
+
+void EmbeddedTestServer::RestartThreadAndListen() {
+  StartThread();
+  CHECK(PostTaskToIOThreadAndWait(base::Bind(
+      &EmbeddedTestServer::ListenOnIOThread, base::Unretained(this))));
 }
 
 bool EmbeddedTestServer::ShutdownAndWaitUntilComplete() {
@@ -134,6 +165,14 @@ bool EmbeddedTestServer::ShutdownAndWaitUntilComplete() {
 
   return PostTaskToIOThreadAndWait(base::Bind(
       &EmbeddedTestServer::ShutdownOnIOThread, base::Unretained(this)));
+}
+
+void EmbeddedTestServer::StartThread() {
+  DCHECK(!io_thread_.get());
+  base::Thread::Options thread_options;
+  thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
+  io_thread_.reset(new base::Thread("EmbeddedTestServer io thread"));
+  CHECK(io_thread_->StartWithOptions(thread_options));
 }
 
 void EmbeddedTestServer::InitializeOnIOThread() {
@@ -155,6 +194,12 @@ void EmbeddedTestServer::InitializeOnIOThread() {
   } else {
     LOG(ERROR) << "GetLocalAddress failed: " << ErrorToString(result);
   }
+}
+
+void EmbeddedTestServer::ListenOnIOThread() {
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(Started());
+  listen_socket_->Listen();
 }
 
 void EmbeddedTestServer::ShutdownOnIOThread() {

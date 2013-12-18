@@ -5,13 +5,9 @@
 #ifndef MOJO_EXAMPLES_SAMPLE_APP_SPINNING_CUBE_H_
 #define MOJO_EXAMPLES_SAMPLE_APP_SPINNING_CUBE_H_
 
-#include "base/memory/scoped_ptr.h"
+#include <stdint.h>
 
-namespace gpu {
-namespace gles2 {
-class GLES2Interface;
-}
-}
+#include "base/memory/scoped_ptr.h"
 
 namespace mojo {
 namespace examples {
@@ -21,21 +17,26 @@ class SpinningCube {
   SpinningCube();
   ~SpinningCube();
 
-  void BindTo(gpu::gles2::GLES2Interface* gl,
-              int width,
-              int height);
-  void OnGLContextLost();
-
-  void Update(float delta_time);
+  void Init(uint32_t width, uint32_t height);
+  void set_direction(int direction) { direction_ = direction; }
+  void SetFlingMultiplier(float drag_distance, float drag_time);
+  void UpdateForTimeDelta(float delta_time);
+  void UpdateForDragDistance(float distance);
   void Draw();
+
+  void OnGLContextLost();
 
  private:
   class GLState;
 
-  gpu::gles2::GLES2Interface* gl_;
-  int width_;
-  int height_;
+  void Update();
+
+  bool initialized_;
+  uint32_t width_;
+  uint32_t height_;
   scoped_ptr<GLState> state_;
+  float fling_multiplier_;
+  int direction_;
 };
 
 }  // namespace examples

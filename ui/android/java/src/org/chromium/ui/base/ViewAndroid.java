@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,6 @@ package org.chromium.ui.base;
 import android.view.View;
 
 import org.chromium.base.JNINamespace;
-import org.chromium.ui.base.ViewAndroidDelegate;
-import org.chromium.ui.base.WindowAndroid;
 
 /**
  * From the Chromium architecture point of view, ViewAndroid and its native counterpart

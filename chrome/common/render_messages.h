@@ -141,7 +141,7 @@ IPC_STRUCT_BEGIN(ChromeViewHostMsg_GetPluginInfo_Output)
   IPC_STRUCT_MEMBER(content::WebPluginInfo, plugin)
   IPC_STRUCT_MEMBER(std::string, actual_mime_type)
   IPC_STRUCT_MEMBER(std::string, group_identifier)
-  IPC_STRUCT_MEMBER(string16, group_name)
+  IPC_STRUCT_MEMBER(base::string16, group_name)
 IPC_STRUCT_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ContentSettingsPattern::PatternParts)
@@ -270,8 +270,8 @@ IPC_MESSAGE_CONTROL0(ChromeViewMsg_PurgeMemory)
 // a time which is late enough to not be thrown out, and early enough to be
 // before onload events are fired.
 IPC_MESSAGE_ROUTED4(ChromeViewMsg_WebUIJavaScript,
-                    string16,  /* frame_xpath */
-                    string16,  /* jscript_url */
+                    base::string16,  /* frame_xpath */
+                    base::string16,  /* jscript_url */
                     int,  /* ID */
                     bool  /* If true, result is sent back. */)
 
@@ -328,13 +328,13 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetSuggestionToPrefetch,
                     InstantSuggestion /* suggestion */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSubmit,
-                    string16 /* value */)
+                    base::string16 /* value */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxThemeChanged,
                     ThemeBackgroundInfo /* value */)
 
 IPC_MESSAGE_ROUTED2(ChromeViewMsg_ChromeIdentityCheckResult,
-                    string16 /* identity */,
+                    base::string16 /* identity */,
                     bool /* identity_match */)
 
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxToggleVoiceSearch)
@@ -409,6 +409,18 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_RetrieveWebappInformation,
                     GURL /* expected_url */)
 #endif  // defined(OS_ANDROID)
 
+// chrome.principals messages ------------------------------------------------
+
+// Message sent from the renderer to the browser to get the list of browser
+// managed accounts for the given origin.
+IPC_SYNC_MESSAGE_CONTROL1_1(ChromeViewHostMsg_GetManagedAccounts,
+                            GURL /* current URL */,
+                            std::vector<std::string> /* managed accounts */)
+
+// Message sent from the renderer to the browser to show the browser account
+// management UI.
+IPC_MESSAGE_CONTROL0(ChromeViewHostMsg_ShowBrowserAccountManagementUI)
+
 // JavaScript related messages -----------------------------------------------
 
 // Notify the JavaScript engine in the render to change its parameters
@@ -444,9 +456,8 @@ IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_UpdatedCacheStats,
 
 // Tells the browser that content in the current page was blocked due to the
 // user's content settings.
-IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_ContentBlocked,
-                    ContentSettingsType, /* type of blocked content */
-                    std::string /* resource identifier */)
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_ContentBlocked,
+                    ContentSettingsType /* type of blocked content */)
 
 // Sent by the renderer process to check whether access to web databases is
 // granted by content settings.
@@ -454,8 +465,8 @@ IPC_SYNC_MESSAGE_CONTROL5_1(ChromeViewHostMsg_AllowDatabase,
                             int /* render_view_id */,
                             GURL /* origin_url */,
                             GURL /* top origin url */,
-                            string16 /* database name */,
-                            string16 /* database display name */,
+                            base::string16 /* database name */,
+                            base::string16 /* database display name */,
                             bool /* allowed */)
 
 // Sent by the renderer process to check whether access to DOM Storage is
@@ -481,7 +492,7 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ChromeViewHostMsg_AllowIndexedDB,
                             int /* render_view_id */,
                             GURL /* origin_url */,
                             GURL /* top origin url */,
-                            string16 /* database name */,
+                            base::string16 /* database name */,
                             bool /* allowed */)
 
 // Return information about a plugin for the given URL and MIME type.
@@ -489,7 +500,7 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ChromeViewHostMsg_AllowIndexedDB,
 // about specific reasons why a plug-in can't be used, for example because it's
 // disabled.
 IPC_SYNC_MESSAGE_CONTROL4_1(ChromeViewHostMsg_GetPluginInfo,
-                            int /* render_view_id */,
+                            int /* render_frame_id */,
                             GURL /* url */,
                             GURL /* top origin url */,
                             std::string /* mime_type */,
@@ -524,7 +535,7 @@ IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_RemovePluginPlaceholderHost,
 // Notifies a missing plug-in placeholder that a plug-in with name |plugin_name|
 // has been found.
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_FoundMissingPlugin,
-                    string16 /* plugin_name */)
+                    base::string16 /* plugin_name */)
 
 // Notifies a missing plug-in placeholder that no plug-in has been found.
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_DidNotFindMissingPlugin)
@@ -605,7 +616,7 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_BlockedOutdatedPlugin,
 // Notifies when a plugin couldn't be loaded because it requires
 // user authorization.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_BlockedUnauthorizedPlugin,
-                    string16 /* name */,
+                    base::string16 /* name */,
                     std::string /* plug-in group identifier */)
 
 // Provide the browser process with information about the WebCore resource
@@ -710,7 +721,7 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
 // The Instant page asks for Chrome identity check against |identity|.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_ChromeIdentityCheck,
                     int /* page_id */,
-                    string16 /* identity */)
+                    base::string16 /* identity */)
 
 // Tells InstantExtended to set the omnibox focus state.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FocusOmnibox,
@@ -722,7 +733,7 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FocusOmnibox,
 // open.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_PasteAndOpenDropdown,
                     int /* page_id */,
-                    string16 /* text to be pasted */)
+                    base::string16 /* text to be pasted */)
 
 // Tells InstantExtended whether the embedded search API is supported.
 // See http://dev.chromium.org/embeddedsearch
@@ -766,7 +777,7 @@ IPC_MESSAGE_CONTROL2(ChromeViewMsg_SetSearchURLs,
 // Tells listeners that a detailed message was reported to the console by
 // WebKit.
 IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DetailedConsoleMessageAdded,
-                    string16 /* message */,
-                    string16 /* source */,
+                    base::string16 /* message */,
+                    base::string16 /* source */,
                     extensions::StackTrace /* stack trace */,
                     int32 /* severity level */)

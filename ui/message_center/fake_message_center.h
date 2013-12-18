@@ -39,6 +39,7 @@ class FakeMessageCenter : public MessageCenter {
 
   virtual void RemoveNotification(const std::string& id, bool by_user) OVERRIDE;
   virtual void RemoveAllNotifications(bool by_user) OVERRIDE;
+  virtual void RemoveAllVisibleNotifications(bool by_user) OVERRIDE;
   virtual void SetNotificationIcon(const std::string& notification_id,
                                    const gfx::Image& image) OVERRIDE;
 
@@ -64,7 +65,7 @@ class FakeMessageCenter : public MessageCenter {
   virtual void EnterQuietModeWithExpire(
       const base::TimeDelta& expires_in) OVERRIDE;
   virtual void SetVisibility(Visibility visible) OVERRIDE;
-  virtual bool IsMessageCenterVisible() OVERRIDE;
+  virtual bool IsMessageCenterVisible() const OVERRIDE;
   virtual void RestartPopupTimers() OVERRIDE;
   virtual void PausePopupTimers() OVERRIDE;
 

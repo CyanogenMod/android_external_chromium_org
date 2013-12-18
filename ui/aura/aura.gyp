@@ -99,7 +99,10 @@
         'root_window.h',
         'window.cc',
         'window.h',
+        'window_targeter.cc',
+        'window_targeter.h',
         'window_delegate.h',
+        'window_layer_type.h',
         'window_observer.h',
         'window_tracker.cc',
         'window_tracker.h',
@@ -148,7 +151,6 @@
         '../ui.gyp:ui',
         '../ui_unittests.gyp:ui_test_support',
         'aura',
-        'aura_test_support_pak',
       ],
       'include_dirs': [
         '..',
@@ -161,8 +163,6 @@
         'test/env_test_helper.h',
         'test/event_generator.cc',
         'test/event_generator.h',
-        'test/test_aura_initializer.cc',
-        'test/test_aura_initializer.h',
         'test/test_cursor_client.cc',
         'test/test_cursor_client.h',
         'test/test_event_handler.cc',
@@ -185,38 +185,6 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
-    },
-    {
-      # We build a minimal set of resources required for aura_test_support.
-      'target_name': 'aura_test_support_pak',
-      'type': 'none',
-      'dependencies': [
-        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
-        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-      ],
-      'variables': {
-        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-      },
-      'actions': [
-        {
-          'action_name': 'repack_aura_test_support_pack',
-          'variables': {
-            'pak_inputs': [
-              '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-            ],
-          },
-          'inputs': [
-            '<(repack_path)',
-            '<@(pak_inputs)',
-          ],
-          'outputs': [
-            '<(PRODUCT_DIR)/aura_test_support_resources.pak',
-          ],
-          'action': ['python', '<(repack_path)', '<@(_outputs)',
-                     '<@(pak_inputs)'],
-        },
-      ],
     },
     {
       'target_name': 'aura_demo',
@@ -298,6 +266,7 @@
         'test/run_all_unittests.cc',
         'test/test_suite.cc',
         'test/test_suite.h',
+        'window_targeter_unittest.cc',
         'window_unittest.cc',
       ],
       'conditions': [

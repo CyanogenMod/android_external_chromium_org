@@ -9,9 +9,11 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "components/dom_distiller/core/article_entry.h"
 #include "components/dom_distiller/core/dom_distiller_database.h"
 #include "components/dom_distiller/core/dom_distiller_model.h"
+#include "components/dom_distiller/core/dom_distiller_observer.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_data.h"
 #include "sync/api/sync_error.h"
@@ -36,6 +38,8 @@ class DomDistillerStoreInterface {
 
   virtual bool AddEntry(const ArticleEntry& entry) = 0;
 
+  virtual bool RemoveEntry(const ArticleEntry& entry) = 0;
+
   // Lookup an ArticleEntry by ID or URL. Returns whether a corresponding entry
   // was found. On success, if |entry| is not null, it will contain the entry.
   virtual bool GetEntryById(const std::string& entry_id,
@@ -45,8 +49,9 @@ class DomDistillerStoreInterface {
   // Gets a copy of all the current entries.
   virtual std::vector<ArticleEntry> GetEntries() const = 0;
 
-  // TODO(cjhopman): This should have a way to observe changes to the underlying
-  // model.
+  virtual void AddObserver(DomDistillerObserver* observer) = 0;
+
+  virtual void RemoveObserver(DomDistillerObserver* observer) = 0;
 };
 
 // Implements syncing/storing of DomDistiller entries. This keeps three
@@ -84,10 +89,13 @@ class DomDistillerStore : public syncer::SyncableService,
   // DomDistillerStoreInterface implementation.
   virtual syncer::SyncableService* GetSyncableService() OVERRIDE;
   virtual bool AddEntry(const ArticleEntry& entry) OVERRIDE;
+  virtual bool RemoveEntry(const ArticleEntry& entry) OVERRIDE;
   virtual bool GetEntryById(const std::string& entry_id,
                             ArticleEntry* entry) OVERRIDE;
   virtual bool GetEntryByUrl(const GURL& url, ArticleEntry* entry) OVERRIDE;
   virtual std::vector<ArticleEntry> GetEntries() const OVERRIDE;
+  virtual void AddObserver(DomDistillerObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(DomDistillerObserver* observer) OVERRIDE;
 
   // syncer::SyncableService implementation.
   virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
@@ -124,14 +132,17 @@ class DomDistillerStore : public syncer::SyncableService,
 
   // Applies the changes to |model_|. If the model returns an error, disables
   // syncing and database changes and returns false.
-  bool ApplyChangesToModel(const syncer::SyncChangeList& change_list,
+  void ApplyChangesToModel(const syncer::SyncChangeList& change_list,
                            syncer::SyncChangeList* changes_applied,
                            syncer::SyncChangeList* changes_missing);
+
+  void NotifyObservers(const syncer::SyncChangeList& changes);
 
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
   scoped_ptr<syncer::SyncErrorFactory> error_factory_;
   scoped_ptr<DomDistillerDatabaseInterface> database_;
   bool database_loaded_;
+  ObserverList<DomDistillerObserver> observers_;
 
   DomDistillerModel model_;
 

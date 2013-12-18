@@ -17,7 +17,11 @@
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/android_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/google_auto_login_helper.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
@@ -25,12 +29,12 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_core.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_android.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #endif
 
@@ -205,9 +209,26 @@ void SigninManagerAndroid::OnBrowsingDataRemoverDone() {
 }
 
 void SigninManagerAndroid::LogInSignedInUser(JNIEnv* env, jobject obj) {
-  // AutoLogin deletes itself.
-  GoogleAutoLoginHelper* autoLogin = new GoogleAutoLoginHelper(profile_);
-  autoLogin->LogIn();
+  if (profiles::IsNewProfileManagementEnabled()) {
+    // New Mirror code path that just fires the events and let the
+    // Account Reconcilor handles everything.
+    AndroidProfileOAuth2TokenService* token_service =
+        ProfileOAuth2TokenServiceFactory::GetPlatformSpecificForProfile(
+            profile_);
+    const std::string& primary_acct = token_service->GetPrimaryAccountId();
+    const std::vector<std::string>& ids = token_service->GetAccounts();
+    token_service->ValidateAccounts(primary_acct, ids);
+
+  } else {
+    DVLOG(1) << "SigninManagerAndroid::LogInSignedInUser "
+        " Manually calling GoogleAutoLoginHelper";
+    // Old code path that doesn't depend on the new Account Reconcilor.
+    // We manually login.
+
+    // AutoLogin deletes itself.
+    GoogleAutoLoginHelper* autoLogin = new GoogleAutoLoginHelper(profile_);
+    autoLogin->LogIn();
+  }
 }
 
 static jlong Init(JNIEnv* env, jobject obj) {

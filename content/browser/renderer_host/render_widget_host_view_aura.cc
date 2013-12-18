@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 
+#include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -450,6 +451,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
     : host_(RenderWidgetHostImpl::From(host)),
       window_(new aura::Window(this)),
       in_shutdown_(false),
+      in_bounds_changed_(false),
       is_fullscreen_(false),
       popup_parent_host_view_(NULL),
       popup_child_host_view_(NULL),
@@ -990,7 +992,8 @@ void RenderWidgetHostViewAura::Destroy() {
   delete window_;
 }
 
-void RenderWidgetHostViewAura::SetTooltipText(const string16& tooltip_text) {
+void RenderWidgetHostViewAura::SetTooltipText(
+    const base::string16& tooltip_text) {
   tooltip_ = tooltip_text;
   aura::Window* root_window = window_->GetRootWindow();
   aura::client::TooltipClient* tooltip_client =
@@ -1002,7 +1005,7 @@ void RenderWidgetHostViewAura::SetTooltipText(const string16& tooltip_text) {
   }
 }
 
-void RenderWidgetHostViewAura::SelectionChanged(const string16& text,
+void RenderWidgetHostViewAura::SelectionChanged(const base::string16& text,
                                                 size_t offset,
                                                 const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
@@ -1082,16 +1085,33 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceToVideoFrame(
     return;
   }
 
+  // Try get a texture to reuse.
+  scoped_refptr<OwnedMailbox> subscriber_texture;
+  if (frame_subscriber_) {
+    if (!idle_frame_subscriber_textures_.empty()) {
+      subscriber_texture = idle_frame_subscriber_textures_.back();
+      idle_frame_subscriber_textures_.pop_back();
+    } else if (GLHelper* helper =
+                   ImageTransportFactory::GetInstance()->GetGLHelper()) {
+      subscriber_texture = new OwnedMailbox(helper);
+    }
+  }
+
   scoped_ptr<cc::CopyOutputRequest> request =
       cc::CopyOutputRequest::CreateRequest(base::Bind(
           &RenderWidgetHostViewAura::
-              CopyFromCompositingSurfaceHasResultForVideo,
+               CopyFromCompositingSurfaceHasResultForVideo,
           AsWeakPtr(),  // For caching the ReadbackYUVInterface on this class.
+          subscriber_texture,
           target,
           callback));
   gfx::Rect src_subrect_in_pixel =
       ConvertRectToPixel(current_device_scale_factor_, src_subrect);
   request->set_area(src_subrect_in_pixel);
+  if (subscriber_texture) {
+    request->SetTextureMailbox(cc::TextureMailbox(
+        subscriber_texture->mailbox(), subscriber_texture->sync_point()));
+  }
   window_->layer()->RequestCopyOfOutput(request.Pass());
 }
 
@@ -1115,9 +1135,9 @@ void RenderWidgetHostViewAura::BeginFrameSubscription(
 }
 
 void RenderWidgetHostViewAura::EndFrameSubscription() {
+  idle_frame_subscriber_textures_.clear();
   frame_subscriber_.reset();
 }
-
 
 void RenderWidgetHostViewAura::OnAcceleratedCompositingStateChange() {
   // Delay processing the state change until we either get a software frame if
@@ -1148,7 +1168,10 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
   if (HasDisplayPropertyChanged(window_))
     host_->InvalidateScreenInfo();
 
-  window_->SetBounds(rect);
+  // Don't recursively call SetBounds if this bounds update is the result of
+  // a Window::SetBoundsInternal call.
+  if (!in_bounds_changed_)
+    window_->SetBounds(rect);
   host_->WasResized();
   MaybeCreateResizeLock();
   if (touch_editing_client_) {
@@ -1405,7 +1428,13 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
       resource_collection_ = new cc::DelegatedFrameResourceCollection;
       resource_collection_->SetClient(this);
     }
-    if (!frame_provider_.get() || frame_size != frame_provider_->frame_size()) {
+    // If the physical frame size changes, we need a new |frame_provider_|. If
+    // the physical frame size is the same, but the size in DIP changed, we
+    // need to adjust the scale at which the frames will be drawn, and we do
+    // this by making a new |frame_provider_| also to ensure the scale change
+    // is presented in sync with the new frame content.
+    if (!frame_provider_.get() || frame_size != frame_provider_->frame_size() ||
+        frame_size_in_dip != current_frame_size_) {
       frame_provider_ = new cc::DelegatedFrameProvider(
           resource_collection_.get(), frame_data.Pass());
       window_->layer()->SetShowDelegatedContent(frame_provider_.get(),
@@ -1872,17 +1901,34 @@ void RenderWidgetHostViewAura::PrepareBitmapCopyOutputResult(
   callback.Run(true, bitmap);
 }
 
-static void CopyFromCompositingSurfaceFinishedForVideo(
+void RenderWidgetHostViewAura::CopyFromCompositingSurfaceFinishedForVideo(
+    base::WeakPtr<RenderWidgetHostViewAura> rwhva,
     const base::Callback<void(bool)>& callback,
+    scoped_refptr<OwnedMailbox> subscriber_texture,
     scoped_ptr<cc::SingleReleaseCallback> release_callback,
     bool result) {
-  release_callback->Run(0, false);
   callback.Run(result);
+
+  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+  uint32 sync_point = gl_helper ? gl_helper->InsertSyncPoint() : 0;
+  if (release_callback) {
+    DCHECK(!subscriber_texture);
+    release_callback->Run(sync_point, false);
+  } else {
+    // If there's no release callback, then the texture is from
+    // idle_frame_subscriber_textures_ and we can put it back there.
+    DCHECK(subscriber_texture);
+    subscriber_texture->UpdateSyncPoint(sync_point);
+    if (rwhva && rwhva->frame_subscriber_ && subscriber_texture->texture_id())
+      rwhva->idle_frame_subscriber_textures_.push_back(subscriber_texture);
+    subscriber_texture = NULL;
+  }
 }
 
 // static
 void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHasResultForVideo(
     base::WeakPtr<RenderWidgetHostViewAura> rwhva,
+    scoped_refptr<OwnedMailbox> subscriber_texture,
     scoped_refptr<media::VideoFrame> video_frame,
     const base::Callback<void(bool)>& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
@@ -1890,7 +1936,6 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHasResultForVideo(
 
   if (!rwhva)
     return;
-
   if (result->IsEmpty())
     return;
   if (result->size().IsEmpty())
@@ -1993,8 +2038,10 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHasResultForVideo(
 
   ignore_result(scoped_callback_runner.Release());
   base::Callback<void(bool result)> finished_callback = base::Bind(
-      &CopyFromCompositingSurfaceFinishedForVideo,
+      &RenderWidgetHostViewAura::CopyFromCompositingSurfaceFinishedForVideo,
+      rwhva->AsWeakPtr(),
       callback,
+      subscriber_texture,
       base::Passed(&release_callback));
   yuv_readback_pipeline->ReadbackYUV(
       texture_mailbox.name(),
@@ -2180,8 +2227,10 @@ void RenderWidgetHostViewAura::SetCompositionText(
 }
 
 void RenderWidgetHostViewAura::ConfirmCompositionText() {
-  if (host_ && has_composition_text_)
-    host_->ImeConfirmComposition(string16(), gfx::Range::InvalidRange(), false);
+  if (host_ && has_composition_text_) {
+    host_->ImeConfirmComposition(base::string16(), gfx::Range::InvalidRange(),
+                                 false);
+  }
   has_composition_text_ = false;
 }
 
@@ -2191,7 +2240,7 @@ void RenderWidgetHostViewAura::ClearCompositionText() {
   has_composition_text_ = false;
 }
 
-void RenderWidgetHostViewAura::InsertText(const string16& text) {
+void RenderWidgetHostViewAura::InsertText(const base::string16& text) {
   DCHECK(text_input_type_ != ui::TEXT_INPUT_TYPE_NONE);
   if (host_)
     host_->ImeConfirmComposition(text, gfx::Range::InvalidRange(), false);
@@ -2326,7 +2375,7 @@ bool RenderWidgetHostViewAura::DeleteRange(const gfx::Range& range) {
 
 bool RenderWidgetHostViewAura::GetTextFromRange(
     const gfx::Range& range,
-    string16* text) const {
+    base::string16* text) const {
   gfx::Range selection_text_range(selection_text_offset_,
       selection_text_offset_ + selection_text_.length());
 
@@ -2386,12 +2435,15 @@ void RenderWidgetHostViewAura::EnsureCaretInRect(const gfx::Rect& rect) {
 }
 
 void RenderWidgetHostViewAura::OnCandidateWindowShown() {
+  host_->CandidateWindowShown();
 }
 
 void RenderWidgetHostViewAura::OnCandidateWindowUpdated() {
+  host_->CandidateWindowUpdated();
 }
 
 void RenderWidgetHostViewAura::OnCandidateWindowHidden() {
+  host_->CandidateWindowHidden();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2428,6 +2480,7 @@ gfx::Size RenderWidgetHostViewAura::GetMaximumSize() const {
 
 void RenderWidgetHostViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
                                                const gfx::Rect& new_bounds) {
+  base::AutoReset<bool> in_bounds_changed(&in_bounds_changed_, true);
   // We care about this only in fullscreen mode, where there is no
   // WebContentsViewAura. We are sized via SetSize() or SetBounds() by
   // WebContentsViewAura in other cases.
@@ -2976,6 +3029,17 @@ void RenderWidgetHostViewAura::OnWindowFocused(aura::Window* gained_focus,
         (screen->GetDisplayNearestWindow(window_).id() !=
          screen->GetDisplayNearestWindow(gained_focus).id());
     if (is_fullscreen_ && !in_shutdown_ && !focusing_other_display) {
+#if defined(OS_WIN)
+      // On Windows, if we are switching to a non Aura Window on a different
+      // screen we should not close the fullscreen window.
+      if (!gained_focus) {
+        POINT point = {0};
+        ::GetCursorPos(&point);
+        if (screen->GetDisplayNearestWindow(window_).id() !=
+            screen->GetDisplayNearestPoint(gfx::Point(point)).id())
+          return;
+      }
+#endif
       in_shutdown_ = true;
       host_->Shutdown();
     }
@@ -3132,6 +3196,8 @@ void RenderWidgetHostViewAura::OnLostResources() {
   current_surface_ = NULL;
   UpdateExternalTexture();
 
+  idle_frame_subscriber_textures_.clear();
+
   // Make sure all ImageTransportClients are deleted now that the context those
   // are using is becoming invalid. This sends pending ACKs and needs to happen
   // after calling UpdateExternalTexture() which syncs with the impl thread.
@@ -3238,8 +3304,10 @@ bool RenderWidgetHostViewAura::NeedsInputGrab() {
 void RenderWidgetHostViewAura::FinishImeCompositionSession() {
   if (!has_composition_text_)
     return;
-  if (host_)
-    host_->ImeConfirmComposition(string16(), gfx::Range::InvalidRange(), false);
+  if (host_) {
+    host_->ImeConfirmComposition(base::string16(), gfx::Range::InvalidRange(),
+                                 false);
+  }
   ImeCancelComposition();
 }
 
@@ -3348,6 +3416,11 @@ void RenderWidgetHostViewAura::AddedToRootWindow() {
   }
   if (current_surface_.get())
     UpdateExternalTexture();
+  if (HasFocus()) {
+    ui::InputMethod* input_method = GetInputMethod();
+    if (input_method)
+      input_method->SetFocusedTextInputClient(this);
+  }
 }
 
 void RenderWidgetHostViewAura::RemovingFromRootWindow() {

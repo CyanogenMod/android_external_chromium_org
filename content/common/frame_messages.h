@@ -6,6 +6,7 @@
 // Multiply-included message file, hence no include guard.
 
 #include "content/common/content_export.h"
+#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -42,3 +43,45 @@ IPC_MESSAGE_ROUTED4(FrameHostMsg_DidStartProvisionalLoadForFrame,
                     bool /* true if it is the main frame */,
                     GURL /* url */)
 
+// Sent to the browser when the renderer detects it is blocked on a pepper
+// plugin message for too long. This is also sent when it becomes unhung
+// (according to the value of is_hung). The browser can give the user the
+// option of killing the plugin.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_PepperPluginHung,
+                    int /* plugin_child_id */,
+                    base::FilePath /* path */,
+                    bool /* is_hung */)
+
+// Sent by the renderer process to indicate that a plugin instance has crashed.
+// Note: |plugin_pid| should not be trusted. The corresponding process has
+// probably died. Moreover, the ID may have been reused by a new process. Any
+// usage other than displaying it in a prompt to the user is very likely to be
+// wrong.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_PluginCrashed,
+                    base::FilePath /* plugin_path */,
+                    base::ProcessId /* plugin_pid */)
+
+// Return information about a plugin for the given URL and MIME
+// type. If there is no matching plugin, |found| is false.
+// |actual_mime_type| is the actual mime type supported by the
+// found plugin.
+IPC_SYNC_MESSAGE_CONTROL4_3(FrameHostMsg_GetPluginInfo,
+                            int /* render_frame_id */,
+                            GURL /* url */,
+                            GURL /* page_url */,
+                            std::string /* mime_type */,
+                            bool /* found */,
+                            content::WebPluginInfo /* plugin info */,
+                            std::string /* actual_mime_type */)
+
+// A renderer sends this to the browser process when it wants to
+// create a plugin.  The browser will create the plugin process if
+// necessary, and will return a handle to the channel on success.
+// On error an empty string is returned.
+IPC_SYNC_MESSAGE_CONTROL4_2(FrameHostMsg_OpenChannelToPlugin,
+                            int /* render_frame_id */,
+                            GURL /* url */,
+                            GURL /* page_url */,
+                            std::string /* mime_type */,
+                            IPC::ChannelHandle /* channel_handle */,
+                            content::WebPluginInfo /* info */)

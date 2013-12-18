@@ -121,7 +121,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
     return;
   }
 
-  scoped_refptr<cc::ContextProvider> offscreen_context_provider;
+  scoped_refptr<ContextProvider> offscreen_context_provider;
   if (created_offscreen_context_provider_) {
     offscreen_context_provider =
         layer_tree_host_->client()->OffscreenContextProvider();
@@ -200,9 +200,9 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
 
     layer_tree_host_impl_->BeginCommit();
 
-    if (layer_tree_host_->contents_texture_manager()) {
-      layer_tree_host_->contents_texture_manager()->
-          PushTexturePrioritiesToBackings();
+    if (PrioritizedResourceManager* contents_texture_manager =
+        layer_tree_host_->contents_texture_manager()) {
+      contents_texture_manager->PushTexturePrioritiesToBackings();
     }
     layer_tree_host_->BeginCommitOnImplThread(layer_tree_host_impl_.get());
 
@@ -329,24 +329,28 @@ bool SingleThreadProxy::ReduceContentsTextureMemoryOnImplThread(
     size_t limit_bytes,
     int priority_cutoff) {
   DCHECK(IsImplThread());
-  if (!layer_tree_host_->contents_texture_manager())
-    return false;
-  if (!layer_tree_host_impl_->resource_provider())
+  PrioritizedResourceManager* contents_texture_manager =
+      layer_tree_host_->contents_texture_manager();
+
+  ResourceProvider* resource_provider =
+      layer_tree_host_impl_->resource_provider();
+
+  if (!contents_texture_manager || !resource_provider)
     return false;
 
-  return layer_tree_host_->contents_texture_manager()->ReduceMemoryOnImplThread(
-      limit_bytes, priority_cutoff, layer_tree_host_impl_->resource_provider());
+  return contents_texture_manager->ReduceMemoryOnImplThread(
+      limit_bytes, priority_cutoff, resource_provider);
 }
 
 void SingleThreadProxy::SendManagedMemoryStats() {
   DCHECK(Proxy::IsImplThread());
   if (!layer_tree_host_impl_)
     return;
-  if (!layer_tree_host_->contents_texture_manager())
-    return;
-
   PrioritizedResourceManager* contents_texture_manager =
       layer_tree_host_->contents_texture_manager();
+  if (!contents_texture_manager)
+    return;
+
   layer_tree_host_impl_->SendManagedMemoryStats(
       contents_texture_manager->MemoryVisibleBytes(),
       contents_texture_manager->MemoryVisibleAndNearbyBytes(),
@@ -434,12 +438,12 @@ bool SingleThreadProxy::CommitAndComposite(
 
   layer_tree_host_->AnimateLayers(frame_begin_time);
 
-  if (layer_tree_host_->contents_texture_manager()) {
-    layer_tree_host_->contents_texture_manager()
-        ->UnlinkAndClearEvictedBackings();
-    layer_tree_host_->contents_texture_manager()->SetMaxMemoryLimitBytes(
+  if (PrioritizedResourceManager* contents_texture_manager =
+      layer_tree_host_->contents_texture_manager()) {
+    contents_texture_manager->UnlinkAndClearEvictedBackings();
+    contents_texture_manager->SetMaxMemoryLimitBytes(
         layer_tree_host_impl_->memory_allocation_limit_bytes());
-    layer_tree_host_->contents_texture_manager()->SetExternalPriorityCutoff(
+    contents_texture_manager->SetExternalPriorityCutoff(
         layer_tree_host_impl_->memory_allocation_priority_cutoff());
   }
 
@@ -449,7 +453,7 @@ bool SingleThreadProxy::CommitAndComposite(
 
   layer_tree_host_->WillCommit();
 
-  scoped_refptr<cc::ContextProvider> offscreen_context_provider;
+  scoped_refptr<ContextProvider> offscreen_context_provider;
   if (renderer_capabilities_for_main_thread_.using_offscreen_context3d &&
       layer_tree_host_->needs_offscreen_context()) {
     offscreen_context_provider =
@@ -485,7 +489,7 @@ void SingleThreadProxy::UpdateBackgroundAnimateTicking() {
 }
 
 bool SingleThreadProxy::DoComposite(
-    scoped_refptr<cc::ContextProvider> offscreen_context_provider,
+    scoped_refptr<ContextProvider> offscreen_context_provider,
     base::TimeTicks frame_begin_time,
     gfx::Rect device_viewport_damage_rect,
     bool for_readback,
@@ -516,9 +520,11 @@ bool SingleThreadProxy::DoComposite(
         layer_tree_host_impl_->CurrentFrameTime());
     UpdateBackgroundAnimateTicking();
 
-    layer_tree_host_impl_->PrepareToDraw(frame, device_viewport_damage_rect);
-    layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
-    layer_tree_host_impl_->DidDrawAllLayers(*frame);
+    if (!layer_tree_host_impl_->IsContextLost()) {
+      layer_tree_host_impl_->PrepareToDraw(frame, device_viewport_damage_rect);
+      layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
+      layer_tree_host_impl_->DidDrawAllLayers(*frame);
+    }
     lost_output_surface = layer_tree_host_impl_->IsContextLost();
 
     bool start_ready_animations = true;
@@ -528,7 +534,7 @@ bool SingleThreadProxy::DoComposite(
   }
 
   if (lost_output_surface) {
-    cc::ContextProvider* offscreen_contexts =
+    ContextProvider* offscreen_contexts =
         layer_tree_host_impl_->offscreen_context_provider();
     if (offscreen_contexts)
       offscreen_contexts->VerifyContexts();

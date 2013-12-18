@@ -3469,6 +3469,9 @@ ssl3_HandleAlert(sslSocket *ss, sslBuffer *buf)
     case certificate_unknown: 	error = SSL_ERROR_CERTIFICATE_UNKNOWN_ALERT;
 			        					  break;
     case illegal_parameter: 	error = SSL_ERROR_ILLEGAL_PARAMETER_ALERT;break;
+    case inappropriate_fallback:
+        error = SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT;
+        break;
 
     /* All alerts below are TLS only. */
     case unknown_ca: 		error = SSL_ERROR_UNKNOWN_CA_ALERT;       break;
@@ -4973,7 +4976,7 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     int              num_suites;
     int              actual_count = 0;
     PRBool           isTLS = PR_FALSE;
-    PRBool           requestingResume = PR_FALSE;
+    PRBool           requestingResume = PR_FALSE, fallbackSCSV = PR_FALSE;
     PRInt32          total_exten_len = 0;
     unsigned         paddingExtensionLen;
     unsigned         numCompressionMethods;
@@ -5223,8 +5226,15 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     num_suites = count_cipher_suites(ss, ss->ssl3.policy, PR_TRUE);
     if (!num_suites)
     	return SECFailure;	/* count_cipher_suites has set error code. */
+
+    fallbackSCSV = ss->opt.enableFallbackSCSV && (!requestingResume ||
+						  ss->version < sid->version);
+    /* make room for SCSV */
     if (ss->ssl3.hs.sendingSCSV) {
-	++num_suites;   /* make room for SCSV */
+	++num_suites;
+    }
+    if (fallbackSCSV) {
+	++num_suites;
     }
 
     /* count compression methods */
@@ -5316,6 +5326,14 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     if (ss->ssl3.hs.sendingSCSV) {
 	/* Add the actual SCSV */
 	rv = ssl3_AppendHandshakeNumber(ss, TLS_EMPTY_RENEGOTIATION_INFO_SCSV,
+					sizeof(ssl3CipherSuite));
+	if (rv != SECSuccess) {
+	    return rv;	/* err set by ssl3_AppendHandshake* */
+	}
+	actual_count++;
+    }
+    if (fallbackSCSV) {
+	rv = ssl3_AppendHandshakeNumber(ss, TLS_FALLBACK_SCSV,
 					sizeof(ssl3CipherSuite));
 	if (rv != SECSuccess) {
 	    return rv;	/* err set by ssl3_AppendHandshake* */
@@ -6973,14 +6991,27 @@ no_memory:	/* no-memory error has already been set. */
 
 
 /*
- * Returns true if the client authentication key is an RSA or DSA key that
- * may be able to sign only SHA-1 hashes.
+ * Returns the TLS signature algorithm for the client authentication key and
+ * whether it is an RSA or DSA key that may be able to sign only SHA-1 hashes.
  */
-static PRBool
-ssl3_ClientKeyPrefersSHA1(sslSocket *ss)
+static SECStatus
+ssl3_ExtractClientKeyInfo(sslSocket *ss,
+			  TLSSignatureAlgorithm *sigAlg,
+			  PRBool *preferSha1)
 {
+    SECStatus rv = SECSuccess;
     SECKEYPublicKey *pubk;
-    PRBool prefer_sha1 = PR_FALSE;
+
+    pubk = CERT_ExtractPublicKey(ss->ssl3.clientCertificate);
+    if (pubk == NULL) {
+	rv = SECFailure;
+	goto done;
+    }
+
+    rv = ssl3_TLSSignatureAlgorithmForKeyType(pubk->keyType, sigAlg);
+    if (rv != SECSuccess) {
+	goto done;
+    }
 
 #if defined(NSS_PLATFORM_CLIENT_AUTH) && defined(_WIN32)
     /* If the key is in CAPI, assume conservatively that the CAPI service
@@ -6989,7 +7020,8 @@ ssl3_ClientKeyPrefersSHA1(sslSocket *ss)
     if (ss->ssl3.platformClientKey->dwKeySpec != CERT_NCRYPT_KEY_SPEC) {
 	/* CAPI only supports RSA and DSA signatures, so we don't need to
 	 * check the key type. */
-	return PR_TRUE;
+	*preferSha1 = PR_TRUE;
+	goto done;
     }
 #endif  /* NSS_PLATFORM_CLIENT_AUTH && _WIN32 */
 
@@ -6999,38 +7031,61 @@ ssl3_ClientKeyPrefersSHA1(sslSocket *ss)
      * older, DSA key size is at most 1024 bits and the hash function must
      * be SHA-1.
      */
-    pubk = CERT_ExtractPublicKey(ss->ssl3.clientCertificate);
-    if (pubk == NULL) {
-	return PR_FALSE;
-    }
     if (pubk->keyType == rsaKey || pubk->keyType == dsaKey) {
-	prefer_sha1 = SECKEY_PublicKeyStrength(pubk) <= 128;
+	*preferSha1 = SECKEY_PublicKeyStrength(pubk) <= 128;
+    } else {
+	*preferSha1 = PR_FALSE;
     }
-    SECKEY_DestroyPublicKey(pubk);
-    return prefer_sha1;
+
+  done:
+    if (pubk)
+	SECKEY_DestroyPublicKey(pubk);
+    return rv;
 }
 
-/* Destroys the backup handshake hash context if we don't need it. */
+/* Destroys the backup handshake hash context if we don't need it. Note that
+ * this function selects the hash algorithm for client authentication
+ * signatures; ssl3_SendCertificateVerify uses the presence of the backup hash
+ * to determine whether to use SHA-1 or SHA-256. */
 static void
 ssl3_DestroyBackupHandshakeHashIfNotNeeded(sslSocket *ss,
 					   const SECItem *algorithms)
 {
-    PRBool need_backup_hash = PR_FALSE;
+    SECStatus rv;
+    TLSSignatureAlgorithm sigAlg;
+    PRBool preferSha1;
+    PRBool supportsSha1 = PR_FALSE;
+    PRBool supportsSha256 = PR_FALSE;
+    PRBool needBackupHash = PR_FALSE;
     unsigned int i;
 
     PORT_Assert(ss->ssl3.hs.md5);
-    if (ssl3_ClientKeyPrefersSHA1(ss)) {
-	/* Use SHA-1 if the server supports it. */
-	for (i = 0; i < algorithms->len; i += 2) {
-	    if (algorithms->data[i] == tls_hash_sha1 &&
-		(algorithms->data[i+1] == tls_sig_rsa ||
-		 algorithms->data[i+1] == tls_sig_dsa)) {
-		need_backup_hash = PR_TRUE;
-		break;
+
+    /* Determine the key's signature algorithm and whether it prefers SHA-1. */
+    rv = ssl3_ExtractClientKeyInfo(ss, &sigAlg, &preferSha1);
+    if (rv != SECSuccess) {
+	goto done;
+    }
+
+    /* Determine the server's hash support for that signature algorithm. */
+    for (i = 0; i < algorithms->len; i += 2) {
+	if (algorithms->data[i+1] == sigAlg) {
+	    if (algorithms->data[i] == tls_hash_sha1) {
+		supportsSha1 = PR_TRUE;
+	    } else if (algorithms->data[i] == tls_hash_sha256) {
+		supportsSha256 = PR_TRUE;
 	    }
 	}
     }
-    if (!need_backup_hash) {
+
+    /* If either the server does not support SHA-256 or the client key prefers
+     * SHA-1, leave the backup hash. */
+    if (supportsSha1 && (preferSha1 || !supportsSha256)) {
+	needBackupHash = PR_TRUE;
+    }
+
+done:
+    if (!needBackupHash) {
 	PK11_DestroyContext(ss->ssl3.hs.md5, PR_TRUE);
 	ss->ssl3.hs.md5 = NULL;
     }
@@ -7998,6 +8053,19 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     rv = ssl3_ConsumeHandshakeVariable(ss, &suites, 2, &b, &length);
     if (rv != SECSuccess) {
 	goto loser;		/* malformed */
+    }
+
+    /* If the ClientHello version is less than our maximum version, check for a
+     * TLS_FALLBACK_SCSV and reject the connection if found. */
+    if (ss->vrange.max > ss->clientHelloVersion) {
+	for (i = 0; i + 1 < suites.len; i += 2) {
+	    PRUint16 suite_i = (suites.data[i] << 8) | suites.data[i + 1];
+	    if (suite_i != TLS_FALLBACK_SCSV)
+		continue;
+	    desc = inappropriate_fallback;
+	    errCode = SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT;
+	    goto alert_loser;
+	}
     }
 
     /* grab the list of compression methods. */
@@ -10712,7 +10780,7 @@ ssl3_SendEncryptedExtensions(sslSocket *ss)
     spki = SECKEY_EncodeDERSubjectPublicKeyInfo(ss->ssl3.channelIDPub);
 
     if (spki->len != sizeof(P256_SPKI_PREFIX) + CHANNEL_ID_PUBLIC_KEY_LENGTH ||
-	memcmp(spki->data, P256_SPKI_PREFIX, sizeof(P256_SPKI_PREFIX) != 0)) {
+	memcmp(spki->data, P256_SPKI_PREFIX, sizeof(P256_SPKI_PREFIX)) != 0) {
 	PORT_SetError(SSL_ERROR_INVALID_CHANNEL_ID_KEY);
 	rv = SECFailure;
 	goto loser;
@@ -12421,6 +12489,46 @@ ssl3_CipherPrefGet(sslSocket *ss, ssl3CipherSuite which, PRBool *enabled)
     }
     *enabled = pref;
     return rv;
+}
+
+SECStatus
+ssl3_CipherOrderSet(sslSocket *ss, const ssl3CipherSuite *ciphers, unsigned int len)
+{
+    /* |i| iterates over |ciphers| while |done| and |j| iterate over
+     * |ss->cipherSuites|. */
+    unsigned int i, done;
+
+    for (i = done = 0; i < len; i++) {
+	PRUint16 id = ciphers[i];
+	unsigned int existingIndex, j;
+	PRBool found = PR_FALSE;
+
+	for (j = done; j < ssl_V3_SUITES_IMPLEMENTED; j++) {
+	    if (ss->cipherSuites[j].cipher_suite == id) {
+		existingIndex = j;
+		found = PR_TRUE;
+		break;
+	    }
+	}
+
+	if (!found) {
+	    continue;
+	}
+
+	if (existingIndex != done) {
+	    const ssl3CipherSuiteCfg temp = ss->cipherSuites[done];
+	    ss->cipherSuites[done] = ss->cipherSuites[existingIndex];
+	    ss->cipherSuites[existingIndex] = temp;
+	}
+	done++;
+    }
+
+    /* Disable all cipher suites that weren't included. */
+    for (; done < ssl_V3_SUITES_IMPLEMENTED; done++) {
+	ss->cipherSuites[done].enabled = 0;
+    }
+
+    return SECSuccess;
 }
 
 /* copy global default policy into socket. */

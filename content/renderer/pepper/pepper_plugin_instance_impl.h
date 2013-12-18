@@ -105,6 +105,7 @@ class PluginObject;
 class PPB_Graphics3D_Impl;
 class PPB_ImageData_Impl;
 class PPB_URLLoader_Impl;
+class RenderFrameImpl;
 class RenderViewImpl;
 
 // Represents one time a plugin appears on one web page.
@@ -122,11 +123,11 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // get_plugin_interface function. If the plugin does not support any valid
   // PPP_Instance interface, returns NULL.
   static PepperPluginInstanceImpl* Create(
-      RenderViewImpl* render_view,
+      RenderFrameImpl* render_frame,
       PluginModule* module,
       blink::WebPluginContainer* container,
       const GURL& plugin_url);
-  RenderViewImpl* render_view() const { return render_view_; }
+  RenderFrameImpl* render_frame() const { return render_frame_; }
   PluginModule* module() const { return module_.get(); }
   MessageChannel& message_channel() { return *message_channel_; }
 
@@ -445,19 +446,20 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       PP_URLComponents_Dev* components) OVERRIDE;
 
   // PPB_ContentDecryptor_Private implementation.
-  virtual void KeyAdded(PP_Instance instance,
-                        uint32_t reference_id) OVERRIDE;
-  virtual void KeyMessage(PP_Instance instance,
-                          uint32_t reference_id,
-                          PP_Var message,
-                          PP_Var default_url) OVERRIDE;
-  virtual void KeyError(PP_Instance instance,
-                        uint32_t reference_id,
-                        int32_t media_error,
-                        int32_t system_code) OVERRIDE;
-  virtual void SetSessionId(PP_Instance instance,
-                            uint32_t reference_id,
-                            PP_Var session_id_var) OVERRIDE;
+  virtual void SessionCreated(PP_Instance instance,
+                              uint32_t session_id,
+                              PP_Var web_session_id_var) OVERRIDE;
+  virtual void SessionMessage(PP_Instance instance,
+                              uint32_t session_id,
+                              PP_Var message,
+                              PP_Var destination_url) OVERRIDE;
+  virtual void SessionReady(PP_Instance instance, uint32_t session_id) OVERRIDE;
+  virtual void SessionClosed(PP_Instance instance,
+                             uint32_t session_id) OVERRIDE;
+  virtual void SessionError(PP_Instance instance,
+                            uint32_t session_id,
+                            int32_t media_error,
+                            int32_t system_code) OVERRIDE;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) OVERRIDE;
@@ -557,7 +559,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // objects. This constructor is private so that we can hide the
   // PPP_Instance_Combined details while still having 1 constructor to maintain
   // for member initialization.
-  PepperPluginInstanceImpl(RenderViewImpl* render_view,
+  PepperPluginInstanceImpl(RenderFrameImpl* render_frame,
                            PluginModule* module,
                            ppapi::PPP_Instance_Combined* instance_interface,
                            blink::WebPluginContainer* container,
@@ -653,7 +655,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       int pending_host_id,
       const ppapi::URLResponseInfoData& data);
 
-  RenderViewImpl* render_view_;
+  RenderFrameImpl* render_frame_;
   scoped_refptr<PluginModule> module_;
   scoped_ptr<ppapi::PPP_Instance_Combined> instance_interface_;
   // If this is the NaCl plugin, we create a new module when we switch to the

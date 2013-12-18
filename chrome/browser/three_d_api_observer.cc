@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "content/public/browser/gpu_data_manager.h"
@@ -17,7 +18,8 @@
 
 class ThreeDAPIInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a 3D API infobar delegate and adds it to |infobar_service|.
+  // Creates a 3D API infobar and delegate and adds the infobar to
+  // |infobar_service|.
   static void Create(InfoBarService* infobar_service,
                      const GURL& url,
                      content::ThreeDAPIType requester);
@@ -30,19 +32,17 @@ class ThreeDAPIInfoBarDelegate : public ConfirmInfoBarDelegate {
     DISMISSAL_MAX
   };
 
-  ThreeDAPIInfoBarDelegate(InfoBarService* owner,
-                           const GURL& url,
-                           content::ThreeDAPIType requester);
+  ThreeDAPIInfoBarDelegate(const GURL& url, content::ThreeDAPIType requester);
   virtual ~ThreeDAPIInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
   virtual bool EqualsDelegate(InfoBarDelegate* delegate) const OVERRIDE;
   virtual ThreeDAPIInfoBarDelegate* AsThreeDAPIInfoBarDelegate() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   GURL url_;
@@ -61,15 +61,15 @@ void ThreeDAPIInfoBarDelegate::Create(InfoBarService* infobar_service,
                                       content::ThreeDAPIType requester) {
   if (!infobar_service)
     return;  // NULL for apps.
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new ThreeDAPIInfoBarDelegate(infobar_service, url, requester)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new ThreeDAPIInfoBarDelegate(url, requester))));
 }
 
 ThreeDAPIInfoBarDelegate::ThreeDAPIInfoBarDelegate(
-    InfoBarService* owner,
     const GURL& url,
     content::ThreeDAPIType requester)
-    : ConfirmInfoBarDelegate(owner),
+    : ConfirmInfoBarDelegate(),
       url_(url),
       requester_(requester),
       message_text_queried_(false),
@@ -99,7 +99,7 @@ ThreeDAPIInfoBarDelegate*
 string16 ThreeDAPIInfoBarDelegate::GetMessageText() const {
   message_text_queried_ = true;
 
-  string16 api_name;
+  base::string16 api_name;
   switch (requester_) {
     case content::THREE_D_API_TYPE_WEBGL:
       api_name = l10n_util::GetStringUTF16(IDS_3D_APIS_WEBGL_NAME);

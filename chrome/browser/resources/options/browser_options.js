@@ -220,13 +220,8 @@ cr.define('options', function() {
 
         this.updateAccountPicture_();
 
-        $('account-picture-wrapper').oncontextmenu = function(e) {
-          e.preventDefault();
-        };
-
-        $('account-picture').onclick = function() {
-          OptionsPage.navigateToPage('changePicture');
-        };
+        $('account-picture').onclick = this.showImagerPickerOverlay_;
+        $('change-picture-caption').onclick = this.showImagerPickerOverlay_;
 
         $('manage-accounts-button').onclick = function(event) {
           OptionsPage.navigateToPage('accounts');
@@ -438,6 +433,15 @@ cr.define('options', function() {
           chrome.send('highContrastChange',
                       [$('accessibility-high-contrast-check').checked]);
         };
+
+        var updateDelayDropdown = function() {
+          $('accessibility-autoclick-dropdown').disabled =
+              !$('accessibility-autoclick-check').checked;
+        };
+        Preferences.getInstance().addEventListener(
+            $('accessibility-autoclick-check').getAttribute('pref'),
+            updateDelayDropdown);
+
         $('accessibility-sticky-keys').hidden =
             !loadTimeData.getBoolean('enableStickyKeys');
       }
@@ -544,6 +548,7 @@ cr.define('options', function() {
 
       // Unhide
       section.hidden = false;
+      section.style.height = '0px';
 
       var expander = function() {
         // Reveal the section using a WebKit transition if animating.
@@ -589,7 +594,7 @@ cr.define('options', function() {
       setTimeout(function() {
         // Hide the section using a WebKit transition.
         section.classList.add('sliding');
-        section.style.height = '';
+        section.style.height = '0px';
       }, 0);
     },
 
@@ -639,13 +644,13 @@ cr.define('options', function() {
       var sectionTop = section.offsetTop;
       if (pageTop + sectionBottom > document.body.scrollHeight ||
           pageTop + sectionTop < 0) {
-        pageContainer.oldScrollTop = -pageTop;
         // Currently not all layout updates are guaranteed to precede the
         // initializationComplete event (for example 'set-as-default-browser'
         // button) leaving some uncertainty in the optimal scroll position.
         // The section is placed approximately in the middle of the screen.
-        pageContainer.style.top = document.body.scrollHeight / 2 -
-            sectionBottom + 'px';
+        var top = Math.min(0, document.body.scrollHeight / 2 - sectionBottom);
+        pageContainer.style.top = top + 'px';
+        pageContainer.oldScrollTop = -top;
       }
     },
 
@@ -678,9 +683,10 @@ cr.define('options', function() {
       // Disable WebKit transitions.
       section.classList.remove('sliding');
 
-      if (section.style.height == '') {
+      if (section.style.height == '0px') {
         // Hide the content so it can't get tab focus.
         section.hidden = true;
+        section.style.height = '';
       } else {
         // Set the section height to 'auto' to allow for size changes
         // (due to font change or dynamic content).
@@ -1170,6 +1176,25 @@ cr.define('options', function() {
       $('themes-reset').disabled = !enabled;
     },
 
+    setAccountPictureManaged_: function(managed) {
+      var picture = $('account-picture');
+      if (managed || UIAccountTweaks.loggedInAsGuest()) {
+        picture.disabled = true;
+        ChangePictureOptions.closeOverlay();
+      } else {
+        picture.disabled = false;
+      }
+
+      // Create a synthetic pref change event decorated as
+      // CoreOptionsHandler::CreateValueForPref() does.
+      var event = new Event('account-picture');
+      if (managed)
+        event.value = { controlledBy: 'policy' };
+      else
+        event.value = {};
+      $('account-picture-indicator').handlePrefChange(event);
+    },
+
     /**
      * (Re)loads IMG element with current user account picture.
      * @private
@@ -1503,6 +1528,14 @@ cr.define('options', function() {
         if (index != undefined)
           $('bluetooth-paired-devices-list').deleteItemAtIndex(index);
       }
+    },
+
+    /**
+     * Shows the overlay dialog for changing the user avatar image.
+     * @private
+     */
+    showImagerPickerOverlay_: function() {
+      OptionsPage.navigateToPage('changePicture');
     }
   };
 
@@ -1518,6 +1551,7 @@ cr.define('options', function() {
     'removeBluetoothDevice',
     'removeCloudPrintConnectorSection',
     'scrollToSection',
+    'setAccountPictureManaged',
     'setAutoOpenFileTypesDisplayed',
     'setBluetoothState',
     'setFontSize',

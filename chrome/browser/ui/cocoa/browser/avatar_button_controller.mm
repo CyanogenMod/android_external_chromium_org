@@ -14,11 +14,14 @@
 #include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_label_button.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
+#import "chrome/browser/ui/cocoa/base_bubble_controller.h"
+#import "chrome/browser/ui/cocoa/browser/profile_chooser_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -142,12 +145,15 @@ class Observer : public content::NotificationObserver {
                            forAttribute:NSAccessibilityDescriptionAttribute];
 
     Profile* profile = browser_->profile();
-    if (profile->IsOffTheRecord()) {
-      ResourceBundle& bundle = ResourceBundle::GetSharedInstance();
-      NSImage* otrIcon = bundle.GetNativeImageNamed(IDR_OTR_ICON).ToNSImage();
-      [self setImage:[self compositeImageWithShadow:otrIcon]];
-      [self setButtonEnabled:NO];
-    } else {
+
+    if (profile->IsOffTheRecord() || profile->IsGuestSession()) {
+      const int icon_id = profile->IsGuestSession() ? IDR_LOGIN_GUEST :
+                                                      IDR_OTR_ICON;
+      NSImage* icon = ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+          icon_id).ToNSImage();
+      [self setImage:[self compositeImageWithShadow:icon]];
+      [self setButtonEnabled:profile->IsGuestSession()];
+   } else {
       [self setButtonEnabled:YES];
       observer_.reset(new AvatarButtonControllerInternal::Observer(self));
       [self updateAvatar];
@@ -217,9 +223,16 @@ class Observer : public content::NotificationObserver {
   point = [anchor convertPoint:point toView:nil];
   point = [[anchor window] convertBaseToScreen:point];
 
-  // |menu| will automatically release itself on close.
-  menuController_ = [[AvatarMenuBubbleController alloc] initWithBrowser:browser_
-                                                             anchoredAt:point];
+  // |menuController_| will automatically release itself on close.
+  if (profiles::IsNewProfileManagementEnabled()) {
+    menuController_ =
+      [[ProfileChooserController alloc] initWithBrowser:browser_
+                                             anchoredAt:point];
+  } else {
+    menuController_ =
+      [[AvatarMenuBubbleController alloc] initWithBrowser:browser_
+                                               anchoredAt:point];
+  }
   [[NSNotificationCenter defaultCenter]
       addObserver:self
          selector:@selector(bubbleWillClose:)
@@ -298,7 +311,7 @@ class Observer : public content::NotificationObserver {
       profiles::kAvatarIconWidth, profiles::kAvatarIconHeight);
   [self setImage:icon.ToNSImage()];
 
-  const string16& name = cache.GetNameOfProfileAtIndex(index);
+  const base::string16& name = cache.GetNameOfProfileAtIndex(index);
   NSString* nsName = base::SysUTF16ToNSString(name);
   [button_ setToolTip:nsName];
   [[button_ cell]
@@ -334,7 +347,7 @@ class Observer : public content::NotificationObserver {
 
 // Testing /////////////////////////////////////////////////////////////////////
 
-- (AvatarMenuBubbleController*)menuController {
+- (BaseBubbleController*)menuController {
   return menuController_;
 }
 

@@ -57,7 +57,7 @@ void I18NCustomBindings::GetL10nMessage(
     l10n_messages = GetL10nMessagesMap(extension_id);
   }
 
-  std::string message_name = *v8::String::AsciiValue(args[0]);
+  std::string message_name = *v8::String::Utf8Value(args[0]);
   std::string message =
       MessageBundle::GetL10nMessage(message_name, *l10n_messages);
 
@@ -79,7 +79,7 @@ void I18NCustomBindings::GetL10nMessage(
   }
 
   args.GetReturnValue().Set(
-      v8::String::New(ReplaceStringPlaceholders(
+      v8::String::NewFromUtf8(args.GetIsolate(), ReplaceStringPlaceholders(
         message, substitutions, NULL).c_str()));
 }
 

@@ -68,6 +68,9 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Methods called from Java via JNI
   // --------------------------------------------------------------------------
 
+  base::android::ScopedJavaLocalRef<jobject> GetWebContentsAndroid(JNIEnv* env,
+                                                                   jobject obj);
+
   void OnJavaContentViewCoreDestroyed(JNIEnv* env, jobject obj);
 
   // Notifies the ContentViewCore that items were selected in the currently
@@ -141,13 +144,6 @@ class ContentViewCoreImpl : public ContentViewCore,
                                 jfloat x2, jfloat y2);
   void MoveCaret(JNIEnv* env, jobject obj, jfloat x, jfloat y);
 
-  jboolean CanGoBack(JNIEnv* env, jobject obj);
-  jboolean CanGoForward(JNIEnv* env, jobject obj);
-  jboolean CanGoToOffset(JNIEnv* env, jobject obj, jint offset);
-  void GoBack(JNIEnv* env, jobject obj);
-  void GoForward(JNIEnv* env, jobject obj);
-  void GoToOffset(JNIEnv* env, jobject obj, jint offset);
-  void GoToNavigationIndex(JNIEnv* env, jobject obj, jint index);
   void LoadIfNecessary(JNIEnv* env, jobject obj);
   void RequestRestoreLoad(JNIEnv* env, jobject obj);
   void StopLoading(JNIEnv* env, jobject obj);
@@ -258,7 +254,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                         int selection_start, int selection_end,
                         int composition_start, int composition_end,
                         bool show_ime_if_needed, bool require_ack);
-  void SetTitle(const string16& title);
+  void SetTitle(const base::string16& title);
   void OnBackgroundColorChanged(SkColor color);
 
   bool HasFocus();

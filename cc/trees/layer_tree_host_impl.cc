@@ -15,10 +15,12 @@
 #include "base/strings/stringprintf.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/timing_function.h"
+#include "cc/base/latency_info_swap_promise_monitor.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/debug_rect_history.h"
+#include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/frame_rate_counter.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/paint_time_counter.h"
@@ -206,9 +208,10 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHostImpl::Create(
     LayerTreeHostImplClient* client,
     Proxy* proxy,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
-    SharedBitmapManager* manager) {
+    SharedBitmapManager* manager,
+    int id) {
   return make_scoped_ptr(new LayerTreeHostImpl(
-      settings, client, proxy, rendering_stats_instrumentation, manager));
+      settings, client, proxy, rendering_stats_instrumentation, manager, id));
 }
 
 LayerTreeHostImpl::LayerTreeHostImpl(
@@ -216,7 +219,8 @@ LayerTreeHostImpl::LayerTreeHostImpl(
     LayerTreeHostImplClient* client,
     Proxy* proxy,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
-    SharedBitmapManager* manager)
+    SharedBitmapManager* manager,
+    int id)
     : client_(client),
       proxy_(proxy),
       input_handler_client_(NULL),
@@ -257,7 +261,8 @@ LayerTreeHostImpl::LayerTreeHostImpl(
 #ifndef NDEBUG
       did_lose_called_(false),
 #endif
-      shared_bitmap_manager_(manager) {
+      shared_bitmap_manager_(manager),
+      id_(id) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
 
@@ -447,13 +452,13 @@ void LayerTreeHostImpl::StartPageScaleAnimation(gfx::Vector2d target_offset,
                                   duration.InSecondsF());
   }
 
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   client_->SetNeedsCommitOnImplThread();
   client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::ScheduleAnimation() {
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
 }
 
 bool LayerTreeHostImpl::HaveTouchEventHandlersAt(gfx::Point viewport_point) {
@@ -472,9 +477,11 @@ bool LayerTreeHostImpl::HaveTouchEventHandlersAt(gfx::Point viewport_point) {
   return layer_impl != NULL;
 }
 
-void LayerTreeHostImpl::SetLatencyInfoForInputEvent(
-    const ui::LatencyInfo& latency_info) {
-  active_tree()->SetLatencyInfo(latency_info);
+scoped_ptr<SwapPromiseMonitor>
+LayerTreeHostImpl::CreateLatencyInfoSwapPromiseMonitor(
+    ui::LatencyInfo* latency) {
+  return scoped_ptr<SwapPromiseMonitor>(
+      new LatencyInfoSwapPromiseMonitor(latency, NULL, this));
 }
 
 void LayerTreeHostImpl::TrackDamageForAllSurfaces(
@@ -893,13 +900,21 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
 
   // Any copy requests left in the tree are not going to get serviced, and
   // should be aborted.
-  ScopedPtrVector<CopyOutputRequest> requests_to_abort;
-  while (!active_tree_->LayersWithCopyOutputRequest().empty()) {
-    LayerImpl* layer = active_tree_->LayersWithCopyOutputRequest().back();
-    layer->TakeCopyRequestsAndTransformToTarget(&requests_to_abort);
+  if (!active_tree_->LayersWithCopyOutputRequest().empty()) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Renderer4.UnservicedCopyOutputRequestCount",
+        active_tree_->LayersWithCopyOutputRequest().size(),
+        0,
+        1000,
+        10);
+    ScopedPtrVector<CopyOutputRequest> requests_to_abort;
+    while (!active_tree_->LayersWithCopyOutputRequest().empty()) {
+      LayerImpl* layer = active_tree_->LayersWithCopyOutputRequest().back();
+      layer->TakeCopyRequestsAndTransformToTarget(&requests_to_abort);
+    }
+    for (size_t i = 0; i < requests_to_abort.size(); ++i)
+      requests_to_abort[i]->SendEmptyResult();
   }
-  for (size_t i = 0; i < requests_to_abort.size(); ++i)
-    requests_to_abort[i]->SendEmptyResult();
 
   // If we're making a frame to draw, it better have at least one render pass.
   DCHECK(!frame->render_passes.empty());
@@ -937,6 +952,11 @@ void LayerTreeHostImpl::UpdateBackgroundAnimateTicking(
   }
 
   time_source_client_adapter_->SetActive(enabled);
+}
+
+void LayerTreeHostImpl::DidAnimateScrollOffset() {
+  client_->SetNeedsCommitOnImplThread();
+  client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::SetViewportDamage(gfx::Rect damage_rect) {
@@ -1235,6 +1255,9 @@ void LayerTreeHostImpl::SetExternalDrawConstraints(
 }
 
 void LayerTreeHostImpl::SetNeedsRedrawRect(gfx::Rect damage_rect) {
+  if (damage_rect.IsEmpty())
+    return;
+  NotifySwapPromiseMonitorsOfSetNeedsRedraw();
   client_->SetNeedsRedrawRectOnImplThread(damage_rect);
 }
 
@@ -1269,7 +1292,6 @@ CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
   metadata.root_layer_size = active_tree_->ScrollableSize();
   metadata.min_page_scale_factor = active_tree_->min_page_scale_factor();
   metadata.max_page_scale_factor = active_tree_->max_page_scale_factor();
-  metadata.latency_info = active_tree_->GetLatencyInfo();
   if (top_controls_manager_) {
     metadata.location_bar_offset =
         gfx::Vector2dF(0.f, top_controls_manager_->controls_top_offset());
@@ -1365,9 +1387,13 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
 
     scoped_ptr<SoftwareRenderer> temp_software_renderer =
         SoftwareRenderer::Create(this, &settings_, output_surface_.get(), NULL);
-    temp_software_renderer->DrawFrame(
-        &frame->render_passes, NULL, device_scale_factor_, allow_partial_swap,
-        disable_picture_quad_image_filtering);
+    temp_software_renderer->DrawFrame(&frame->render_passes,
+                                      NULL,
+                                      device_scale_factor_,
+                                      DeviceViewport(),
+                                      DeviceClip(),
+                                      allow_partial_swap,
+                                      disable_picture_quad_image_filtering);
   } else {
     // We don't track damage on the HUD layer (it interacts with damage tracking
     // visualizations), so disable partial swaps to make the HUD layer display
@@ -1377,6 +1403,8 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
     renderer_->DrawFrame(&frame->render_passes,
                          offscreen_context_provider_.get(),
                          device_scale_factor_,
+                         DeviceViewport(),
+                         DeviceClip(),
                          allow_partial_swap,
                          false);
   }
@@ -1428,9 +1456,8 @@ bool LayerTreeHostImpl::SwapBuffers(const LayerTreeHostImpl::FrameData& frame) {
     return false;
   }
   CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
+  active_tree()->FinishSwapPromises(&metadata);
   renderer_->SwapBuffers(metadata);
-  active_tree_->ClearLatencyInfo();
-  active_tree()->FinishSwapPromises();
   return true;
 }
 
@@ -1459,6 +1486,8 @@ gfx::SizeF LayerTreeHostImpl::UnscaledScrollableViewportSize() const {
 }
 
 void LayerTreeHostImpl::DidLoseOutputSurface() {
+  if (resource_provider_)
+    resource_provider_->DidLoseOutputSurface();
   // TODO(jamesr): The renderer_ check is needed to make some of the
   // LayerTreeHostContextTest tests pass, but shouldn't be necessary (or
   // important) in production. We should adjust the test to not need this.
@@ -1565,7 +1594,7 @@ void LayerTreeHostImpl::ActivatePendingTree() {
       root_layer_scroll_offset_delegate_);
 
   client_->OnCanDrawStateChanged(CanDraw());
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   client_->RenewTreePriority();
 
   if (debug_state_.continuous_painting) {
@@ -1582,6 +1611,8 @@ void LayerTreeHostImpl::ActivatePendingTree() {
 
   if (time_source_client_adapter_ && time_source_client_adapter_->Active())
     DCHECK(active_tree_->root_layer());
+  devtools_instrumentation::didActivateLayerTree(id_,
+      active_tree_->source_frame_number());
 }
 
 void LayerTreeHostImpl::SetVisible(bool visible) {
@@ -1605,6 +1636,11 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
     return;
 
   renderer_->SetVisible(visible);
+}
+
+void LayerTreeHostImpl::SetNeedsRedraw() {
+  NotifySwapPromiseMonitorsOfSetNeedsRedraw();
+  client_->SetNeedsRedrawOnImplThread();
 }
 
 ManagedMemoryPolicy LayerTreeHostImpl::ActualManagedMemoryPolicy() const {
@@ -1655,8 +1691,7 @@ void LayerTreeHostImpl::CreateAndSetRenderer(
                                    output_surface,
                                    resource_provider,
                                    texture_mailbox_deleter_.get(),
-                                   settings_.highp_threshold_min,
-                                   settings_.force_direct_layer_drawing);
+                                   settings_.highp_threshold_min);
   } else if (output_surface->software_device()) {
     renderer_ = SoftwareRenderer::Create(
         this, &settings_, output_surface, resource_provider);
@@ -1709,8 +1744,6 @@ bool LayerTreeHostImpl::InitializeRenderer(
   // the old resources (i.e. render_surfaces and texture IDs). Clear them
   // before we destroy the old resource provider.
   ReleaseTreeResources();
-  if (resource_provider_)
-    resource_provider_->DidLoseOutputSurface();
 
   // Note: order is important here.
   renderer_.reset();
@@ -1867,9 +1900,6 @@ void LayerTreeHostImpl::SetViewportSize(gfx::Size device_viewport_size) {
 
   UpdateMaxScrollOffset();
 
-  if (renderer_)
-    renderer_->ViewportChanged();
-
   client_->OnCanDrawStateChanged(CanDraw());
   SetFullRootLayerDamage();
 }
@@ -1894,9 +1924,6 @@ void LayerTreeHostImpl::SetDeviceScaleFactor(float device_scale_factor) {
   if (device_scale_factor == device_scale_factor_)
     return;
   device_scale_factor_ = device_scale_factor;
-
-  if (renderer_)
-    renderer_->ViewportChanged();
 
   UpdateMaxScrollOffset();
   SetFullRootLayerDamage();
@@ -1929,7 +1956,7 @@ void LayerTreeHostImpl::UpdateMaxScrollOffset() {
 }
 
 void LayerTreeHostImpl::DidChangeTopControlsPosition() {
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   active_tree_->set_needs_update_draw_properties();
   SetFullRootLayerDamage();
 }
@@ -2216,7 +2243,7 @@ bool LayerTreeHostImpl::ScrollBy(gfx::Point viewport_point,
   bool did_scroll = did_scroll_x || did_scroll_y;
   if (did_scroll) {
     client_->SetNeedsCommitOnImplThread();
-    client_->SetNeedsRedrawOnImplThread();
+    SetNeedsRedraw();
     client_->RenewTreePriority();
   }
 
@@ -2269,7 +2296,7 @@ bool LayerTreeHostImpl::ScrollVerticallyByPage(gfx::Point viewport_point,
 
     if (!applied_delta.IsZero()) {
       client_->SetNeedsCommitOnImplThread();
-      client_->SetNeedsRedrawOnImplThread();
+      SetNeedsRedraw();
       client_->RenewTreePriority();
       return true;
     }
@@ -2452,7 +2479,7 @@ void LayerTreeHostImpl::PinchGestureUpdate(float magnify_delta,
   RootScrollLayer()->ScrollBy(move);
 
   client_->SetNeedsCommitOnImplThread();
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   client_->RenewTreePriority();
 }
 
@@ -2518,7 +2545,7 @@ void LayerTreeHostImpl::AnimatePageScale(base::TimeTicks time) {
       page_scale_animation_->ScrollOffsetAtTime(monotonic_time);
 
   RootScrollLayer()->ScrollBy(next_scroll - scroll_total);
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
 
   if (page_scale_animation_->IsAnimationCompleteAtTime(monotonic_time)) {
     page_scale_animation_.reset();
@@ -2557,7 +2584,7 @@ void LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
        ++iter)
     (*iter).second->Animate(monotonic_seconds);
 
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
 }
 
 void LayerTreeHostImpl::UpdateAnimationState(bool start_ready_animations) {
@@ -2671,7 +2698,7 @@ void LayerTreeHostImpl::AnimateScrollbarsRecursive(LayerImpl* layer,
     TRACE_EVENT_INSTANT0(
         "cc", "LayerTreeHostImpl::SetNeedsRedraw due to AnimateScrollbars",
         TRACE_EVENT_SCOPE_THREAD);
-    client_->SetNeedsRedrawOnImplThread();
+    SetNeedsRedraw();
   }
 
   for (size_t i = 0; i < layer->children().size(); ++i)
@@ -2695,7 +2722,7 @@ void LayerTreeHostImpl::StartScrollbarAnimationRecursive(LayerImpl* layer,
     if (delay > base::TimeDelta())
       client_->RequestScrollbarAnimationOnImplThread(delay);
     else if (scrollbar_controller->Animate(time))
-      client_->SetNeedsRedrawOnImplThread();
+      SetNeedsRedraw();
   }
 
   for (size_t i = 0; i < layer->children().size(); ++i)
@@ -2879,6 +2906,20 @@ void LayerTreeHostImpl::MarkUIResourceNotEvicted(UIResourceId uid) {
 void LayerTreeHostImpl::ScheduleMicroBenchmark(
     scoped_ptr<MicroBenchmarkImpl> benchmark) {
   micro_benchmark_controller_.ScheduleRun(benchmark.Pass());
+}
+
+void LayerTreeHostImpl::InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor) {
+  swap_promise_monitor_.insert(monitor);
+}
+
+void LayerTreeHostImpl::RemoveSwapPromiseMonitor(SwapPromiseMonitor* monitor) {
+  swap_promise_monitor_.erase(monitor);
+}
+
+void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfSetNeedsRedraw() {
+  std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
+  for (; it != swap_promise_monitor_.end(); it++)
+    (*it)->OnSetNeedsRedrawOnImpl();
 }
 
 }  // namespace cc

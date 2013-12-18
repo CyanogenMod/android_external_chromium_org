@@ -96,7 +96,7 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
     PathService::Get(base::DIR_TEMP, &tmp_path);
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDirUnderPath(tmp_path));
     downloads_dir_ = tmp_dir_.path().Append("Downloads");
-    file_util::CreateDirectory(downloads_dir_);
+    base::CreateDirectory(downloads_dir_);
 
     // Must run after our setup because it actually runs the test.
     ExtensionBrowserTest::SetUp();
@@ -122,7 +122,8 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
     // adding the test mount point (which will also be mapped as Downloads).
     mount_points->RevokeFileSystem(mount_point_name);
     EXPECT_TRUE(mount_points->RegisterFileSystem(
-        mount_point_name, fileapi::kFileSystemTypeNativeLocal, path));
+        mount_point_name, fileapi::kFileSystemTypeNativeLocal,
+        fileapi::FileSystemMountOption(), path));
   }
 
   void CheckJavascriptErrors() {
@@ -150,7 +151,7 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
     }
 
     dialog_->SelectFile(dialog_type,
-                        string16() /* title */,
+                        base::string16() /* title */,
                         file_path,
                         NULL /* file_types */,
                          0 /* file_type_index */,
@@ -181,7 +182,7 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
     // At the moment we don't really care about dialog type, but we have to put
     // some dialog type.
     second_dialog_->SelectFile(ui::SelectFileDialog::SELECT_OPEN_FILE,
-                               string16() /* title */,
+                               base::string16() /* title */,
                                base::FilePath() /* default_path */,
                                NULL /* file_types */,
                                0 /* file_type_index */,
@@ -198,11 +199,11 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
         content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
         content::NotificationService::AllSources());
     content::RenderViewHost* host = dialog_->GetRenderViewHost();
-    string16 main_frame;
+    base::string16 main_frame;
     std::string button_class =
         (button_type == DIALOG_BTN_OK) ? ".button-panel .ok" :
                                          ".button-panel .cancel";
-    string16 script = ASCIIToUTF16(
+    base::string16 script = ASCIIToUTF16(
         "console.log(\'Test JavaScript injected.\');"
         "document.querySelector(\'" + button_class + "\').click();");
     // The file selection handler closes the dialog and does not return control
@@ -272,9 +273,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
       downloads_dir_.AppendASCII("file_manager_test.html");
 
   // Create an empty file to give us something to select.
-  FILE* fp = file_util::OpenFile(test_file, "w");
+  FILE* fp = base::OpenFile(test_file, "w");
   ASSERT_TRUE(fp != NULL);
-  ASSERT_TRUE(file_util::CloseFile(fp));
+  ASSERT_TRUE(base::CloseFile(fp));
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 

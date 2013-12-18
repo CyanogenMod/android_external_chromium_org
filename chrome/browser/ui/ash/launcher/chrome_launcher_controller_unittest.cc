@@ -9,11 +9,11 @@
 #include <vector>
 
 #include "ash/ash_switches.h"
-#include "ash/launcher/launcher_item_delegate_manager.h"
+#include "ash/shelf/shelf_item_delegate_manager.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_model_observer.h"
 #include "ash/shell.h"
-#include "ash/test/launcher_item_delegate_manager_test_api.h"
+#include "ash/test/shelf_item_delegate_manager_test_api.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -233,7 +233,7 @@ class TestV2AppLauncherItemController : public LauncherItemController {
   virtual bool Activate(ash::LaunchSource source) OVERRIDE { return false; }
   virtual void Close() OVERRIDE {}
   virtual bool ItemSelected(const ui::Event& event) OVERRIDE { return false; }
-  virtual string16 GetTitle() OVERRIDE { return string16(); }
+  virtual base::string16 GetTitle() OVERRIDE { return base::string16(); }
   virtual ChromeLauncherAppMenuItems GetApplicationList(
       int event_flags) OVERRIDE {
     ChromeLauncherAppMenuItems items;
@@ -241,10 +241,12 @@ class TestV2AppLauncherItemController : public LauncherItemController {
     items.push_back(new ChromeLauncherAppMenuItem(string16(), NULL, false));
     return items.Pass();
   }
-  virtual ui::MenuModel* CreateContextMenu(
-      aura::Window* root_window) OVERRIDE { return NULL; }
-  virtual ash::LauncherMenuModel* CreateApplicationMenu(
-      int event_flags) OVERRIDE { return NULL; }
+  virtual ui::MenuModel* CreateContextMenu(aura::Window* root_window) OVERRIDE {
+    return NULL;
+  }
+  virtual ash::ShelfMenuModel* CreateApplicationMenu(int event_flags) OVERRIDE {
+    return NULL;
+  }
   virtual bool IsDraggable() OVERRIDE { return false; }
   virtual bool ShouldShowTooltip() OVERRIDE { return false; }
 
@@ -274,10 +276,10 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
 
     if (ash::Shell::HasInstance()) {
       item_delegate_manager_ =
-          ash::Shell::GetInstance()->launcher_item_delegate_manager();
+          ash::Shell::GetInstance()->shelf_item_delegate_manager();
     } else {
       item_delegate_manager_ =
-          new ash::LauncherItemDelegateManager(model_.get());
+          new ash::ShelfItemDelegateManager(model_.get());
     }
 
     DictionaryValue manifest;
@@ -426,7 +428,7 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     launcher_controller_.reset(
         new ChromeLauncherController(profile(), model_.get()));
     if (!ash::Shell::HasInstance())
-      SetLauncherItemDelegateManager(item_delegate_manager_);
+      SetShelfItemDelegateManager(item_delegate_manager_);
     launcher_controller_->Init();
   }
 
@@ -444,9 +446,8 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     launcher_controller_->SetAppTabHelperForTest(helper);
   }
 
-  void SetLauncherItemDelegateManager(
-      ash::LauncherItemDelegateManager* manager) {
-    launcher_controller_->SetLauncherItemDelegateManagerForTest(manager);
+  void SetShelfItemDelegateManager(ash::ShelfItemDelegateManager* manager) {
+    launcher_controller_->SetShelfItemDelegateManagerForTest(manager);
   }
 
   void InsertPrefValue(base::ListValue* pref_value,
@@ -595,7 +596,7 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
 
   ExtensionService* extension_service_;
 
-  ash::LauncherItemDelegateManager* item_delegate_manager_;
+  ash::ShelfItemDelegateManager* item_delegate_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerTest);
 };
@@ -2054,7 +2055,7 @@ TEST_F(ChromeLauncherControllerTest, PendingInsertionOrder) {
 bool CheckMenuCreation(ChromeLauncherController* controller,
                        const ash::LauncherItem& item,
                        size_t expected_items,
-                       string16 title[],
+                       base::string16 title[],
                        bool is_browser) {
   ChromeLauncherAppMenuItems items = controller->GetApplicationList(item, 0);
   // A new behavior has been added: Only show menus if there is at least one
@@ -2075,9 +2076,8 @@ bool CheckMenuCreation(ChromeLauncherController* controller,
       EXPECT_FALSE(items[i]->HasLeadingSeparator());
   }
 
-  scoped_ptr<ash::LauncherMenuModel> menu(
-      new LauncherApplicationMenuItemModel(
-          controller->GetApplicationList(item, 0)));
+  scoped_ptr<ash::ShelfMenuModel> menu(new LauncherApplicationMenuItemModel(
+      controller->GetApplicationList(item, 0)));
   // The first element in the menu is a spacing separator. On some systems
   // (e.g. Windows) such things do not exist. As such we check the existence
   // and adjust dynamically.
@@ -2111,9 +2111,9 @@ TEST_F(ChromeLauncherControllerTest, BrowserMenuGeneration) {
   // Now make the created browser() visible by adding it to the active browser
   // list.
   BrowserList::SetLastActive(browser());
-  string16 title1 = ASCIIToUTF16("Test1");
+  base::string16 title1 = ASCIIToUTF16("Test1");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL("http://test1"), title1);
-  string16 one_menu_item[] = { title1 };
+  base::string16 one_menu_item[] = { title1 };
 
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_browser, 1, one_menu_item, true));
@@ -2124,13 +2124,13 @@ TEST_F(ChromeLauncherControllerTest, BrowserMenuGeneration) {
       chrome::CreateBrowserWithTestWindowForParams(&ash_params));
   chrome::NewTab(browser2.get());
   BrowserList::SetLastActive(browser2.get());
-  string16 title2 = ASCIIToUTF16("Test2");
+  base::string16 title2 = ASCIIToUTF16("Test2");
   NavigateAndCommitActiveTabWithTitle(browser2.get(), GURL("http://test2"),
                                       title2);
 
   // Check that the list contains now two entries - make furthermore sure that
   // the active item is the first entry.
-  string16 two_menu_items[] = {title1, title2};
+  base::string16 two_menu_items[] = {title1, title2};
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_browser, 2, two_menu_items, true));
 
@@ -2158,9 +2158,9 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
 
   // Show the created |browser()| by adding it to the active browser list.
   BrowserList::SetLastActive(browser());
-  string16 title1 = ASCIIToUTF16("Test1");
+  base::string16 title1 = ASCIIToUTF16("Test1");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL("http://test1"), title1);
-  string16 one_menu_item1[] = { title1 };
+  base::string16 one_menu_item1[] = { title1 };
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_browser, 1, one_menu_item1, true));
 
@@ -2170,7 +2170,7 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
   TestingProfile* profile2 = CreateMultiUserProfile(user2);
   scoped_ptr<Browser> browser2(
       CreateBrowserAndTabWithProfile(profile2, user2, "http://test2"));
-  string16 one_menu_item2[] = { ASCIIToUTF16(user2) };
+  base::string16 one_menu_item2[] = { ASCIIToUTF16(user2) };
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_browser, 1, one_menu_item1, true));
 
@@ -2227,16 +2227,16 @@ TEST_F(ChromeLauncherControllerTest, V1AppMenuGeneration) {
       launcher_controller_.get(), item_gmail, 0, NULL, false));
 
   // Set the gmail URL to a new tab.
-  string16 title1 = ASCIIToUTF16("Test1");
+  base::string16 title1 = ASCIIToUTF16("Test1");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title1);
 
-  string16 one_menu_item[] = { title1 };
+  base::string16 one_menu_item[] = { title1 };
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_gmail, 1, one_menu_item, false));
 
   // Create one empty tab.
   chrome::NewTab(browser());
-  string16 title2 = ASCIIToUTF16("Test2");
+  base::string16 title2 = ASCIIToUTF16("Test2");
   NavigateAndCommitActiveTabWithTitle(
       browser(),
       GURL("https://bla"),
@@ -2244,15 +2244,15 @@ TEST_F(ChromeLauncherControllerTest, V1AppMenuGeneration) {
 
   // and another one with another gmail instance.
   chrome::NewTab(browser());
-  string16 title3 = ASCIIToUTF16("Test3");
+  base::string16 title3 = ASCIIToUTF16("Test3");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title3);
-  string16 two_menu_items[] = {title1, title3};
+  base::string16 two_menu_items[] = {title1, title3};
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_gmail, 2, two_menu_items, false));
 
   // Even though the item is in the V1 app list, it should also be in the
   // browser list.
-  string16 browser_menu_item[] = {title3};
+  base::string16 browser_menu_item[] = {title3};
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_browser, 1, browser_menu_item, false));
 
@@ -2262,7 +2262,7 @@ TEST_F(ChromeLauncherControllerTest, V1AppMenuGeneration) {
 
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_gmail, 0, NULL, false));
-  string16 browser_menu_item2[] = { title2 };
+  base::string16 browser_menu_item2[] = { title2 };
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_browser, 1, browser_menu_item2, false));
 }
@@ -2297,10 +2297,10 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
       launcher_controller_.get(), item_gmail, 0, NULL, false));
 
   // Set the gmail URL to a new tab.
-  string16 title1 = ASCIIToUTF16("Test1");
+  base::string16 title1 = ASCIIToUTF16("Test1");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title1);
 
-  string16 one_menu_item[] = { title1 };
+  base::string16 one_menu_item[] = { title1 };
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_gmail, 1, one_menu_item, false));
 
@@ -2405,26 +2405,25 @@ TEST_F(ChromeLauncherControllerTest, V1AppMenuExecution) {
   ash::LauncherID gmail_id = model_->next_id();
   extension_service_->AddExtension(extension3_.get());
   launcher_controller_->SetRefocusURLPatternForTest(gmail_id, GURL(gmail_url));
-  string16 title1 = ASCIIToUTF16("Test1");
+  base::string16 title1 = ASCIIToUTF16("Test1");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title1);
   chrome::NewTab(browser());
-  string16 title2 = ASCIIToUTF16("Test2");
+  base::string16 title2 = ASCIIToUTF16("Test2");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title2);
 
   // Check that the menu is properly set.
   ash::LauncherItem item_gmail;
   item_gmail.type = ash::TYPE_APP_SHORTCUT;
   item_gmail.id = gmail_id;
-  string16 two_menu_items[] = {title1, title2};
+  base::string16 two_menu_items[] = {title1, title2};
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_gmail, 2, two_menu_items, false));
   EXPECT_EQ(1, browser()->tab_strip_model()->active_index());
   // Execute the second item in the list (which shouldn't do anything since that
   // item is per definition already the active tab).
   {
-    scoped_ptr<ash::LauncherMenuModel> menu(
-        new LauncherApplicationMenuItemModel(
-            launcher_controller_->GetApplicationList(item_gmail, 0)));
+    scoped_ptr<ash::ShelfMenuModel> menu(new LauncherApplicationMenuItemModel(
+        launcher_controller_->GetApplicationList(item_gmail, 0)));
     // The first element in the menu is a spacing separator. On some systems
     // (e.g. Windows) such things do not exist. As such we check the existence
     // and adjust dynamically.
@@ -2436,9 +2435,8 @@ TEST_F(ChromeLauncherControllerTest, V1AppMenuExecution) {
 
   // Execute the first item.
   {
-    scoped_ptr<ash::LauncherMenuModel> menu(
-        new LauncherApplicationMenuItemModel(
-            launcher_controller_->GetApplicationList(item_gmail, 0)));
+    scoped_ptr<ash::ShelfMenuModel> menu(new LauncherApplicationMenuItemModel(
+        launcher_controller_->GetApplicationList(item_gmail, 0)));
     int first_item =
         (menu->GetTypeAt(0) == ui::MenuModel::TYPE_SEPARATOR) ? 1 : 0;
     menu->ActivatedAt(first_item + 2);
@@ -2456,17 +2454,17 @@ TEST_F(ChromeLauncherControllerTest, V1AppMenuDeletionExecution) {
   ash::LauncherID gmail_id = model_->next_id();
   extension_service_->AddExtension(extension3_.get());
   launcher_controller_->SetRefocusURLPatternForTest(gmail_id, GURL(gmail_url));
-  string16 title1 = ASCIIToUTF16("Test1");
+  base::string16 title1 = ASCIIToUTF16("Test1");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title1);
   chrome::NewTab(browser());
-  string16 title2 = ASCIIToUTF16("Test2");
+  base::string16 title2 = ASCIIToUTF16("Test2");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title2);
 
   // Check that the menu is properly set.
   ash::LauncherItem item_gmail;
   item_gmail.type = ash::TYPE_APP_SHORTCUT;
   item_gmail.id = gmail_id;
-  string16 two_menu_items[] = {title1, title2};
+  base::string16 two_menu_items[] = {title1, title2};
   EXPECT_TRUE(CheckMenuCreation(
       launcher_controller_.get(), item_gmail, 2, two_menu_items, false));
 
@@ -2550,7 +2548,7 @@ TEST_F(ChromeLauncherControllerTest, GmailMatching) {
 
   // Create a Gmail browser tab.
   chrome::NewTab(browser());
-  string16 title = ASCIIToUTF16("Test");
+  base::string16 title = ASCIIToUTF16("Test");
   NavigateAndCommitActiveTabWithTitle(browser(), GURL(gmail_url), title);
   content::WebContents* content =
       browser()->tab_strip_model()->GetActiveWebContents();
@@ -2582,7 +2580,7 @@ TEST_F(ChromeLauncherControllerTest, GmailOfflineMatching) {
 
   // Create a Gmail browser tab.
   chrome::NewTab(browser());
-  string16 title = ASCIIToUTF16("Test");
+  base::string16 title = ASCIIToUTF16("Test");
   NavigateAndCommitActiveTabWithTitle(browser(),
                                       GURL(offline_gmail_url),
                                       title);
@@ -2640,9 +2638,9 @@ TEST_F(ChromeLauncherControllerTest, PersistLauncherItemPositions) {
   if (!ash::Shell::HasInstance()) {
     delete item_delegate_manager_;
   } else {
-    // Clear already registered LauncherItemDelegate.
-    ash::test::LauncherItemDelegateManagerTestAPI test(item_delegate_manager_);
-    test.RemoveAllLauncherItemDelegateForTest();
+    // Clear already registered ShelfItemDelegate.
+    ash::test::ShelfItemDelegateManagerTestAPI test(item_delegate_manager_);
+    test.RemoveAllShelfItemDelegateForTest();
   }
   model_.reset(new ash::ShelfModel);
 
@@ -2654,9 +2652,8 @@ TEST_F(ChromeLauncherControllerTest, PersistLauncherItemPositions) {
   app_tab_helper->SetAppID(tab_strip_model->GetWebContentsAt(1), "2");
   SetAppTabHelper(app_tab_helper);
   if (!ash::Shell::HasInstance()) {
-    item_delegate_manager_ =
-        new ash::LauncherItemDelegateManager(model_.get());
-    SetLauncherItemDelegateManager(item_delegate_manager_);
+    item_delegate_manager_ = new ash::ShelfItemDelegateManager(model_.get());
+    SetShelfItemDelegateManager(item_delegate_manager_);
   }
   launcher_controller_->Init();
 
@@ -2696,9 +2693,9 @@ TEST_F(ChromeLauncherControllerTest, PersistPinned) {
   if (!ash::Shell::HasInstance()) {
     delete item_delegate_manager_;
   } else {
-    // Clear already registered LauncherItemDelegate.
-    ash::test::LauncherItemDelegateManagerTestAPI test(item_delegate_manager_);
-    test.RemoveAllLauncherItemDelegateForTest();
+    // Clear already registered ShelfItemDelegate.
+    ash::test::ShelfItemDelegateManagerTestAPI test(item_delegate_manager_);
+    test.RemoveAllShelfItemDelegateForTest();
   }
   model_.reset(new ash::ShelfModel);
 
@@ -2711,9 +2708,8 @@ TEST_F(ChromeLauncherControllerTest, PersistPinned) {
   app_icon_loader = new TestAppIconLoaderImpl;
   SetAppIconLoader(app_icon_loader);
   if (!ash::Shell::HasInstance()) {
-    item_delegate_manager_ =
-        new ash::LauncherItemDelegateManager(model_.get());
-    SetLauncherItemDelegateManager(item_delegate_manager_);
+    item_delegate_manager_ = new ash::ShelfItemDelegateManager(model_.get());
+    SetShelfItemDelegateManager(item_delegate_manager_);
   }
   launcher_controller_->Init();
 

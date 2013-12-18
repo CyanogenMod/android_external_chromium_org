@@ -21,6 +21,7 @@
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_account_id_helper.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/signin/signin_internals_util.h"
 #include "chrome/browser/signin/signin_manager_cookie_helper.h"
@@ -363,10 +364,16 @@ void SigninManager::Initialize(Profile* profile, PrefService* local_state) {
     // have changed the policy since the last signin, so sign out the user.
     SignOut();
   }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kNewProfileManagement)) {
+    account_id_helper_.reset(new SigninAccountIdHelper(profile));
+  }
 }
 
 void SigninManager::Shutdown() {
   local_state_pref_registrar_.RemoveAll();
+  account_id_helper_.reset();
   SigninManagerBase::Shutdown();
 }
 
@@ -404,7 +411,7 @@ bool SigninManager::IsUsernameAllowedByPolicy(const std::string& username,
   // are not valid regular expressions - they should instead be ".*@foo.com").
   // For convenience, detect these patterns and insert a "." character at the
   // front.
-  string16 pattern = UTF8ToUTF16(policy);
+  base::string16 pattern = UTF8ToUTF16(policy);
   if (pattern[0] == L'*')
     pattern.insert(pattern.begin(), L'.');
 
@@ -418,7 +425,7 @@ bool SigninManager::IsUsernameAllowedByPolicy(const std::string& username,
     // break signin than to quietly allow users to sign in).
     return false;
   }
-  string16 username16 = UTF8ToUTF16(username);
+  base::string16 username16 = UTF8ToUTF16(username);
   icu::UnicodeString icu_input(username16.data(), username16.length());
   matcher.reset(icu_input);
   status = U_ZERO_ERROR;
@@ -583,8 +590,7 @@ void SigninManager::OnSignedIn(const std::string& username) {
   // Don't store password hash except for users of new profile features.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kNewProfileManagement)) {
-    std::string auth_username = GetAuthenticatedUsername();
-    chrome::SetLocalAuthCredentials(profile_, auth_username, password_);
+    chrome::SetLocalAuthCredentials(profile_, password_);
   }
 #endif
 

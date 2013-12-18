@@ -113,7 +113,7 @@ void FillOutputForSection(
 bool IsSectionInputUsedInFormStructure(DialogSection section,
                                        ServerFieldType input_type,
                                        const FormStructure& form_structure) {
-  const DetailInput input = { 0, input_type };
+  const DetailInput input = { DetailInput::LONG, input_type };
   for (size_t i = 0; i < form_structure.field_count(); ++i) {
     const AutofillField* field = form_structure.field(i);
     if (field && common::DetailInputMatchesField(section, input, *field))
@@ -346,11 +346,12 @@ void AutofillDialogControllerAndroid::DialogContinue(
     jstring jlast_used_billing,
     jstring jlast_used_shipping,
     jstring jlast_used_card) {
-  const string16 email = AutofillDialogResult::GetWalletEmail(env, wallet);
+  const base::string16 email =
+      AutofillDialogResult::GetWalletEmail(env, wallet);
   const std::string google_transaction_id =
       AutofillDialogResult::GetWalletGoogleTransactionId(env, wallet);
 
-  const string16 last_used_account_name =
+  const base::string16 last_used_account_name =
       base::android::ConvertJavaStringToUTF16(env, jlast_used_account_name);
   const std::string last_used_billing =
       base::android::ConvertJavaStringToUTF8(env, jlast_used_billing);

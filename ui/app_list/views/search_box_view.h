@@ -38,10 +38,10 @@ class SearchBoxView : public views::View,
                       public SearchBoxModelObserver {
  public:
   SearchBoxView(SearchBoxViewDelegate* delegate,
-                AppListViewDelegate* view_delegate,
-                AppListModel* model);
+                AppListViewDelegate* view_delegate);
   virtual ~SearchBoxView();
 
+  void ModelChanged();
   bool HasSearch() const;
   void ClearSearch();
   void InvalidateMenu();
@@ -81,19 +81,18 @@ class SearchBoxView : public views::View,
   // Overridden from SearchBoxModelObserver:
   virtual void IconChanged() OVERRIDE;
   virtual void SpeechRecognitionButtonPropChanged() OVERRIDE;
-  virtual void SetSpeechRecognitionButtonState(bool toggled) OVERRIDE;
   virtual void HintTextChanged() OVERRIDE;
   virtual void SelectionModelChanged() OVERRIDE;
   virtual void TextChanged() OVERRIDE;
 
   SearchBoxViewDelegate* delegate_;  // Not owned.
   AppListViewDelegate* view_delegate_;  // Not owned.
-  AppListModel* model_;  // Owned by AppListView.
+  AppListModel* model_;  // Owned by the profile-keyed service.
 
   scoped_ptr<AppListMenuViews> menu_;
 
   views::ImageView* icon_view_;  // Owned by views hierarchy.
-  views::ToggleImageButton* speech_button_;  // Owned by views hierarchy.
+  views::ImageButton* speech_button_;  // Owned by views hierarchy.
   views::MenuButton* menu_button_;  // Owned by views hierarchy.
   views::Textfield* search_box_;  // Owned by views hierarchy.
   views::View* contents_view_;  // Owned by views hierarchy.

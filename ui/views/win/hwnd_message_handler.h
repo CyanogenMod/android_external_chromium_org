@@ -19,6 +19,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
+#include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
 #include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/ui_base_types.h"
@@ -174,16 +175,13 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   void SetVisibilityChangedAnimationsEnabled(bool enabled);
 
-  void SetTitle(const string16& title);
+  // Returns true if the title changed.
+  bool SetTitle(const string16& title);
 
   void SetCursor(HCURSOR cursor);
 
   void FrameTypeChanged();
 
-  // Disable Layered Window updates by setting to false.
-  void set_can_update_layered_window(bool can_update_layered_window) {
-    can_update_layered_window_ = can_update_layered_window;
-  }
   void SchedulePaintInRect(const gfx::Rect& rect);
   void SetOpacity(BYTE opacity);
 
@@ -253,6 +251,11 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // If |force| is true, the window region is reset to NULL even for native
   // frame windows.
   void ResetWindowRegion(bool force, bool redraw);
+
+  // Enables or disables rendering of the non-client (glass) area by DWM,
+  // under Vista and above, depending on whether the caller has requested a
+  // custom frame.
+  void UpdateDwmNcRenderingPolicy();
 
   // Calls DefWindowProc, safely wrapping the call in a ScopedRedrawLock to
   // prevent frame flicker. DefWindowProc handling can otherwise render the
@@ -440,6 +443,9 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // true.
   bool restored_enabled_;
 
+  // The current cursor.
+  HCURSOR current_cursor_;
+
   // The last cursor that was active before the current one was selected. Saved
   // so that we can restore it.
   HCURSOR previous_cursor_;
@@ -509,12 +515,11 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Set to true when waiting for RedrawLayeredWindowContents().
   bool waiting_for_redraw_layered_window_contents_;
 
-  // True if we are allowed to update the layered window from the DIB backing
-  // store if necessary.
-  bool can_update_layered_window_;
-
   // True the first time nccalc is called on a sizable widget
   bool is_first_nccalc_;
+
+  // Copy of custom window region specified via SetRegion(), if any.
+  base::win::ScopedRegion custom_window_region_;
 
   // A factory used to lookup appbar autohide edges.
   base::WeakPtrFactory<HWNDMessageHandler> autohide_factory_;
@@ -524,6 +529,11 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };
+
+// This window property if set on the window does not activate the window for a
+// touch based WM_MOUSEACTIVATE message.
+const wchar_t kIgnoreTouchMouseActivateForWindow[] =
+    L"Chrome.IgnoreMouseActivate";
 
 }  // namespace views
 

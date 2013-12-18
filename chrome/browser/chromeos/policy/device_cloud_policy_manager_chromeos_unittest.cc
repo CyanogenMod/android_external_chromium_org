@@ -13,15 +13,12 @@
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_store_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/mock_device_management_service.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
@@ -29,12 +26,15 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/system/mock_statistics_provider.h"
 #include "chromeos/system/statistics_provider.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/mock_device_management_service.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/schema_registry.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_test_util.h"
 #include "policy/policy_constants.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -290,7 +290,7 @@ class DeviceCloudPolicyManagerChromeOSEnrollmentTest
     // Trigger enrollment.
     MockDeviceManagementJob* register_job = NULL;
     EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION))
+                CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION, _))
         .Times(AtMost(1))
         .WillOnce(device_management_service_.CreateAsyncJob(&register_job));
     EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
@@ -312,7 +312,7 @@ class DeviceCloudPolicyManagerChromeOSEnrollmentTest
     ASSERT_TRUE(register_job);
     MockDeviceManagementJob* policy_fetch_job = NULL;
     EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+                CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH, _))
         .Times(AtMost(1))
         .WillOnce(device_management_service_.CreateAsyncJob(&policy_fetch_job));
     EXPECT_CALL(device_management_service_, StartJob(_, _, _, _, _, _, _))
@@ -333,8 +333,8 @@ class DeviceCloudPolicyManagerChromeOSEnrollmentTest
 
     // Process verification.
     MockDeviceManagementJob* robot_auth_fetch_job = NULL;
-    EXPECT_CALL(device_management_service_,
-                CreateJob(DeviceManagementRequestJob::TYPE_API_AUTH_CODE_FETCH))
+    EXPECT_CALL(device_management_service_, CreateJob(
+        DeviceManagementRequestJob::TYPE_API_AUTH_CODE_FETCH, _))
         .Times(AtMost(1))
         .WillOnce(device_management_service_.CreateAsyncJob(
             &robot_auth_fetch_job));

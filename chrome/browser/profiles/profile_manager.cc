@@ -13,7 +13,6 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -330,15 +329,8 @@ base::FilePath ProfileManager::GetInitialProfileDir() {
       // TODO(nkostylev): Remove this code completely once we eliminate
       // legacy --login-profile=user switch and enable multi-profiles on CrOS
       // by default. http://crbug.com/294628
-      std::string login_profile_value =
-          command_line.GetSwitchValueASCII(chromeos::switches::kLoginProfile);
-      if (login_profile_value == chrome::kLegacyProfileDir ||
-          login_profile_value == chrome::kTestUserProfileDir) {
-        profile_dir = base::FilePath(login_profile_value);
-      } else {
-        profile_dir = g_browser_process->platform_part()->profile_helper()->
-            GetUserProfileDir(login_profile_value);
-      }
+      profile_dir = chromeos::ProfileHelper::
+          GetProfileDirByLegacyLoginProfileSwitch();
     } else if (!command_line.HasSwitch(switches::kMultiProfiles)) {
       // We should never be logged in with no profile dir unless
       // multi-profiles are enabled.
@@ -370,8 +362,29 @@ Profile* ProfileManager::GetLastUsedProfile(
     const base::FilePath& user_data_dir) {
 #if defined(OS_CHROMEOS)
   // Use default login profile if user has not logged in yet.
-  if (!logged_in_)
+  if (!logged_in_) {
     return GetDefaultProfile(user_data_dir);
+  } else {
+    // CrOS multi-profiles implementation is different so GetLastUsedProfile
+    // has custom implementation too.
+    base::FilePath profile_dir;
+    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    if (command_line.HasSwitch(switches::kMultiProfiles)) {
+      // In case of multi-profiles we ignore "last used profile" preference
+      // since it may refer to profile that has been in use in previous session.
+      // That profile dir may not be mounted in this session so instead return
+      // active profile from current session.
+      profile_dir = g_browser_process->platform_part()->
+          profile_helper()->GetActiveUserProfileDir();
+    } else {
+      // For legacy (not multi-profiles) implementation always default to
+      // --login-profile value.
+      profile_dir =
+          chromeos::ProfileHelper::GetProfileDirByLegacyLoginProfileSwitch();
+    }
+    base::FilePath profile_path(user_data_dir);
+    return GetProfile(profile_path.Append(profile_dir));
+  }
 #endif
 
   return GetProfile(GetLastUsedProfileDir(user_data_dir));
@@ -413,6 +426,54 @@ std::vector<Profile*> ProfileManager::GetLastOpenedProfiles(
     }
   }
   return to_return;
+}
+
+Profile* ProfileManager::GetPrimaryUserProfile() {
+#if defined(OS_CHROMEOS)
+  // TODO(skuhne): Remove once GetDefaultProfile is removed.
+  CHECK(s_allow_get_default_profile)
+      << "GetPrimaryUserProfile() called before allowed.";
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager->IsLoggedIn())
+    return GetDefaultProfile();
+  chromeos::UserManager* manager = chromeos::UserManager::Get();
+  return manager->GetProfileByUser(manager->GetPrimaryUser());
+#else
+  return GetDefaultProfile();
+#endif
+}
+
+Profile* ProfileManager::GetActiveUserProfile() {
+#if defined(OS_CHROMEOS)
+  // TODO(skuhne): Remove once GetDefaultProfile is removed.
+  CHECK(s_allow_get_default_profile)
+      << "GetActiveUserProfile() called before allowed.";
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager->IsLoggedIn())
+    return GetDefaultProfile();
+  chromeos::UserManager* manager = chromeos::UserManager::Get();
+  return manager->GetProfileByUser(manager->GetActiveUser());
+#else
+  return GetDefaultProfile();
+#endif
+}
+
+Profile* ProfileManager::GetPrimaryUserProfileOrOffTheRecord() {
+  Profile* profile = GetPrimaryUserProfile();
+#if defined(OS_CHROMEOS)
+  if (chromeos::UserManager::Get()->IsLoggedInAsGuest())
+    profile = profile->GetOffTheRecordProfile();
+#endif
+  return profile;
+}
+
+Profile* ProfileManager::GetActiveUserProfileOrOffTheRecord() {
+  Profile* profile = GetActiveUserProfile();
+#if defined(OS_CHROMEOS)
+  if (chromeos::UserManager::Get()->IsLoggedInAsGuest())
+    profile = profile->GetOffTheRecordProfile();
+#endif
+  return profile;
 }
 
 Profile* ProfileManager::GetDefaultProfile(
@@ -495,8 +556,8 @@ Profile* ProfileManager::GetProfile(const base::FilePath& profile_dir) {
 void ProfileManager::CreateProfileAsync(
     const base::FilePath& profile_path,
     const CreateCallback& callback,
-    const string16& name,
-    const string16& icon_url,
+    const base::string16& name,
+    const base::string16& icon_url,
     const std::string& managed_user_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -522,7 +583,7 @@ void ProfileManager::CreateProfileAsync(
     std::string icon_url_std = UTF16ToASCII(icon_url);
     if (cache.IsDefaultAvatarIconUrl(icon_url_std, &icon_index)) {
       // add profile to cache with user selected name and avatar
-      cache.AddProfileToCache(profile_path, name, string16(), icon_index,
+      cache.AddProfileToCache(profile_path, name, base::string16(), icon_index,
                               managed_user_id);
     }
 
@@ -530,6 +591,8 @@ void ProfileManager::CreateProfileAsync(
       content::RecordAction(
           UserMetricsAction("ManagedMode_LocallyManagedUserCreated"));
     }
+
+    ProfileMetrics::UpdateReportedProfilesStatistics(this);
   }
 
   // Call or enqueue the callback.
@@ -772,37 +835,8 @@ void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
 void ProfileManager::DoFinalInitForServices(Profile* profile,
                                             bool go_off_the_record) {
 #if defined(ENABLE_EXTENSIONS)
-  // Set up a field trial to determine the effectiveness of deferring
-  // creation of background extension RenderViews.
-  CR_DEFINE_STATIC_LOCAL(scoped_refptr<base::FieldTrial>, trial, ());
-  static bool defer_creation = false;
-
-  if (!trial.get()) {
-    const base::FieldTrial::Probability kDivisor = 100;
-
-    // Enable the deferred creation for 50% of the users.
-    base::FieldTrial::Probability probability_per_group = 50;
-
-    // After August 31, 2014 builds, it will always be in default group
-    // (defer_creation == false).
-    trial = base::FieldTrialList::FactoryGetFieldTrial(
-        "DeferBackgroundExtensionCreation",
-        kDivisor,
-        "RateLimited",
-        2014,
-        8,
-        31,
-        base::FieldTrial::ONE_TIME_RANDOMIZED,
-        NULL);
-
-    // Add group for deferred creation of background extension RenderViews.
-    int defer_creation_group =
-        trial->AppendGroup("Deferred", probability_per_group);
-    defer_creation = trial->group() == defer_creation_group;
-  }
-
   extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
-      !go_off_the_record, defer_creation);
+      !go_off_the_record);
   // During tests, when |profile| is an instance of TestingProfile,
   // ExtensionSystem might not create an ExtensionService.
   if (extensions::ExtensionSystem::Get(profile)->extension_service()) {
@@ -917,8 +951,8 @@ base::FilePath ProfileManager::GenerateNextProfileDirectoryPath() {
 
 // static
 base::FilePath ProfileManager::CreateMultiProfileAsync(
-    const string16& name,
-    const string16& icon_url,
+    const base::string16& name,
+    const base::string16& icon_url,
     const CreateCallback& callback,
     const std::string& managed_user_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -984,12 +1018,12 @@ void ProfileManager::AddProfileToCache(Profile* profile) {
   if (cache.GetIndexOfProfileWithPath(profile->GetPath()) != std::string::npos)
     return;
 
-  string16 username = UTF8ToUTF16(profile->GetPrefs()->GetString(
+  base::string16 username = UTF8ToUTF16(profile->GetPrefs()->GetString(
       prefs::kGoogleServicesUsername));
 
   // Profile name and avatar are set by InitProfileUserPrefs and stored in the
   // profile. Use those values to setup the cache entry.
-  string16 profile_name = UTF8ToUTF16(profile->GetPrefs()->GetString(
+  base::string16 profile_name = UTF8ToUTF16(profile->GetPrefs()->GetString(
       prefs::kProfileName));
 
   size_t icon_index = profile->GetPrefs()->GetInteger(
@@ -1115,8 +1149,8 @@ void ProfileManager::ScheduleProfileForDeletion(
                              new_path.BaseName().MaybeAsASCII());
       CreateProfileAsync(new_path,
                          callback,
-                         string16(),
-                         string16(),
+                         base::string16(),
+                         base::string16(),
                          std::string());
     } else {
       // On the Mac, the browser process is not killed when all browser windows
@@ -1129,8 +1163,8 @@ void ProfileManager::ScheduleProfileForDeletion(
                                     profile_dir,
                                     last_non_managed_profile_path,
                                     callback),
-                         string16(),
-                         string16(),
+                         base::string16(),
+                         base::string16(),
                          std::string());
       return;
 #else
@@ -1199,6 +1233,7 @@ void ProfileManager::FinishDeletingProfile(const base::FilePath& profile_dir) {
 
   QueueProfileDirectoryForDeletion(profile_dir);
   cache.DeleteProfileFromCache(profile_dir);
+  ProfileMetrics::UpdateReportedProfilesStatistics(this);
 }
 
 void ProfileManager::AutoloadProfiles() {

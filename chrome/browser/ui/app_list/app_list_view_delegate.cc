@@ -34,7 +34,9 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
+#include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/search_box_model.h"
+#include "ui/app_list/speech_ui_model.h"
 
 #if defined(USE_ASH)
 #include "chrome/browser/ui/ash/app_list/app_sync_ui_state_watcher.h"
@@ -129,8 +131,6 @@ void AppListViewDelegate::OnProfileChanged() {
   app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_, model_));
 #endif
 
-  model_->SetSignedIn(!GetSigninDelegate()->NeedSignin());
-
   // Don't populate the app list users if we are on the ash desktop.
   chrome::HostDesktopType desktop = chrome::GetHostDesktopTypeForNativeWindow(
       controller_->GetAppListWindow());
@@ -140,6 +140,10 @@ void AppListViewDelegate::OnProfileChanged() {
   // Populate the app list users.
   PopulateUsers(g_browser_process->profile_manager()->GetProfileInfoCache(),
                 profile_->GetPath(), &users_);
+
+  FOR_EACH_OBSERVER(app_list::AppListViewDelegateObserver,
+                    observers_,
+                    OnProfilesChanged());
 }
 
 bool AppListViewDelegate::ForceNativeDesktop() const {
@@ -168,6 +172,10 @@ app_list::AppListModel* AppListViewDelegate::GetModel() {
 
 app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
   return &signin_delegate_;
+}
+
+app_list::SpeechUIModel* AppListViewDelegate::GetSpeechUI() {
+  return &speech_ui_;
 }
 
 void AppListViewDelegate::GetShortcutPathForApp(
@@ -276,12 +284,20 @@ void AppListViewDelegate::ShowForProfileByPath(
   controller_->ShowForProfileByPath(profile_path);
 }
 
-void AppListViewDelegate::OnSearch(const base::string16& query) {
-  model_->search_box()->SetText(query);
+void AppListViewDelegate::OnSpeechResult(const base::string16& result,
+                                         bool is_final) {
+  speech_ui_.SetSpeechResult(result, is_final);
+  if (is_final)
+    model_->search_box()->SetText(result);
 }
 
-void AppListViewDelegate::OnSpeechRecognitionStateChanged(bool recognizing) {
-  model_->search_box()->SetSpeechRecognitionButtonState(recognizing);
+void AppListViewDelegate::OnSpeechSoundLevelChanged(int16 level) {
+  speech_ui_.UpdateSoundLevel(level);
+}
+
+void AppListViewDelegate::OnSpeechRecognitionStateChanged(
+    app_list::SpeechRecognitionState new_state) {
+  speech_ui_.SetSpeechRecognitionState(new_state);
 }
 
 void AppListViewDelegate::Observe(
@@ -318,4 +334,14 @@ content::WebContents* AppListViewDelegate::GetStartPageContents() {
 const app_list::AppListViewDelegate::Users&
 AppListViewDelegate::GetUsers() const {
   return users_;
+}
+
+void AppListViewDelegate::AddObserver(
+    app_list::AppListViewDelegateObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void AppListViewDelegate::RemoveObserver(
+    app_list::AppListViewDelegateObserver* observer) {
+  observers_.RemoveObserver(observer);
 }

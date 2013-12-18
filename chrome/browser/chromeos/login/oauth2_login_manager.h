@@ -98,6 +98,9 @@ class OAuth2LoginManager : public BrowserContextKeyedService,
   // Continues session restore after transient network errors.
   void ContinueSessionRestore();
 
+  // Start resporting session from saved OAuth2 refresh token.
+  void RestoreSessionFromSavedTokens();
+
   // Stops all background authentication requests.
   void Stop();
 
@@ -124,6 +127,20 @@ class OAuth2LoginManager : public BrowserContextKeyedService,
     SESSION_RESTORE_COUNT = SESSION_RESTORE_MERGE_SESSION_FAILED,
   };
 
+  // Outcomes of post-merge session verification.
+  // This enum is used for an UMA histogram, and hence new items should only be
+  // appended at the end.
+  enum PostMergeVerificationOutcome {
+    POST_MERGE_UNDEFINED  = 0,
+    POST_MERGE_SUCCESS = 1,
+    POST_MERGE_NO_ACCOUNTS = 2,
+    POST_MERGE_MISSING_PRIMARY_ACCOUNT = 3,
+    POST_MERGE_PRIMARY_NOT_FIRST_ACCOUNT = 4,
+    POST_MERGE_VERIFICATION_FAILED = 5,
+    POST_MERGE_CONNECTION_FAILED = 6,
+    POST_MERGE_COUNT = 7,
+  };
+
   // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
@@ -135,11 +152,10 @@ class OAuth2LoginManager : public BrowserContextKeyedService,
   virtual void OnNetworkError(int response_code) OVERRIDE;
 
   // OAuth2LoginVerifier::Delegate overrides.
-  virtual void OnOAuthLoginSuccess(
-      const GaiaAuthConsumer::ClientLoginResult& gaia_credentials) OVERRIDE;
-  virtual void OnOAuthLoginFailure(bool connection_error) OVERRIDE;
   virtual void OnSessionMergeSuccess() OVERRIDE;
   virtual void OnSessionMergeFailure(bool connection_error) OVERRIDE;
+  virtual void OnListAccountsSuccess(const std::string& data) OVERRIDE;
+  virtual void OnListAccountsFailure(bool connection_error) OVERRIDE;
 
   // OAuth2TokenFetcher::Delegate overrides.
   virtual void OnOAuth2TokensAvailable(
@@ -155,6 +171,12 @@ class OAuth2LoginManager : public BrowserContextKeyedService,
 
   // Retrieves ProfileOAuth2TokenService for |user_profile_|.
   ProfileOAuth2TokenService* GetTokenService();
+
+  // Records |refresh_token_| to token service. The associated account id is
+  // assumed to be the primary account id of the user profile. If the primary
+  // account id is not present, GetAccountIdOfRefreshToken will be called to
+  // retrieve the associated account id.
+  void StoreOAuth2Token();
 
   // Get the account id corresponding to the specified refresh token.
   void GetAccountIdOfRefreshToken(const std::string& refresh_token);
@@ -179,14 +201,15 @@ class OAuth2LoginManager : public BrowserContextKeyedService,
   // Testing helper.
   void SetSessionRestoreStartForTesting(const base::Time& time);
 
+  // Records |outcome| of post merge verification check.
+  static void RecordPostMergeOutcome(PostMergeVerificationOutcome outcome);
+
   // Keeps the track if we have already reported OAuth2 token being loaded
   // by OAuth2TokenService.
   Profile* user_profile_;
   scoped_refptr<net::URLRequestContextGetter> auth_request_context_;
   SessionRestoreStrategy restore_strategy_;
   SessionRestoreState state_;
-
-  bool loading_reported_;
 
   scoped_ptr<OAuth2TokenFetcher> oauth2_token_fetcher_;
   scoped_ptr<OAuth2LoginVerifier> login_verifier_;

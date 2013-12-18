@@ -68,7 +68,7 @@ class LocalFileStreamReaderTest : public testing::Test {
 
     file_util::WriteFile(test_path(), kTestData, kTestDataSize);
     base::PlatformFileInfo info;
-    ASSERT_TRUE(file_util::GetFileInfo(test_path(), &info));
+    ASSERT_TRUE(base::GetFileInfo(test_path(), &info));
     test_file_modification_time_ = info.last_modified;
   }
 
@@ -94,9 +94,9 @@ class LocalFileStreamReaderTest : public testing::Test {
   void TouchTestFile() {
     base::Time new_modified_time =
         test_file_modification_time() - base::TimeDelta::FromSeconds(1);
-    ASSERT_TRUE(file_util::TouchFile(test_path(),
-                                    test_file_modification_time(),
-                                    new_modified_time));
+    ASSERT_TRUE(base::TouchFile(test_path(),
+                                test_file_modification_time(),
+                                new_modified_time));
   }
 
   base::MessageLoopProxy* file_task_runner() const {

@@ -7,12 +7,23 @@
 
 #include <string>
 
+#include "base/gtest_prod_util.h"
 #include "base/strings/string16.h"
 #include "ui/gfx/image/image.h"
 #include "ui/message_center/message_center_export.h"
 #include "url/gurl.h"
 
+FORWARD_DECLARE_TEST(MessageCenterTrayBridgeTest,
+                     StatusItemOnlyAfterFirstNotification);
+
+namespace ash {
+class WebNotificationTrayTest;
+}
+
 namespace message_center {
+namespace test {
+class MessagePopupCollectionTest;
+}
 
 class NotifierSettingsDelegate;
 class NotifierSettingsProvider;
@@ -33,32 +44,41 @@ struct MESSAGE_CENTER_EXPORT NotifierId {
     SYNCED_NOTIFICATION_SERVICE,
   };
 
-  // Constructor for APPLICATION and SYNCED_NOTIFICATION_SERVICE type.
+  // Constructor for non WEB_PAGE type.
   NotifierId(NotifierType type, const std::string& id);
 
   // Constructor for WEB_PAGE type.
   explicit NotifierId(const GURL& url);
 
-  // Constructor for system component types. The type should be positive.
-  explicit NotifierId(int type);
-
-  // The default constructor which doesn't specify the notifier. Used for tests.
-  NotifierId();
-
   bool operator==(const NotifierId& other) const;
 
   NotifierType type;
 
-  // The identifier of the app notifier. Empty if it's not APPLICATION or
-  // SYNCED_NOTIFICATION_SERVICE.
+  // The identifier of the app notifier. Empty if it's WEB_PAGE.
   std::string id;
 
   // The URL pattern of the notifer.
   GURL url;
 
-  // The type of system component notifier, usually used in ash. -1 if it's not
-  // the system component. See also: ash/system/system_notifier.h
-  int system_component_type;
+  // The identifier of the profile where the notification is created. This is
+  // used for ChromeOS multi-profile support and can be empty.
+  std::string profile_id;
+
+ private:
+  friend class MessageCenterTrayTest;
+  friend class test::MessagePopupCollectionTest;
+  friend class NotificationControllerTest;
+  friend class PopupCollectionTest;
+  friend class TrayViewControllerTest;
+  friend class ash::WebNotificationTrayTest;
+  FRIEND_TEST_ALL_PREFIXES(::MessageCenterTrayBridgeTest,
+                           StatusItemOnlyAfterFirstNotification);
+  FRIEND_TEST_ALL_PREFIXES(PopupControllerTest, Creation);
+  FRIEND_TEST_ALL_PREFIXES(NotificationListTest, UnreadCountNoNegative);
+  FRIEND_TEST_ALL_PREFIXES(NotificationListTest, TestHasNotificationOfType);
+
+  // The default constructor which doesn't specify the notifier. Used for tests.
+  NotifierId();
 };
 
 // The struct to hold the information of notifiers. The information will be

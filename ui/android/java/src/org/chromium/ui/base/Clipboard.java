@@ -1,17 +1,18 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.ui.base;
 
-import org.chromium.base.CalledByNative;
-import org.chromium.base.JNINamespace;
-
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.os.Build;
-import android.text.TextUtils;
+import android.widget.Toast;
+
+import org.chromium.base.ApiCompatibilityUtils;
+import org.chromium.base.CalledByNative;
+import org.chromium.base.JNINamespace;
+import org.chromium.ui.R;
 
 /**
  * Simple proxy that provides C++ code with an access pathway to the Android
@@ -30,7 +31,7 @@ public class Clipboard {
      *
      * @param context for accessing the clipboard
      */
-    private Clipboard(final Context context) {
+    public Clipboard(final Context context) {
         mContext = context;
         mClipboardManager = (ClipboardManager)
                 context.getSystemService(Context.CLIPBOARD_SERVICE);
@@ -77,6 +78,36 @@ public class Clipboard {
     }
 
     /**
+     * Gets the HTML text of top item on the primary clip on the Android clipboard.
+     *
+     * @return a Java string with the html text if any, or null if there is no html
+     *         text or no entries on the primary clip.
+     */
+    @CalledByNative
+    private String getHTMLText() {
+        if (isHTMLClipboardSupported()) {
+            final ClipData clip = mClipboardManager.getPrimaryClip();
+            if (clip != null && clip.getItemCount() > 0) {
+                return clip.getItemAt(0).getHtmlText();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Emulates the behavior of the now-deprecated
+     * {@link android.text.ClipboardManager#setText(CharSequence)}, setting the
+     * clipboard's current primary clip to a plain-text clip that consists of
+     * the specified string.
+     *
+     * @param label will become the label of the clipboard's primary clip
+     * @param text  will become the content of the clipboard's primary clip
+     */
+    public void setText(final String label, final String text) {
+        setPrimaryClipNoException(ClipData.newPlainText(label, text));
+    }
+
+    /**
      * Emulates the behavior of the now-deprecated
      * {@link android.text.ClipboardManager#setText(CharSequence)}, setting the
      * clipboard's current primary clip to a plain-text clip that consists of
@@ -84,10 +115,24 @@ public class Clipboard {
      *
      * @param text will become the content of the clipboard's primary clip
      */
-    @SuppressWarnings("javadoc")
     @CalledByNative
-    private void setText(final String text) {
-        mClipboardManager.setPrimaryClip(ClipData.newPlainText(null, text));
+    public void setText(final String text) {
+        setText(null, text);
+    }
+
+    /**
+     * Writes HTML to the clipboard, together with a plain-text representation
+     * of that very data. This API is only available in Android JellyBean+ and
+     * will be a no-operation in older versions.
+     *
+     * @param html  The HTML content to be pasted to the clipboard.
+     * @param label The Plain-text label for the HTML content.
+     * @param text  Plain-text representation of the HTML content.
+     */
+    public void setHTMLText(final String html, final String label, final String text) {
+        if (isHTMLClipboardSupported()) {
+            setPrimaryClipNoException(ClipData.newHtmlText(label, text, html));
+        }
     }
 
     /**
@@ -99,30 +144,22 @@ public class Clipboard {
      * @param text Plain-text representation of the HTML content.
      */
     @CalledByNative
-    private void setHTMLText(final String html, final String text) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            mClipboardManager.setPrimaryClip(
-                    ClipData.newHtmlText(null, text, html));
-        }
+    public void setHTMLText(final String html, final String text) {
+        setHTMLText(html, null, text);
     }
 
-    /**
-     * Approximates the behavior of the now-deprecated
-     * {@link android.text.ClipboardManager#hasText()}, returning true if and
-     * only if the clipboard has a primary clip and that clip contains a plain
-     * non-empty text entry (without attempting coercion - URLs and intents
-     * will cause this method to return false).
-     *
-     * @return as described above
-     */
-    @SuppressWarnings("javadoc")
     @CalledByNative
-    private boolean hasPlainText() {
-        final ClipData clip = mClipboardManager.getPrimaryClip();
-        if (clip != null && clip.getItemCount() > 0) {
-            final CharSequence text = clip.getItemAt(0).getText();
-            return !TextUtils.isEmpty(text);
+    private static boolean isHTMLClipboardSupported() {
+        return ApiCompatibilityUtils.isHTMLClipboardSupported();
+    }
+
+    private void setPrimaryClipNoException(ClipData clip) {
+        try {
+            mClipboardManager.setPrimaryClip(clip);
+        } catch (Exception ex) {
+            // Ignore any exceptions here as certain devices have bugs and will fail.
+            String text = mContext.getString(R.string.copy_to_clipboard_failure_message);
+            Toast.makeText(mContext, text, Toast.LENGTH_SHORT).show();
         }
-        return false;
     }
 }

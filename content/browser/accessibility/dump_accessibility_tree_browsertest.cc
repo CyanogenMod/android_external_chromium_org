@@ -161,7 +161,7 @@ void DumpAccessibilityTreeTest::RunTest(
   // Tolerate Windows-style line endings (\r\n) in the expected file:
   // normalize by deleting all \r from the file (if any) to leave only \n.
   std::string expected_contents;
-  RemoveChars(expected_contents_raw, "\r", &expected_contents);
+  base::RemoveChars(expected_contents_raw, "\r", &expected_contents);
 
   if (!expected_contents.compare(0, strlen(kMarkSkipFile), kMarkSkipFile)) {
     printf("Skipping this test on this platform.\n");
@@ -169,7 +169,7 @@ void DumpAccessibilityTreeTest::RunTest(
   }
 
   // Load the page.
-  string16 html_contents16;
+  base::string16 html_contents16;
   html_contents16 = UTF8ToUTF16(html_contents);
   GURL url = GetTestUrl("accessibility",
                         html_file.BaseName().MaybeAsASCII().c_str());
@@ -191,7 +191,7 @@ void DumpAccessibilityTreeTest::RunTest(
   formatter.SetFilters(filters);
 
   // Perform a diff (or write the initial baseline).
-  string16 actual_contents_utf16;
+  base::string16 actual_contents_utf16;
   formatter.FormatAccessibilityTree(&actual_contents_utf16);
   std::string actual_contents = UTF16ToUTF8(actual_contents_utf16);
   std::vector<std::string> actual_lines, expected_lines;
@@ -409,6 +409,10 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputRange) {
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
                        AccessibilityInputTextNameCalc) {
   RunTest(FILE_PATH_LITERAL("input-text-name-calc.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputTypes) {
+  RunTest(FILE_PATH_LITERAL("input-types.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityLabel) {

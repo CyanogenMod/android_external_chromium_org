@@ -413,7 +413,7 @@ bool CheckMultiInstallConditions(const InstallationState& original_state,
         // migrated to single-install. This is treated as an update failure
         // unless the binaries are not in-use, in which case they will be
         // uninstalled and success will be reported (see handling in wWinMain).
-        LOG(INFO) << "No products to be updated.";
+        VLOG(1) << "No products to be updated.";
         *status = installer::UNUSED_BINARIES;
         installer_state->WriteInstallerResult(*status, 0, NULL);
         return false;
@@ -691,71 +691,14 @@ bool CreateTemporaryAndUnpackDirectories(
   }
   VLOG(1) << "Created path " << temp_path->path().value();
 
-  if (!file_util::CreateTemporaryDirInDir(temp_path->path(),
-                                          installer::kInstallSourceDir,
-                                          unpack_path)) {
+  if (!base::CreateTemporaryDirInDir(temp_path->path(),
+                                     installer::kInstallSourceDir,
+                                     unpack_path)) {
     PLOG(ERROR) << "Could not create temporary path for unpacked archive.";
     return false;
   }
 
   return true;
-}
-
-installer::InstallStatus InstallProducts(
-    const InstallationState& original_state,
-    const CommandLine& cmd_line,
-    const MasterPreferences& prefs,
-    InstallerState* installer_state,
-    base::FilePath* installer_directory) {
-  DCHECK(installer_state);
-  const bool system_install = installer_state->system_install();
-  installer::InstallStatus install_status = installer::UNKNOWN_STATUS;
-  installer::ArchiveType archive_type = installer::UNKNOWN_ARCHIVE_TYPE;
-  bool delegated_to_existing = false;
-  installer_state->UpdateStage(installer::PRECONDITIONS);
-  // The stage provides more fine-grained information than -multifail, so remove
-  // the -multifail suffix from the Google Update "ap" value.
-  BrowserDistribution::GetSpecificDistribution(installer_state->state_type())->
-      UpdateInstallStatus(system_install, archive_type, install_status);
-  if (CheckPreInstallConditions(original_state, installer_state,
-                                &install_status)) {
-    VLOG(1) << "Installing to " << installer_state->target_path().value();
-    install_status = InstallProductsHelper(
-        original_state, cmd_line, prefs, *installer_state,
-        installer_directory, &archive_type, &delegated_to_existing);
-  } else {
-    // CheckPreInstallConditions must set the status on failure.
-    DCHECK_NE(install_status, installer::UNKNOWN_STATUS);
-  }
-
-  // Delete the master preferences file if present. Note that we do not care
-  // about rollback here and we schedule for deletion on reboot if the delete
-  // fails. As such, we do not use DeleteTreeWorkItem.
-  if (cmd_line.HasSwitch(installer::switches::kInstallerData)) {
-    base::FilePath prefs_path(cmd_line.GetSwitchValuePath(
-        installer::switches::kInstallerData));
-    if (!base::DeleteFile(prefs_path, false)) {
-      LOG(ERROR) << "Failed deleting master preferences file "
-                 << prefs_path.value()
-                 << ", scheduling for deletion after reboot.";
-      ScheduleFileSystemEntityForDeletion(prefs_path);
-    }
-  }
-
-  // Early exit if this setup.exe delegated to another, since that one would
-  // have taken care of UpdateInstallStatus and UpdateStage.
-  if (delegated_to_existing)
-    return install_status;
-
-  const Products& products = installer_state->products();
-  for (Products::const_iterator it = products.begin(); it < products.end();
-       ++it) {
-    (*it)->distribution()->UpdateInstallStatus(
-        system_install, archive_type, install_status);
-  }
-
-  installer_state->UpdateStage(installer::NO_STAGE);
-  return install_status;
 }
 
 installer::InstallStatus UninstallProduct(
@@ -868,6 +811,100 @@ installer::InstallStatus UninstallProducts(
   return install_status;
 }
 
+// Uninstall the binaries if they are the only product present and they're not
+// in-use.
+void UninstallBinariesIfUnused(
+    const InstallationState& original_state,
+    const InstallerState& installer_state,
+    installer::InstallStatus* install_status) {
+  // Early exit if the binaries are still in use.
+  if (*install_status != installer::UNUSED_BINARIES ||
+      installer_state.AreBinariesInUse(original_state)) {
+    return;
+  }
+
+  LOG(INFO) << "Uninstalling unused binaries";
+  installer_state.UpdateStage(installer::UNINSTALLING_BINARIES);
+
+  // Simulate the uninstall as coming from the installed version.
+  const ProductState* binaries_state =
+      original_state.GetProductState(installer_state.system_install(),
+                                     BrowserDistribution::CHROME_BINARIES);
+  const CommandLine& uninstall_cmd(binaries_state->uninstall_command());
+  MasterPreferences uninstall_prefs(uninstall_cmd);
+  InstallerState uninstall_state;
+  uninstall_state.Initialize(uninstall_cmd, uninstall_prefs, original_state);
+
+  *install_status =
+      UninstallProducts(original_state, uninstall_state, uninstall_cmd);
+
+  // Report that the binaries were uninstalled if they were. This translates
+  // into a successful install return code.
+  if (IsUninstallSuccess(*install_status)) {
+    *install_status = installer::UNUSED_BINARIES_UNINSTALLED;
+    installer_state.WriteInstallerResult(*install_status, 0, NULL);
+  }
+}
+
+installer::InstallStatus InstallProducts(
+    const InstallationState& original_state,
+    const CommandLine& cmd_line,
+    const MasterPreferences& prefs,
+    InstallerState* installer_state,
+    base::FilePath* installer_directory) {
+  DCHECK(installer_state);
+  const bool system_install = installer_state->system_install();
+  installer::InstallStatus install_status = installer::UNKNOWN_STATUS;
+  installer::ArchiveType archive_type = installer::UNKNOWN_ARCHIVE_TYPE;
+  bool delegated_to_existing = false;
+  installer_state->UpdateStage(installer::PRECONDITIONS);
+  // The stage provides more fine-grained information than -multifail, so remove
+  // the -multifail suffix from the Google Update "ap" value.
+  BrowserDistribution::GetSpecificDistribution(installer_state->state_type())->
+      UpdateInstallStatus(system_install, archive_type, install_status);
+  if (CheckPreInstallConditions(original_state, installer_state,
+                                &install_status)) {
+    VLOG(1) << "Installing to " << installer_state->target_path().value();
+    install_status = InstallProductsHelper(
+        original_state, cmd_line, prefs, *installer_state,
+        installer_directory, &archive_type, &delegated_to_existing);
+  } else {
+    // CheckPreInstallConditions must set the status on failure.
+    DCHECK_NE(install_status, installer::UNKNOWN_STATUS);
+  }
+
+  // Delete the master preferences file if present. Note that we do not care
+  // about rollback here and we schedule for deletion on reboot if the delete
+  // fails. As such, we do not use DeleteTreeWorkItem.
+  if (cmd_line.HasSwitch(installer::switches::kInstallerData)) {
+    base::FilePath prefs_path(cmd_line.GetSwitchValuePath(
+        installer::switches::kInstallerData));
+    if (!base::DeleteFile(prefs_path, false)) {
+      LOG(ERROR) << "Failed deleting master preferences file "
+                 << prefs_path.value()
+                 << ", scheduling for deletion after reboot.";
+      ScheduleFileSystemEntityForDeletion(prefs_path);
+    }
+  }
+
+  // Early exit if this setup.exe delegated to another, since that one would
+  // have taken care of UpdateInstallStatus and UpdateStage.
+  if (delegated_to_existing)
+    return install_status;
+
+  const Products& products = installer_state->products();
+  for (Products::const_iterator it = products.begin(); it < products.end();
+       ++it) {
+    (*it)->distribution()->UpdateInstallStatus(
+        system_install, archive_type, install_status);
+  }
+
+  UninstallBinariesIfUnused(original_state, *installer_state, &install_status);
+
+  installer_state->UpdateStage(installer::NO_STAGE);
+  return install_status;
+}
+
 installer::InstallStatus ShowEULADialog(const string16& inner_frame) {
   VLOG(1) << "About to show EULA";
   string16 eula_path = installer::GetLocalizedEulaResource();
@@ -900,7 +937,7 @@ bool CreateEULASentinel(BrowserDistribution* dist) {
     return false;
   }
 
-  return (file_util::CreateDirectory(eula_sentinel.DirName()) &&
+  return (base::CreateDirectory(eula_sentinel.DirName()) &&
           file_util::WriteFile(eula_sentinel, "", 0) != -1);
 }
 
@@ -977,7 +1014,7 @@ installer::InstallStatus RegisterDevChrome(
     shortcut_properties.set_dual_mode(true);
     shortcut_properties.set_pin_to_taskbar(true);
     ShellUtil::CreateOrUpdateShortcut(
-        ShellUtil::SHORTCUT_LOCATION_START_MENU, chrome_dist,
+        ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR, chrome_dist,
         shortcut_properties, ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS);
 
     // Register Chrome at user-level and make it default.
@@ -1339,7 +1376,7 @@ google_breakpad::ExceptionHandler* InitializeCrashReporting(
 
   // Get the alternate dump directory. We use the temp path.
   base::FilePath temp_directory;
-  if (!file_util::GetTempDir(&temp_directory) || temp_directory.empty())
+  if (!base::GetTempDir(&temp_directory) || temp_directory.empty())
     return NULL;
 
   wchar_t exe_path[MAX_PATH * 2] = {0};
@@ -1365,6 +1402,63 @@ google_breakpad::ExceptionHandler* InitializeCrashReporting(
           google_breakpad::ExceptionHandler::HANDLER_ALL, kLargerDumpType,
           pipe_name.c_str(), GetCustomInfo(exe_path));
   return breakpad;
+}
+
+// Uninstalls multi-install Chrome Frame if the current operation is a
+// multi-install install or update. The operation is performed directly rather
+// than delegated to the existing install since there is no facility in older
+// versions of setup.exe to uninstall GCF without touching the binaries. The
+// binaries will be uninstalled during later processing if they are not in-use
+// (see UninstallBinariesIfUnused). |original_state| and |installer_state| are
+// updated to reflect the state of the world following the operation.
+void UninstallMultiChromeFrameIfPresent(const CommandLine& cmd_line,
+                                        const MasterPreferences& prefs,
+                                        InstallationState* original_state,
+                                        InstallerState* installer_state) {
+  // Early exit if not installing or updating multi-install product(s).
+  if (installer_state->operation() != InstallerState::MULTI_INSTALL &&
+      installer_state->operation() != InstallerState::MULTI_UPDATE) {
+    return;
+  }
+
+  // Early exit if Chrome Frame is not present as multi-install.
+  const ProductState* chrome_frame_state =
+      original_state->GetProductState(installer_state->system_install(),
+                                      BrowserDistribution::CHROME_FRAME);
+  if (!chrome_frame_state || !chrome_frame_state->is_multi_install())
+    return;
+
+  LOG(INFO) << "Uninstalling multi-install Chrome Frame.";
+  installer_state->UpdateStage(installer::UNINSTALLING_CHROME_FRAME);
+
+  // Uninstall Chrome Frame without touching the multi-install binaries.
+  // Simulate the uninstall as coming from the installed version.
+  const CommandLine& uninstall_cmd(chrome_frame_state->uninstall_command());
+  MasterPreferences uninstall_prefs(uninstall_cmd);
+  InstallerState uninstall_state;
+  uninstall_state.Initialize(uninstall_cmd, uninstall_prefs, *original_state);
+  const Product* chrome_frame_product = uninstall_state.FindProduct(
+      BrowserDistribution::CHROME_FRAME);
+  if (chrome_frame_product) {
+    // No shared state should be left behind.
+    const bool remove_all = true;
+    // Don't accept no for an answer.
+    const bool force_uninstall = true;
+    installer::InstallStatus uninstall_status =
+        installer::UninstallProduct(*original_state, uninstall_state,
+                                    uninstall_cmd.GetProgram(),
+                                    *chrome_frame_product, remove_all,
+                                    force_uninstall, cmd_line);
+
+    VLOG(1) << "Uninstallation of Chrome Frame returned status "
+            << uninstall_status;
+  } else {
+    LOG(ERROR) << "Chrome Frame not found for uninstall.";
+  }
+
+  // Refresh state for the continuation of the original install/update.
+  original_state->Initialize();
+  installer_state->Initialize(cmd_line, prefs, *original_state);
 }
 
 }  // namespace
@@ -1775,26 +1869,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     }
   }
 
+  UninstallMultiChromeFrameIfPresent(cmd_line, prefs,
+                                     &original_state, &installer_state);
+
   base::FilePath installer_directory;
   installer::InstallStatus install_status = installer::UNKNOWN_STATUS;
-  // If --uninstall option is not specified, we assume it is install case.
-  if (!is_uninstall) {
+  // If --uninstall option is given, uninstall the identified product(s)
+  if (is_uninstall) {
+    install_status =
+        UninstallProducts(original_state, installer_state, cmd_line);
+  } else {
+    // If --uninstall option is not specified, we assume it is install case.
     install_status =
         InstallProducts(original_state, cmd_line, prefs, &installer_state,
                         &installer_directory);
-  }
-  // If --uninstall option is given or only the binaries are present and they're
-  // not in-use, uninstall the identified product(s).
-  if (is_uninstall || (install_status == installer::UNUSED_BINARIES &&
-                       !installer_state.AreBinariesInUse(original_state))) {
-    install_status =
-        UninstallProducts(original_state, installer_state, cmd_line);
-    // Report that the binaries were uninstalled if they were. This translates
-    // into a successful install return code.
-    if (!is_uninstall && IsUninstallSuccess(install_status)) {
-      install_status = installer::UNUSED_BINARIES_UNINSTALLED;
-      installer_state.WriteInstallerResult(install_status, 0, NULL);
-    }
   }
 
   // Validate that the machine is now in a good state following the operation.

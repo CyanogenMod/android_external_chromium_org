@@ -140,11 +140,12 @@ void ChromeViewsDelegate::NotifyAccessibilityEvent(
       view, event_type);
 }
 
-void ChromeViewsDelegate::NotifyMenuItemFocused(const string16& menu_name,
-                                                const string16& menu_item_name,
-                                                int item_index,
-                                                int item_count,
-                                                bool has_submenu) {
+void ChromeViewsDelegate::NotifyMenuItemFocused(
+    const base::string16& menu_name,
+    const base::string16& menu_item_name,
+    int item_index,
+    int item_count,
+    bool has_submenu) {
   AccessibilityEventRouterViews::GetInstance()->HandleMenuItemFocused(
       menu_name, menu_item_name, item_index, item_count, has_submenu);
 }
@@ -153,6 +154,11 @@ void ChromeViewsDelegate::NotifyMenuItemFocused(const string16& menu_name,
 HICON ChromeViewsDelegate::GetDefaultWindowIcon() const {
   return GetAppIcon();
 }
+
+bool ChromeViewsDelegate::IsWindowInMetro(gfx::NativeWindow window) const {
+  return chrome::IsNativeViewInAsh(window);
+}
+
 #elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
 gfx::ImageSkia* ChromeViewsDelegate::GetDefaultWindowIcon() const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();

@@ -14,7 +14,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -26,6 +25,7 @@
 #include "chromeos/network/onc/onc_utils.h"
 #include "components/onc/onc_constants.h"
 #include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
 #include "policy/policy_constants.h"
@@ -332,21 +332,22 @@ IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, GetState) {
   EXPECT_TRUE(RunNetworkingSubtest("getState")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, SetProperties) {
-  EXPECT_TRUE(RunNetworkingSubtest("setProperties")) << message_;
-}
-
-#if defined(OS_CHROMEOS)
-IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, CreateNetwork) {
-  EXPECT_TRUE(RunNetworkingSubtest("createNetwork")) << message_;
-}
-
 IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, GetStateNonExistent) {
   EXPECT_TRUE(RunNetworkingSubtest("getStateNonExistent")) << message_;
 }
 
+IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, SetProperties) {
+  EXPECT_TRUE(RunNetworkingSubtest("setProperties")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, CreateNetwork) {
+  EXPECT_TRUE(RunNetworkingSubtest("createNetwork")) << message_;
+}
+
 IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
                        GetManagedProperties) {
+#if defined(OS_CHROMEOS)
+  // TODO(mef): Move this to ChromeOS-specific helper or SetUpOnMainThread.
   ShillServiceClient::TestInterface* service_test =
       DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface();
   const std::string uidata_blob =
@@ -394,10 +395,10 @@ IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
   provider_.UpdateChromePolicy(policy);
 
   content::RunAllPendingInMessageLoop();
+#endif  // OS_CHROMEOS
 
   EXPECT_TRUE(RunNetworkingSubtest("getManagedProperties")) << message_;
 }
-#endif  // OS_CHROMEOS
 
 IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
                        OnNetworksChangedEventConnect) {

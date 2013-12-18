@@ -159,7 +159,7 @@ class FileSystemOperationImplTest
 
   int64 GetFileSize(const std::string& path) {
     base::PlatformFileInfo info;
-    EXPECT_TRUE(file_util::GetFileInfo(PlatformPath(path), &info));
+    EXPECT_TRUE(base::GetFileInfo(PlatformPath(path), &info));
     return info.size;
   }
 
@@ -664,7 +664,7 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcDirRecursive) {
 
 TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileSuccess) {
   base::FilePath src_local_disk_file_path;
-  file_util::CreateTemporaryFile(&src_local_disk_file_path);
+  base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
   int data_size = ARRAYSIZE_UNSAFE(test_data);
   file_util::WriteFile(src_local_disk_file_path, test_data, data_size);
@@ -689,15 +689,15 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileSuccess) {
 
   // Compare contents of src and copied file.
   char buffer[100];
-  EXPECT_EQ(data_size, file_util::ReadFile(PlatformPath("dest/file"),
-                                           buffer, data_size));
+  EXPECT_EQ(data_size, base::ReadFile(PlatformPath("dest/file"),
+                                      buffer, data_size));
   for (int i = 0; i < data_size; ++i)
     EXPECT_EQ(test_data[i], buffer[i]);
 }
 
 TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileFailureByQuota) {
   base::FilePath src_local_disk_file_path;
-  file_util::CreateTemporaryFile(&src_local_disk_file_path);
+  base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
   file_util::WriteFile(src_local_disk_file_path, test_data,
                        ARRAYSIZE_UNSAFE(test_data));
@@ -1009,7 +1009,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncate) {
   // data.
   EXPECT_EQ(length, GetFileSize("file"));
   char data[100];
-  EXPECT_EQ(length, file_util::ReadFile(platform_path, data, length));
+  EXPECT_EQ(length, base::ReadFile(platform_path, data, length));
   for (int i = 0; i < length; ++i) {
     if (i < static_cast<int>(sizeof(test_data)))
       EXPECT_EQ(test_data[i], data[i]);
@@ -1028,7 +1028,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncate) {
 
   // Check that its length is now 3 and that it contains only bits of test data.
   EXPECT_EQ(length, GetFileSize("file"));
-  EXPECT_EQ(length, file_util::ReadFile(platform_path, data, length));
+  EXPECT_EQ(length, base::ReadFile(platform_path, data, length));
   for (int i = 0; i < length; ++i)
     EXPECT_EQ(test_data[i], data[i]);
 
@@ -1065,7 +1065,7 @@ TEST_F(FileSystemOperationImplTest, TestTouchFile) {
   base::FilePath platform_path = PlatformPath("file");
 
   base::PlatformFileInfo info;
-  EXPECT_TRUE(file_util::GetFileInfo(platform_path, &info));
+  EXPECT_TRUE(base::GetFileInfo(platform_path, &info));
   EXPECT_FALSE(info.is_directory);
   EXPECT_EQ(0, info.size);
   const base::Time last_modified = info.last_modified;
@@ -1083,7 +1083,7 @@ TEST_F(FileSystemOperationImplTest, TestTouchFile) {
   EXPECT_EQ(base::PLATFORM_FILE_OK, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 
-  EXPECT_TRUE(file_util::GetFileInfo(platform_path, &info));
+  EXPECT_TRUE(base::GetFileInfo(platform_path, &info));
   // We compare as time_t here to lower our resolution, to avoid false
   // negatives caused by conversion to the local filesystem's native
   // representation and back.

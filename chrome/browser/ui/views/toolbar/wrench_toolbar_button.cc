@@ -9,7 +9,7 @@
 #include "ui/base/theme_provider.h"
 
 WrenchToolbarButton::WrenchToolbarButton(views::MenuButtonListener* listener)
-    : views::MenuButton(NULL, string16(), listener, false) {
+    : views::MenuButton(NULL, base::string16(), listener, false) {
   wrench_icon_painter_.reset(new WrenchIconPainter(this));
 
   // Used for sizing only.
@@ -34,6 +34,7 @@ void WrenchToolbarButton::OnPaint(gfx::Canvas* canvas) {
 
   wrench_icon_painter_->Paint(
       canvas, GetThemeProvider(), gfx::Rect(size()), GetCurrentBezelType());
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter());
 }
 
 void WrenchToolbarButton::ScheduleWrenchIconPaint() {

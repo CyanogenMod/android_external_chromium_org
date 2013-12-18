@@ -34,6 +34,7 @@
 #include "chrome/browser/extensions/extension_resource_protocols.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/media/media_device_id_salt.h"
 #include "chrome/browser/net/about_protocol_handler.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/net/chrome_fraudulent_certificate_reporter.h"
@@ -70,7 +71,6 @@
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/client_cert_store.h"
-#include "net/ssl/client_cert_store_impl.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
@@ -80,6 +80,14 @@
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/cloud/policy_header_service.h"
+#include "chrome/browser/policy/cloud/policy_header_service_factory.h"
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#include "components/policy/core/browser/policy_header_io_helper.h"
+#endif
+
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -88,15 +96,30 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
+#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
 #include "chrome/browser/chromeos/policy/policy_cert_verifier.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "crypto/nss_util.h"
+#include "crypto/nss_util_internal.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(USE_NSS)
 #include "chrome/browser/ui/crypto_module_password_dialog.h"
+#include "net/ssl/client_cert_store_nss.h"
+#endif
+
+#if defined(OS_WIN)
+#include "net/ssl/client_cert_store_win.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "net/ssl/client_cert_store_mac.h"
 #endif
 
 using content::BrowserContext;
@@ -227,6 +250,112 @@ class DebugDevToolsInterceptor
 };
 #endif  // defined(DEBUG_DEVTOOLS)
 
+#if defined(OS_CHROMEOS)
+// The following four functions are responsible for initializing NSS for each
+// profile on ChromeOS, which has a separate NSS database and TPM slot
+// per-profile.
+//
+// Initialization basically follows these steps:
+// 1) Get some info from chromeos::UserManager about the User for this profile.
+// 2) Tell nss_util to initialize the software slot for this profile.
+// 3) Wait for the TPM module to be loaded by nss_util if it isn't already.
+// 4) Ask CryptohomeClient which TPM slot id corresponds to this profile.
+// 5) Tell nss_util to use that slot id on the TPM module.
+//
+// Some of these steps must happen on the UI thread, others must happen on the
+// IO thread:
+//               UI thread                              IO Thread
+//
+//  ProfileIOData::InitializeOnUIThread
+//                   |
+// chromeos::UserManager::GetUserByProfile
+//                   \---------------------------------------v
+//                                                 StartNSSInitOnIOThread
+//                                                           |
+//                                          crypto::InitializeNSSForChromeOSUser
+//                                                           |
+//                                                crypto::IsTPMTokenReady
+//                                                           |
+//                                          StartTPMSlotInitializationOnIOThread
+//                   v---------------------------------------/
+//     GetTPMInfoForUserOnUIThread
+//                   |
+// CryptohomeClient::Pkcs11GetTpmTokenInfoForUser
+//                   |
+//     DidGetTPMInfoForUserOnUIThread
+//                   \---------------------------------------v
+//                                          crypto::InitializeTPMForChromeOSUser
+
+void DidGetTPMInfoForUserOnUIThread(const std::string& username_hash,
+                                    chromeos::DBusMethodCallStatus call_status,
+                                    const std::string& label,
+                                    const std::string& user_pin,
+                                    int slot_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (call_status == chromeos::DBUS_METHOD_CALL_FAILURE) {
+    NOTREACHED() << "dbus error getting TPM info for " << username_hash;
+    return;
+  }
+  DVLOG(1) << "Got TPM slot for " << username_hash << ": " << slot_id;
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &crypto::InitializeTPMForChromeOSUser, username_hash, slot_id));
+}
+
+void GetTPMInfoForUserOnUIThread(const std::string& username,
+                                 const std::string& username_hash) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DVLOG(1) << "Getting TPM info from cryptohome for "
+           << " " << username << " " << username_hash;
+  chromeos::DBusThreadManager::Get()
+      ->GetCryptohomeClient()
+      ->Pkcs11GetTpmTokenInfoForUser(
+            username,
+            base::Bind(&DidGetTPMInfoForUserOnUIThread, username_hash));
+}
+
+void StartTPMSlotInitializationOnIOThread(const std::string& username,
+                                          const std::string& username_hash) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&GetTPMInfoForUserOnUIThread, username, username_hash));
+}
+
+void StartNSSInitOnIOThread(const std::string& username,
+                            const std::string& username_hash,
+                            const base::FilePath& path,
+                            bool is_primary_user) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DVLOG(1) << "Starting NSS init for " << username
+           << "  hash:" << username_hash
+           << "  is_primary_user:" << is_primary_user;
+
+  if (!crypto::InitializeNSSForChromeOSUser(
+           username, username_hash, is_primary_user, path)) {
+    // If the user already exists in nss_util's map, it is already initialized
+    // or in the process of being initialized. In either case, there's no need
+    // to do anything.
+    return;
+  }
+
+  if (crypto::IsTPMTokenEnabledForNSS()) {
+    if (crypto::IsTPMTokenReady(base::Bind(
+            &StartTPMSlotInitializationOnIOThread, username, username_hash))) {
+      StartTPMSlotInitializationOnIOThread(username, username_hash);
+    } else {
+      DVLOG(1) << "Waiting for tpm ready ...";
+    }
+  } else {
+    crypto::InitializePrivateSoftwareSlotForChromeOSUser(username_hash);
+  }
+}
+#endif  // defined(OS_CHROMEOS)
+
 }  // namespace
 
 void ProfileIOData::InitializeOnUIThread(Profile* profile) {
@@ -277,6 +406,25 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   params->managed_mode_url_filter =
       managed_user_service->GetURLFilterForIOThread();
 #endif
+#if defined(OS_CHROMEOS)
+  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+  if (user_manager) {
+    chromeos::User* user = user_manager->GetUserByProfile(profile);
+    if (user) {
+      params->username_hash = user->username_hash();
+      bool is_primary_user = (user_manager->GetPrimaryUser() == user);
+      BrowserThread::PostTask(BrowserThread::IO,
+                              FROM_HERE,
+                              base::Bind(&StartNSSInitOnIOThread,
+                                         user->email(),
+                                         user->username_hash(),
+                                         profile->GetPath(),
+                                         is_primary_user));
+    }
+  }
+  if (params->username_hash.empty())
+    LOG(WARNING) << "no username_hash";
+#endif
 
   params->profile = profile;
   profile_params_.reset(params.release());
@@ -293,6 +441,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   printing_enabled_.Init(prefs::kPrintingEnabled, pref_service);
   printing_enabled_.MoveToThread(io_message_loop_proxy);
 #endif
+
   chrome_http_user_agent_settings_.reset(
       new ChromeHttpUserAgentSettings(pref_service));
 
@@ -300,6 +449,10 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   // in incognito mode.  So no need to initialize them.
   if (!is_incognito()) {
     signin_names_.reset(new SigninNamesOnIOThread());
+
+    google_services_user_account_id_.Init(
+        prefs::kGoogleServicesUserAccountId, pref_service);
+    google_services_user_account_id_.MoveToThread(io_message_loop_proxy);
 
     google_services_username_.Init(
         prefs::kGoogleServicesUsername, pref_service);
@@ -324,6 +477,9 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
     signin_allowed_.MoveToThread(io_message_loop_proxy);
   }
 
+  media_device_id_salt_.reset(new MediaDeviceIDSalt(pref_service,
+                                                    is_incognito()));
+
 #if defined(OS_CHROMEOS)
   cert_verifier_ = policy::PolicyCertServiceFactory::CreateForProfile(profile);
 #endif
@@ -334,6 +490,16 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   // in particular when this ProfileIOData isn't |initialized_| during deletion.
 #if defined(ENABLE_CONFIGURATION_POLICY)
   url_blacklist_manager_.reset(new policy::URLBlacklistManager(pref_service));
+
+  if (!is_incognito()) {
+    // Add policy headers for non-incognito requests.
+    policy::PolicyHeaderService* policy_header_service =
+        policy::PolicyHeaderServiceFactory::GetForBrowserContext(profile);
+    if (policy_header_service) {
+      policy_header_helper_ = policy_header_service->CreatePolicyHeaderIOHelper(
+          io_message_loop_proxy);
+    }
+  }
 #endif
 
   initialized_on_UI_thread_ = true;
@@ -502,7 +668,7 @@ bool ProfileIOData::IsHandledProtocol(const std::string& scheme) {
 #endif  // defined(OS_CHROMEOS)
     chrome::kAboutScheme,
 #if !defined(DISABLE_FTP_SUPPORT)
-    chrome::kFtpScheme,
+    content::kFtpScheme,
 #endif  // !defined(DISABLE_FTP_SUPPORT)
     chrome::kBlobScheme,
     chrome::kFileSystemScheme,
@@ -613,6 +779,10 @@ HostContentSettingsMap* ProfileIOData::GetHostContentSettingsMap() const {
   return host_content_settings_map_.get();
 }
 
+std::string ProfileIOData::GetMediaDeviceIDSalt() const {
+  return media_device_id_salt_->GetSalt();
+}
+
 void ProfileIOData::InitializeMetricsEnabledStateOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 #if defined(OS_CHROMEOS)
@@ -682,19 +852,21 @@ net::URLRequestContext* ProfileIOData::ResourceContext::GetRequestContext()  {
 
 scoped_ptr<net::ClientCertStore>
 ProfileIOData::ResourceContext::CreateClientCertStore() {
-#if !defined(USE_OPENSSL)
-  scoped_ptr<net::ClientCertStoreImpl> store(new net::ClientCertStoreImpl());
 #if defined(USE_NSS)
-  store->set_password_delegate_factory(
+  return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreNSS(
       base::Bind(&chrome::NewCryptoModuleBlockingDialogDelegate,
-                 chrome::kCryptoModulePasswordClientAuth));
-#endif
-  return store.PassAs<net::ClientCertStore>();
-#else  // defined(USE_OPENSSL)
+                 chrome::kCryptoModulePasswordClientAuth)));
+#elif defined(OS_WIN)
+  return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreWin());
+#elif defined(OS_MACOSX)
+  return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreMac());
+#elif defined(USE_OPENSSL)
   // OpenSSL does not use the ClientCertStore infrastructure. On Android client
   // cert matching is done by the OS as part of the call to show the cert
   // selection dialog.
   return scoped_ptr<net::ClientCertStore>();
+#else
+#error Unknown platform.
 #endif
 }
 
@@ -713,6 +885,10 @@ bool ProfileIOData::ResourceContext::AllowContentAccess(
   ContentSetting setting = content_settings->GetContentSetting(
       origin, origin, type, NO_RESOURCE_IDENTIFIER);
   return setting == CONTENT_SETTING_ALLOW;
+}
+
+std::string ProfileIOData::ResourceContext::GetMediaDeviceIDSalt() {
+  return io_data_->GetMediaDeviceIDSalt();
 }
 
 // static
@@ -820,6 +996,7 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
     main_request_context_->set_cert_verifier(
         io_thread_globals->cert_verifier.get());
   }
+  username_hash_ = profile_params_->username_hash;
 #else
   main_request_context_->set_cert_verifier(
       io_thread_globals->cert_verifier.get());
@@ -882,7 +1059,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
 #if !defined(DISABLE_FTP_SUPPORT)
   DCHECK(ftp_transaction_factory);
   job_factory->SetProtocolHandler(
-      chrome::kFtpScheme,
+      content::kFtpScheme,
       new net::FtpProtocolHandler(ftp_transaction_factory));
 #endif  // !defined(DISABLE_FTP_SUPPORT)
 
@@ -909,6 +1086,7 @@ void ProfileIOData::ShutdownOnUIThread() {
   if (signin_names_)
     signin_names_->ReleaseResourcesOnUIThread();
 
+  google_services_user_account_id_.Destroy();
   google_services_username_.Destroy();
   google_services_username_pattern_.Destroy();
   reverse_autologin_enabled_.Destroy();
@@ -923,6 +1101,8 @@ void ProfileIOData::ShutdownOnUIThread() {
   printing_enabled_.Destroy();
   sync_disabled_.Destroy();
   signin_allowed_.Destroy();
+  if (media_device_id_salt_)
+    media_device_id_salt_->ShutdownOnUIThread();
   session_startup_pref_.Destroy();
 #if defined(ENABLE_CONFIGURATION_POLICY)
   if (url_blacklist_manager_)
@@ -958,6 +1138,7 @@ void ProfileIOData::PopulateNetworkSessionParams(
   params->cert_verifier = context->cert_verifier();
   params->server_bound_cert_service = context->server_bound_cert_service();
   params->transport_security_state = context->transport_security_state();
+  params->cert_transparency_verifier = context->cert_transparency_verifier();
   params->proxy_service = context->proxy_service();
   params->ssl_session_cache_shard = GetSSLSessionCacheShard();
   params->ssl_config_service = context->ssl_config_service();

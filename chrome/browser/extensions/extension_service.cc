@@ -28,9 +28,7 @@
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -49,7 +47,6 @@
 #include "chrome/browser/extensions/installed_loader.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/extensions/update_observer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
@@ -83,6 +80,7 @@
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/update_observer.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
@@ -170,12 +168,12 @@ class SharedModuleProvider : public extensions::ManagementPolicy::Provider {
   }
 
   virtual bool UserMayModifySettings(const Extension* extension,
-                                     string16* error) const OVERRIDE {
+                                     base::string16* error) const OVERRIDE {
     return !IsCWSSharedModule(extension);
   }
 
   virtual bool MustRemainEnabled(const Extension* extension,
-                                 string16* error) const OVERRIDE {
+                                 base::string16* error) const OVERRIDE {
     return IsCWSSharedModule(extension);
   }
 
@@ -298,7 +296,7 @@ bool ExtensionService::UninstallExtensionHelper(
 
   // The following call to UninstallExtension will not allow an uninstall of a
   // policy-controlled extension.
-  string16 error;
+  base::string16 error;
   if (!extensions_service->UninstallExtension(extension_id, false, &error)) {
     LOG(WARNING) << "Cannot uninstall extension with id " << extension_id
                  << ": " << error;
@@ -339,10 +337,9 @@ ExtensionService::ExtensionService(Profile* profile,
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Figure out if extension installation should be enabled.
-  if (command_line->HasSwitch(switches::kDisableExtensions) ||
-      profile->GetPrefs()->GetBoolean(prefs::kDisableExtensions)) {
+  if (extensions::ExtensionsBrowserClient::Get()->AreExtensionsDisabled(
+          *command_line, profile))
     extensions_enabled_ = false;
-  }
 
   registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllBrowserContextsAndSources());
@@ -462,7 +459,7 @@ const Extension* ExtensionService::GetExtensionById(
     // Include blacklisted extensions here because there are hundreds of
     // callers of this function, and many might assume that this includes those
     // that have been disabled due to blacklisting.
-    include_mask |= INCLUDE_DISABLED | INCLUDE_BLACKLISTED | INCLUDE_TERMINATED;
+    include_mask |= INCLUDE_DISABLED | INCLUDE_BLACKLISTED;
   }
   return GetExtensionById(id, include_mask);
 }
@@ -748,7 +745,7 @@ void ExtensionService::ReloadExtension(const std::string extension_id) {
 bool ExtensionService::UninstallExtension(
     std::string extension_id,
     bool external_uninstall,
-    string16* error) {
+    base::string16* error) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   scoped_refptr<const Extension> extension(GetInstalledExtension(extension_id));
@@ -1427,9 +1424,8 @@ bool ExtensionService::IsUnacknowledgedExternalExtension(
 }
 
 void ExtensionService::ReconcileKnownDisabled() {
-  const ExtensionIdSet known_disabled_ids =
-      extension_prefs_->GetKnownDisabled();
-  if (known_disabled_ids.empty() && !disabled_extensions_.is_empty()) {
+  ExtensionIdSet known_disabled_ids;
+  if (!extension_prefs_->GetKnownDisabled(&known_disabled_ids)) {
     extension_prefs_->SetKnownDisabled(disabled_extensions_.GetIDs());
     UMA_HISTOGRAM_BOOLEAN("Extensions.KnownDisabledInitialized", true);
     return;
@@ -1544,11 +1540,6 @@ void ExtensionService::UnloadExtension(
     system_->UnregisterExtensionWithRequestContexts(extension_id, reason);
     return;
   }
-
-  // If uninstalling let RuntimeEventRouter know.
-  if (reason == UnloadedExtensionInfo::REASON_UNINSTALL)
-    extensions::RuntimeEventRouter::OnExtensionUninstalled(
-        profile_, extension_id);
 
   // Keep information about the extension so that we can reload it later
   // even if it's not permanently installed.
@@ -2122,13 +2113,9 @@ void ExtensionService::OnExtensionInstalled(
     // Transfer ownership of |extension|.
     delayed_installs_.Insert(extension);
 
-    // Notify extension of available update.
-    extensions::RuntimeEventRouter::DispatchOnUpdateAvailableEvent(
-        profile_, id, extension->manifest()->value());
-
     // Notify observers that app update is available.
     FOR_EACH_OBSERVER(extensions::UpdateObserver, update_observers_,
-                      OnAppUpdateAvailable(extension->id()));
+                      OnAppUpdateAvailable(extension));
     return;
   }
 
@@ -2431,7 +2418,7 @@ void ExtensionService::ReportExtensionLoadError(
       content::Details<const std::string>(&error));
 
   std::string path_str = UTF16ToUTF8(extension_path.LossyDisplayName());
-  string16 message = UTF8ToUTF16(base::StringPrintf(
+  base::string16 message = UTF8ToUTF16(base::StringPrintf(
       "Could not load extension from '%s'. %s",
       path_str.c_str(), error.c_str()));
   ExtensionErrorReporter::GetInstance()->ReportError(message, be_noisy);
@@ -2557,10 +2544,6 @@ void ExtensionService::Observe(int type,
       break;
     }
     case chrome::NOTIFICATION_UPGRADE_RECOMMENDED: {
-      // Notify extensions that chrome update is available.
-      extensions::RuntimeEventRouter::DispatchOnBrowserUpdateAvailableEvent(
-          profile_);
-
       // Notify observers that chrome update is available.
       FOR_EACH_OBSERVER(extensions::UpdateObserver, update_observers_,
                         OnChromeUpdateAvailable());

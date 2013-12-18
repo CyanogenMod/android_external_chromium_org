@@ -378,21 +378,20 @@ bool ZipString(const base::FilePath& filename,
 
   // Create a temporary directory, put the logs into a file in it. Create
   // another temporary file to receive the zip file in.
-  if (!file_util::CreateNewTempDirectory(FILE_PATH_LITERAL(""), &temp_path))
+  if (!base::CreateNewTempDirectory(base::FilePath::StringType(), &temp_path))
     return false;
   if (file_util::WriteFile(temp_path.Append(filename),
                            data.c_str(), data.size()) == -1)
     return false;
-  if (!file_util::CreateTemporaryFile(&zip_file))
-    return false;
 
-  if (!zip::Zip(temp_path, zip_file, false))
-    return false;
+  bool succeed = base::CreateTemporaryFile(&zip_file) &&
+      zip::Zip(temp_path, zip_file, false) &&
+      base::ReadFileToString(zip_file, compressed_logs);
 
-  if (!base::ReadFileToString(zip_file, compressed_logs))
-    return false;
+  base::DeleteFile(temp_path, true);
+  base::DeleteFile(zip_file, false);
 
-  return true;
+  return succeed;
 }
 
 }  // namespace feedback_util

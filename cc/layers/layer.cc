@@ -12,6 +12,7 @@
 #include "base/single_thread_task_runner.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
+#include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/layers/layer_client.h"
 #include "cc/layers/layer_impl.h"
@@ -43,13 +44,7 @@ Layer::Layer()
       have_wheel_event_handlers_(false),
       user_scrollable_horizontal_(true),
       user_scrollable_vertical_(true),
-      anchor_point_(0.5f, 0.5f),
-      background_color_(0),
-      compositing_reasons_(kCompositingReasonUnknown),
-      opacity_(1.f),
-      blend_mode_(SkXfermode::kSrcOver_Mode),
       is_root_for_isolated_group_(false),
-      anchor_point_z_(0.f),
       is_container_for_fixed_position_layers_(false),
       is_drawable_(false),
       hide_layer_and_subtree_(false),
@@ -60,6 +55,12 @@ Layer::Layer()
       use_parent_backface_visibility_(false),
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
+      anchor_point_(0.5f, 0.5f),
+      background_color_(0),
+      compositing_reasons_(kCompositingReasonUnknown),
+      opacity_(1.f),
+      blend_mode_(SkXfermode::kSrcOver_Mode),
+      anchor_point_z_(0.f),
       scroll_parent_(NULL),
       clip_parent_(NULL),
       replica_layer_(NULL),
@@ -72,6 +73,7 @@ Layer::Layer()
 
   layer_animation_controller_ = LayerAnimationController::Create(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
+  layer_animation_controller_->set_value_provider(this);
 }
 
 Layer::~Layer() {
@@ -83,6 +85,7 @@ Layer::~Layer() {
   DCHECK(!layer_tree_host());
 
   layer_animation_controller_->RemoveValueObserver(this);
+  layer_animation_controller_->remove_value_provider(this);
 
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
@@ -873,10 +876,12 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   bool is_tracing;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                                      &is_tracing);
-  if (is_tracing)
-      layer->SetDebugName(DebugName());
-  else
-      layer->SetDebugName(std::string());
+  if (is_tracing) {
+    layer->SetDebugName(DebugName());
+    layer->SetDebugInfo(TakeDebugInfo());
+  } else {
+    layer->SetDebugName(std::string());
+  }
 
   layer->SetCompositingReasons(compositing_reasons_);
   layer->SetDoubleSided(double_sided_);
@@ -1034,6 +1039,14 @@ std::string Layer::DebugName() {
   return client_ ? client_->DebugName() : std::string();
 }
 
+scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
+  if (client_)
+    return client_->TakeDebugInfo();
+  else
+    return NULL;
+}
+
+
 void Layer::SetCompositingReasons(CompositingReasons reasons) {
   compositing_reasons_ = reasons;
 }
@@ -1046,6 +1059,10 @@ void Layer::CreateRenderSurface() {
 
 void Layer::ClearRenderSurface() {
   draw_properties_.render_surface.reset();
+}
+
+gfx::Vector2dF Layer::ScrollOffsetForAnimation() const {
+  return TotalScrollOffset();
 }
 
 // On<Property>Animated is called due to an ongoing accelerated animation.
@@ -1062,6 +1079,12 @@ void Layer::OnOpacityAnimated(float opacity) {
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
   transform_ = transform;
+}
+
+void Layer::OnScrollOffsetAnimated(gfx::Vector2dF scroll_offset) {
+  // Do nothing. Scroll deltas will be sent from the compositor thread back
+  // to the main thread in the same manner as during non-animated
+  // compositor-driven scrolling.
 }
 
 void Layer::OnAnimationWaitingForDeletion() {

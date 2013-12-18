@@ -65,14 +65,14 @@ GestureRecognizerImpl::~GestureRecognizerImpl() {
 // Checks if this finger is already down, if so, returns the current target.
 // Otherwise, returns NULL.
 GestureConsumer* GestureRecognizerImpl::GetTouchLockedTarget(
-    TouchEvent* event) {
-  return touch_id_target_[event->touch_id()];
+    const TouchEvent& event) {
+  return touch_id_target_[event.touch_id()];
 }
 
 GestureConsumer* GestureRecognizerImpl::GetTargetForGestureEvent(
-    GestureEvent* event) {
+    const GestureEvent& event) {
   GestureConsumer* target = NULL;
-  int touch_id = event->GetLowestTouchId();
+  int touch_id = event.GetLowestTouchId();
   target = touch_id_target_for_gestures_[touch_id];
   return target;
 }
@@ -185,7 +185,7 @@ void GestureRecognizerImpl::SetupTargets(const TouchEvent& event,
   if (event.type() == ui::ET_TOUCH_RELEASED ||
       event.type() == ui::ET_TOUCH_CANCELLED) {
     touch_id_target_.erase(event.touch_id());
-  } else {
+  } else if (event.type() == ui::ET_TOUCH_PRESSED) {
     touch_id_target_[event.touch_id()] = target;
     if (target)
       touch_id_target_for_gestures_[event.touch_id()] = target;
@@ -239,7 +239,7 @@ void GestureRecognizerImpl::RemoveGestureEventHelper(
 }
 
 void GestureRecognizerImpl::DispatchPostponedGestureEvent(GestureEvent* event) {
-  GestureConsumer* consumer = GetTargetForGestureEvent(event);
+  GestureConsumer* consumer = GetTargetForGestureEvent(*event);
   if (consumer) {
     GestureEventHelper* helper = FindDispatchHelperForConsumer(consumer);
     if (helper)

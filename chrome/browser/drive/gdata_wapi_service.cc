@@ -12,14 +12,14 @@
 #include "base/sequenced_task_runner.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_requests.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
-#include "chrome/browser/google_apis/request_sender.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/gdata_wapi_requests.h"
+#include "google_apis/drive/gdata_wapi_url_generator.h"
+#include "google_apis/drive/request_sender.h"
 #include "net/url_request/url_request_context_getter.h"
 
 using content::BrowserThread;
@@ -464,25 +464,6 @@ CancelCallback GDataWapiService::RenameResource(
                                 callback,
                                 resource_id,
                                 new_title));
-}
-
-CancelCallback GDataWapiService::TouchResource(
-    const std::string& resource_id,
-    const base::Time& modified_date,
-    const base::Time& last_viewed_by_me_date,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!modified_date.is_null());
-  DCHECK(!last_viewed_by_me_date.is_null());
-  DCHECK(!callback.is_null());
-
-  // Unfortunately, there is no way to support this method on GData WAPI.
-  // So, this should always return an error.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback, HTTP_NOT_IMPLEMENTED,
-                 base::Passed(scoped_ptr<ResourceEntry>())));
-  return base::Bind(&base::DoNothing);
 }
 
 CancelCallback GDataWapiService::AddResourceToDirectory(

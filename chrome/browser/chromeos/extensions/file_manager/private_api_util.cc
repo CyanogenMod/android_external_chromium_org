@@ -140,6 +140,11 @@ void VolumeInfoToVolumeMetadata(
 
   volume_metadata->volume_id = volume_info.volume_id;
 
+  // TODO(kinaba): fill appropriate information once multi-profile support is
+  // implemented.
+  volume_metadata->profile.display_name = profile->GetProfileName();
+  volume_metadata->profile.is_current_profile = true;
+
   if (!volume_info.source_path.empty()) {
     volume_metadata->source_path.reset(
         new std::string(volume_info.source_path.AsUTF8Unsafe()));
@@ -228,12 +233,6 @@ content::WebContents* GetWebContents(ExtensionFunctionDispatcher* dispatcher) {
     return NULL;
   }
   return web_contents;
-}
-
-int32 GetTabId(ExtensionFunctionDispatcher* dispatcher) {
-  content::WebContents* web_contents = GetWebContents(dispatcher);
-  return web_contents ?
-      extensions::ExtensionTabUtil::GetTabId(web_contents) : 0;
 }
 
 base::FilePath GetLocalPathFromURL(

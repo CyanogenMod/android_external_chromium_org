@@ -42,7 +42,7 @@ class LoginDisplay : public RemoveUserDelegate {
     virtual void CompleteLogin(const UserContext& user_context) = 0;
 
     // Returns name of the currently connected network.
-    virtual string16 GetConnectedNetworkName() = 0;
+    virtual base::string16 GetConnectedNetworkName() = 0;
 
     // Returns true if sign in is in progress.
     virtual bool IsSigninInProgress() const = 0;
@@ -142,6 +142,9 @@ class LoginDisplay : public RemoveUserDelegate {
   // Selects user entry with specified |index|.
   // Does nothing if current user is already selected.
   virtual void SelectPod(int index) = 0;
+
+  // Displays a banner on the login screen containing |message|.
+  virtual void ShowBannerMessage(const std::string& message) = 0;
 
   // Displays simple error bubble with |error_msg_id| specified.
   // |login_attempts| shows number of login attempts made by current user.

@@ -24,7 +24,6 @@
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/browser/translate/translate_script.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/translate/translate_ui_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_factory.h"
@@ -52,7 +51,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 
-using content::RenderViewHostTester;
 
 // An observer that keeps track of whether a navigation entry was committed.
 class NavEntryCommittedObserver : public content::NotificationObserver {
@@ -104,7 +102,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                                              bool page_translatable) {
     LanguageDetectionDetails details;
     details.adopted_language = lang;
-    RenderViewHostTester::TestOnMessageReceived(
+    content::RenderViewHostTester::TestOnMessageReceived(
         rvh(),
         ChromeViewHostMsg_TranslateLanguageDetermined(
             0, details, page_translatable));
@@ -114,7 +112,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                                 const std::string& source_lang,
                                 const std::string& target_lang,
                                 TranslateErrors::Type error) {
-    RenderViewHostTester::TestOnMessageReceived(
+    content::RenderViewHostTester::TestOnMessageReceived(
         rvh(),
         ChromeViewHostMsg_PageTranslated(
             routing_id, 0, source_lang, target_lang, error));
@@ -154,7 +152,8 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
   // infobar.
   TranslateInfoBarDelegate* GetTranslateInfoBar() {
     return (infobar_service()->infobar_count() == 1) ?
-        infobar_service()->infobar_at(0)->AsTranslateInfoBarDelegate() : NULL;
+        infobar_service()->infobar_at(0)->delegate()->
+            AsTranslateInfoBarDelegate() : NULL;
   }
 
   // If there is 1 infobar and it is a translate infobar, closes it and returns
@@ -164,7 +163,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
     if (!infobar)
       return false;
     infobar->InfoBarDismissed();  // Simulates closing the infobar.
-    infobar_service()->RemoveInfoBar(infobar);
+    infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
     return true;
   }
 
@@ -187,7 +186,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
     if (!infobar)
       return false;
     infobar->TranslationDeclined();
-    infobar_service()->RemoveInfoBar(infobar);
+    infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
     return true;
   }
 
@@ -214,13 +213,18 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                        const content::NotificationDetails& details) {
     DCHECK_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED, type);
     removed_infobars_.insert(
-        content::Details<InfoBar::RemovedDetails>(details)->first);
+        content::Details<InfoBar::RemovedDetails>(details)->first->delegate());
   }
 
   MOCK_METHOD1(OnPreferenceChanged, void(const std::string&));
 
  protected:
   virtual void SetUp() {
+    // This test is a unit test but runs in the browser_tests suite. Therefore
+    // it needs to manage its own TestingBrowserProcess.
+    // TODO(jamescook): Figure out how to move this suite back to unit_tests.
+    // Right now it fails to get the translate infobar if you run it there.
+    TestingBrowserProcess::CreateInstance();
     // Access the TranslateManager singleton so it is created before we call
     // ChromeRenderViewHostTestHarness::SetUp() to match what's done in Chrome,
     // where the TranslateManager is created before the WebContents.  This
@@ -251,6 +255,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
         content::Source<InfoBarService>(infobar_service()));
 
     ChromeRenderViewHostTestHarness::TearDown();
+    TestingBrowserProcess::DeleteInstance();
   }
 
   void SimulateTranslateScriptURLFetch(bool success) {
@@ -338,7 +343,8 @@ class MockTranslateBubbleFactory : public TranslateBubbleFactory {
   virtual void ShowImplementation(
       BrowserWindow* window,
       content::WebContents* web_contents,
-      TranslateBubbleModel::ViewState view_state) OVERRIDE {
+      TranslateBubbleModel::ViewState view_state,
+      TranslateErrors::Type error_type) OVERRIDE {
     if (model_) {
       model_->SetViewState(view_state);
       return;
@@ -353,7 +359,8 @@ class MockTranslateBubbleFactory : public TranslateBubbleFactory {
     scoped_ptr<TranslateUIDelegate> ui_delegate(
         new TranslateUIDelegate(web_contents,
                                 source_language,
-                                target_language));
+                                target_language,
+                                error_type));
     model_.reset(
         new TranslateBubbleModelImpl(view_state, ui_delegate.Pass()));
   }
@@ -458,10 +465,8 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   EXPECT_EQ("en", target_lang);
   // Simulate the render notifying the translation has been done.
   SimulateOnPageTranslated(new_original_lang, "en");
-  // infobar is now invalid.
-  TranslateInfoBarDelegate* new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
-  infobar = new_infobar;
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
 
   // Simulate changing the target language and translating.
   process()->sink().ClearMessages();
@@ -473,24 +478,21 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   EXPECT_EQ(new_target_lang, target_lang);
   // Simulate the render notifying the translation has been done.
   SimulateOnPageTranslated(new_original_lang, new_target_lang);
-  // infobar is now invalid.
-  new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
-  EXPECT_EQ(new_target_lang, new_infobar->target_language_code());
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
+  EXPECT_EQ(new_target_lang, infobar->target_language_code());
 
   // Reloading should trigger translation iff Always Translate is on.
   ReloadAndWait(true);
-  new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
-  infobar = new_infobar;
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
             infobar->infobar_type());
   infobar->UpdateTargetLanguageIndex(1);
   infobar->ToggleAlwaysTranslate();
   ReloadAndWait(true);
-  new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
-  infobar = new_infobar;
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
   EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
   EXPECT_EQ(new_target_lang, infobar->target_language_code());
 }
@@ -781,18 +783,17 @@ TEST_F(TranslateManagerBrowserTest, Reload) {
 
   EXPECT_TRUE(CloseTranslateInfoBar());
 
-  // Reload should bring back the infobar if the page succeds
+  // Reload should bring back the infobar if the reload succeeds.
   ReloadAndWait(true);
   EXPECT_TRUE(GetTranslateInfoBar() != NULL);
-
   EXPECT_TRUE(CloseTranslateInfoBar());
 
-  // And not show it if the reload fails
+  // ...But not show it if the reload fails.
   ReloadAndWait(false);
-  EXPECT_EQ(NULL, GetTranslateInfoBar());
+  EXPECT_TRUE(GetTranslateInfoBar() == NULL);
 
-  // Set reload attempts to a high value, we will not see the infobar
-  // immediatly.
+  // If we set reload attempts to a high value, we will not see the infobar
+  // immediately.
   TranslateManager::GetInstance()->set_translate_max_reload_attemps(100);
   ReloadAndWait(true);
   EXPECT_TRUE(GetTranslateInfoBar() == NULL);

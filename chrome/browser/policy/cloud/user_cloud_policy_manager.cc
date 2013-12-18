@@ -7,11 +7,10 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/sequenced_task_runner.h"
-#include "chrome/browser/policy/cloud/cloud_external_data_manager.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_service.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_store.h"
+#include "components/policy/core/common/cloud/cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_service.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/policy/core/common/policy_types.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -21,7 +20,6 @@ namespace em = enterprise_management;
 namespace policy {
 
 UserCloudPolicyManager::UserCloudPolicyManager(
-    content::BrowserContext* context,
     scoped_ptr<UserCloudPolicyStore> store,
     const base::FilePath& component_policy_cache_path,
     scoped_ptr<CloudExternalDataManager> external_data_manager,
@@ -34,22 +32,16 @@ UserCloudPolicyManager::UserCloudPolicyManager(
           task_runner,
           file_task_runner,
           io_task_runner),
-      context_(context),
       store_(store.Pass()),
       component_policy_cache_path_(component_policy_cache_path),
-      external_data_manager_(external_data_manager.Pass()) {
-  UserCloudPolicyManagerFactory::GetInstance()->Register(context_, this);
-}
+      external_data_manager_(external_data_manager.Pass()) {}
 
-UserCloudPolicyManager::~UserCloudPolicyManager() {
-  UserCloudPolicyManagerFactory::GetInstance()->Unregister(context_, this);
-}
+UserCloudPolicyManager::~UserCloudPolicyManager() {}
 
 void UserCloudPolicyManager::Shutdown() {
   if (external_data_manager_)
     external_data_manager_->Disconnect();
   CloudPolicyManager::Shutdown();
-  BrowserContextKeyedService::Shutdown();
 }
 
 void UserCloudPolicyManager::SetSigninUsername(const std::string& username) {
@@ -66,6 +58,7 @@ void UserCloudPolicyManager::Connect(
                                 policy_prefs::kUserPolicyRefreshRate);
   if (external_data_manager_)
     external_data_manager_->Connect(request_context);
+
   CreateComponentCloudPolicyService(component_policy_cache_path_,
                                     request_context);
 }
@@ -73,17 +66,28 @@ void UserCloudPolicyManager::Connect(
 // static
 scoped_ptr<CloudPolicyClient>
 UserCloudPolicyManager::CreateCloudPolicyClient(
-    DeviceManagementService* device_management_service) {
+    DeviceManagementService* device_management_service,
+    scoped_refptr<net::URLRequestContextGetter> request_context) {
   return make_scoped_ptr(
-      new CloudPolicyClient(std::string(), std::string(),
-                            USER_AFFILIATION_NONE,
-                            NULL, device_management_service)).Pass();
+      new CloudPolicyClient(
+          std::string(),
+          std::string(),
+          USER_AFFILIATION_NONE,
+          NULL,
+          device_management_service,
+          request_context)).Pass();
 }
 
 void UserCloudPolicyManager::DisconnectAndRemovePolicy() {
   if (external_data_manager_)
     external_data_manager_->Disconnect();
   core()->Disconnect();
+
+  // store_->Clear() will publish the updated, empty policy. The component
+  // policy service must be cleared before OnStoreLoaded() is issued, so that
+  // component policies are also empty at CheckAndPublishPolicy().
+  ClearAndDestroyComponentCloudPolicyService();
+
   // When the |store_| is cleared, it informs the |external_data_manager_| that
   // all external data references have been removed, causing the
   // |external_data_manager_| to clear its cache as well.

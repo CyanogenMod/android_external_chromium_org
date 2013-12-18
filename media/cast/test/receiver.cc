@@ -15,6 +15,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/time/default_tick_clock.h"
+#include "media/base/video_frame.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_receiver.h"
@@ -28,13 +29,13 @@
 
 namespace media {
 namespace cast {
-
+// Settings chosen to match default sender settings.
 #define DEFAULT_SEND_PORT "2346"
 #define DEFAULT_RECEIVE_PORT "2344"
 #define DEFAULT_SEND_IP "127.0.0.1"
 #define DEFAULT_RESTART "0"
-#define DEFAULT_AUDIO_FEEDBACK_SSRC "2"
-#define DEFAULT_AUDIO_INCOMING_SSRC "1"
+#define DEFAULT_AUDIO_FEEDBACK_SSRC "1"
+#define DEFAULT_AUDIO_INCOMING_SSRC "2"
 #define DEFAULT_AUDIO_PAYLOAD_TYPE "127"
 #define DEFAULT_VIDEO_FEEDBACK_SSRC "12"
 #define DEFAULT_VIDEO_INCOMING_SSRC "11"
@@ -157,10 +158,10 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
  private:
   friend class base::RefCountedThreadSafe<ReceiveProcess>;
 
-  void DisplayFrame(scoped_ptr<I420VideoFrame> frame,
+  void DisplayFrame(const scoped_refptr<media::VideoFrame>& video_frame,
       const base::TimeTicks& render_time) {
 #ifdef OS_LINUX
-    render_.RenderFrame(*frame);
+    render_.RenderFrame(video_frame);
 #endif // OS_LINUX
     // Print out the delta between frames.
     if (!last_render_time_.is_null()){
@@ -179,7 +180,7 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
         base::TimeDelta::FromMilliseconds(kFrameTimerMs);
     if (!last_playout_time_.is_null()){
         time_diff = playout_time - last_playout_time_;
-        VLOG(0) << " PlayoutDelay[mS] =  " << time_diff.InMilliseconds();
+        VLOG(0) << " ***PlayoutDelay[mS] =  " << time_diff.InMilliseconds();
     }
     last_playout_time_ = playout_time;
     GetAudioFrame(time_diff);

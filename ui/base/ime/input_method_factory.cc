@@ -4,7 +4,7 @@
 
 #include "ui/base/ime/input_method_factory.h"
 
-#include "ui/base/ime/input_method_delegate.h"
+#include "base/memory/singleton.h"
 #include "ui/base/ime/mock_input_method.h"
 
 #if defined(OS_CHROMEOS) && defined(USE_X11)
@@ -15,59 +15,99 @@
 #include "ui/base/ime/input_method_tsf.h"
 #include "ui/base/ime/remote_input_method_win.h"
 #elif defined(USE_AURA) && defined(USE_X11)
-#include "ui/base/ime/input_method_linux_x11.h"
+#include "ui/base/ime/input_method_auralinux.h"
 #else
-#include "ui/base/ime/fake_input_method.h"
+#include "ui/base/ime/input_method_minimal.h"
 #endif
 
-namespace ui {
 namespace {
 
-bool g_input_method_set_for_testing = false;
-InputMethod* g_shared_input_method = NULL;
+ui::InputMethodFactory* g_input_method_factory = NULL;
 
 #if defined(OS_WIN)
-// Returns a new instance of input method object for Windows.
-scoped_ptr<InputMethod> CreateInputMethodWinInternal(
+ui::InputMethod* g_shared_input_method = NULL;
+#endif
+
+}  // namespace
+
+namespace ui {
+
+// static
+InputMethodFactory* InputMethodFactory::GetInstance() {
+  if (!g_input_method_factory)
+    SetInstance(DefaultInputMethodFactory::GetInstance());
+
+  return g_input_method_factory;
+}
+
+// static
+void InputMethodFactory::SetInstance(InputMethodFactory* instance) {
+  CHECK(!g_input_method_factory);
+  CHECK(instance);
+
+  g_input_method_factory = instance;
+}
+
+// static
+void InputMethodFactory::ClearInstance() {
+  // It's a client's duty to delete the object.
+  g_input_method_factory = NULL;
+}
+
+// DefaultInputMethodFactory
+
+// static
+DefaultInputMethodFactory* DefaultInputMethodFactory::GetInstance() {
+  return Singleton<DefaultInputMethodFactory>::get();
+}
+
+scoped_ptr<InputMethod> DefaultInputMethodFactory::CreateInputMethod(
     internal::InputMethodDelegate* delegate,
     gfx::AcceleratedWidget widget) {
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+  return scoped_ptr<InputMethod>(new InputMethodIBus(delegate));
+#elif defined(OS_WIN)
   if (base::win::IsTSFAwareRequired())
     return scoped_ptr<InputMethod>(new InputMethodTSF(delegate, widget));
   if (IsRemoteInputMethodWinRequired(widget))
     return CreateRemoteInputMethodWin(delegate);
   return scoped_ptr<InputMethod>(new InputMethodIMM32(delegate, widget));
-}
+#elif defined(USE_AURA) && defined(USE_X11)
+  return scoped_ptr<InputMethod>(new InputMethodAuraLinux(delegate));
+#else
+  return scoped_ptr<InputMethod>(new InputMethodMinimal(delegate));
 #endif
+}
 
-}  // namespace
+// MockInputMethodFactory
+
+// static
+MockInputMethodFactory* MockInputMethodFactory::GetInstance() {
+  return Singleton<MockInputMethodFactory>::get();
+}
+
+scoped_ptr<InputMethod> MockInputMethodFactory::CreateInputMethod(
+    internal::InputMethodDelegate* delegate,
+    gfx::AcceleratedWidget /* widget */) {
+  return scoped_ptr<InputMethod>(new MockInputMethod(delegate));
+}
+
+// Shorthands
 
 scoped_ptr<InputMethod> CreateInputMethod(
     internal::InputMethodDelegate* delegate,
     gfx::AcceleratedWidget widget) {
-  if (g_input_method_set_for_testing)
-    return scoped_ptr<InputMethod>(new MockInputMethod(delegate));
-#if defined(OS_CHROMEOS) && defined(USE_X11)
-  return scoped_ptr<InputMethod>(new InputMethodIBus(delegate));
-#elif defined(OS_WIN)
-  return CreateInputMethodWinInternal(delegate, widget);
-#elif defined(USE_AURA) && defined(USE_X11)
-  return scoped_ptr<InputMethod>(new InputMethodLinuxX11(delegate));
-#else
-  return scoped_ptr<InputMethod>(new FakeInputMethod(delegate));
-#endif
+  return InputMethodFactory::GetInstance()->CreateInputMethod(delegate, widget);
 }
 
 void SetUpInputMethodFactoryForTesting() {
-  g_input_method_set_for_testing = true;
+  InputMethodFactory::SetInstance(MockInputMethodFactory::GetInstance());
 }
 
-InputMethod* GetSharedInputMethod() {
 #if defined(OS_WIN)
+InputMethod* GetSharedInputMethod() {
   if (!g_shared_input_method)
     g_shared_input_method = CreateInputMethod(NULL, NULL).release();
-#else
-  NOTREACHED();
-#endif
   return g_shared_input_method;
 }
 
@@ -79,4 +119,6 @@ void DestroySharedInputMethod() {
 }
 
 }  // namespace internal
+#endif
+
 }  // namespace ui

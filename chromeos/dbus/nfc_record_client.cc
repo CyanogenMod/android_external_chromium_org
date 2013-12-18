@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "chromeos/dbus/fake_nfc_record_client.h"
 #include "chromeos/dbus/nfc_device_client.h"
 #include "chromeos/dbus/nfc_tag_client.h"
 #include "dbus/bus.h"
@@ -187,11 +186,16 @@ class NfcRecordClientImpl : public NfcRecordClient,
   // nfc_client_helpers::DBusObjectMap::Delegate override.
   virtual NfcPropertySet* CreateProperties(
       dbus::ObjectProxy* object_proxy) OVERRIDE {
-    return new Properties(
+    Properties* properties = new Properties(
         object_proxy,
         base::Bind(&NfcRecordClientImpl::OnPropertyChanged,
                    weak_ptr_factory_.GetWeakPtr(),
                    object_proxy->object_path()));
+    properties->SetAllPropertiesReceivedCallback(
+        base::Bind(&NfcRecordClientImpl::OnPropertiesReceived,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   object_proxy->object_path()));
+    return properties;
   }
 
   // nfc_client_helpers::DBusObjectMap::Delegate override.
@@ -214,6 +218,14 @@ class NfcRecordClientImpl : public NfcRecordClient,
             << " Property: " << property_name;
     FOR_EACH_OBSERVER(NfcRecordClient::Observer, observers_,
                       RecordPropertyChanged(object_path, property_name));
+  }
+
+  // Called by NfcPropertySet when all properties have been processed as a
+  // result of a call to GetAll.
+  void OnPropertiesReceived(const dbus::ObjectPath& object_path) {
+    VLOG(1) << "All record properties received; Path: " << object_path.value();
+    FOR_EACH_OBSERVER(NfcRecordClient::Observer, observers_,
+                      RecordPropertiesReceived(object_path));
   }
 
   // We maintain a pointer to the bus to be able to request proxies for
@@ -247,13 +259,9 @@ NfcRecordClient::NfcRecordClient() {
 NfcRecordClient::~NfcRecordClient() {
 }
 
-NfcRecordClient* NfcRecordClient::Create(DBusClientImplementationType type,
-                                         NfcDeviceClient* device_client,
+NfcRecordClient* NfcRecordClient::Create(NfcDeviceClient* device_client,
                                          NfcTagClient* tag_client) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new NfcRecordClientImpl(device_client, tag_client);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeNfcRecordClient();
+  return new NfcRecordClientImpl(device_client, tag_client);
 }
 
 }  // namespace chromeos

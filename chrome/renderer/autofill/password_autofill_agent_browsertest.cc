@@ -132,6 +132,23 @@ const char kWebpageWithDynamicContent[] =
     "   </body>"
     "</html>";
 
+const char kAutocompleteOffFormHTML[] =
+    "<FORM name='LoginTestForm' autocomplete='off'>"
+    "  <INPUT type='text' id='username'/>"
+    "  <INPUT type='password' id='password'/>"
+    "  <INPUT type='submit' value='Login'/>"
+    "</FORM>";
+
+const char kJavaScriptClick[] =
+    "var event = new MouseEvent('click', {"
+    "   'view': window,"
+    "   'bubbles': true,"
+    "   'cancelable': true"
+    "});"
+    "var form = document.getElementById('myform1');"
+    "form.dispatchEvent(event);"
+    "console.log('clicked!');";
+
 }  // namespace
 
 namespace autofill {
@@ -255,15 +272,20 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
                                        bool username_autofilled,
                                        const WebInputElement& password_element,
                                        const std::string& password,
-                                       bool password_autofilled) {
+                                       bool password_autofilled,
+                                       bool checkSuggestedValue = true) {
     EXPECT_EQ(username,
               static_cast<std::string>(username_element.value().utf8()));
     EXPECT_EQ(username_autofilled, username_element.isAutofilled());
     EXPECT_EQ(password,
-              static_cast<std::string>(password_element.value().utf8()));
+              static_cast<std::string>(
+                  checkSuggestedValue ? password_element.suggestedValue().utf8()
+                                      : password_element.value().utf8()));
     EXPECT_EQ(password_autofilled, password_element.isAutofilled());
   }
 
+  // Checks the DOM-accessible value of the username element and the
+  // *suggested* value of the password element.
   void CheckTextFieldsState(const std::string& username,
                             bool username_autofilled,
                             const std::string& password,
@@ -273,18 +295,33 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
                                     password, password_autofilled);
   }
 
+  // Checks the DOM-accessible value of the username element and the
+  // DOM-accessible value of the password element.
+  void CheckTextFieldsDOMState(const std::string& username,
+                               bool username_autofilled,
+                               const std::string& password,
+                               bool password_autofilled) {
+    CheckTextFieldsStateForElements(username_element_,
+                                    username,
+                                    username_autofilled,
+                                    password_element_,
+                                    password,
+                                    password_autofilled,
+                                    false);
+  }
+
   void CheckUsernameSelection(int start, int end) {
     EXPECT_EQ(start, username_element_.selectionStart());
     EXPECT_EQ(end, username_element_.selectionEnd());
   }
 
-  string16 username1_;
-  string16 username2_;
-  string16 username3_;
-  string16 password1_;
-  string16 password2_;
-  string16 password3_;
-  string16 alternate_username3_;
+  base::string16 username1_;
+  base::string16 username2_;
+  base::string16 username3_;
+  base::string16 password1_;
+  base::string16 password2_;
+  base::string16 password3_;
+  base::string16 alternate_username3_;
   PasswordFormFillData fill_data_;
 
   WebInputElement username_element_;
@@ -433,17 +470,47 @@ TEST_F(PasswordAutofillAgentTest, InputWithNoForms) {
   CheckTextFieldsState(std::string(), false, std::string(), false);
 }
 
-// Tests that we do not autofill username/passwords if marked as
-// autocomplete="off".
-TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForAutocompleteOff) {
+// Makes sure that we are ignoring autocomplete="off" on usernames and paswords.
+TEST_F(PasswordAutofillAgentTest, IgnoreElementAutocompleteOff) {
   username_element_.setAttribute(WebString::fromUTF8("autocomplete"),
+                                 WebString::fromUTF8("off"));
+  password_element_.setAttribute(WebString::fromUTF8("autocomplete"),
                                  WebString::fromUTF8("off"));
 
   // Simulate the browser sending back the login info, it triggers the
   // autocomplete.
   SimulateOnFillPasswordForm(fill_data_);
 
-  CheckTextFieldsState(std::string(), false, std::string(), false);
+  CheckTextFieldsState(kAliceUsername, true, kAlicePassword, true);
+}
+
+// Makes sure that we are ignoring autocomplete="off" on forms
+TEST_F(PasswordAutofillAgentTest, IgnoreFormAutocompleteOff) {
+  // We need to set the origin so it matches the frame URL and the action so
+  // it matches the form action, otherwise we won't autocomplete.
+  LoadHTML(kAutocompleteOffFormHTML);
+
+  // Retrieve the input elements so the test can access them.
+  WebDocument document = GetMainFrame()->document();
+  WebElement element =
+      document.getElementById(WebString::fromUTF8(kUsernameName));
+  ASSERT_FALSE(element.isNull());
+  username_element_ = element.to<blink::WebInputElement>();
+  element = document.getElementById(WebString::fromUTF8(kPasswordName));
+  ASSERT_FALSE(element.isNull());
+  password_element_ = element.to<blink::WebInputElement>();
+
+  // Set the expected form origin and action URLs.
+  std::string origin("data:text/html;charset=utf-8,");
+  origin += kAutocompleteOffFormHTML;
+  fill_data_.basic_data.origin = GURL(origin);
+  fill_data_.basic_data.action = GURL(origin);
+
+  // Simulate the browser sending back the login info, it triggers the
+  // autocomplete.
+  SimulateOnFillPasswordForm(fill_data_);
+
+  CheckTextFieldsState(kAliceUsername, true, kAlicePassword, true);
 }
 
 TEST_F(PasswordAutofillAgentTest, NoAutocompleteForTextFieldPasswords) {
@@ -776,6 +843,34 @@ TEST_F(PasswordAutofillAgentTest, IframeNoFillTest) {
 
   CheckTextFieldsStateForElements(username_input, kAliceUsername, true,
                                   password_input, kAlicePassword, true);
+}
+
+// Tests that a password will only be filled as a suggested and will not be
+// accessible by the DOM until a user gesture has occurred.
+TEST_F(PasswordAutofillAgentTest, GestureRequiredTest) {
+  // Trigger the initial autocomplete.
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // The username and password should have been autocompleted.
+  CheckTextFieldsState(kAliceUsername, true, kAlicePassword, true);
+
+  // However, it should only have completed with the suggested value, as tested
+  // above, and it should not have completed into the DOM accessible value for
+  // the password field.
+  CheckTextFieldsDOMState(kAliceUsername, true, "", true);
+
+  // Simulate a user click so that the password field's real value is filled.
+  SimulateElementClick(kUsernameName);
+  CheckTextFieldsDOMState(kAliceUsername, true, kAlicePassword, true);
+}
+
+// Verfies that a DOM-activated UI event will not cause an autofill.
+TEST_F(PasswordAutofillAgentTest, NoDOMActivationTest) {
+  // Trigger the initial autocomplete.
+  SimulateOnFillPasswordForm(fill_data_);
+
+  ExecuteJavaScript(kJavaScriptClick);
+  CheckTextFieldsDOMState(kAliceUsername, true, "", true);
 }
 
 }  // namespace autofill

@@ -14,24 +14,21 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
-#include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
-#include "chrome/browser/ui/browser_dialogs.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
@@ -40,7 +37,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/process_manager.h"
@@ -50,16 +46,11 @@
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/window_open_disposition.h"
 
-#if !defined(OS_ANDROID)
-#include "components/web_modal/web_contents_modal_dialog_manager.h"
-#endif
-
-using blink::WebDragOperation;
-using blink::WebDragOperationsMask;
 using content::BrowserContext;
-using content::NativeWebKeyboardEvent;
 using content::OpenURLParams;
+using content::RenderProcessHost;
 using content::RenderViewHost;
 using content::SiteInstance;
 using content::WebContents;
@@ -212,25 +203,6 @@ const GURL& ExtensionHost::GetURL() const {
 }
 
 void ExtensionHost::LoadInitialURL() {
-  if (!IsBackgroundPage() &&
-      !ExtensionSystem::GetForBrowserContext(browser_context_)->
-          extension_service()->IsBackgroundPageReady(extension_)) {
-    // Make sure the background page loads before any others.
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
-                   content::Source<Extension>(extension_));
-    return;
-  }
-
-#if !defined(OS_ANDROID)
-  // TODO(jamescook): Move this to ExtensionViewHost, which handles popups.
-  if (extension_host_type_ == VIEW_TYPE_EXTENSION_POPUP) {
-    web_modal::WebContentsModalDialogManager::CreateForWebContents(
-        host_contents_.get());
-    web_modal::WebContentsModalDialogManager::FromWebContents(
-        host_contents_.get())->SetDelegate(this);
-  }
-#endif
-
   host_contents_->GetController().LoadURL(
       initial_url_, content::Referrer(), content::PAGE_TRANSITION_LINK,
       std::string());
@@ -248,49 +220,10 @@ void ExtensionHost::Close() {
       content::Details<ExtensionHost>(this));
 }
 
-#if !defined(OS_ANDROID)
-web_modal::WebContentsModalDialogHost*
-ExtensionHost::GetWebContentsModalDialogHost() {
-  return this;
-}
-
-gfx::NativeView ExtensionHost::GetHostView() const {
-  return NULL;
-}
-
-gfx::Point ExtensionHost::GetDialogPosition(const gfx::Size& size) {
-  if (!GetVisibleWebContents())
-    return gfx::Point();
-  gfx::Rect bounds = GetVisibleWebContents()->GetView()->GetViewBounds();
-  return gfx::Point(
-      std::max(0, (bounds.width() - size.width()) / 2),
-      std::max(0, (bounds.height() - size.height()) / 2));
-}
-
-gfx::Size ExtensionHost::GetMaximumDialogSize() {
-  if (!GetVisibleWebContents())
-    return gfx::Size();
-  return GetVisibleWebContents()->GetView()->GetViewBounds().size();
-}
-
-void ExtensionHost::AddObserver(
-    web_modal::ModalDialogHostObserver* observer) {
-}
-
-void ExtensionHost::RemoveObserver(
-    web_modal::ModalDialogHostObserver* observer) {
-}
-#endif
-
 void ExtensionHost::Observe(int type,
                             const content::NotificationSource& source,
                             const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY:
-      DCHECK(ExtensionSystem::GetForBrowserContext(browser_context_)->
-                 extension_service()->IsBackgroundPageReady(extension_));
-      LoadInitialURL();
-      break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
       // The extension object will be deleted after this notification has been
       // sent. NULL it out so that dirty pointer issues don't arise in cases
@@ -311,7 +244,8 @@ void ExtensionHost::RenderProcessGone(base::TerminationStatus status) {
   // During browser shutdown, we may use sudden termination on an extension
   // process, so it is expected to lose our connection to the render view.
   // Do nothing.
-  if (browser_shutdown::GetShutdownType() != browser_shutdown::NOT_VALID)
+  RenderProcessHost* process_host = host_contents_->GetRenderProcessHost();
+  if (process_host && process_host->FastShutdownStarted())
     return;
 
   // In certain cases, multiple ExtensionHost objects may have pointed to
@@ -496,16 +430,6 @@ content::JavaScriptDialogManager* ExtensionHost::GetJavaScriptDialogManager() {
     dialog_manager_.reset(CreateJavaScriptDialogManagerInstance(this));
   }
   return dialog_manager_.get();
-}
-
-content::ColorChooser* ExtensionHost::OpenColorChooser(
-    WebContents* web_contents, SkColor initial_color) {
-  return chrome::ShowColorChooser(web_contents, initial_color);
-}
-
-void ExtensionHost::RunFileChooser(WebContents* tab,
-                                   const content::FileChooserParams& params) {
-  FileSelectHelper::RunFileChooser(tab, params);
 }
 
 void ExtensionHost::AddNewContents(WebContents* source,

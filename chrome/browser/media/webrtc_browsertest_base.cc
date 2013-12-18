@@ -4,6 +4,7 @@
 
 #include "chrome/browser/media/webrtc_browsertest_base.h"
 
+#include "base/lazy_instance.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/infobar.h"
@@ -23,10 +24,47 @@ const char WebRtcTestBase::kVideoOnlyCallConstraints[] = "'{video: true}'";
 const char WebRtcTestBase::kFailedWithPermissionDeniedError[] =
     "failed-with-error-PermissionDeniedError";
 
-WebRtcTestBase::WebRtcTestBase() {
+namespace {
+
+base::LazyInstance<bool> hit_javascript_errors_ =
+      LAZY_INSTANCE_INITIALIZER;
+
+// Intercepts all log messages. We always attach this handler but only look at
+// the results if the test requests so. Note that this will only work if the
+// WebrtcTestBase-inheriting test cases do not run in parallel (if they did they
+// would race to look at the log, which is global to all tests).
+bool JavascriptErrorDetectingLogHandler(int severity,
+                                        const char* file,
+                                        int line,
+                                        size_t message_start,
+                                        const std::string& str) {
+  if (file == NULL || std::string("CONSOLE") != file)
+    return false;
+
+  bool contains_uncaught = str.find("\"Uncaught ") != std::string::npos;
+  if (severity == logging::LOG_ERROR ||
+      (severity == logging::LOG_INFO && contains_uncaught)) {
+    hit_javascript_errors_.Get() = true;
+  }
+
+  return false;
+}
+
+}  // namespace
+
+WebRtcTestBase::WebRtcTestBase(): detect_errors_in_javascript_(false) {
+  // The handler gets set for each test method, but that's fine since this
+  // set operation is idempotent.
+  logging::SetLogMessageHandler(&JavascriptErrorDetectingLogHandler);
+  hit_javascript_errors_.Get() = false;
 }
 
 WebRtcTestBase::~WebRtcTestBase() {
+  if (detect_errors_in_javascript_) {
+    EXPECT_FALSE(hit_javascript_errors_.Get())
+        << "Encountered javascript errors during test execution (Search "
+        << "for Uncaught or ERROR:CONSOLE in the test output).";
+  }
 }
 
 void WebRtcTestBase::GetUserMediaAndAccept(
@@ -38,9 +76,8 @@ void WebRtcTestBase::GetUserMediaAndAccept(
 void WebRtcTestBase::GetUserMediaWithSpecificConstraintsAndAccept(
     content::WebContents* tab_contents,
     const std::string& constraints) const {
-  MediaStreamInfoBarDelegate* infobar =
-      GetUserMediaAndWaitForInfoBar(tab_contents, constraints);
-  infobar->Accept();
+  InfoBar* infobar = GetUserMediaAndWaitForInfoBar(tab_contents, constraints);
+  infobar->delegate()->AsConfirmInfoBarDelegate()->Accept();
   CloseInfoBarInTab(tab_contents, infobar);
 
   // Wait for WebRTC to call the success callback.
@@ -57,9 +94,8 @@ void WebRtcTestBase::GetUserMediaAndDeny(content::WebContents* tab_contents) {
 void WebRtcTestBase::GetUserMediaWithSpecificConstraintsAndDeny(
     content::WebContents* tab_contents,
     const std::string& constraints) const {
-  MediaStreamInfoBarDelegate* infobar =
-      GetUserMediaAndWaitForInfoBar(tab_contents, constraints);
-  infobar->Cancel();
+  InfoBar* infobar = GetUserMediaAndWaitForInfoBar(tab_contents, constraints);
+  infobar->delegate()->AsConfirmInfoBarDelegate()->Cancel();
   CloseInfoBarInTab(tab_contents, infobar);
 
   // Wait for WebRTC to call the fail callback.
@@ -69,9 +105,9 @@ void WebRtcTestBase::GetUserMediaWithSpecificConstraintsAndDeny(
 
 void WebRtcTestBase::GetUserMediaAndDismiss(
     content::WebContents* tab_contents) const {
-  MediaStreamInfoBarDelegate* infobar =
+  InfoBar* infobar =
       GetUserMediaAndWaitForInfoBar(tab_contents, kAudioVideoCallConstraints);
-  infobar->InfoBarDismissed();
+  infobar->delegate()->InfoBarDismissed();
   CloseInfoBarInTab(tab_contents, infobar);
 
   // A dismiss should be treated like a deny.
@@ -81,14 +117,25 @@ void WebRtcTestBase::GetUserMediaAndDismiss(
 
 void WebRtcTestBase::GetUserMedia(content::WebContents* tab_contents,
                                   const std::string& constraints) const {
+  // TODO(phoglund): temporary debugging measure for crbug.com/281268.
+  std::string javascript =
+      "if (typeof(doGetUserMedia) != typeof(Function)) {\n"
+      "  console.log('hitting weird js load bug: diagnosing...');\n"
+      "  for (var v in window) {\n"
+      "    if (window.hasOwnProperty(v)) console.log(v);\n"
+      "  }\n"
+      "  window.domAutomationController.send('failed!');\n"
+      "}\n"
+      "else\n"
+      "  doGetUserMedia(" + constraints + ");";
   // Request user media: this will launch the media stream info bar.
   std::string result;
   EXPECT_TRUE(content::ExecuteScriptAndExtractString(
-      tab_contents, "doGetUserMedia(" + constraints + ");", &result));
+      tab_contents, javascript, &result));
   EXPECT_EQ("ok-requested", result);
 }
 
-MediaStreamInfoBarDelegate* WebRtcTestBase::GetUserMediaAndWaitForInfoBar(
+InfoBar* WebRtcTestBase::GetUserMediaAndWaitForInfoBar(
     content::WebContents* tab_contents,
     const std::string& constraints) const {
   content::WindowedNotificationObserver infobar_added(
@@ -101,9 +148,8 @@ MediaStreamInfoBarDelegate* WebRtcTestBase::GetUserMediaAndWaitForInfoBar(
   // Wait for the bar to pop up, then return it.
   infobar_added.Wait();
   content::Details<InfoBar::AddedDetails> details(infobar_added.details());
-  MediaStreamInfoBarDelegate* infobar = details->AsMediaStreamInfoBarDelegate();
-  EXPECT_TRUE(infobar);
-  return infobar;
+  EXPECT_TRUE(details->delegate()->AsMediaStreamInfoBarDelegate());
+  return details.ptr();
 }
 
 content::WebContents* WebRtcTestBase::OpenPageAndAcceptUserMedia(
@@ -119,10 +165,9 @@ content::WebContents* WebRtcTestBase::OpenPageAndAcceptUserMedia(
   content::WebContents* tab_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   content::Details<InfoBar::AddedDetails> details(infobar_added.details());
-  MediaStreamInfoBarDelegate* infobar =
-      details->AsMediaStreamInfoBarDelegate();
+  InfoBar* infobar = details.ptr();
   EXPECT_TRUE(infobar);
-  infobar->Accept();
+  infobar->delegate()->AsMediaStreamInfoBarDelegate()->Accept();
 
   CloseInfoBarInTab(tab_contents, infobar);
   return tab_contents;
@@ -130,7 +175,7 @@ content::WebContents* WebRtcTestBase::OpenPageAndAcceptUserMedia(
 
 void WebRtcTestBase::CloseInfoBarInTab(
     content::WebContents* tab_contents,
-    MediaStreamInfoBarDelegate* infobar) const {
+    InfoBar* infobar) const {
   content::WindowedNotificationObserver infobar_removed(
       chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
       content::NotificationService::AllSources());
@@ -162,4 +207,8 @@ void WebRtcTestBase::ConnectToPeerConnectionServer(
       "connect('http://localhost:%s', '%s');",
       PeerConnectionServerRunner::kDefaultPort, peer_name.c_str());
   EXPECT_EQ("ok-connected", ExecuteJavascript(javascript, tab_contents));
+}
+
+void WebRtcTestBase::DetectErrorsInJavaScript() {
+  detect_errors_in_javascript_ = true;
 }

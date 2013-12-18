@@ -1100,6 +1100,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
           route_id,
           request_data.origin_pid,
           request_id,
+          request_data.render_frame_id,
           request_data.is_main_frame,
           request_data.frame_id,
           request_data.parent_is_main_frame,
@@ -1131,6 +1132,23 @@ void ResourceDispatcherHostImpl::BeginRequest(
       request, filter_->appcache_service(), child_id,
       request_data.appcache_host_id, request_data.resource_type);
 
+  scoped_ptr<ResourceHandler> handler(
+       CreateResourceHandler(
+           request,
+           request_data, sync_result, route_id, process_type, child_id,
+           resource_context));
+
+  BeginRequestInternal(new_request.Pass(), handler.Pass());
+}
+
+scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
+    net::URLRequest* request,
+    const ResourceHostMsg_Request& request_data,
+    IPC::Message* sync_result,
+    int route_id,
+    int process_type,
+    int child_id,
+    ResourceContext* resource_context) {
   // Construct the IPC resource handler.
   scoped_ptr<ResourceHandler> handler;
   if (sync_result) {
@@ -1185,7 +1203,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   handler.reset(
       new ThrottlingResourceHandler(handler.Pass(), request, throttles.Pass()));
 
-  BeginRequestInternal(new_request.Pass(), handler.Pass());
+  return handler.Pass();
 }
 
 void ResourceDispatcherHostImpl::OnReleaseDownloadedFile(int request_id) {
@@ -1254,6 +1272,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       route_id,
       0,
       request_id_,
+      MSG_ROUTING_NONE,  // render_frame_id
       false,     // is_main_frame
       -1,        // frame_id
       false,     // parent_is_main_frame

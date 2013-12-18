@@ -475,7 +475,7 @@ bool Gtk2UI::IsStatusIconSupported() const {
 
 scoped_ptr<views::StatusIconLinux> Gtk2UI::CreateLinuxStatusIcon(
     const gfx::ImageSkia& image,
-    const string16& tool_tip) const {
+    const base::string16& tool_tip) const {
   if (AppIndicatorIcon::CouldOpen()) {
     ++indicators_count;
     return scoped_ptr<views::StatusIconLinux>(new AppIndicatorIcon(
@@ -548,6 +548,10 @@ ui::SelectFileDialog* Gtk2UI::CreateSelectFileDialog(
     ui::SelectFileDialog::Listener* listener,
     ui::SelectFilePolicy* policy) const {
   return SelectFileDialogImpl::Create(listener, policy);
+}
+
+bool Gtk2UI::UnityIsRunning() {
+  return unity::IsRunning();
 }
 
 void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,

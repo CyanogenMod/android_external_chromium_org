@@ -10,8 +10,8 @@
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/bubble/bubble_frame_view.h"
-#include "ui/views/focus_border.h"
 #include "ui/views/mouse_watcher_view_host.h"
+#include "ui/views/painter.h"
 
 namespace autofill {
 
@@ -78,10 +78,16 @@ void TooltipIcon::OnMouseExited(const ui::MouseEvent& event) {
   show_timer_.Stop();
 }
 
+void TooltipIcon::OnGestureEvent(ui::GestureEvent* event) {
+  if (event->type() == ui::ET_GESTURE_TAP) {
+    ShowBubble();
+    event->SetHandled();
+  }
+}
+
 void TooltipIcon::OnBoundsChanged(const gfx::Rect& prev_bounds) {
-  gfx::Insets insets = GetPreferredInsets(this);
-  set_focus_border(views::FocusBorder::CreateDashedFocusBorder(
-      insets.left(), insets.top(), insets.right(), insets.bottom()));
+  SetFocusPainter(views::Painter::CreateDashedFocusPainterWithInsets(
+                      GetPreferredInsets(this)));
 }
 
 void TooltipIcon::OnFocus() {
@@ -108,21 +114,25 @@ void TooltipIcon::ChangeImageTo(int idr) {
 }
 
 void TooltipIcon::ShowBubble() {
-  DCHECK(mouse_inside_ || HasFocus());
-
   if (bubble_)
     return;
 
   ChangeImageTo(IDR_AUTOFILL_TOOLTIP_ICON_H);
 
   bubble_ = new TooltipBubble(this, tooltip_);
+  // When shown due to a gesture event, close on deactivate (i.e. don't use
+  // "focusless").
+  bubble_->set_use_focusless(mouse_inside_ || HasFocus());
+
   bubble_->Show();
 
-  views::View* frame = bubble_->GetWidget()->non_client_view()->frame_view();
-  scoped_ptr<views::MouseWatcherHost> host(
-      new views::MouseWatcherViewHost(frame, gfx::Insets()));
-  mouse_watcher_.reset(new views::MouseWatcher(host.release(), this));
-  mouse_watcher_->Start();
+  if (mouse_inside_) {
+    views::View* frame = bubble_->GetWidget()->non_client_view()->frame_view();
+    scoped_ptr<views::MouseWatcherHost> host(
+        new views::MouseWatcherViewHost(frame, gfx::Insets()));
+    mouse_watcher_.reset(new views::MouseWatcher(host.release(), this));
+    mouse_watcher_->Start();
+  }
 }
 
 void TooltipIcon::HideBubble() {
@@ -131,6 +141,7 @@ void TooltipIcon::HideBubble() {
 
   ChangeImageTo(IDR_AUTOFILL_TOOLTIP_ICON);
 
+  mouse_watcher_.reset();
   bubble_->Hide();
   bubble_ = NULL;
 }

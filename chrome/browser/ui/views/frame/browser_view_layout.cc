@@ -78,14 +78,6 @@ class BrowserViewLayout::WebContentsModalDialogHostViews
                       OnPositionRequiresUpdate());
   }
 
- private:
-  virtual gfx::NativeView GetHostView() const OVERRIDE {
-    gfx::NativeWindow native_window =
-        browser_view_layout_->browser()->window()->GetNativeWindow();
-    return views::Widget::GetWidgetForNativeWindow(native_window)->
-        GetNativeView();
-  }
-
   // Center horizontally over the content area, with the top overlapping the
   // browser chrome.
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE {
@@ -98,6 +90,14 @@ class BrowserViewLayout::WebContentsModalDialogHostViews
     int middle_x = contents_container_bounds_in_widget.x() +
         contents_container_bounds_in_widget.width() / 2;
     return gfx::Point(middle_x - size.width() / 2, top_y);
+  }
+
+ private:
+  virtual gfx::NativeView GetHostView() const OVERRIDE {
+    gfx::NativeWindow native_window =
+        browser_view_layout_->browser()->window()->GetNativeWindow();
+    return views::Widget::GetWidgetForNativeWindow(native_window)->
+        GetNativeView();
   }
 
   virtual gfx::Size GetMaximumDialogSize() OVERRIDE {
@@ -200,16 +200,20 @@ gfx::Size BrowserViewLayout::GetMinimumSize() {
     bookmark_bar_size = bookmark_bar_->GetMinimumSize();
     bookmark_bar_size.Enlarge(0, -bookmark_bar_->GetToolbarOverlap());
   }
+  gfx::Size infobar_container_size(infobar_container_->GetMinimumSize());
   // TODO: Adjust the minimum height for the find bar.
 
   gfx::Size contents_size(contents_split_->GetMinimumSize());
 
-  int min_height = tabstrip_size.height() + toolbar_size.height() +
-      bookmark_bar_size.height() + contents_size.height();
+  int min_height = delegate_->GetTopInsetInBrowserView() +
+      tabstrip_size.height() + toolbar_size.height() +
+      bookmark_bar_size.height() + infobar_container_size.height() +
+      contents_size.height();
   int widths[] = {
         tabstrip_size.width(),
         toolbar_size.width(),
         bookmark_bar_size.width(),
+        infobar_container_size.width(),
         contents_size.width() };
   int min_width = *std::max_element(&widths[0], &widths[arraysize(widths)]);
   return gfx::Size(min_width, min_height);
@@ -384,8 +388,11 @@ void BrowserViewLayout::Layout(views::View* browser_view) {
   if (fullscreen_exit_bubble)
     fullscreen_exit_bubble->RepositionIfVisible();
 
-  // Adjust any web contents modal dialogs.
-  dialog_host_->NotifyPositionRequiresUpdate();
+  // Adjust any hosted dialogs if the browser's dialog positioning has changed.
+  if (dialog_host_->GetDialogPosition(gfx::Size()) != latest_dialog_position_) {
+    latest_dialog_position_ = dialog_host_->GetDialogPosition(gfx::Size());
+    dialog_host_->NotifyPositionRequiresUpdate();
+  }
 }
 
 // Return the preferred size which is the size required to give each
@@ -532,8 +539,11 @@ void BrowserViewLayout::LayoutContentsSplitView(int top, int bottom) {
 void BrowserViewLayout::UpdateTopContainerBounds() {
   gfx::Rect top_container_bounds(top_container_->GetPreferredSize());
 
-  // If the immersive mode controller is animating the top-of-window views,
-  // part of the top container may be offscreen.
+  // If the immersive mode controller is animating the top container, it may be
+  // partly offscreen. The top container is positioned relative to the top of
+  // the client view instead of relative to GetTopInsetInBrowserView() because
+  // the top container paints parts of the frame (title, window controls) during
+  // an immersive reveal.
   top_container_bounds.set_y(
       immersive_mode_controller_->GetTopContainerVerticalOffset(
           top_container_bounds.size()));

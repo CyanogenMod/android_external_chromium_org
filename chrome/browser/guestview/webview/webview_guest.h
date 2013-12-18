@@ -41,11 +41,12 @@ class WebViewGuest : public GuestView,
 
   // GuestDelegate implementation.
   virtual void AddMessageToConsole(int32 level,
-                                   const string16& message,
+                                   const base::string16& message,
                                    int32 line_no,
-                                   const string16& source_id) OVERRIDE;
+                                   const base::string16& source_id) OVERRIDE;
   virtual void LoadProgressed(double progress) OVERRIDE;
   virtual void Close() OVERRIDE;
+  virtual void DidAttach() OVERRIDE;
   virtual void EmbedderDestroyed() OVERRIDE;
   virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool HandleKeyboardEvent(
@@ -139,18 +140,18 @@ class WebViewGuest : public GuestView,
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
-      const string16& frame_unique_name,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
-      const string16& frame_unique_name,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
@@ -164,6 +165,7 @@ class WebViewGuest : public GuestView,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
+  virtual void UserAgentOverrideSet(const std::string& user_agent) OVERRIDE;
 
   // Called after the load handler is called in the guest's main frame.
   void LoadHandlerCalled();
@@ -194,6 +196,10 @@ class WebViewGuest : public GuestView,
 
   // True if the user agent is overridden.
   bool is_overriding_user_agent_;
+
+  // Indicates that the page needs to be reloaded once it has been attached to
+  // an embedder.
+  bool pending_reload_on_attachment_;
 
   DISALLOW_COPY_AND_ASSIGN(WebViewGuest);
 };

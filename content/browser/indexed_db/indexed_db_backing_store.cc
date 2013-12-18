@@ -157,7 +157,7 @@ static void PutVarInt(LevelDBTransaction* transaction,
 template <typename DBOrTransaction>
 WARN_UNUSED_RESULT static bool GetString(DBOrTransaction* db,
                                          const StringPiece& key,
-                                         string16* found_string,
+                                         base::string16* found_string,
                                          bool* found) {
   std::string result;
   *found = false;
@@ -172,7 +172,7 @@ WARN_UNUSED_RESULT static bool GetString(DBOrTransaction* db,
 
 static void PutString(LevelDBTransaction* transaction,
                       const StringPiece& key,
-                      const string16& value) {
+                      const base::string16& value) {
   std::string buffer;
   EncodeString(value, &buffer);
   transaction->Put(key, &buffer);
@@ -513,7 +513,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_ATTEMPT_NON_ASCII,
                         origin_url);
   }
-  if (!file_util::CreateDirectory(path_base)) {
+  if (!base::CreateDirectory(path_base)) {
     LOG(ERROR) << "Unable to create IndexedDB database path "
                << path_base.AsUTF8Unsafe();
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_DIRECTORY,
@@ -653,8 +653,8 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Create(
   return backing_store;
 }
 
-std::vector<string16> IndexedDBBackingStore::GetDatabaseNames() {
-  std::vector<string16> found_names;
+std::vector<base::string16> IndexedDBBackingStore::GetDatabaseNames() {
+  std::vector<base::string16> found_names;
   const std::string start_key =
       DatabaseNameKey::EncodeMinKeyForOrigin(origin_identifier_);
   const std::string stop_key =
@@ -678,7 +678,7 @@ std::vector<string16> IndexedDBBackingStore::GetDatabaseNames() {
 }
 
 bool IndexedDBBackingStore::GetIDBDatabaseMetaData(
-    const string16& name,
+    const base::string16& name,
     IndexedDBDatabaseMetadata* metadata,
     bool* found) {
   const std::string key = DatabaseNameKey::Encode(origin_identifier_, name);
@@ -755,10 +755,11 @@ WARN_UNUSED_RESULT static bool GetNewDatabaseId(LevelDBTransaction* transaction,
   return true;
 }
 
-bool IndexedDBBackingStore::CreateIDBDatabaseMetaData(const string16& name,
-                                                      const string16& version,
-                                                      int64 int_version,
-                                                      int64* row_id) {
+bool IndexedDBBackingStore::CreateIDBDatabaseMetaData(
+    const base::string16& name,
+    const base::string16& version,
+    int64 int_version,
+    int64* row_id) {
   scoped_refptr<LevelDBTransaction> transaction =
       new LevelDBTransaction(db_.get());
 
@@ -811,7 +812,7 @@ static void DeleteRange(LevelDBTransaction* transaction,
     transaction->Remove(it->Key());
 }
 
-bool IndexedDBBackingStore::DeleteDatabase(const string16& name) {
+bool IndexedDBBackingStore::DeleteDatabase(const base::string16& name) {
   IDB_TRACE("IndexedDBBackingStore::DeleteDatabase");
   scoped_ptr<LevelDBWriteOnlyTransaction> transaction =
       LevelDBWriteOnlyTransaction::Create(db_.get());
@@ -895,7 +896,7 @@ bool IndexedDBBackingStore::GetObjectStores(
 
     // TODO(jsbell): Do this by direct key lookup rather than iteration, to
     // simplify.
-    string16 object_store_name;
+    base::string16 object_store_name;
     {
       StringPiece slice(it->Value());
       if (!DecodeString(&slice, &object_store_name) || !slice.empty())
@@ -1049,7 +1050,7 @@ bool IndexedDBBackingStore::CreateObjectStore(
     IndexedDBBackingStore::Transaction* transaction,
     int64 database_id,
     int64 object_store_id,
-    const string16& name,
+    const base::string16& name,
     const IndexedDBKeyPath& key_path,
     bool auto_increment) {
   IDB_TRACE("IndexedDBBackingStore::CreateObjectStore");
@@ -1103,7 +1104,7 @@ bool IndexedDBBackingStore::DeleteObjectStore(
     return false;
   LevelDBTransaction* leveldb_transaction = transaction->transaction();
 
-  string16 object_store_name;
+  base::string16 object_store_name;
   bool found = false;
   bool ok = GetString(
       leveldb_transaction,
@@ -1473,7 +1474,7 @@ bool IndexedDBBackingStore::GetIndexes(
     // TODO(jsbell): Do this by direct key lookup rather than iteration, to
     // simplify.
     int64 index_id = meta_data_key.IndexId();
-    string16 index_name;
+    base::string16 index_name;
     {
       StringPiece slice(it->Value());
       if (!DecodeString(&slice, &index_name) || !slice.empty())
@@ -1553,7 +1554,7 @@ bool IndexedDBBackingStore::CreateIndex(
     int64 database_id,
     int64 object_store_id,
     int64 index_id,
-    const string16& name,
+    const base::string16& name,
     const IndexedDBKeyPath& key_path,
     bool is_unique,
     bool is_multi_entry) {
@@ -2022,7 +2023,7 @@ class ObjectStoreKeyCursorImpl : public IndexedDBBackingStore::Cursor {
   }
 
   // IndexedDBBackingStore::Cursor
-  virtual std::string* Value() OVERRIDE {
+  virtual std::string* value() OVERRIDE {
     NOTREACHED();
     return NULL;
   }
@@ -2079,7 +2080,7 @@ class ObjectStoreCursorImpl : public IndexedDBBackingStore::Cursor {
   virtual Cursor* Clone() OVERRIDE { return new ObjectStoreCursorImpl(this); }
 
   // IndexedDBBackingStore::Cursor
-  virtual std::string* Value() OVERRIDE { return &current_value_; }
+  virtual std::string* value() OVERRIDE { return &current_value_; }
   virtual bool LoadCurrentRow() OVERRIDE;
 
  protected:
@@ -2137,15 +2138,15 @@ class IndexKeyCursorImpl : public IndexedDBBackingStore::Cursor {
   virtual Cursor* Clone() OVERRIDE { return new IndexKeyCursorImpl(this); }
 
   // IndexedDBBackingStore::Cursor
-  virtual std::string* Value() OVERRIDE {
+  virtual std::string* value() OVERRIDE {
     NOTREACHED();
     return NULL;
   }
   virtual const IndexedDBKey& primary_key() const OVERRIDE {
     return *primary_key_;
   }
-  virtual const IndexedDBBackingStore::RecordIdentifier& RecordIdentifier()
-      const {
+  virtual const IndexedDBBackingStore::RecordIdentifier& record_identifier()
+      const OVERRIDE {
     NOTREACHED();
     return record_identifier_;
   }
@@ -2244,12 +2245,12 @@ class IndexCursorImpl : public IndexedDBBackingStore::Cursor {
   virtual Cursor* Clone() OVERRIDE { return new IndexCursorImpl(this); }
 
   // IndexedDBBackingStore::Cursor
-  virtual std::string* Value() OVERRIDE { return &current_value_; }
+  virtual std::string* value() OVERRIDE { return &current_value_; }
   virtual const IndexedDBKey& primary_key() const OVERRIDE {
     return *primary_key_;
   }
-  virtual const IndexedDBBackingStore::RecordIdentifier& RecordIdentifier()
-      const {
+  virtual const IndexedDBBackingStore::RecordIdentifier& record_identifier()
+      const OVERRIDE {
     NOTREACHED();
     return record_identifier_;
   }

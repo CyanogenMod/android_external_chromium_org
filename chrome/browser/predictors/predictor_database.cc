@@ -85,7 +85,8 @@ PredictorDatabaseInternal::~PredictorDatabaseInternal() {
 }
 
 void PredictorDatabaseInternal::Initialize() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::DB) ||
+        !BrowserThread::IsMessageLoopValid(BrowserThread::DB));
   // TODO(tburkard): figure out if we need this.
   //  db_->set_exclusive_locking();
   bool success = db_->Open(db_path_);
@@ -101,7 +102,8 @@ void PredictorDatabaseInternal::Initialize() {
 }
 
 void PredictorDatabaseInternal::SetCancelled() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+        !BrowserThread::IsMessageLoopValid(BrowserThread::UI));
 
   autocomplete_table_->SetCancelled();
   logged_in_table_->SetCancelled();
@@ -109,10 +111,11 @@ void PredictorDatabaseInternal::SetCancelled() {
 }
 
 void PredictorDatabaseInternal::LogDatabaseStats() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::DB) ||
+        !BrowserThread::IsMessageLoopValid(BrowserThread::DB));
 
   int64 db_size;
-  bool success = file_util::GetFileSize(db_path_, &db_size);
+  bool success = base::GetFileSize(db_path_, &db_size);
   DCHECK(success) << "Failed to get file size for " << db_path_.value();
   UMA_HISTOGRAM_MEMORY_KB("PredictorDatabase.DatabaseSizeKB",
                           static_cast<int>(db_size / 1024));

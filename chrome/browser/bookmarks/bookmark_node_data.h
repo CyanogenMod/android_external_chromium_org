@@ -10,6 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "ui/base/clipboard/clipboard_types.h"
 
 #include "url/gurl.h"
@@ -17,7 +18,6 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #endif
 
-class BookmarkNode;
 class Pickle;
 class PickleIterator;
 class Profile;
@@ -54,7 +54,7 @@ struct BookmarkNodeData {
     GURL url;
 
     // Title of the entry, used for both urls and folders.
-    string16 title;
+    base::string16 title;
 
     // Date of when this node was created.
     base::Time date_added;
@@ -64,6 +64,9 @@ struct BookmarkNodeData {
 
     // Children, only used for non-URL nodes.
     std::vector<Element> children;
+
+    // Meta info for the bookmark node.
+    BookmarkNode::MetaInfoMap meta_info_map;
 
     int64 id() const { return id_; }
 
@@ -99,7 +102,7 @@ struct BookmarkNodeData {
   bool ReadFromVector(const std::vector<const BookmarkNode*>& nodes);
 
   // Creates a single-bookmark DragData from url/title pair.
-  bool ReadFromTuple(const GURL& url, const string16& title);
+  bool ReadFromTuple(const GURL& url, const base::string16& title);
 
   // Writes bookmarks to the specified clipboard.
   void WriteToClipboard(ui::ClipboardType type);

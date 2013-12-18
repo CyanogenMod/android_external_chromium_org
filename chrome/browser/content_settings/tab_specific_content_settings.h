@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_CONTENT_SETTINGS_TAB_SPECIFIC_CONTENT_SETTINGS_H_
 #define CHROME_BROWSER_CONTENT_SETTINGS_TAB_SPECIFIC_CONTENT_SETTINGS_H_
 
-#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -15,7 +14,6 @@
 #include "chrome/browser/content_settings/content_settings_usages_state.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
-#include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
@@ -54,31 +52,6 @@ class TabSpecificContentSettings
     MICROPHONE_BLOCKED,
     CAMERA_BLOCKED,
     MICROPHONE_CAMERA_BLOCKED,
-  };
-
-  // A PasswordObserver is implemented in ManagePasswordsIconController which
-  // will be notified when a password form is submitted.
-  class PasswordObserver {
-   public:
-    explicit PasswordObserver(
-        TabSpecificContentSettings* tab_specific_content_settings);
-    virtual ~PasswordObserver();
-
-    // Called whenever a password form is submitted.
-    virtual void OnPasswordAction() = 0;
-
-    TabSpecificContentSettings* tab_specific_content_settings() {
-      return tab_specific_content_settings_;
-    }
-
-    // Called when the TabSpecificContentSettings is destroyed; nulls out
-    // the local reference.
-    void ContentSettingsDestroyed();
-
-   private:
-    TabSpecificContentSettings* tab_specific_content_settings_;
-
-    DISALLOW_COPY_AND_ASSIGN(PasswordObserver);
   };
 
   // Classes that want to be notified about site data events must implement
@@ -144,8 +117,8 @@ class TabSpecificContentSettings
   static void WebDatabaseAccessed(int render_process_id,
                                   int render_view_id,
                                   const GURL& url,
-                                  const string16& name,
-                                  const string16& display_name,
+                                  const base::string16& name,
+                                  const base::string16& display_name,
                                   bool blocked_by_policy);
 
   // Called when a specific DOM storage area in the current page was
@@ -165,7 +138,7 @@ class TabSpecificContentSettings
   static void IndexedDBAccessed(int render_process_id,
                                 int render_view_id,
                                 const GURL& url,
-                                const string16& description,
+                                const base::string16& description,
                                 bool blocked_by_policy);
 
   // Called when a specific file system in the current page was accessed.
@@ -230,35 +203,6 @@ class TabSpecificContentSettings
 
   // Returns the state of the camera and microphone usage.
   MicrophoneCameraState GetMicrophoneCameraState() const;
-
-  void unset_manage_passwords_bubble_needs_showing() {
-    manage_passwords_bubble_needs_showing_ = false;
-  }
-
-  bool password_to_be_saved() const {
-    return password_to_be_saved_;
-  }
-
-  void unset_password_to_be_saved() {
-    password_to_be_saved_ = false;
-  }
-
-  bool manage_passwords_bubble_needs_showing() const {
-    return manage_passwords_bubble_needs_showing_;
-  }
-
-  bool manage_passwords_icon_to_be_shown() const {
-    return manage_passwords_icon_to_be_shown_;
-  }
-
-  // Returns whether there is a password to be saved.
-  bool GetPasswordSavingState() const;
-
-  // Returns whether the password bubble has been shown to the user.
-  bool GetManagePasswordsBubbleShownState() const;
-
-  const std::set<std::string>& BlockedResourcesForType(
-      ContentSettingsType content_type) const;
 
   // Returns the ContentSettingsUsagesState that controls the
   // geolocation API usage on this page.
@@ -345,36 +289,8 @@ class TabSpecificContentSettings
   virtual void AppCacheAccessed(const GURL& manifest_url,
                                 bool blocked_by_policy) OVERRIDE;
 
-  void SavePassword();
-
-  const autofill::PasswordForm pending_credentials() const {
-    return form_manager_->pending_credentials();
-  }
-
-  const autofill::PasswordFormMap best_matches() const {
-    return password_form_map_;
-  }
-
-  // TODO(npentrel) This ought to be changed. Best matches should be newly
-  // made when opening the ManagePasswordsBubble because there may have been
-  // changes to the best matches via the settings page. At the moment this also
-  // fails if one deletes a password when they are autofilled, as it still shows
-  // up after logging in and saving a password.
-  void remove_from_best_matches(autofill::PasswordForm password_form) {
-    password_form_map_.erase(password_form.username_value);
-  }
-
-  bool password_submitted() const {
-    return password_submitted_;
-  }
-
-  void password_submitted(bool password_submitted) {
-    password_submitted_ = password_submitted;
-  }
-
   // Message handlers. Public for testing.
-  void OnContentBlocked(ContentSettingsType type,
-                        const std::string& resource_identifier);
+  void OnContentBlocked(ContentSettingsType type);
   void OnContentAllowed(ContentSettingsType type);
 
   // These methods are invoked on the UI thread by the static functions above.
@@ -391,14 +307,14 @@ class TabSpecificContentSettings
   void OnFileSystemAccessed(const GURL& url,
                             bool blocked_by_policy);
   void OnIndexedDBAccessed(const GURL& url,
-                           const string16& description,
+                           const base::string16& description,
                            bool blocked_by_policy);
   void OnLocalStorageAccessed(const GURL& url,
                               bool local,
                               bool blocked_by_policy);
   void OnWebDatabaseAccessed(const GURL& url,
-                             const string16& name,
-                             const string16& display_name,
+                             const base::string16& name,
+                             const base::string16& display_name,
                              bool blocked_by_policy);
   void OnGeolocationPermissionSet(const GURL& requesting_frame,
                                   bool allowed);
@@ -415,24 +331,9 @@ class TabSpecificContentSettings
       const MediaStreamDevicesController::MediaStreamTypeSettingsMap&
           request_permissions);
 
-  // Called when the user submits a form containing login information, so we
-  // can handle later requests to save or blacklist that login information.
-  // This stores the provided object in form_manager_ and triggers the UI to
-  // prompt the user about whether they would like to save the password.
-  void OnPasswordSubmitted(PasswordFormManager* form_manager);
-
-  // Called when a form is autofilled with login information, so we can manage
-  // password credentials for the current site which are stored in
-  // |password_form_map|. This stores a copy of |password_form_map| and shows
-  // the manage password icon.
-  void OnPasswordAutofilled(const autofill::PasswordFormMap& password_form_map);
-
   // There methods are called to update the status about MIDI access.
   void OnMIDISysExAccessed(const GURL& reqesting_origin);
   void OnMIDISysExAccessBlocked(const GURL& requesting_origin);
-
-  // Is called to set ManagePasswordsIconController as an observer.
-  void SetPasswordObserver(PasswordObserver* observer);
 
   // Adds the given |SiteDataObserver|. The |observer| is notified when a
   // locale shared object, like for example a cookie, is accessed.
@@ -445,19 +346,10 @@ class TabSpecificContentSettings
   explicit TabSpecificContentSettings(content::WebContents* tab);
   friend class content::WebContentsUserData<TabSpecificContentSettings>;
 
-  void AddBlockedResource(ContentSettingsType content_type,
-                          const std::string& resource_identifier);
-
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // Notifies the registered PasswordObserver of a sumitted password form.
-  void NotifyPasswordObserver();
-
-  // Currently the registered PasswordObserver.
-  PasswordObserver* password_observer_;
 
   // Notifies all registered |SiteDataObserver|s.
   void NotifySiteDataObservers();
@@ -473,11 +365,6 @@ class TabSpecificContentSettings
 
   // Stores which content setting types actually were allowed.
   bool content_allowed_[CONTENT_SETTINGS_NUM_TYPES];
-
-  // Stores the blocked resources for each content type.
-  // Currently only used for plugins.
-  scoped_ptr<std::set<std::string> >
-      blocked_resources_[CONTENT_SETTINGS_NUM_TYPES];
 
   // The profile of the tab.
   Profile* profile_;
@@ -521,21 +408,6 @@ class TabSpecificContentSettings
   // request is requesting certain specific devices.
   std::string media_stream_requested_audio_device_;
   std::string media_stream_requested_video_device_;
-
-  // Set by OnPasswordSubmitted() when the user submits a form containing login
-  // information.  If the user responds to a subsequent "Do you want to save
-  // this password?" prompt, we ask this object to save or blacklist the
-  // associated login information in Chrome's password store.
-  scoped_ptr<PasswordFormManager> form_manager_;
-
-  // All previously stored credentials for a specific site.  Set by
-  // OnPasswordSubmitted() or OnPasswordAutofilled().
-  autofill::PasswordFormMap password_form_map_;
-
-  bool manage_passwords_icon_to_be_shown_;
-  bool password_to_be_saved_;
-  bool manage_passwords_bubble_needs_showing_;
-  bool password_submitted_;
 
   DISALLOW_COPY_AND_ASSIGN(TabSpecificContentSettings);
 };

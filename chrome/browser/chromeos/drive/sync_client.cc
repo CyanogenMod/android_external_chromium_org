@@ -13,9 +13,9 @@
 #include "chrome/browser/chromeos/drive/file_system/download_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/update_operation.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/drive/sync/remove_performer.h"
-#include "chrome/browser/google_apis/task_util.h"
+#include "chrome/browser/chromeos/drive/sync/entry_update_performer.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/task_util.h"
 
 using content::BrowserThread;
 
@@ -49,18 +49,27 @@ const int kLongDelaySeconds = 600;
 void CollectBacklog(ResourceMetadata* metadata,
                     std::vector<std::string>* to_fetch,
                     std::vector<std::string>* to_upload,
-                    std::vector<std::string>* to_remove) {
+                    std::vector<std::string>* to_update) {
   DCHECK(to_fetch);
   DCHECK(to_upload);
-  DCHECK(to_remove);
+  DCHECK(to_update);
 
   scoped_ptr<ResourceMetadata::Iterator> it = metadata->GetIterator();
   for (; !it->IsAtEnd(); it->Advance()) {
     const std::string& local_id = it->GetID();
     const ResourceEntry& entry = it->GetValue();
     if (entry.parent_local_id() == util::kDriveTrashDirLocalId) {
-      to_remove->push_back(local_id);
+      to_update->push_back(local_id);
       continue;
+    }
+
+    switch (entry.metadata_edit_state()) {
+      case ResourceEntry::CLEAN:
+        break;
+      case ResourceEntry::SYNCING:
+      case ResourceEntry::DIRTY:
+        to_update->push_back(local_id);
+        break;
     }
 
     FileCacheEntry cache_entry;
@@ -119,7 +128,7 @@ void CheckExistingPinnedFiles(ResourceMetadata* metadata,
 
 }  // namespace
 
-SyncClient::SyncTask::SyncTask() : state(PENDING) {}
+SyncClient::SyncTask::SyncTask() : state(PENDING), should_run_again(false) {}
 SyncClient::SyncTask::~SyncTask() {}
 
 SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
@@ -143,9 +152,10 @@ SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
                                                          scheduler,
                                                          metadata,
                                                          cache)),
-      remove_performer_(new RemovePerformer(blocking_task_runner,
-                                            scheduler,
-                                            metadata)),
+      entry_update_performer_(new EntryUpdatePerformer(blocking_task_runner,
+                                                       observer,
+                                                       scheduler,
+                                                       metadata)),
       delay_(base::TimeDelta::FromSeconds(kDelaySeconds)),
       long_delay_(base::TimeDelta::FromSeconds(kLongDelaySeconds)),
       weak_ptr_factory_(this) {
@@ -218,9 +228,9 @@ void SyncClient::AddUploadTask(const ClientContext& context,
                         delay_);
 }
 
-void SyncClient::AddRemoveTask(const std::string& local_id) {
+void SyncClient::AddUpdateTask(const std::string& local_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  AddRemoveTaskInternal(local_id, base::TimeDelta::FromSeconds(0));
+  AddUpdateTaskInternal(local_id, base::TimeDelta::FromSeconds(0));
 }
 
 void SyncClient::AddFetchTaskInternal(const std::string& local_id,
@@ -261,17 +271,17 @@ void SyncClient::AddUploadTaskInternal(
   AddTask(SyncTasks::key_type(UPLOAD, local_id), task, delay);
 }
 
-void SyncClient::AddRemoveTaskInternal(const std::string& local_id,
+void SyncClient::AddUpdateTaskInternal(const std::string& local_id,
                                        const base::TimeDelta& delay) {
   SyncTask task;
   task.task = base::Bind(
-      &RemovePerformer::Remove,
-      base::Unretained(remove_performer_.get()),
+      &EntryUpdatePerformer::UpdateEntry,
+      base::Unretained(entry_update_performer_.get()),
       local_id,
-      base::Bind(&SyncClient::OnRemoveComplete,
+      base::Bind(&SyncClient::OnUpdateComplete,
                  weak_ptr_factory_.GetWeakPtr(),
                  local_id));
-  AddTask(SyncTasks::key_type(REMOVE, local_id), task, delay);
+  AddTask(SyncTasks::key_type(UPDATE, local_id), task, delay);
 }
 
 void SyncClient::AddTask(const SyncTasks::key_type& key,
@@ -279,9 +289,19 @@ void SyncClient::AddTask(const SyncTasks::key_type& key,
                          const base::TimeDelta& delay) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // If the same task is found, ignore this task.
-  if (tasks_.count(key))
+  SyncTasks::iterator it = tasks_.find(key);
+  if (it != tasks_.end()) {
+    switch (it->second.state) {
+      case PENDING:
+        // The same task will run, do nothing.
+        break;
+      case RUNNING:
+        // Something has changed since the task started. Schedule rerun.
+        it->second.should_run_again = true;
+        break;
+    }
     return;
+  }
 
   DCHECK_EQ(PENDING, task.state);
   tasks_[key] = task;
@@ -311,7 +331,7 @@ void SyncClient::StartTask(const SyncTasks::key_type& key) {
 void SyncClient::OnGetLocalIdsOfBacklog(
     const std::vector<std::string>* to_fetch,
     const std::vector<std::string>* to_upload,
-    const std::vector<std::string>* to_remove) {
+    const std::vector<std::string>* to_update) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Give priority to upload tasks over fetch tasks, so that dirty files are
@@ -330,10 +350,10 @@ void SyncClient::OnGetLocalIdsOfBacklog(
     AddFetchTaskInternal(local_id, delay_);
   }
 
-  for (size_t i = 0; i < to_remove->size(); ++i) {
-    const std::string& local_id = (*to_remove)[i];
-    DVLOG(1) << "Queuing to remove: " << local_id;
-    AddRemoveTask(local_id);
+  for (size_t i = 0; i < to_update->size(); ++i) {
+    const std::string& local_id = (*to_update)[i];
+    DVLOG(1) << "Queuing to update: " << local_id;
+    AddUpdateTask(local_id);
   }
 }
 
@@ -344,13 +364,32 @@ void SyncClient::AddFetchTasks(const std::vector<std::string>* local_ids) {
     AddFetchTask((*local_ids)[i]);
 }
 
+bool SyncClient::OnTaskComplete(SyncType type, const std::string& local_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  const SyncTasks::key_type key(type, local_id);
+  SyncTasks::iterator it = tasks_.find(key);
+  DCHECK(it != tasks_.end());
+
+  if (it->second.should_run_again) {
+    DVLOG(1) << "Running again: type = " << type << ", id = " << local_id;
+    it->second.should_run_again = false;
+    it->second.task.Run();
+    return false;
+  }
+
+  tasks_.erase(it);
+  return true;
+}
+
 void SyncClient::OnFetchFileComplete(const std::string& local_id,
                                      FileError error,
                                      const base::FilePath& local_path,
                                      scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  tasks_.erase(SyncTasks::key_type(FETCH, local_id));
+  if (!OnTaskComplete(FETCH, local_id))
+    return;
 
   if (error == FILE_ERROR_OK) {
     DVLOG(1) << "Fetched " << local_id << ": " << local_path.value();
@@ -359,8 +398,11 @@ void SyncClient::OnFetchFileComplete(const std::string& local_id,
       case FILE_ERROR_ABORT:
         // If user cancels download, unpin the file so that we do not sync the
         // file again.
-        cache_->UnpinOnUIThread(local_id,
-                                base::Bind(&util::EmptyFileOperationCallback));
+        base::PostTaskAndReplyWithResult(
+            blocking_task_runner_,
+            FROM_HERE,
+            base::Bind(&FileCache::Unpin, base::Unretained(cache_), local_id),
+            base::Bind(&util::EmptyFileOperationCallback));
         break;
       case FILE_ERROR_NO_CONNECTION:
         // Add the task again so that we'll retry once the connection is back.
@@ -381,7 +423,8 @@ void SyncClient::OnUploadFileComplete(const std::string& local_id,
                                       FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  tasks_.erase(SyncTasks::key_type(UPLOAD, local_id));
+  if (!OnTaskComplete(UPLOAD, local_id))
+    return;
 
   if (error == FILE_ERROR_OK) {
     DVLOG(1) << "Uploaded " << local_id;
@@ -406,26 +449,27 @@ void SyncClient::OnUploadFileComplete(const std::string& local_id,
   }
 }
 
-void SyncClient::OnRemoveComplete(const std::string& local_id,
+void SyncClient::OnUpdateComplete(const std::string& local_id,
                                   FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  tasks_.erase(SyncTasks::key_type(REMOVE, local_id));
+  if (!OnTaskComplete(UPDATE, local_id))
+    return;
 
   if (error == FILE_ERROR_OK) {
-    DVLOG(1) << "Removed " << local_id;
+    DVLOG(1) << "Updated " << local_id;
   } else {
     switch (error) {
       case FILE_ERROR_NO_CONNECTION:
         // Add the task again so that we'll retry once the connection is back.
-        AddRemoveTaskInternal(local_id, base::TimeDelta::FromSeconds(0));
+        AddUpdateTaskInternal(local_id, base::TimeDelta::FromSeconds(0));
         break;
       case FILE_ERROR_SERVICE_UNAVAILABLE:
         // Add the task again so that we'll retry once the service is back.
-        AddRemoveTaskInternal(local_id, long_delay_);
+        AddUpdateTaskInternal(local_id, long_delay_);
         break;
       default:
-        LOG(WARNING) << "Failed to remove " << local_id << ": "
+        LOG(WARNING) << "Failed to update " << local_id << ": "
                      << FileErrorToString(error);
     }
   }

@@ -7,14 +7,13 @@
 #include <set>
 
 #include "base/memory/weak_ptr.h"
-#include "base/metrics/histogram.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_controller_delegate.h"
 #include "ui/views/controls/menu/menu_delegate.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
-#include "ui/views/controls/menu/submenu_view.h"
+#include "ui/views/controls/menu/menu_runner_handler.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_WIN)
@@ -24,35 +23,6 @@
 namespace views {
 
 namespace internal {
-
-void RecordSelectedIndexes(const MenuItemView* menu_item) {
-  if (!menu_item)
-    return;
-  const MenuItemView* parent = menu_item->GetParentMenuItem();
-  if (!parent)
-    return;
-
-  SubmenuView* submenu = parent->GetSubmenu();
-  for (int i = 0; i < submenu->GetMenuItemCount(); ++i) {
-    if (submenu->GetMenuItemAt(i) == menu_item) {
-      UMA_HISTOGRAM_COUNTS_100("MenuSelection.Index", i);
-      break;
-    }
-  }
-
-  RecordSelectedIndexes(parent);
-}
-
-void RecordMenuStats(MenuItemView* result, base::TimeDelta time_elapsed) {
-  // Report if user made a selection.
-  UMA_HISTOGRAM_BOOLEAN("MenuSelection.Result", result != NULL);
-
-  if (result) {
-    // Report how much time it took to make a selection.
-    UMA_HISTOGRAM_TIMES("MenuSelection.Time", time_elapsed);
-    RecordSelectedIndexes(result);
-  }
-}
 
 // Manages the menu. To destroy a MenuRunnerImpl invoke Release(). Release()
 // deletes immediately if the menu isn't showing. If the menu is showing
@@ -224,7 +194,6 @@ MenuRunner::RunResult MenuRunnerImpl::RunMenuAt(
                        !for_drop_ && ShouldShowMnemonics(button));
 
   // Run the loop.
-  base::TimeTicks start_time = base::TimeTicks::Now();
   int mouse_event_flags = 0;
   MenuItemView* result = controller->Run(parent, button, menu_, bounds, anchor,
                                         (types & MenuRunner::CONTEXT_MENU) != 0,
@@ -235,7 +204,6 @@ MenuRunner::RunResult MenuRunnerImpl::RunMenuAt(
     // Drop menus return immediately. We finish processing in DropMenuClosed.
     return MenuRunner::NORMAL_EXIT;
   }
-  RecordMenuStats(result, base::TimeTicks::Now() - start_time);
   return MenuDone(result, mouse_event_flags);
 }
 
@@ -345,6 +313,11 @@ MenuRunner::RunResult MenuRunner::RunMenuAt(Widget* parent,
                                             MenuItemView::AnchorPosition anchor,
                                             ui::MenuSourceType source_type,
                                             int32 types) {
+  if (runner_handler_.get()) {
+    return runner_handler_->RunMenuAt(parent, button, bounds, anchor,
+                                      source_type, types);
+  }
+
   // The parent of the nested menu will have created a DisplayChangeListener, so
   // we avoid creating a DisplayChangeListener if nested. Drop menus are
   // transient, so we don't cancel in that case.
@@ -382,6 +355,11 @@ void MenuRunner::Cancel() {
 
 base::TimeDelta MenuRunner::closing_event_time() const {
   return holder_->closing_event_time();
+}
+
+void MenuRunner::SetRunnerHandler(
+    scoped_ptr<MenuRunnerHandler> runner_handler) {
+  runner_handler_ = runner_handler.Pass();
 }
 
 }  // namespace views

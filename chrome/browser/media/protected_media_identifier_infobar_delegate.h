@@ -14,26 +14,28 @@
 class PermissionQueueController;
 class InfoBarService;
 
+// TODO(toyoshim): Much more code can be shared with GeolocationInfoBarDelegate.
+// http://crbug.com/266743
+
 class ProtectedMediaIdentifierInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a protected media identifier infobar delegate and adds it to
-  // |infobar_service|.
-  // Returns the delegate if it was successfully added.
-  static InfoBarDelegate* Create(InfoBarService* infobar_service,
-                                 PermissionQueueController* controller,
-                                 const PermissionRequestID& id,
-                                 const GURL& requesting_frame,
-                                 const std::string& display_languages);
+  // Creates a protected media identifier infobar and delegate and adds the
+  // infobar to |infobar_service|.  Returns the infobar if it was successfully
+  // added.
+  static InfoBar* Create(InfoBarService* infobar_service,
+                         PermissionQueueController* controller,
+                         const PermissionRequestID& id,
+                         const GURL& requesting_frame,
+                         const std::string& display_languages);
  protected:
-  ProtectedMediaIdentifierInfoBarDelegate(InfoBarService* infobar_service,
-                                          PermissionQueueController* controller,
+  ProtectedMediaIdentifierInfoBarDelegate(PermissionQueueController* controller,
                                           const PermissionRequestID& id,
                                           const GURL& requesting_frame,
                                           int contents_unique_id,
                                           const std::string& display_languages);
   virtual ~ProtectedMediaIdentifierInfoBarDelegate();
 
-  // Call back to the controller, to inform of the user's decision.
+  // Calls back to the controller to inform it of the user's decision.
   void SetPermission(bool update_content_setting, bool allowed);
 
  private:
@@ -43,11 +45,11 @@ class ProtectedMediaIdentifierInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual bool ShouldExpireInternal(
       const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   PermissionQueueController* controller_;

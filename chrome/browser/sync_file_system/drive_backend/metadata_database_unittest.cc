@@ -9,12 +9,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
@@ -217,12 +217,6 @@ class MetadataDatabaseTest : public testing::Test {
   }
 
   MetadataDatabase* metadata_database() { return metadata_database_.get(); }
-
-  leveldb::DB* db() {
-    if (!metadata_database_)
-      return NULL;
-    return metadata_database_->db_.get();
-  }
 
   scoped_ptr<leveldb::DB> InitializeLevelDB() {
     leveldb::DB* db = NULL;
@@ -884,7 +878,8 @@ TEST_F(MetadataDatabaseTest, UpdateByChangeListTest) {
   reorganized_file.tracker.set_dirty(true);
   updated_file.tracker.set_dirty(true);
   noop_file.tracker.set_dirty(true);
-  new_file.tracker.clear_synced_details();
+  new_file.tracker.mutable_synced_details()->set_missing(true);
+  new_file.tracker.mutable_synced_details()->clear_md5();
   new_file.tracker.set_active(false);
   new_file.tracker.set_dirty(true);
   ResetTrackerID(&new_file.tracker);

@@ -72,9 +72,9 @@ void BoundLogMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
   for (int i = 0; i < info.Length(); ++i) {
     if (i > 0)
       message += " ";
-    message += *v8::String::AsciiValue(info[i]);
+    message += *v8::String::Utf8Value(info[i]);
   }
-  (*log_method)(v8::Context::GetCalling(), message);
+  (*log_method)(info.GetIsolate()->GetCallingContext(), message);
 }
 
 void BindLogMethod(v8::Isolate* isolate,
@@ -82,9 +82,11 @@ void BindLogMethod(v8::Isolate* isolate,
                    const std::string& name,
                    LogMethod log_method) {
   v8::Local<v8::FunctionTemplate> tmpl = v8::FunctionTemplate::New(
+      isolate,
       &BoundLogMethodCallback,
       v8::External::New(isolate, reinterpret_cast<void*>(log_method)));
-  target->Set(v8::String::New(name.c_str()), tmpl->GetFunction());
+  target->Set(v8::String::NewFromUtf8(isolate, name.c_str()),
+              tmpl->GetFunction());
 }
 
 }  // namespace
@@ -174,13 +176,13 @@ void AddMessage(v8::Handle<v8::Context> context,
 
 v8::Local<v8::Object> AsV8Object() {
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::HandleScope handle_scope(isolate);
+  v8::EscapableHandleScope handle_scope(isolate);
   v8::Local<v8::Object> console_object = v8::Object::New();
   BindLogMethod(isolate, console_object, "debug", &Debug);
   BindLogMethod(isolate, console_object, "log", &Log);
   BindLogMethod(isolate, console_object, "warn", &Warn);
   BindLogMethod(isolate, console_object, "error", &Error);
-  return handle_scope.Close(console_object);
+  return handle_scope.Escape(console_object);
 }
 
 }  // namespace console

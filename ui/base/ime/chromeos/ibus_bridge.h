@@ -17,17 +17,11 @@ namespace gfx {
 class Rect;
 }  // namespace gfx
 
-namespace chromeos {
-namespace ibus {
-// Following button indicator value is introduced from
-// http://developer.gnome.org/gdk/stable/gdk-Event-Structures.html#GdkEventButton
-enum IBusMouseButton {
-  IBUS_MOUSE_BUTTON_LEFT = 1U,
-  IBUS_MOUSE_BUTTON_MIDDLE = 2U,
-  IBUS_MOUSE_BUTTON_RIGHT = 3U,
-};
-}  // namespace ibus
+namespace ui {
+class KeyEvent;
+}  // namespace ui
 
+namespace chromeos {
 namespace input_method {
 class CandidateWindow;
 }  // namespace input_method
@@ -91,23 +85,14 @@ class UI_EXPORT IBusEngineHandlerInterface {
   // Called when the IME is reset.
   virtual void Reset() = 0;
 
-  // Called when the key event is received. The |keycode| is raw layout
-  // independent keycode. The |keysym| is result of XLookupString function
-  // which translate |keycode| to keyboard layout dependent symbol value.
+  // Called when the key event is received.
   // Actual implementation must call |callback| after key event handling.
-  // For example: key press event for 'd' key on us layout and dvorak layout.
-  //                  keyval keycode state
-  //      us layout :  0x64   0x20    0x00
-  //  dvorak layout :  0x65   0x20    0x00
-  virtual void ProcessKeyEvent(uint32 keysym, uint32 keycode, uint32 state,
+  virtual void ProcessKeyEvent(const ui::KeyEvent& key_event,
                                const KeyEventDoneCallback& callback) = 0;
 
   // Called when the candidate in lookup table is clicked. The |index| is 0
-  // based candidate index in lookup table. The |state| is same value as
-  // GdkModifierType in
-  // http://developer.gnome.org/gdk/stable/gdk-Windows.html#GdkModifierType
-  virtual void CandidateClicked(uint32 index, ibus::IBusMouseButton button,
-                                uint32 state) = 0;
+  // based candidate index in lookup table.
+  virtual void CandidateClicked(uint32 index) = 0;
 
   // Called when a new surrounding text is set. The |text| is surrounding text
   // and |cursor_pos| is 0 based index of cursor position in |text|. If there is
@@ -159,8 +144,6 @@ class UI_EXPORT IBusPanelCandidateWindowHandlerInterface {
 // or EngineService) directly by using this class.
 class UI_EXPORT IBusBridge {
  public:
-  typedef base::Callback<void()> CreateEngineHandler;
-
   virtual ~IBusBridge();
 
   // Allocates the global instance. Must be called before any calls to Get().
@@ -181,6 +164,12 @@ class UI_EXPORT IBusBridge {
   virtual void SetInputContextHandler(
       IBusInputContextHandlerInterface* handler) = 0;
 
+  // Initializes the mapping from |engine_id| to |handler|.
+  // |engine_id| must not be empty and |handler| must not be null.
+  virtual void InitEngineHandler(
+      const std::string& engine_id,
+      IBusEngineHandlerInterface* handler) = 0;
+
   // Returns current EngineHandler. This function returns NULL if current engine
   // is not ready to use.
   virtual IBusEngineHandlerInterface* GetEngineHandler() const = 0;
@@ -188,6 +177,12 @@ class UI_EXPORT IBusBridge {
   // Updates current EngineHandler. If there is no active engine service, pass
   // NULL for |handler|. Caller must release |handler|.
   virtual void SetEngineHandler(IBusEngineHandlerInterface* handler) = 0;
+
+  // Updates current EngineHandler by Engine ID. If there is no active
+  // engine service, pass an empty string for |engine_id|.  The set
+  // IBusEngineHandlerInterface is returned.
+  virtual IBusEngineHandlerInterface* SetEngineHandlerById(
+      const std::string& engine_id) = 0;
 
   // Returns current CandidateWindowHandler. This function returns NULL if
   // current candidate window is not ready to use.
@@ -198,20 +193,6 @@ class UI_EXPORT IBusBridge {
   // window service, pass NULL for |handler|. Caller must release |handler|.
   virtual void SetCandidateWindowHandler(
       IBusPanelCandidateWindowHandlerInterface* handler) = 0;
-
-  // Sets create engine handler for |engine_id|. |engine_id| must not be empty
-  // and |handler| must not be null.
-  virtual void SetCreateEngineHandler(
-      const std::string& engine_id,
-      const CreateEngineHandler& handler) = 0;
-
-  // Unsets create engine handler for |engine_id|. |engine_id| must not be
-  // empty.
-  virtual void UnsetCreateEngineHandler(const std::string& engine_id) = 0;
-
-  // Creates engine. Do not call this function before SetCreateEngineHandler
-  // call with |engine_id|.
-  virtual void CreateEngine(const std::string& engine_id) = 0;
 
  protected:
   IBusBridge();

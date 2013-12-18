@@ -39,7 +39,7 @@ void WebURLLoaderMockFactory::RegisterURL(const WebURL& url,
     response_info.file_path =
         base::FilePath(static_cast<std::string>(file_path.utf8()));
 #elif defined(OS_WIN)
-    string16 file_path_16 = file_path;
+    base::string16 file_path_16 = file_path;
     response_info.file_path = base::FilePath(std::wstring(
         file_path_16.data(), file_path_16.length()));
 #endif
@@ -176,13 +176,13 @@ bool WebURLLoaderMockFactory::IsPending(WebURLLoaderMock* loader) {
 bool WebURLLoaderMockFactory::ReadFile(const base::FilePath& file_path,
                                        WebData* data) {
   int64 file_size = 0;
-  if (!file_util::GetFileSize(file_path, &file_size))
+  if (!base::GetFileSize(file_path, &file_size))
     return false;
 
   int size = static_cast<int>(file_size);
   scoped_ptr<char[]> buffer(new char[size]);
   data->reset();
-  int read_count = file_util::ReadFile(file_path, buffer.get(), size);
+  int read_count = base::ReadFile(file_path, buffer.get(), size);
   if (read_count == -1)
     return false;
   DCHECK(read_count == size);

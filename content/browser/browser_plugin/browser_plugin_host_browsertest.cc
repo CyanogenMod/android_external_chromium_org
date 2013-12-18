@@ -453,11 +453,11 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_EmbedderSameAfterNav) {
   // does not happen and existing embedder doesn't change in web_contents.
   GURL test_url_new(embedded_test_server()->GetURL(
       "/browser_plugin_title_change.html"));
-  const string16 expected_title = ASCIIToUTF16("done");
+  const base::string16 expected_title = ASCIIToUTF16("done");
   content::TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   NavigateToURL(shell(), test_url_new);
   VLOG(0) << "Start waiting for title";
-  string16 actual_title = title_watcher.WaitAndGetTitle();
+  base::string16 actual_title = title_watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, actual_title);
   VLOG(0) << "Done navigating to second page";
 
@@ -536,26 +536,26 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, ReloadEmbedder) {
   // the page has successfully reloaded when it goes back to 'embedder'
   // in the next step.
   {
-    const string16 expected_title = ASCIIToUTF16("modified");
+    const base::string16 expected_title = ASCIIToUTF16("modified");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
     ExecuteSyncJSFunction(rvh,
                           base::StringPrintf("SetTitle('%s');", "modified"));
 
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
 
   // Reload the embedder page, and verify that the reload was successful.
   // Then navigate the guest to verify that the browser process does not crash.
   {
-    const string16 expected_title = ASCIIToUTF16("embedder");
+    const base::string16 expected_title = ASCIIToUTF16("embedder");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
     test_embedder()->web_contents()->GetController().Reload(false);
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
 
     ExecuteSyncJSFunction(
@@ -618,7 +618,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_AcceptDragEvents) {
   // This should trigger appropriate messages from the embedder to the guest,
   // and end with a drop on the guest. The guest changes title when a drop
   // happens.
-  const string16 expected_title = ASCIIToUTF16("DROPPED");
+  const base::string16 expected_title = ASCIIToUTF16("DROPPED");
   content::TitleWatcher title_watcher(test_guest()->web_contents(),
       expected_title);
 
@@ -628,7 +628,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_AcceptDragEvents) {
       blink::WebDragOperationEvery, 0);
   rvh->DragTargetDrop(gfx::Point(end_x, end_y), gfx::Point(end_x, end_y), 0);
 
-  string16 actual_title = title_watcher.WaitAndGetTitle();
+  base::string16 actual_title = title_watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, actual_title);
 }
 
@@ -650,7 +650,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, PostMessage) {
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       test_embedder()->web_contents()->GetRenderViewHost());
   {
-    const string16 expected_title = ASCIIToUTF16("main guest");
+    const base::string16 expected_title = ASCIIToUTF16("main guest");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
@@ -661,7 +661,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, PostMessage) {
 
     // The title will be updated to "main guest" at the last stage of the
     // process described above.
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
 }
@@ -678,7 +678,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DISABLED_PostMessageToIFrame) {
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       test_embedder()->web_contents()->GetRenderViewHost());
   {
-    const string16 expected_title = ASCIIToUTF16("main guest");
+    const base::string16 expected_title = ASCIIToUTF16("main guest");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
@@ -687,7 +687,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DISABLED_PostMessageToIFrame) {
 
     // The title will be updated to "main guest" at the last stage of the
     // process described above.
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
   {
@@ -703,7 +703,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DISABLED_PostMessageToIFrame) {
         base::StringPrintf(
             "CreateChildFrame('%s');", test_url.spec().c_str()));
 
-    string16 actual_title = ready_watcher.WaitAndGetTitle();
+    base::string16 actual_title = ready_watcher.WaitAndGetTitle();
     EXPECT_EQ(ASCIIToUTF16("ready"), actual_title);
 
     content::TitleWatcher iframe_watcher(test_embedder()->web_contents(),
@@ -808,6 +808,121 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DoNotCrashOnInvalidNavigation) {
       base::StringPrintf("SetSrc('%s://abc123');", kGuestScheme));
   EXPECT_TRUE(delegate->load_aborted());
   EXPECT_TRUE(delegate->load_aborted_url().is_valid());
+}
+
+
+// Tests involving the threaded compositor.
+class BrowserPluginThreadedCompositorTest : public BrowserPluginHostTest {
+ public:
+  BrowserPluginThreadedCompositorTest() {}
+  virtual ~BrowserPluginThreadedCompositorTest() {}
+
+ protected:
+  virtual void SetUpCommandLine(CommandLine* cmd) OVERRIDE {
+    BrowserPluginHostTest::SetUpCommandLine(cmd);
+    cmd->AppendSwitch(switches::kEnableThreadedCompositing);
+
+    // http://crbug.com/327035
+    cmd->AppendSwitch(switches::kDisableDelegatedRenderer);
+  }
+};
+
+static void CompareSkBitmaps(const SkBitmap& expected_bitmap,
+                             const SkBitmap& bitmap) {
+  EXPECT_EQ(expected_bitmap.width(), bitmap.width());
+  if (expected_bitmap.width() != bitmap.width())
+    return;
+  EXPECT_EQ(expected_bitmap.height(), bitmap.height());
+  if (expected_bitmap.height() != bitmap.height())
+    return;
+  EXPECT_EQ(expected_bitmap.config(), bitmap.config());
+  if (expected_bitmap.config() != bitmap.config())
+    return;
+
+  SkAutoLockPixels expected_bitmap_lock(expected_bitmap);
+  SkAutoLockPixels bitmap_lock(bitmap);
+  int fails = 0;
+  const int kAllowableError = 2;
+  for (int i = 0; i < bitmap.width() && fails < 10; ++i) {
+    for (int j = 0; j < bitmap.height() && fails < 10; ++j) {
+      SkColor expected_color = expected_bitmap.getColor(i, j);
+      SkColor color = bitmap.getColor(i, j);
+      int expected_alpha = SkColorGetA(expected_color);
+      int alpha = SkColorGetA(color);
+      int expected_red = SkColorGetR(expected_color);
+      int red = SkColorGetR(color);
+      int expected_green = SkColorGetG(expected_color);
+      int green = SkColorGetG(color);
+      int expected_blue = SkColorGetB(expected_color);
+      int blue = SkColorGetB(color);
+      EXPECT_NEAR(expected_alpha, alpha, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+      EXPECT_NEAR(expected_red, red, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+      EXPECT_NEAR(expected_green, green, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+      EXPECT_NEAR(expected_blue, blue, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+    }
+  }
+  EXPECT_LT(fails, 10);
+}
+
+static void CompareSkBitmapAndRun(const base::Closure& callback,
+                                  const SkBitmap& expected_bitmap,
+                                  bool *result,
+                                  bool succeed,
+                                  const SkBitmap& bitmap) {
+  *result = succeed;
+  if (succeed)
+    CompareSkBitmaps(expected_bitmap, bitmap);
+  callback.Run();
+}
+
+// http://crbug.com/171744
+#if defined(OS_MACOSX)
+#define MAYBE_GetBackingStore DISABLED_GetBackingStore
+#else
+#define MAYBE_GetBackingStore GetBackingStore
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserPluginThreadedCompositorTest,
+                       MAYBE_GetBackingStore) {
+  const char kEmbedderURL[] = "/browser_plugin_embedder.html";
+  const char kHTMLForGuest[] =
+      "data:text/html,<html><style>body { background-color: red; }</style>"
+      "<body></body></html>";
+  StartBrowserPluginTest(kEmbedderURL, kHTMLForGuest, true,
+                         std::string("SetSize(50, 60);"));
+
+  WebContentsImpl* guest_contents = test_guest()->web_contents();
+  RenderWidgetHostImpl* guest_widget_host =
+      RenderWidgetHostImpl::From(guest_contents->GetRenderViewHost());
+
+  SkBitmap expected_bitmap;
+  expected_bitmap.setConfig(SkBitmap::kARGB_8888_Config, 50, 60);
+  expected_bitmap.allocPixels();
+  expected_bitmap.eraseARGB(255, 255, 0, 0);  // #f00
+  bool result = false;
+  while (!result) {
+    base::RunLoop loop;
+    guest_widget_host->CopyFromBackingStore(gfx::Rect(),
+        guest_widget_host->GetView()->GetViewBounds().size(),
+        base::Bind(&CompareSkBitmapAndRun, loop.QuitClosure(), expected_bitmap,
+                   &result));
+    loop.Run();
+  }
 }
 
 }  // namespace content

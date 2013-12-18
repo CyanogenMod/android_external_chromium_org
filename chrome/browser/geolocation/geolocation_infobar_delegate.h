@@ -19,17 +19,16 @@ class InfoBarService;
 // and handling of geolocation permission infobars to the user.
 class GeolocationInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a geolocation infobar delegate and adds it to |infobar_service|.
-  // Returns the delegate if it was successfully added.
-  static InfoBarDelegate* Create(InfoBarService* infobar_service,
-                                 PermissionQueueController* controller,
-                                 const PermissionRequestID& id,
-                                 const GURL& requesting_frame,
-                                 const std::string& display_languages);
+  // Creates a geolocation infobar and delegate and adds the infobar to
+  // |infobar_service|.  Returns the infobar if it was successfully added.
+  static InfoBar* Create(InfoBarService* infobar_service,
+                         PermissionQueueController* controller,
+                         const PermissionRequestID& id,
+                         const GURL& requesting_frame,
+                         const std::string& display_languages);
 
  protected:
-  GeolocationInfoBarDelegate(InfoBarService* infobar_service,
-                             PermissionQueueController* controller,
+  GeolocationInfoBarDelegate(PermissionQueueController* controller,
                              const PermissionRequestID& id,
                              const GURL& requesting_frame,
                              int contents_unique_id,
@@ -56,10 +55,10 @@ class GeolocationInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual bool ShouldExpireInternal(
       const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   PermissionQueueController* controller_;

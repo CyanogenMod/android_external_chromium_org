@@ -20,7 +20,6 @@
 #include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "chromeos/dbus/dbus_thread_manager_observer.h"
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
@@ -52,7 +51,7 @@
 namespace chromeos {
 
 static DBusThreadManager* g_dbus_thread_manager = NULL;
-static bool g_dbus_thread_manager_set_for_testing = false;
+static DBusThreadManager* g_dbus_thread_manager_for_testing = NULL;
 
 // The DBusThreadManager implementation used in production.
 class DBusThreadManagerImpl : public DBusThreadManager {
@@ -224,9 +223,8 @@ class DBusThreadManagerImpl : public DBusThreadManager {
   }
 
  private:
-  // Constructs all clients -- stub or real implementation according to
-  // |client_type| and |client_type_override| -- and stores them in the
-  // respective *_client_ member variable.
+  // Constructs all clients and stores them in the respective *_client_ member
+  // variable.
   void CreateDefaultClients() {
     DBusClientImplementationType client_type = REAL_DBUS_CLIENT_IMPLEMENTATION;
     DBusClientImplementationType client_type_override =
@@ -238,50 +236,41 @@ class DBusThreadManagerImpl : public DBusThreadManager {
       client_type_override = STUB_DBUS_CLIENT_IMPLEMENTATION;
     }
 
-    bluetooth_adapter_client_.reset(
-        BluetoothAdapterClient::Create(client_type));
+    bluetooth_adapter_client_.reset(BluetoothAdapterClient::Create());
     bluetooth_agent_manager_client_.reset(
-        BluetoothAgentManagerClient::Create(client_type));
-    bluetooth_device_client_.reset(BluetoothDeviceClient::Create(client_type));
-    bluetooth_input_client_.reset(BluetoothInputClient::Create(client_type));
+        BluetoothAgentManagerClient::Create());
+    bluetooth_device_client_.reset(BluetoothDeviceClient::Create());
+    bluetooth_input_client_.reset(BluetoothInputClient::Create());
     bluetooth_profile_manager_client_.reset(
-        BluetoothProfileManagerClient::Create(client_type));
-    cras_audio_client_.reset(CrasAudioClient::Create(client_type));
+        BluetoothProfileManagerClient::Create());
+    cras_audio_client_.reset(CrasAudioClient::Create());
     cros_disks_client_.reset(CrosDisksClient::Create(client_type));
-    cryptohome_client_.reset(CryptohomeClient::Create(client_type));
-    debug_daemon_client_.reset(DebugDaemonClient::Create(client_type));
-    shill_manager_client_.reset(
-        ShillManagerClient::Create(client_type_override));
-    shill_device_client_.reset(
-        ShillDeviceClient::Create(client_type_override));
-    shill_ipconfig_client_.reset(
-        ShillIPConfigClient::Create(client_type_override));
-    shill_service_client_.reset(
-        ShillServiceClient::Create(client_type_override));
-    shill_profile_client_.reset(
-        ShillProfileClient::Create(client_type_override));
-    gsm_sms_client_.reset(GsmSMSClient::Create(client_type_override));
-    image_burner_client_.reset(ImageBurnerClient::Create(client_type));
-    introspectable_client_.reset(IntrospectableClient::Create(client_type));
-    modem_messaging_client_.reset(ModemMessagingClient::Create(client_type));
+    cryptohome_client_.reset(CryptohomeClient::Create());
+    debug_daemon_client_.reset(DebugDaemonClient::Create());
+    shill_manager_client_.reset(ShillManagerClient::Create());
+    shill_device_client_.reset(ShillDeviceClient::Create());
+    shill_ipconfig_client_.reset(ShillIPConfigClient::Create());
+    shill_service_client_.reset(ShillServiceClient::Create());
+    shill_profile_client_.reset(ShillProfileClient::Create());
+    gsm_sms_client_.reset(GsmSMSClient::Create());
+    image_burner_client_.reset(ImageBurnerClient::Create());
+    introspectable_client_.reset(IntrospectableClient::Create());
+    modem_messaging_client_.reset(ModemMessagingClient::Create());
     // Create the NFC clients in the correct order based on their dependencies.
-    nfc_manager_client_.reset(NfcManagerClient::Create(client_type));
+    nfc_manager_client_.reset(NfcManagerClient::Create());
     nfc_adapter_client_.reset(
-        NfcAdapterClient::Create(client_type, nfc_manager_client_.get()));
+        NfcAdapterClient::Create(nfc_manager_client_.get()));
     nfc_device_client_.reset(
-        NfcDeviceClient::Create(client_type, nfc_adapter_client_.get()));
-    nfc_tag_client_.reset(
-        NfcTagClient::Create(client_type, nfc_adapter_client_.get()));
-    nfc_record_client_.reset(
-        NfcRecordClient::Create(
-            client_type, nfc_device_client_.get(), nfc_tag_client_.get()));
-    permission_broker_client_.reset(
-        PermissionBrokerClient::Create(client_type));
+        NfcDeviceClient::Create(nfc_adapter_client_.get()));
+    nfc_tag_client_.reset(NfcTagClient::Create(nfc_adapter_client_.get()));
+    nfc_record_client_.reset(NfcRecordClient::Create(nfc_device_client_.get(),
+                                                     nfc_tag_client_.get()));
+    permission_broker_client_.reset(PermissionBrokerClient::Create());
     power_manager_client_.reset(
         PowerManagerClient::Create(client_type_override));
     session_manager_client_.reset(SessionManagerClient::Create(client_type));
-    sms_client_.reset(SMSClient::Create(client_type));
-    system_clock_client_.reset(SystemClockClient::Create(client_type));
+    sms_client_.reset(SMSClient::Create());
+    system_clock_client_.reset(SystemClockClient::Create());
     update_engine_client_.reset(UpdateEngineClient::Create(client_type));
 
     power_policy_controller_.reset(new PowerPolicyController);
@@ -330,13 +319,16 @@ class DBusThreadManagerImpl : public DBusThreadManager {
 
 // static
 void DBusThreadManager::Initialize() {
-  // Ignore Initialize() if we set a test DBusThreadManager.
-  if (g_dbus_thread_manager_set_for_testing)
-    return;
   // If we initialize DBusThreadManager twice we may also be shutting it down
   // early; do not allow that.
   CHECK(g_dbus_thread_manager == NULL);
 
+  if (g_dbus_thread_manager_for_testing) {
+    g_dbus_thread_manager = g_dbus_thread_manager_for_testing;
+    InitializeClients();
+    VLOG(1) << "DBusThreadManager initialized with test implementation";
+    return;
+  }
   // Determine whether we use stub or real client implementations.
   if (base::SysInfo::IsRunningOnChromeOS()) {
     g_dbus_thread_manager = new DBusThreadManagerImpl;
@@ -344,21 +336,22 @@ void DBusThreadManager::Initialize() {
     VLOG(1) << "DBusThreadManager initialized for ChromeOS";
   } else {
     InitializeWithStub();
-    return;
   }
+}
+
+// static
+void DBusThreadManager::SetInstanceForTesting(
+    DBusThreadManager* dbus_thread_manager) {
+  CHECK(!g_dbus_thread_manager);
+  CHECK(!g_dbus_thread_manager_for_testing);
+  g_dbus_thread_manager_for_testing = dbus_thread_manager;
 }
 
 // static
 void DBusThreadManager::InitializeForTesting(
     DBusThreadManager* dbus_thread_manager) {
-  // If we initialize DBusThreadManager twice we may also be shutting it down
-  // early; do not allow that.
-  CHECK(g_dbus_thread_manager == NULL);
-  CHECK(dbus_thread_manager);
-  g_dbus_thread_manager = dbus_thread_manager;
-  g_dbus_thread_manager_set_for_testing = true;
-  InitializeClients();
-  VLOG(1) << "DBusThreadManager initialized with test implementation";
+  SetInstanceForTesting(dbus_thread_manager);
+  Initialize();
 }
 
 // static
@@ -383,9 +376,10 @@ bool DBusThreadManager::IsInitialized() {
 void DBusThreadManager::Shutdown() {
   // If we called InitializeForTesting, this may get called more than once.
   // Ensure that we only shutdown DBusThreadManager once.
-  CHECK(g_dbus_thread_manager || g_dbus_thread_manager_set_for_testing);
+  CHECK(g_dbus_thread_manager || g_dbus_thread_manager_for_testing);
   DBusThreadManager* dbus_thread_manager = g_dbus_thread_manager;
   g_dbus_thread_manager = NULL;
+  g_dbus_thread_manager_for_testing = NULL;
   delete dbus_thread_manager;
   VLOG(1) << "DBusThreadManager Shutdown completed";
 }
@@ -400,9 +394,9 @@ DBusThreadManager::~DBusThreadManager() {
     return;  // Called form Shutdown() or local test instance.
   // There should never be both a global instance and a local instance.
   CHECK(this == g_dbus_thread_manager);
-  if (g_dbus_thread_manager_set_for_testing) {
+  if (g_dbus_thread_manager_for_testing) {
     g_dbus_thread_manager = NULL;
-    g_dbus_thread_manager_set_for_testing = false;
+    g_dbus_thread_manager_for_testing = NULL;
     VLOG(1) << "DBusThreadManager destroyed";
   } else {
     LOG(FATAL) << "~DBusThreadManager() called outside of Shutdown()";
@@ -431,11 +425,6 @@ void DBusThreadManager::InitializeClients() {
   InitClient(g_dbus_thread_manager->GetImageBurnerClient());
   InitClient(g_dbus_thread_manager->GetIntrospectableClient());
   InitClient(g_dbus_thread_manager->GetModemMessagingClient());
-  // Initialize the NFC clients in the correct order.
-  InitClient(g_dbus_thread_manager->GetNfcAdapterClient());
-  InitClient(g_dbus_thread_manager->GetNfcManagerClient());
-  InitClient(g_dbus_thread_manager->GetNfcDeviceClient());
-  InitClient(g_dbus_thread_manager->GetNfcTagClient());
   InitClient(g_dbus_thread_manager->GetPermissionBrokerClient());
   InitClient(g_dbus_thread_manager->GetPowerManagerClient());
   InitClient(g_dbus_thread_manager->GetSessionManagerClient());
@@ -447,6 +436,15 @@ void DBusThreadManager::InitializeClients() {
   InitClient(g_dbus_thread_manager->GetSMSClient());
   InitClient(g_dbus_thread_manager->GetSystemClockClient());
   InitClient(g_dbus_thread_manager->GetUpdateEngineClient());
+
+  // Initialize the NFC clients in the correct order. The order of
+  // initialization matters due to dependencies that exist between the
+  // client objects.
+  InitClient(g_dbus_thread_manager->GetNfcManagerClient());
+  InitClient(g_dbus_thread_manager->GetNfcAdapterClient());
+  InitClient(g_dbus_thread_manager->GetNfcDeviceClient());
+  InitClient(g_dbus_thread_manager->GetNfcTagClient());
+  InitClient(g_dbus_thread_manager->GetNfcRecordClient());
 
   // PowerPolicyController is dependent on PowerManagerClient, so
   // initialize it after the main list of clients.

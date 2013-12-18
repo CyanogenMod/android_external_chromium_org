@@ -310,6 +310,14 @@ class IDLParser(IDLLexer):
     """dictionary_block : modifiers DICTIONARY SYMBOL '{' struct_list '}' ';'"""
     p[0] = self.BuildNamed('Dictionary', p, 3, ListFromConcat(p[1], p[5]))
 
+  def p_dictionary_errorA(self, p):
+    """dictionary_block : modifiers DICTIONARY error ';'"""
+    p[0] = []
+
+  def p_dictionary_errorB(self, p):
+    """dictionary_block : modifiers DICTIONARY error '{' struct_list '}' ';'"""
+    p[0] = []
+
 #
 # Callback
 #
@@ -976,7 +984,7 @@ class IDLParser(IDLLexer):
 def FlattenTree(node):
   add_self = False
   out = []
-  for child in node.children:
+  for child in node.GetChildren():
     if child.IsA('Comment'):
       add_self = True
     else:

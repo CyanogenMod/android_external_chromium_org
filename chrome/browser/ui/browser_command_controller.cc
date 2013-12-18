@@ -457,6 +457,8 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       chrome::ToggleAshDesktop();
       break;
     case IDC_MINIMIZE_WINDOW:
+      content::RecordAction(
+          content::UserMetricsAction("Accel_Toggle_Minimized_M"));
       ash::accelerators::ToggleMinimized();
       break;
     // If Ash needs many more commands here we should implement a general
@@ -540,6 +542,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       Print(browser_);
       break;
     case IDC_ADVANCED_PRINT:
+      content::RecordAction(content::UserMetricsAction("Accel_Advanced_Print"));
       AdvancedPrint(browser_);
       break;
     case IDC_PRINT_TO_DESTINATION:
@@ -626,18 +629,23 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 
     // Focus various bits of UI
     case IDC_FOCUS_TOOLBAR:
+      content::RecordAction(content::UserMetricsAction("Accel_Focus_Toolbar"));
       FocusToolbar(browser_);
       break;
     case IDC_FOCUS_LOCATION:
+      content::RecordAction(content::UserMetricsAction("Accel_Focus_Location"));
       FocusLocationBar(browser_);
       break;
     case IDC_FOCUS_SEARCH:
+      content::RecordAction(content::UserMetricsAction("Accel_Focus_Search"));
       FocusSearch(browser_);
       break;
     case IDC_FOCUS_MENU_BAR:
       FocusAppMenu(browser_);
       break;
     case IDC_FOCUS_BOOKMARKS:
+      content::RecordAction(
+          content::UserMetricsAction("Accel_Focus_Bookmarks"));
       FocusBookmarksToolbar(browser_);
       break;
     case IDC_FOCUS_INFOBARS:
@@ -694,6 +702,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       ShowBookmarkManager(browser_);
       break;
     case IDC_SHOW_APP_MENU:
+      content::RecordAction(content::UserMetricsAction("Accel_Show_App_Menu"));
       ShowAppMenu(browser_);
       break;
     case IDC_SHOW_AVATAR_MENU:
@@ -764,7 +773,7 @@ void BrowserCommandController::OnProfileAdded(
 
 void BrowserCommandController::OnProfileWasRemoved(
     const base::FilePath& profile_path,
-    const string16& profile_name) {
+    const base::string16& profile_name) {
   UpdateCommandsForMultipleProfiles();
 }
 
@@ -1246,8 +1255,10 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
 }
 
 void BrowserCommandController::UpdateCommandsForMultipleProfiles() {
+  bool is_regular_or_guest_session =
+      profile()->IsGuestSession() || !profile()->IsOffTheRecord();
   bool enable = IsShowingMainUI() &&
-      !profile()->IsOffTheRecord() &&
+      is_regular_or_guest_session &&
       profile_manager_ &&
       AvatarMenu::ShouldShowAvatarMenu();
   command_updater_.UpdateCommandEnabled(IDC_SHOW_AVATAR_MENU,

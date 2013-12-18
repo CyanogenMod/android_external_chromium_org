@@ -11,8 +11,8 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/common/pref_names.h"
+#include "policy/proto/device_management_backend.pb.h"
 
 namespace em = enterprise_management;
 
@@ -28,10 +28,7 @@ bool Store(const em::PolicyData& policy, PrefService* local_state) {
   if (local_state) {
     std::string policy_string = policy.SerializeAsString();
     std::string encoded;
-    if (!base::Base64Encode(policy_string, &encoded)) {
-      LOG(ERROR) << "Can't encode policy in base64.";
-      return false;
-    }
+    base::Base64Encode(policy_string, &encoded);
     local_state->SetString(prefs::kDeviceSettingsCache, encoded);
     return true;
   }

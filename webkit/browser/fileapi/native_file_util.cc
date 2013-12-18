@@ -137,7 +137,7 @@ PlatformFileError NativeFileUtil::CreateDirectory(
   if (path_exists && !base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_EXISTS;
 
-  if (!file_util::CreateDirectory(path))
+  if (!base::CreateDirectory(path))
     return base::PLATFORM_FILE_ERROR_FAILED;
 
   if (!SetPlatformSpecificDirectoryPermissions(path)) {
@@ -155,7 +155,7 @@ PlatformFileError NativeFileUtil::GetFileInfo(
     base::PlatformFileInfo* file_info) {
   if (!base::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (!file_util::GetFileInfo(path, file_info))
+  if (!base::GetFileInfo(path, file_info))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
@@ -173,8 +173,7 @@ PlatformFileError NativeFileUtil::Touch(
     const base::FilePath& path,
     const base::Time& last_access_time,
     const base::Time& last_modified_time) {
-  if (!file_util::TouchFile(
-          path, last_access_time, last_modified_time))
+  if (!base::TouchFile(path, last_access_time, last_modified_time))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
@@ -244,7 +243,7 @@ PlatformFileError NativeFileUtil::CopyOrMoveFile(
   // Preserve the last modified time. Do not return error here even if
   // the setting is failed, because the copy itself is successfully done.
   if (option == FileSystemOperation::OPTION_PRESERVE_LAST_MODIFIED)
-    file_util::SetLastModifiedTime(dest_path, last_modified);
+    base::TouchFile(dest_path, last_modified, last_modified);
 
   return base::PLATFORM_FILE_OK;
 }
@@ -264,7 +263,7 @@ PlatformFileError NativeFileUtil::DeleteDirectory(const base::FilePath& path) {
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   if (!base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
-  if (!file_util::IsDirectoryEmpty(path))
+  if (!base::IsDirectoryEmpty(path))
     return base::PLATFORM_FILE_ERROR_NOT_EMPTY;
   if (!base::DeleteFile(path, false))
     return base::PLATFORM_FILE_ERROR_FAILED;

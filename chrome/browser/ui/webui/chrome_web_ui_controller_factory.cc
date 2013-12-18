@@ -10,6 +10,8 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/about_flags.h"
+#include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
+#include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/history/history_types.h"
@@ -55,6 +57,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/dom_distiller/core/dom_distiller_constants.h"
+#include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/dom_distiller/webui/dom_distiller_ui.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -186,6 +189,21 @@ WebUIController* NewWebUI<chromeos::OobeUI>(WebUI* web_ui, const GURL& url) {
 }
 #endif
 
+// Special cases for DOM distiller.
+template<>
+WebUIController* NewWebUI<dom_distiller::DomDistillerUi>(WebUI* web_ui,
+                                                         const GURL& url) {
+  // The DomDistillerUi can not depend on components/dom_distiller/content,
+  // so inject the correct DomDistillerService from chrome/.
+  content::BrowserContext* browser_context =
+      web_ui->GetWebContents()->GetBrowserContext();
+  dom_distiller::DomDistillerService* service =
+      dom_distiller::DomDistillerServiceFactory::GetForBrowserContext(
+          browser_context);
+  // TODO(nyquist): Add real scheme.
+  return new dom_distiller::DomDistillerUi(web_ui, service, "dummy");
+}
+
 // Only create ExtensionWebUI for URLs that are allowed extension bindings,
 // hosted by actual tabs.
 bool NeedsExtensionWebUI(Profile* profile, const GURL& url) {
@@ -245,17 +263,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<LocalDiscoveryUI>;
   }
 #endif
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDomDistiller) &&
-      url.host() == dom_distiller::kChromeUIDomDistillerHost) {
-    return &NewWebUI<dom_distiller::DomDistillerUI>;
-  }
   if (url.host() == chrome::kChromeUIFlagsHost)
     return &NewWebUI<FlagsUI>;
   if (url.host() == chrome::kChromeUIHistoryFrameHost)
     return &NewWebUI<HistoryUI>;
-  if (url.host() == chrome::kChromeUIChromeSigninHost)
-    return &NewWebUI<InlineLoginUI>;
   if (url.host() == chrome::kChromeUIInstantHost)
     return &NewWebUI<InstantUI>;
   if (url.host() == chrome::kChromeUIManagedUserPassphrasePageHost)
@@ -407,6 +418,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host() == chrome::kChromeUINetworkHost)
     return &NewWebUI<chromeos::NetworkUI>;
 #endif  // defined(OS_CHROMEOS)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  if (url.host() == chrome::kChromeUIChromeSigninHost)
+    return &NewWebUI<InlineLoginUI>;
+#endif
 
   /****************************************************************************
    * Other #defines and special logics.
@@ -477,6 +492,11 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
       !profile->GetPrefs()->GetBoolean(prefs::kPrintPreviewDisabled))
     return &NewWebUI<PrintPreviewUI>;
 #endif
+
+  if (IsEnableDomDistillerSet() &&
+      url.host() == dom_distiller::kChromeUIDomDistillerHost) {
+    return &NewWebUI<dom_distiller::DomDistillerUi>;
+  }
 
   return NULL;
 }

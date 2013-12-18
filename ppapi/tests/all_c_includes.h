@@ -10,7 +10,9 @@
 
 #include "ppapi/c/dev/deprecated_bool.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
+#include "ppapi/c/dev/pp_optional_structs_dev.h"
 #include "ppapi/c/dev/pp_video_dev.h"
+#include "ppapi/c/dev/ppb_alarms_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_char_set_dev.h"
 #include "ppapi/c/dev/ppb_crypto_dev.h"
@@ -43,8 +45,6 @@
 #include "ppapi/c/dev/ppp_video_decoder_dev.h"
 #include "ppapi/c/dev/ppp_widget_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_alarms_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_events_dev.h"
 #include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"

@@ -33,7 +33,7 @@ static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
   extent->AddPattern(URLPattern(schemes, pattern));
 }
 
-size_t IndexOf(const std::vector<string16>& warnings,
+size_t IndexOf(const std::vector<base::string16>& warnings,
                const std::string& warning) {
   for (size_t i = 0; i < warnings.size(); ++i) {
     if (warnings[i] == ASCIIToUTF16(warning))
@@ -43,7 +43,7 @@ size_t IndexOf(const std::vector<string16>& warnings,
   return warnings.size();
 }
 
-bool Contains(const std::vector<string16>& warnings,
+bool Contains(const std::vector<base::string16>& warnings,
               const std::string& warning) {
   return IndexOf(warnings, warning) != warnings.size();
 }
@@ -659,11 +659,13 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kActiveTab);
   skip.insert(APIPermission::kAdView);
   skip.insert(APIPermission::kAlarms);
+  skip.insert(APIPermission::kAlwaysOnTopWindows);
   skip.insert(APIPermission::kAppCurrentWindowInternal);
   skip.insert(APIPermission::kAppRuntime);
   skip.insert(APIPermission::kAppWindow);
   skip.insert(APIPermission::kAudio);
   skip.insert(APIPermission::kBrowsingData);
+  skip.insert(APIPermission::kCastStreaming);
   skip.insert(APIPermission::kContextMenus);
   skip.insert(APIPermission::kDiagnostics);
   skip.insert(APIPermission::kDns);
@@ -687,7 +689,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kSystemStorage);
   skip.insert(APIPermission::kTts);
   skip.insert(APIPermission::kUnlimitedStorage);
-  skip.insert(APIPermission::kWebRtc);
   skip.insert(APIPermission::kWebView);
   skip.insert(APIPermission::kOverrideEscFullscreen);
 
@@ -728,6 +729,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kBookmarkManagerPrivate);
   skip.insert(APIPermission::kBrailleDisplayPrivate);
   skip.insert(APIPermission::kCast);
+  skip.insert(APIPermission::kCastStreaming);
   skip.insert(APIPermission::kChromeosInfoPrivate);
   skip.insert(APIPermission::kCloudPrintPrivate);
   skip.insert(APIPermission::kCommandLinePrivate);
@@ -739,6 +741,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kFeedbackPrivate);
   skip.insert(APIPermission::kFileBrowserHandlerInternal);
   skip.insert(APIPermission::kFileBrowserPrivate);
+  skip.insert(APIPermission::kFirstRunPrivate);
   skip.insert(APIPermission::kIdentityPrivate);
   skip.insert(APIPermission::kInfobars);
   skip.insert(APIPermission::kInputMethodPrivate);
@@ -873,7 +876,7 @@ TEST(PermissionsTest, GetWarningMessages_ManyHosts) {
   scoped_refptr<Extension> extension;
 
   extension = LoadManifest("permissions", "many-hosts.json");
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Access your data on encrypted.google.com and www.google.com",
@@ -885,7 +888,7 @@ TEST(PermissionsTest, GetWarningMessages_Plugins) {
   scoped_refptr<PermissionSet> permissions;
 
   extension = LoadManifest("permissions", "plugins.json");
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
 // We don't parse the plugins key on Chrome OS, so it should not ask for any
   // permissions.
@@ -906,7 +909,7 @@ TEST(PermissionsTest, GetWarningMessages_AudioVideo) {
   PermissionSet* set =
       const_cast<PermissionSet*>(
           extension->GetActivePermissions().get());
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       provider->GetWarningMessages(set, extension->GetType());
   EXPECT_FALSE(Contains(warnings, "Use your microphone"));
   EXPECT_FALSE(Contains(warnings, "Use your camera"));
@@ -948,7 +951,7 @@ TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {
       LoadManifest("permissions", "web_request_com_host_permissions.json");
   const PermissionMessageProvider* provider = PermissionMessageProvider::Get();
   const PermissionSet* set = extension->GetActivePermissions().get();
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       provider->GetWarningMessages(set, extension->GetType());
   EXPECT_TRUE(Contains(warnings, "Block parts of web pages"));
   EXPECT_FALSE(Contains(warnings, "Access your data on all websites"));
@@ -969,7 +972,7 @@ TEST(PermissionsTest, GetWarningMessages_Serial) {
 
   EXPECT_TRUE(extension->is_platform_app());
   EXPECT_TRUE(extension->HasAPIPermission(APIPermission::kSerial));
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   EXPECT_TRUE(
       Contains(warnings, "Use serial devices attached to your computer"));
@@ -983,7 +986,7 @@ TEST(PermissionsTest, GetWarningMessages_Socket_AnyHost) {
       LoadManifest("permissions", "socket_any_host.json");
   EXPECT_TRUE(extension->is_platform_app());
   EXPECT_TRUE(extension->HasAPIPermission(APIPermission::kSocket));
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   EXPECT_EQ(1u, warnings.size());
   EXPECT_TRUE(Contains(warnings, "Exchange data with any computer "
@@ -997,7 +1000,7 @@ TEST(PermissionsTest, GetWarningMessages_Socket_OneDomainTwoHostnames) {
       LoadManifest("permissions", "socket_one_domain_two_hostnames.json");
   EXPECT_TRUE(extension->is_platform_app());
   EXPECT_TRUE(extension->HasAPIPermission(APIPermission::kSocket));
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
 
   // Verify the warnings, including support for unicode characters, the fact
@@ -1023,7 +1026,7 @@ TEST(PermissionsTest, GetWarningMessages_Socket_TwoDomainsOneHostname) {
       LoadManifest("permissions", "socket_two_domains_one_hostname.json");
   EXPECT_TRUE(extension->is_platform_app());
   EXPECT_TRUE(extension->HasAPIPermission(APIPermission::kSocket));
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
 
   // Verify the warnings, including the fact that domain host warnings come
@@ -1045,7 +1048,7 @@ TEST(PermissionsTest, GetWarningMessages_PlatformApppHosts) {
 
   extension = LoadManifest("permissions", "platform_app_hosts.json");
   EXPECT_TRUE(extension->is_platform_app());
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(0u, warnings.size());
 
@@ -1450,7 +1453,7 @@ TEST(PermissionsTest, SyncFileSystemPermission) {
   apis.insert(APIPermission::kSyncFileSystem);
   EXPECT_TRUE(extension->is_platform_app());
   EXPECT_TRUE(extension->HasAPIPermission(APIPermission::kSyncFileSystem));
-  std::vector<string16> warnings =
+  std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   EXPECT_TRUE(Contains(warnings, "Store data in your Google Drive account"));
   ASSERT_EQ(1u, warnings.size());

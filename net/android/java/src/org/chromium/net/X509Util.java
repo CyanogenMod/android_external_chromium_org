@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@ import android.security.KeyChain;
 import android.util.Log;
 
 import org.chromium.base.JNINamespace;
-import org.chromium.net.CertVerifyResultAndroid;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -21,9 +20,8 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateExpiredException;
-import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.CertificateFactory;
-import java.security.cert.CertificateParsingException;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 
@@ -100,7 +98,7 @@ public class X509Util {
      */
     private static void ensureInitialized() throws CertificateException,
             KeyStoreException, NoSuchAlgorithmException {
-        synchronized(sLock) {
+        synchronized (sLock) {
             if (sCertificateFactory == null) {
                 sCertificateFactory = CertificateFactory.getInstance("X.509");
             }
@@ -111,7 +109,9 @@ public class X509Util {
                 sTestKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
                 try {
                     sTestKeyStore.load(null);
-                } catch(IOException e) {}  // No IO operation is attempted.
+                } catch (IOException e) {
+                    // No IO operation is attempted.
+                }
             }
             if (sTestTrustManager == null) {
                 sTestTrustManager = X509Util.createTrustManager(sTestKeyStore);
@@ -190,7 +190,9 @@ public class X509Util {
             try {
                 sTestKeyStore.load(null);
                 reloadTestTrustManager();
-            } catch (IOException e) {}  // No IO operation is attempted.
+            } catch (IOException e) {
+                // No IO operation is attempted.
+            }
         }
     }
 

@@ -81,7 +81,6 @@ class CONTENT_EXPORT MediaStreamImpl
   virtual void OnDevicesEnumerated(
       int request_id,
       const StreamDeviceInfoArray& device_array) OVERRIDE;
-  virtual void OnDevicesEnumerationFailed(int request_id) OVERRIDE;
   virtual void OnDeviceOpened(
       int request_id,
       const std::string& label,
@@ -182,15 +181,10 @@ class CONTENT_EXPORT MediaStreamImpl
   // |user_media_requests_|.
   void StopUnreferencedSources(bool notify_dispatcher);
 
-  scoped_refptr<VideoFrameProvider>
-  CreateVideoFrameProvider(
-      webrtc::MediaStreamInterface* stream,
-      const base::Closure& error_cb,
-      const VideoFrameProvider::RepaintCB& repaint_cb);
   scoped_refptr<WebRtcAudioRenderer> CreateRemoteAudioRenderer(
       webrtc::MediaStreamInterface* stream);
   scoped_refptr<WebRtcLocalAudioRenderer> CreateLocalAudioRenderer(
-      webrtc::MediaStreamInterface* stream);
+      const blink::WebMediaStreamTrack& audio_track);
 
   // Returns a valid session id if a single capture device is currently open
   // (and then the matching session_id), otherwise -1.

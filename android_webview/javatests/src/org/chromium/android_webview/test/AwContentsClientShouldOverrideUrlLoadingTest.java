@@ -1,44 +1,36 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
-import android.os.Bundle;
-import android.os.SystemClock;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
-import android.view.MotionEvent;
-import android.util.Log;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
 import org.chromium.net.test.util.TestWebServer;
 
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Tests for the WebViewClient.shouldOverrideUrlLoading() method.
  */
 public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
-    private final static String ABOUT_BLANK_URL = "about:blank";
-    private final static String DATA_URL = "data:text/html,<div/>";
-    private final static String REDIRECT_TARGET_PATH = "/redirect_target.html";
-    private final static String TITLE = "TITLE";
+    private static final String ABOUT_BLANK_URL = "about:blank";
+    private static final String DATA_URL = "data:text/html,<div/>";
+    private static final String REDIRECT_TARGET_PATH = "/redirect_target.html";
+    private static final String TITLE = "TITLE";
 
     private static final long TEST_TIMEOUT = 20000L;
     private static final long CHECK_INTERVAL = 100;
@@ -164,7 +156,7 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
                   "} " +
                   "function doRedirectReplace() {" +
                     "location.replace('" + url + "');" +
-                  "} "+
+                  "} " +
                 "</script>",
                 String.format("<iframe onLoad=\"setTimeout('doRedirect%s()', %d);\" />",
                     method, timeout));
@@ -173,7 +165,7 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
     private String getHtmlForPageWithSimplePostFormTo(String destination) {
         return makeHtmlPageFrom("",
                 "<form action=\"" + destination + "\" method=\"post\">" +
-                  "<input type=\"submit\" value=\"post\" id=\"link\">"+
+                  "<input type=\"submit\" value=\"post\" id=\"link\">" +
                 "</form>");
     }
 
@@ -226,7 +218,7 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
             contentsClient.getShouldOverrideUrlLoadingHelper();
         final String[] pageTitles = new String[] { "page1", "page2", "page3" };
 
-        for (String title: pageTitles) {
+        for (String title : pageTitles) {
             loadDataSync(awContents, contentsClient.getOnPageFinishedHelper(),
                     CommonResources.makeHtmlPageFrom("<title>" + title + "</title>", ""),
                     "text/html", false);
@@ -395,6 +387,32 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
         shouldOverrideUrlLoadingHelper.waitForCallback(callCount);
     }
 
+    @SmallTest
+    @Feature({"AndroidWebView", "Navigation"})
+    public void testCalledWhenTopLevelAboutBlankNavigation() throws Throwable {
+        final TestAwContentsClient contentsClient = new TestAwContentsClient();
+        final AwTestContainerView testContainerView =
+            createAwTestContainerViewOnMainSync(contentsClient);
+        final AwContents awContents = testContainerView.getAwContents();
+        TestAwContentsClient.ShouldOverrideUrlLoadingHelper shouldOverrideUrlLoadingHelper =
+                contentsClient.getShouldOverrideUrlLoadingHelper();
+
+        final String httpPath = "/page_with_about_blank_navigation";
+        final String httpPathOnServer = mWebServer.getResponseUrl(httpPath);
+        addPageToTestServer(mWebServer, httpPath,
+                getHtmlForPageWithSimpleLinkTo(ABOUT_BLANK_URL));
+
+        loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(),
+                httpPathOnServer);
+
+        int callCount = shouldOverrideUrlLoadingHelper.getCallCount();
+
+        clickOnLinkUsingJs(awContents, contentsClient);
+
+        shouldOverrideUrlLoadingHelper.waitForCallback(callCount);
+        assertEquals(ABOUT_BLANK_URL,
+                shouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingUrl());
+    }
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})

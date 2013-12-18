@@ -179,6 +179,9 @@
     { "name": "history.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "security.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "goto.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "cloud.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "glass.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "play.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
 
     // Other Google-related domains that must use HTTPS.
     { "name": "market.android.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
@@ -621,8 +624,6 @@
     { "name": "www.cyveillance.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "blog.cyveillance.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "whonix.org", "include_subdomains": true, "mode": "force-https" },
-    { "name": "blueseed.co", "include_subdomains": true, "mode": "force-https" },
-    { "name": "forum.quantifiedself.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "shodan.io", "include_subdomains": true, "mode": "force-https" },
     { "name": "rapidresearch.me", "include_subdomains": true, "mode": "force-https" },
     { "name": "surkatty.org", "include_subdomains": true, "mode": "force-https" },
@@ -661,6 +662,15 @@
     { "name": "manage.zenpayroll.com", "mode": "force-https" },
     { "name": "gernert-server.de", "include_subdomains": true, "mode": "force-https" },
     { "name": "skydrive.live.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "lifeguard.aecom.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "data.qld.gov.au", "mode": "force-https" },
+    { "name": "publications.qld.gov.au", "mode": "force-https" },
+    { "name": "go.xero.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "login.xero.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "my.xero.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "payroll.xero.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "in.xero.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "api.xero.com", "include_subdomains": true, "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

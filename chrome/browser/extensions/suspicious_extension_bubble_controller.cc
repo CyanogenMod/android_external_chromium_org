@@ -123,17 +123,17 @@ string16 SuspiciousExtensionBubbleController::GetMessageBody() {
 }
 
 string16 SuspiciousExtensionBubbleController::GetOverflowText(
-    const string16& overflow_count) {
-  string16 overflow_string = l10n_util::GetStringUTF16(
+    const base::string16& overflow_count) {
+  base::string16 overflow_string = l10n_util::GetStringUTF16(
       IDS_EXTENSIONS_SUSPICIOUS_DISABLED_AND_N_MORE);
-  string16 new_string;
+  base::string16 new_string;
 
   // Just before string freeze, we checked in # as a substitution value for
   // this string, whereas we should have used $1. It was discovered too late,
   // so we do the substitution by hand in that case.
-  if (overflow_string.find(ASCIIToUTF16("#")) != string16::npos) {
-    ReplaceChars(overflow_string, ASCIIToUTF16("#").c_str(),
-                 overflow_count, &new_string);
+  if (overflow_string.find(ASCIIToUTF16("#")) != base::string16::npos) {
+    base::ReplaceChars(overflow_string, ASCIIToUTF16("#").c_str(),
+                       overflow_count, &new_string);
   } else {
     new_string = l10n_util::GetStringFUTF16(
             IDS_EXTENSIONS_SUSPICIOUS_DISABLED_AND_N_MORE,

@@ -39,7 +39,7 @@ bool StoreManagedUserFiles(const std::string& token,
                            const base::FilePath& base_path) {
   if (!base::SysInfo::IsRunningOnChromeOS()) {
     // If running on desktop, cryptohome stub does not create home directory.
-    file_util::CreateDirectory(base_path);
+    base::CreateDirectory(base_path);
   }
   base::FilePath token_file = base_path.Append(kManagedUserTokenFilename);
   int bytes = file_util::WriteFile(token_file, token.c_str(), token.length());
@@ -84,7 +84,7 @@ LocallyManagedUserCreationController::~LocallyManagedUserCreationController() {
 }
 
 void LocallyManagedUserCreationController::SetUpCreation(
-    const string16& display_name,
+    const base::string16& display_name,
     const std::string& password,
     int avatar_index) {
   DCHECK(creation_context_);
@@ -94,7 +94,7 @@ void LocallyManagedUserCreationController::SetUpCreation(
 }
 
 void LocallyManagedUserCreationController::StartImport(
-    const string16& display_name,
+    const base::string16& display_name,
     const std::string& password,
     int avatar_index,
     const std::string& sync_id,

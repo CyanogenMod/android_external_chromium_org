@@ -135,13 +135,16 @@ DesktopRootWindowHostX11::DesktopRootWindowHostX11(
       native_widget_delegate_(native_widget_delegate),
       desktop_native_widget_aura_(desktop_native_widget_aura),
       content_window_(NULL),
-      window_parent_(NULL) {
+      window_parent_(NULL),
+      custom_window_shape_(NULL) {
 }
 
 DesktopRootWindowHostX11::~DesktopRootWindowHostX11() {
   root_window_->window()->ClearProperty(kHostForRootWindow);
   aura::client::SetWindowMoveClient(root_window_->window(), NULL);
   desktop_native_widget_aura_->OnDesktopRootWindowHostDestroyed(root_window_);
+  if (custom_window_shape_)
+    XDestroyRegion(custom_window_shape_);
 }
 
 // static
@@ -352,6 +355,10 @@ void DesktopRootWindowHostX11::SetSize(const gfx::Size& size) {
   NOTIMPLEMENTED();
 }
 
+void DesktopRootWindowHostX11::StackAtTop() {
+  XRaiseWindow(xdisplay_, xwindow_);
+}
+
 void DesktopRootWindowHostX11::CenterWindow(const gfx::Size& size) {
   gfx::Rect parent_bounds = GetWorkAreaBoundsInScreen();
 
@@ -445,20 +452,16 @@ gfx::Rect DesktopRootWindowHostX11::GetWorkAreaBoundsInScreen() const {
 }
 
 void DesktopRootWindowHostX11::SetShape(gfx::NativeRegion native_region) {
-  if (native_region) {
-    Region region = gfx::CreateRegionFromSkRegion(*native_region);
-    XShapeCombineRegion(
-        xdisplay_, xwindow_, ShapeBounding, 0, 0, region, false);
-    XDestroyRegion(region);
-  } else {
-    ResetWindowRegion();
-  }
-
+  if (custom_window_shape_)
+    XDestroyRegion(custom_window_shape_);
+  custom_window_shape_ = gfx::CreateRegionFromSkRegion(*native_region);
+  ResetWindowRegion();
   delete native_region;
 }
 
 void DesktopRootWindowHostX11::Activate() {
   X11DesktopHandler::get()->ActivateWindow(xwindow_);
+  native_widget_delegate_->AsWidget()->SetInitialFocus();
 }
 
 void DesktopRootWindowHostX11::Deactivate() {
@@ -492,7 +495,7 @@ void DesktopRootWindowHostX11::Restore() {
 }
 
 bool DesktopRootWindowHostX11::IsMaximized() const {
-  return (HasWMSpecProperty("_NET_WM_STATE_MAXIMIZED_VERT") ||
+  return (HasWMSpecProperty("_NET_WM_STATE_MAXIMIZED_VERT") &&
           HasWMSpecProperty("_NET_WM_STATE_MAXIMIZED_HORZ"));
 }
 
@@ -516,9 +519,11 @@ bool DesktopRootWindowHostX11::IsAlwaysOnTop() const {
   return is_always_on_top_;
 }
 
-void DesktopRootWindowHostX11::SetWindowTitle(const string16& title) {
+bool DesktopRootWindowHostX11::SetWindowTitle(const string16& title) {
+  if (window_title_ == title)
+    return false;
+  window_title_ = title;
   std::string utf8str = UTF16ToUTF8(title);
-
   XChangeProperty(xdisplay_,
                   xwindow_,
                   atom_cache_.GetAtom("_NET_WM_NAME"),
@@ -527,12 +532,12 @@ void DesktopRootWindowHostX11::SetWindowTitle(const string16& title) {
                   PropModeReplace,
                   reinterpret_cast<const unsigned char*>(utf8str.c_str()),
                   utf8str.size());
-
   // TODO(erg): This is technically wrong. So XStoreName and friends expect
   // this in Host Portable Character Encoding instead of UTF-8, which I believe
   // is Compound Text. This shouldn't matter 90% of the time since this is the
   // fallback to the UTF8 property above.
   XStoreName(xdisplay_, xwindow_, utf8str.c_str());
+  return true;
 }
 
 void DesktopRootWindowHostX11::ClearNativeFocus() {
@@ -726,6 +731,8 @@ void DesktopRootWindowHostX11::Show() {
     base::MessagePumpX11::Current()->BlockUntilWindowMapped(xwindow_);
     window_mapped_ = true;
   }
+
+  native_widget_delegate_->AsWidget()->SetInitialFocus();
 }
 
 void DesktopRootWindowHostX11::Hide() {
@@ -1112,7 +1119,25 @@ void DesktopRootWindowHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
   }
 }
 
+void DesktopRootWindowHostX11::DispatchTouchEvent(ui::TouchEvent* event) {
+  if (g_current_capture && g_current_capture != this &&
+      event->type() == ui::ET_TOUCH_PRESSED) {
+    event->ConvertLocationToTarget(root_window_->window(),
+                                   g_current_capture->root_window_->window());
+    g_current_capture->delegate_->OnHostTouchEvent(event);
+  } else {
+    delegate_->OnHostTouchEvent(event);
+  }
+}
+
 void DesktopRootWindowHostX11::ResetWindowRegion() {
+  // If a custom window shape was supplied then apply it.
+  if (custom_window_shape_) {
+    XShapeCombineRegion(
+        xdisplay_, xwindow_, ShapeBounding, 0, 0, custom_window_shape_, false);
+    return;
+  }
+
   if (!IsMaximized()) {
     gfx::Path window_mask;
     views::Widget* widget = native_widget_delegate_->AsWidget();
@@ -1277,17 +1302,17 @@ bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
       int num_coalesced = 0;
 
       switch (type) {
-        // case ui::ET_TOUCH_MOVED:
-        //   num_coalesced = CoalescePendingMotionEvents(xev, &last_event);
-        //   if (num_coalesced > 0)
-        //     xev = &last_event;
-        //   // fallthrough
-        // case ui::ET_TOUCH_PRESSED:
-        // case ui::ET_TOUCH_RELEASED: {
-        //   ui::TouchEvent touchev(xev);
-        //   delegate_->OnHostTouchEvent(&touchev);
-        //   break;
-        // }
+        case ui::ET_TOUCH_MOVED:
+          num_coalesced = ui::CoalescePendingMotionEvents(xev, &last_event);
+          if (num_coalesced > 0)
+            xev = &last_event;
+          // fallthrough
+        case ui::ET_TOUCH_PRESSED:
+        case ui::ET_TOUCH_RELEASED: {
+          ui::TouchEvent touchev(xev);
+          DispatchTouchEvent(&touchev);
+          break;
+        }
         case ui::ET_MOUSE_MOVED:
         case ui::ET_MOUSE_DRAGGED:
         case ui::ET_MOUSE_PRESSED:

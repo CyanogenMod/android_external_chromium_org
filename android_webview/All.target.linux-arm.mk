@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,base_base_java_activity_state_gyp)/base_java_activity_state.stamp \
 	$(call intermediates-dir-for,GYP,base_base_java_memory_pressure_level_list_gyp)/base_java_memory_pressure_level_list.stamp \
 	$(call intermediates-dir-for,GYP,content_page_transition_types_java_gyp)/page_transition_types_java.stamp \
+	$(call intermediates-dir-for,GYP,content_popup_item_type_java_gyp)/popup_item_type_java.stamp \
 	$(call intermediates-dir-for,GYP,content_result_codes_java_gyp)/result_codes_java.stamp \
 	$(call intermediates-dir-for,GYP,content_speech_recognition_error_java_gyp)/speech_recognition_error_java.stamp \
 	$(call intermediates-dir-for,GYP,media_media_android_imageformat_list_gyp)/media_android_imageformat_list.stamp \

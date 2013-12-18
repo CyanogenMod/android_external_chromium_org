@@ -22,25 +22,23 @@ class AppMetroInfoBarDelegateWin : public ConfirmInfoBarDelegate {
     LAUNCH_PACKAGED_APP
   };
 
-  // Creates an app metro infobar delegate, adds it to a new browser tab, then
-  // activates Metro mode.
+  // Creates an app metro infobar and delegate, adds the infobar to a new
+  // browser tab, then activates Metro mode.
   static void Create(Profile* profile,
                      Mode mode,
                      const std::string& extension_id);
 
  private:
-  AppMetroInfoBarDelegateWin(InfoBarService* infobar_service,
-                             Mode mode,
-                             const std::string& extension_id);
+  AppMetroInfoBarDelegateWin(Mode mode, const std::string& extension_id);
   virtual ~AppMetroInfoBarDelegateWin();
 
   // ConfirmInfoBarDelegate overrides:
   virtual int GetIconID() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   Mode mode_;

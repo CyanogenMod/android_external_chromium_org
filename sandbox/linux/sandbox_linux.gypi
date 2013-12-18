@@ -58,6 +58,7 @@
         [ 'compile_seccomp_bpf==1', {
           'dependencies': [
             'seccomp_bpf',
+            'seccomp_bpf_helpers',
           ],
         }],
       ],
@@ -108,7 +109,6 @@
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
         'seccomp-bpf/sandbox_bpf_policy.h',
-        'seccomp-bpf/sandbox_bpf_policy_forward.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/syscall_iterator.cc',
@@ -121,6 +121,25 @@
       'dependencies': [
         '../base/base.gyp:base',
         'sandbox_services_headers',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+    },
+    {
+      'target_name': 'seccomp_bpf_helpers',
+      'type': 'static_library',
+      'sources': [
+        'seccomp-bpf-helpers/baseline_policy.cc',
+        'seccomp-bpf-helpers/baseline_policy.h',
+        'seccomp-bpf-helpers/sigsys_handlers.cc',
+        'seccomp-bpf-helpers/sigsys_handlers.h',
+        'seccomp-bpf-helpers/syscall_parameters_restrictions.cc',
+        'seccomp-bpf-helpers/syscall_parameters_restrictions.h',
+        'seccomp-bpf-helpers/syscall_sets.cc',
+        'seccomp-bpf-helpers/syscall_sets.h',
+      ],
+      'dependencies': [
       ],
       'include_dirs': [
         '../..',

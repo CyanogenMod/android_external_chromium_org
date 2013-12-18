@@ -130,7 +130,7 @@ class PasswordFormManager : public PasswordStoreConsumer {
   void SubmitFailed();
 
   // Returns the username associated with the credentials.
-  const string16& associated_username() const {
+  const base::string16& associated_username() const {
     return pending_credentials_.username_value;
   }
 
@@ -152,17 +152,14 @@ class PasswordFormManager : public PasswordStoreConsumer {
  private:
   friend class PasswordFormManagerTest;
 
-  // ManagerAction - What does the manager do with this form? Either it
-  // fills it, or it doesn't. If it doesn't fill it, that's either
-  // because it has no match, or it is blacklisted, or it is disabled
-  // via the AUTOCOMPLETE=off attribute. Note that if we don't have
-  // an exact match, we still provide candidates that the user may
-  // end up choosing.
+  // ManagerAction - What does the manager do with this form? Either it fills
+  // it, or it doesn't. If it doesn't fill it, that's either because it has no
+  // match or it is blacklisted. Note that if we don't have an exact match, we
+  // still provide candidates that the user may end up choosing.
   enum ManagerAction {
     kManagerActionNone = 0,
     kManagerActionAutofilled,
     kManagerActionBlacklisted,
-    kManagerActionDisabled,
     kManagerActionMax
   };
 
@@ -230,7 +227,7 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // password form in |best_matches_| and sets |pending_credentials_| to the
   // match which had this username.
   bool UpdatePendingCredentialsIfOtherPossibleUsername(
-      const string16& username);
+      const base::string16& username);
 
   // Converts the "ActionsTaken" fields into an int so they can be logged to
   // UMA.
@@ -273,7 +270,7 @@ class PasswordFormManager : public PasswordStoreConsumer {
 
   // Set if the user has selected one of the other possible usernames in
   // |pending_credentials_|.
-  string16 selected_username_;
+  base::string16 selected_username_;
 
   // PasswordManager owning this.
   const PasswordManager* const password_manager_;

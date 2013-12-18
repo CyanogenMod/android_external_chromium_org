@@ -29,7 +29,7 @@ class PasswordManagerHandler : public OptionsPageUIHandler,
 
   // PasswordUIView implementation.
   virtual Profile* GetProfile() OVERRIDE;
-  virtual void ShowPassword(size_t index, const string16& password_value)
+  virtual void ShowPassword(size_t index, const base::string16& password_value)
       OVERRIDE;
   virtual void SetPasswordList(
       const ScopedVector<autofill::PasswordForm>& password_list,
@@ -37,7 +37,9 @@ class PasswordManagerHandler : public OptionsPageUIHandler,
   virtual void SetPasswordExceptionList(
       const ScopedVector<autofill::PasswordForm>& password_exception_list)
       OVERRIDE;
-
+#if !defined(OS_ANDROID)
+  virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
+#endif
  private:
   // Clears and then populates the list of passwords and password exceptions.
   // Called when the JS PasswordManager object is initialized.

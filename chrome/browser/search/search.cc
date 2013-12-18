@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_iterator.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/search_urls.h"
@@ -94,7 +95,7 @@ const char kInstantSupportEnabled[] = "Instant support enabled";
 const char kInstantSupportDisabled[] = "Instant support disabled";
 const char kInstantSupportUnknown[] = "Instant support unknown";
 
-InstantSupportState StringToInstantSupportState(const string16& value) {
+InstantSupportState StringToInstantSupportState(const base::string16& value) {
   if (value == ASCIIToUTF16(kInstantSupportEnabled))
     return INSTANT_SUPPORT_YES;
   else if (value == ASCIIToUTF16(kInstantSupportDisabled))
@@ -103,7 +104,7 @@ InstantSupportState StringToInstantSupportState(const string16& value) {
     return INSTANT_SUPPORT_UNKNOWN;
 }
 
-string16 InstantSupportStateToString(InstantSupportState state) {
+base::string16 InstantSupportStateToString(InstantSupportState state) {
   switch (state) {
     case INSTANT_SUPPORT_NO:
       return ASCIIToUTF16(kInstantSupportDisabled);
@@ -128,7 +129,7 @@ GURL TemplateURLRefToGURL(const TemplateURLRef& ref,
                           bool append_extra_query_params,
                           bool force_instant_results) {
   TemplateURLRef::SearchTermsArgs search_terms_args =
-      TemplateURLRef::SearchTermsArgs(string16());
+      TemplateURLRef::SearchTermsArgs(base::string16());
   search_terms_args.omnibox_start_margin = start_margin;
   search_terms_args.append_extra_query_params = append_extra_query_params;
   search_terms_args.force_instant_results = force_instant_results;
@@ -217,10 +218,10 @@ bool IsInstantURL(const GURL& url, Profile* profile) {
   return IsQueryExtractionEnabled() && MatchesAnySearchURL(url, template_url);
 }
 
-string16 GetSearchTermsImpl(const content::WebContents* contents,
-                            const content::NavigationEntry* entry) {
+base::string16 GetSearchTermsImpl(const content::WebContents* contents,
+                                  const content::NavigationEntry* entry) {
   if (!contents || !IsQueryExtractionEnabled())
-    return string16();
+    return base::string16();
 
   // For security reasons, don't extract search terms if the page is not being
   // rendered in the privileged Instant renderer process. This is to protect
@@ -235,10 +236,10 @@ string16 GetSearchTermsImpl(const content::WebContents* contents,
   if (!IsRenderedInInstantProcess(contents, profile) &&
       ((entry == contents->GetController().GetLastCommittedEntry()) ||
        !ShouldAssignURLToInstantRenderer(entry->GetURL(), profile)))
-    return string16();
+    return base::string16();
 #endif  // !defined(OS_IOS) && !defined(OS_ANDROID)
   // Check to see if search terms have already been extracted.
-  string16 search_terms = GetSearchTermsFromNavigationEntry(entry);
+  base::string16 search_terms = GetSearchTermsFromNavigationEntry(entry);
   if (!search_terms.empty())
     return search_terms;
 
@@ -302,37 +303,48 @@ bool IsQueryExtractionEnabled() {
 #endif  // defined(OS_IOS) || defined(OS_ANDROID)
 }
 
-string16 GetSearchTermsFromURL(Profile* profile, const GURL& url) {
-  string16 search_terms;
+base::string16 GetSearchTermsFromURL(Profile* profile, const GURL& url) {
+  if (url.is_valid() && url == GetSearchResultPrefetchBaseURL(profile)) {
+    // InstantSearchPrerenderer has the search query for the Instant search base
+    // page.
+    InstantService* instant_service =
+        InstantServiceFactory::GetForProfile(profile);
+    InstantSearchPrerenderer* prerenderer =
+        instant_service ? instant_service->instant_search_prerenderer() : NULL;
+    DCHECK(prerenderer);
+    return prerenderer->get_last_query();
+  }
+
+  base::string16 search_terms;
   TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
   if (template_url && IsSuitableURLForInstant(url, template_url))
     template_url->ExtractSearchTermsFromURL(url, &search_terms);
   return search_terms;
 }
 
-string16 GetSearchTermsFromNavigationEntry(
+base::string16 GetSearchTermsFromNavigationEntry(
     const content::NavigationEntry* entry) {
-  string16 search_terms;
+  base::string16 search_terms;
   if (entry)
     entry->GetExtraData(sessions::kSearchTermsKey, &search_terms);
   return search_terms;
 }
 
-string16 GetSearchTerms(const content::WebContents* contents) {
+base::string16 GetSearchTerms(const content::WebContents* contents) {
   if (!contents)
-    return string16();
+    return base::string16();
 
   const content::NavigationEntry* entry =
       contents->GetController().GetVisibleEntry();
   if (!entry)
-    return string16();
+    return base::string16();
 
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   // iOS and Android doesn't use the Instant framework, disable this check for
   // the two platforms.
   InstantSupportState state = GetInstantSupportStateFromNavigationEntry(*entry);
   if (state == INSTANT_SUPPORT_NO)
-    return string16();
+    return base::string16();
 #endif  // !defined(OS_IOS) && !defined(OS_ANDROID)
 
   return GetSearchTermsImpl(contents, entry);
@@ -382,7 +394,7 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
   if (!IsRenderedInInstantProcess(contents, profile))
     return false;
 
-  if (entry->GetVirtualURL() == GetLocalInstantURL(profile))
+  if (entry->GetURL() == GetLocalInstantURL(profile))
     return true;
 
   if (ShouldUseCacheableNTP()) {
@@ -644,7 +656,7 @@ void SetInstantSupportStateInNavigationEntry(InstantSupportState state,
 
 InstantSupportState GetInstantSupportStateFromNavigationEntry(
     const content::NavigationEntry& entry) {
-  string16 value;
+  base::string16 value;
   if (!entry.GetExtraData(kInstantSupportStateKey, &value))
     return INSTANT_SUPPORT_UNKNOWN;
 

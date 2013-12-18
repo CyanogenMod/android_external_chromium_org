@@ -60,6 +60,7 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
 
@@ -476,11 +477,8 @@ AutofillDialogViews::AccountChooser::AccountChooser(
   menu_button_->set_background(NULL);
   menu_button_->set_border(NULL);
   gfx::Insets insets = GetInsets();
-  menu_button_->set_focus_border(
-      views::FocusBorder::CreateDashedFocusBorder(insets.left(),
-                                                  insets.top(),
-                                                  insets.right(),
-                                                  insets.bottom()));
+  menu_button_->SetFocusPainter(
+      views::Painter::CreateDashedFocusPainterWithInsets(insets));
   menu_button_->set_focusable(true);
   AddChildView(menu_button_);
 
@@ -491,7 +489,7 @@ AutofillDialogViews::AccountChooser::AccountChooser(
 AutofillDialogViews::AccountChooser::~AccountChooser() {}
 
 void AutofillDialogViews::AccountChooser::Update() {
-  SetVisible(!delegate_->ShouldShowSpinner());
+  SetVisible(delegate_->ShouldShowAccountChooser());
 
   gfx::Image icon = delegate_->AccountChooserImage();
   image_->SetImage(icon.AsImageSkia());
@@ -884,6 +882,14 @@ void AutofillDialogViews::SectionContainer::OnMouseReleased(
   proxy_button_->OnMouseReleased(ProxyEvent(event));
 }
 
+void AutofillDialogViews::SectionContainer::OnGestureEvent(
+    ui::GestureEvent* event) {
+  if (!ShouldForwardEvent(*event))
+    return;
+
+  proxy_button_->OnGestureEvent(event);
+}
+
 views::View* AutofillDialogViews::SectionContainer::GetEventHandlerForRect(
     const gfx::Rect& rect) {
   // TODO(tdanderson): Modify this function to support rect-based event
@@ -919,7 +925,7 @@ ui::MouseEvent AutofillDialogViews::SectionContainer::ProxyEvent(
 }
 
 bool AutofillDialogViews::SectionContainer::ShouldForwardEvent(
-    const ui::MouseEvent& event) {
+    const ui::LocatedEvent& event) {
   // Always forward events on the label bar.
   return forward_mouse_events_ || event.y() <= child_at(0)->bounds().bottom();
 }
@@ -937,11 +943,8 @@ AutofillDialogViews::SuggestedButton::SuggestedButton(
   gfx::Insets insets = GetInsets();
   insets += gfx::Insets(-kFocusBorderWidth, -kFocusBorderWidth,
                         -kFocusBorderWidth, -kFocusBorderWidth);
-  set_focus_border(
-      views::FocusBorder::CreateDashedFocusBorder(insets.left(),
-                                                  insets.top(),
-                                                  insets.right(),
-                                                  insets.bottom()));
+  SetFocusPainter(
+      views::Painter::CreateDashedFocusPainterWithInsets(insets));
   set_focusable(true);
 }
 
@@ -966,7 +969,7 @@ void AutofillDialogViews::SuggestedButton::OnPaint(gfx::Canvas* canvas) {
   const gfx::Insets insets = GetInsets();
   canvas->DrawImageInt(*rb.GetImageSkiaNamed(ResourceIDForState()),
                        insets.left(), insets.top());
-  views::View::OnPaintFocusBorder(canvas);
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter());
 }
 
 int AutofillDialogViews::SuggestedButton::ResourceIDForState() const {
@@ -1258,9 +1261,10 @@ void AutofillDialogViews::UpdateAccountChooser() {
       const std::vector<gfx::Range>& link_ranges =
           delegate_->LegalDocumentLinks();
       for (size_t i = 0; i < link_ranges.size(); ++i) {
-        legal_document_view_->AddStyleRange(
-            link_ranges[i],
-            views::StyledLabel::RangeStyleInfo::CreateForLink());
+        views::StyledLabel::RangeStyleInfo link_range_info =
+            views::StyledLabel::RangeStyleInfo::CreateForLink();
+        link_range_info.disable_line_wrapping = false;
+        legal_document_view_->AddStyleRange(link_ranges[i], link_range_info);
       }
     }
 
@@ -1694,11 +1698,11 @@ void AutofillDialogViews::ContentsChanged(views::Textfield* sender,
 
 bool AutofillDialogViews::HandleKeyEvent(views::Textfield* sender,
                                          const ui::KeyEvent& key_event) {
-  scoped_ptr<ui::KeyEvent> copy(key_event.Copy());
+  ui::KeyEvent copy(key_event);
 #if defined(OS_WIN) && !defined(USE_AURA)
-  content::NativeWebKeyboardEvent event(copy->native_event());
+  content::NativeWebKeyboardEvent event(copy.native_event());
 #else
-  content::NativeWebKeyboardEvent event(copy.get());
+  content::NativeWebKeyboardEvent event(&copy);
 #endif
   return delegate_->HandleKeyPressEventInInput(event);
 }
@@ -1959,6 +1963,7 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
   views::GridLayout* layout = new views::GridLayout(view);
   view->SetLayoutManager(layout);
 
+  int column_set_id = 0;
   for (DetailInputs::const_iterator it = inputs.begin();
        it != inputs.end(); ++it) {
     const DetailInput& input = *it;
@@ -1981,19 +1986,21 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
       view_to_add.reset(field);
     }
 
-    int kColumnSetId = input.row_id;
-    if (kColumnSetId < 0) {
+    if (input.length == DetailInput::NONE) {
       other_owned_views_.push_back(view_to_add.release());
       continue;
     }
 
-    views::ColumnSet* column_set = layout->GetColumnSet(kColumnSetId);
+    if (input.length == DetailInput::LONG)
+      ++column_set_id;
+
+    views::ColumnSet* column_set = layout->GetColumnSet(column_set_id);
     if (!column_set) {
       // Create a new column set and row.
-      column_set = layout->AddColumnSet(kColumnSetId);
+      column_set = layout->AddColumnSet(column_set_id);
       if (it != inputs.begin())
         layout->AddPaddingRow(0, kManualInputRowPadding);
-      layout->StartRow(0, kColumnSetId);
+      layout->StartRow(0, column_set_id);
     } else {
       // Add a new column to existing row.
       column_set->AddPaddingColumn(0, views::kRelatedControlHorizontalSpacing);
@@ -2016,6 +2023,9 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
     layout->AddView(view_to_add.release(), 1, 1,
                     views::GridLayout::FILL, views::GridLayout::FILL,
                     1, 0);
+
+    if (input.length == DetailInput::LONG)
+      ++column_set_id;
   }
 
   SetIconsForSection(section);

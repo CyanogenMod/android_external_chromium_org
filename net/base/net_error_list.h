@@ -303,6 +303,10 @@ NET_ERROR(TOO_MANY_SOCKET_STREAMS, -155)
 // The SSL server certificate changed in a renegotiation.
 NET_ERROR(SSL_SERVER_CERT_CHANGED, -156)
 
+// The SSL server indicated that an unnecessary TLS version fallback was
+// performed.
+NET_ERROR(SSL_INAPPROPRIATE_FALLBACK, -157)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -407,6 +411,10 @@ NET_ERROR(CERT_WEAK_KEY, -211)
 
 // The value immediately past the last certificate error code.
 NET_ERROR(CERT_END, -212)
+
+// Certificate Transparency: All Signed Certificate Timestamps failed to verify.
+// XXX(eranm): Move this error to a more appropriate category.
+NET_ERROR(CT_NO_SCTS_VERIFIED_OK, -299)
 
 // The URL is invalid.
 NET_ERROR(INVALID_URL, -300)

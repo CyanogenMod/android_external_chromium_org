@@ -86,7 +86,7 @@ bool CallGetSaveFileName(OPENFILENAME* ofn) {
 // Distinguish directories from regular files.
 bool IsDirectory(const base::FilePath& path) {
   base::PlatformFileInfo file_info;
-  return file_util::GetFileInfo(path, &file_info) ?
+  return base::GetFileInfo(path, &file_info) ?
       file_info.is_directory : path.EndsWithSeparator();
 }
 
@@ -846,7 +846,7 @@ bool SelectFileDialogImpl::RunOpenMultiFileDialog(
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
   // without having to close Chrome first.
   ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER
-               | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT;
+               | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR;
 
   if (!filter.empty()) {
     ofn.lpstrFilter = filter.c_str();

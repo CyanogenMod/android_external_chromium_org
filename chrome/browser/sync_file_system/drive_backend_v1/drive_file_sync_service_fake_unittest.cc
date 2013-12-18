@@ -14,10 +14,6 @@
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_metadata_store.h"
@@ -27,12 +23,17 @@
 #include "chrome/browser/sync_file_system/sync_direction.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
+#include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/id_util.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -76,44 +77,6 @@ void DidInitialize(bool* done, SyncStatusCode status, bool created) {
   *done = true;
   EXPECT_EQ(SYNC_STATUS_OK, status);
   EXPECT_TRUE(created);
-}
-
-void DidProcessRemoteChange(SyncStatusCode* status_out,
-                            fileapi::FileSystemURL* url_out,
-                            SyncStatusCode status,
-                            const fileapi::FileSystemURL& url) {
-  ASSERT_TRUE(status_out);
-  ASSERT_TRUE(url_out);
-  *status_out = status;
-  *url_out = url;
-}
-
-#if !defined(OS_ANDROID)
-void DidGetRemoteVersions(
-    SyncStatusCode* status_out,
-    std::vector<RemoteFileSyncService::Version>* versions_out,
-    SyncStatusCode status,
-    const std::vector<RemoteFileSyncService::Version>& versions) {
-  *status_out = status;
-  *versions_out = versions;
-}
-
-void DidDownloadRemoteVersion(
-    SyncStatusCode* status_out,
-    webkit_blob::ScopedFile* downloaded_out,
-    SyncStatusCode status,
-    webkit_blob::ScopedFile downloaded) {
-  *status_out = status;
-  *downloaded_out = downloaded.Pass();
-}
-#endif  // !defined(OS_ANDROID)
-
-void ExpectEqStatus(bool* done,
-                    SyncStatusCode expected,
-                    SyncStatusCode actual) {
-  EXPECT_FALSE(*done);
-  *done = true;
-  EXPECT_EQ(expected, actual);
 }
 
 // Mocks adding an installed extension to ExtensionService.
@@ -283,10 +246,6 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  void SetSyncEnabled(bool enabled) {
-    sync_service_->SetSyncEnabled(enabled);
-  }
-
  protected:
   void EnableExtension(const std::string& extension_id) {
     extension_service_->EnableExtension(extension_id);
@@ -316,12 +275,6 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
     EXPECT_EQ(b_size, pending_batch_sync_origins()->size());
     EXPECT_EQ(i_size, metadata_store()->incremental_sync_origins().size());
     EXPECT_EQ(d_size, metadata_store()->disabled_origins().size());
-  }
-
-  APIUtilInterface* api_util() {
-    if (api_util_)
-      return api_util_.get();
-    return sync_service_->api_util_.get();
   }
 
   DriveMetadataStore* metadata_store() {
@@ -375,7 +328,7 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
     }
 
     sync_service_->ProcessRemoteChange(
-        base::Bind(&DidProcessRemoteChange, &actual_status, &actual_url));
+        CreateResultReceiver(&actual_status, &actual_url));
     base::RunLoop().RunUntilIdle();
 
     EXPECT_EQ(expected_status, actual_status);
@@ -439,12 +392,12 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
     metadata.set_to_be_fetched(false);
     metadata.set_type(DriveMetadata::RESOURCE_TYPE_FILE);
 
-    bool done = false;
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     metadata_store()->UpdateEntry(
         CreateURL(origin, title), metadata,
-        base::Bind(&ExpectEqStatus, &done, SYNC_STATUS_OK));
+        CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
-    ASSERT_TRUE(done);
+    ASSERT_EQ(SYNC_STATUS_OK, status);
   }
 
   void TestRegisterNewOrigin();
@@ -494,12 +447,12 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
 
 void DriveFileSyncServiceFakeTest::TestRegisterNewOrigin() {
   SetUpDriveSyncService(true);
-  bool done = false;
+  SyncStatusCode status = SYNC_STATUS_UNKNOWN;
   sync_service()->RegisterOrigin(
       ExtensionNameToGURL(kExtensionName1),
-      base::Bind(&ExpectEqStatus, &done, SYNC_STATUS_OK));
+      CreateResultReceiver(&status));
   base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(done);
+  EXPECT_EQ(SYNC_STATUS_OK, status);
 
   VerifySizeOfRegisteredOrigins(0u, 1u, 0u);
   EXPECT_TRUE(!remote_change_handler().HasChanges());
@@ -522,12 +475,12 @@ void DriveFileSyncServiceFakeTest::TestRegisterExistingOrigin() {
 
   SetUpDriveSyncService(true);
 
-  bool done = false;
+  SyncStatusCode status = SYNC_STATUS_UNKNOWN;
   sync_service()->RegisterOrigin(
       ExtensionNameToGURL(kExtensionName1),
-      base::Bind(&ExpectEqStatus, &done, SYNC_STATUS_OK));
+      CreateResultReceiver(&status));
   base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(done);
+  EXPECT_EQ(SYNC_STATUS_OK, status);
 
   // The origin should be registered as an incremental sync origin.
   VerifySizeOfRegisteredOrigins(0u, 1u, 0u);
@@ -542,12 +495,12 @@ void DriveFileSyncServiceFakeTest::TestRegisterOriginWithSyncDisabled() {
   // still return OK).
   SetUpDriveSyncService(false);
 
-  bool done = false;
+  SyncStatusCode status = SYNC_STATUS_UNKNOWN;
   sync_service()->RegisterOrigin(
       ExtensionNameToGURL(kExtensionName1),
-      base::Bind(&ExpectEqStatus, &done, SYNC_STATUS_OK));
+      CreateResultReceiver(&status));
   base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(done);
+  EXPECT_EQ(SYNC_STATUS_OK, status);
 
   // We must not have started batch sync for the newly registered origin,
   // so it should still be in the batch_sync_origins.
@@ -564,13 +517,13 @@ void DriveFileSyncServiceFakeTest::TestUninstallOrigin() {
   VerifySizeOfRegisteredOrigins(0u, 2u, 0u);
   EXPECT_EQ(0u, remote_change_handler().ChangesSize());
 
-  bool done = false;
+  SyncStatusCode status = SYNC_STATUS_UNKNOWN;
   sync_service()->UninstallOrigin(
       ExtensionNameToGURL(kExtensionName1),
       RemoteFileSyncService::UNINSTALL_AND_PURGE_REMOTE,
-      base::Bind(&ExpectEqStatus, &done, SYNC_STATUS_OK));
+      CreateResultReceiver(&status));
   base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(done);
+  EXPECT_EQ(SYNC_STATUS_OK, status);
 
   VerifySizeOfRegisteredOrigins(0u, 1u, 0u);
   EXPECT_TRUE(!remote_change_handler().HasChanges());
@@ -800,7 +753,7 @@ void DriveFileSyncServiceFakeTest::TestGetRemoteVersions() {
   SyncStatusCode status = SYNC_STATUS_FAILED;
   std::vector<RemoteFileSyncService::Version> versions;
   sync_service_->GetRemoteVersions(
-      url, base::Bind(&DidGetRemoteVersions, &status, &versions));
+      url, CreateResultReceiver(&status, &versions));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(SYNC_STATUS_OK, status);
@@ -813,8 +766,7 @@ void DriveFileSyncServiceFakeTest::TestGetRemoteVersions() {
   status = SYNC_STATUS_FAILED;
   webkit_blob::ScopedFile downloaded;
   sync_service_->DownloadRemoteVersion(
-      url, versions[0].id,
-      base::Bind(&DidDownloadRemoteVersion, &status, &downloaded));
+      url, versions[0].id, CreateResultReceiver(&status, &downloaded));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(SYNC_STATUS_OK, status);

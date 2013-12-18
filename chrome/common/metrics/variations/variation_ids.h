@@ -254,10 +254,22 @@ enum ReservedVariationID {
   WEBGL_DEBUG_RENDERER_INFO_CONTROL = 3311942,
   WEBGL_DEBUG_RENDERER_INFO_DISABLED = 3311943,
 
+  NEW_USER_MANAGEMENT_ENABLED = 3311944,
+  NEW_USER_MANAGEMENT_CONTROL = 3311945,
+  NEW_USER_MANAGEMENT_DISABLED = 3311946,
+
+  // Reserve 100 more IDs to be used by autocomplete dynamic field trials.
+  // The dynamic field trials are activated by a call to
+  // OmniboxFieldTrial::ActivateDynamicFieldTrials.
+  // For more details, see
+  // chrome/browser/omnibox/omnibox_field_trial.{h,cc}.
+  AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_RANGE2_ID_MIN = 3311947,
+  AUTOCOMPLETE_DYANMIC_FIELD_TRIAL_RANGE2_ID_MAX = 3312046,
+
   // NEXT ID: When adding new IDs, please add them above this section, starting
   // with the value of NEXT_ID, and updating NEXT_ID to (end of your reserved
   // range) + 1.
-  NEXT_ID = 3311944,
+  NEXT_ID = 3312047,
 
   // USABLE IDs END HERE.
   //

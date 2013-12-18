@@ -6,8 +6,8 @@
 
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 
 namespace drive {
 namespace internal {
@@ -15,7 +15,8 @@ namespace internal {
 typedef file_system::OperationTestBase RemovePerformerTest;
 
 TEST_F(RemovePerformerTest, RemoveFile) {
-  RemovePerformer performer(blocking_task_runner(), scheduler(), metadata());
+  RemovePerformer performer(blocking_task_runner(), observer(), scheduler(),
+                            metadata());
 
   base::FilePath file_in_root(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   base::FilePath file_in_subdir(
@@ -60,7 +61,8 @@ TEST_F(RemovePerformerTest, RemoveFile) {
 }
 
 TEST_F(RemovePerformerTest, RemoveShared) {
-  RemovePerformer performer(blocking_task_runner(), scheduler(), metadata());
+  RemovePerformer performer(blocking_task_runner(), observer(), scheduler(),
+                            metadata());
 
   const base::FilePath kPathInMyDrive(FILE_PATH_LITERAL(
       "drive/root/shared.txt"));

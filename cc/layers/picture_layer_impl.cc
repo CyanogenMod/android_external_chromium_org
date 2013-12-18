@@ -125,12 +125,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
   SharedQuadState* shared_quad_state =
       quad_sink->UseSharedQuadState(CreateSharedQuadState());
 
-  bool draw_direct_to_backbuffer =
-      draw_properties().can_draw_directly_to_backbuffer &&
-      layer_tree_impl()->settings().force_direct_layer_drawing;
-
-  if (draw_direct_to_backbuffer ||
-      current_draw_mode_ == DRAW_MODE_RESOURCELESS_SOFTWARE) {
+  if (current_draw_mode_ == DRAW_MODE_RESOURCELESS_SOFTWARE) {
     AppendDebugBorderQuad(
         quad_sink,
         shared_quad_state,
@@ -154,7 +149,6 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                  RGBA_8888,
                  quad_content_rect,
                  contents_scale,
-                 draw_direct_to_backbuffer,
                  pile_);
     if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
       append_quads_data->num_missing_tiles++;
@@ -179,10 +173,10 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
         } else if (mode == ManagedTileState::TileVersion::PICTURE_PILE_MODE) {
           color = DebugColors::PictureTileBorderColor();
           width = DebugColors::PictureTileBorderWidth(layer_tree_impl());
-        } else if (iter->priority(ACTIVE_TREE).resolution == HIGH_RESOLUTION) {
+        } else if (iter.priority().resolution == HIGH_RESOLUTION) {
           color = DebugColors::HighResTileBorderColor();
           width = DebugColors::HighResTileBorderWidth(layer_tree_impl());
-        } else if (iter->priority(ACTIVE_TREE).resolution == LOW_RESOLUTION) {
+        } else if (iter.priority().resolution == LOW_RESOLUTION) {
           color = DebugColors::LowResTileBorderColor();
           width = DebugColors::LowResTileBorderWidth(layer_tree_impl());
         } else if (iter->contents_scale() > contents_scale_x()) {
@@ -276,7 +270,6 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                      format,
                      iter->content_rect(),
                      iter->contents_scale(),
-                     draw_direct_to_backbuffer,
                      pile_);
         draw_quad = quad.PassAs<DrawQuad>();
         break;
@@ -463,11 +456,23 @@ skia::RefPtr<SkPicture> PictureLayerImpl::GetPicture() {
   return pile_->GetFlattenedPicture();
 }
 
+bool PictureLayerImpl::ShouldUseGPURasterization() const {
+  // TODO(skaslev): Add a proper heuristic for hybrid (software or GPU)
+  // tile rasterization. Currently, when --enable-gpu-rasterization is
+  // set all tiles get GPU rasterized.
+  return layer_tree_impl()->settings().gpu_rasterization;
+}
+
 scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
                                                  gfx::Rect content_rect) {
   if (!pile_->CanRaster(tiling->contents_scale(), content_rect))
     return scoped_refptr<Tile>();
 
+  int flags = 0;
+  if (is_using_lcd_text_)
+    flags |= Tile::USE_LCD_TEXT;
+  if (ShouldUseGPURasterization())
+    flags |= Tile::USE_GPU_RASTERIZATION;
   return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
       content_rect.size(),
@@ -476,7 +481,15 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
       tiling->contents_scale(),
       id(),
       layer_tree_impl()->source_frame_number(),
-      is_using_lcd_text_);
+      flags);
+}
+
+scoped_refptr<TileBundle> PictureLayerImpl::CreateTileBundle(int offset_x,
+                                                             int offset_y,
+                                                             int width,
+                                                             int height) {
+  return layer_tree_impl()->tile_manager()->CreateTileBundle(
+      offset_x, offset_y, width, height);
 }
 
 void PictureLayerImpl::UpdatePile(Tile* tile) {
@@ -488,7 +501,7 @@ const Region* PictureLayerImpl::GetInvalidation() {
 }
 
 const PictureLayerTiling* PictureLayerImpl::GetTwinTiling(
-    const PictureLayerTiling* tiling) {
+    const PictureLayerTiling* tiling) const {
 
   if (!twin_layer_)
     return NULL;
@@ -659,6 +672,10 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
   DCHECK(ideal_contents_scale_);
   DCHECK_GT(tilings_->num_tilings(), 0u);
 
+  // The goal of this function is to find the minimum set of tiles that need to
+  // be ready to draw in order to activate without flashing content from a
+  // higher res on the active tree to a lower res on the pending tree.
+
   gfx::Rect rect(visible_content_rect());
 
   float min_acceptable_scale =
@@ -675,17 +692,21 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
     }
   }
 
-  // Mark tiles for activation in two passes.  Ready to draw tiles in acceptable
-  // but non-ideal tilings are marked as required for activation, but any
-  // non-ready tiles are not marked as required.  From there, any missing holes
-  // will need to be filled in from the high res tiling.
-
   PictureLayerTiling* high_res = NULL;
+  PictureLayerTiling* low_res = NULL;
+
+  // First pass: ready to draw tiles in acceptable but non-ideal tilings are
+  // marked as required for activation so that their textures are not thrown
+  // away; any non-ready tiles are not marked as required.
   Region missing_region = rect;
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
     PictureLayerTiling* tiling = tilings_->tiling_at(i);
     DCHECK(tiling->has_ever_been_updated());
 
+    if (tiling->resolution() == LOW_RESOLUTION) {
+      DCHECK(!low_res) << "There can only be one low res tiling";
+      low_res = tiling;
+    }
     if (tiling->contents_scale() < min_acceptable_scale)
       continue;
     if (tiling->resolution() == HIGH_RESOLUTION) {
@@ -704,28 +725,76 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
       // This iteration is over the visible content rect which is potentially
       // less conservative than projecting the viewport into the layer.
       // Ignore tiles that are know to be outside the viewport.
-      if (iter->priority(PENDING_TREE).distance_to_visible_in_pixels != 0)
+      if (iter.priority().distance_to_visible_in_pixels != 0)
         continue;
 
       missing_region.Subtract(iter.geometry_rect());
       iter->MarkRequiredForActivation();
     }
   }
-
   DCHECK(high_res) << "There must be one high res tiling";
-  for (PictureLayerTiling::CoverageIterator iter(high_res,
-                                                 contents_scale_x(),
+
+  // If these pointers are null (because no twin, no matching tiling, or the
+  // simpification just below), then high res tiles will be required to fill any
+  // holes left by the first pass above.  If the pointers are valid, then this
+  // layer is allowed to skip any tiles that are not ready on its twin.
+  const PictureLayerTiling* twin_high_res = NULL;
+  const PictureLayerTiling* twin_low_res = NULL;
+
+  // As a simplification, only allow activating to skip twin tiles that the
+  // active layer is also missing when both this layer and its twin have 2
+  // tilings (high and low).  This avoids having to iterate/track coverage of
+  // non-ideal tilings during the last draw call on the active layer.
+  if (high_res && low_res && tilings_->num_tilings() == 2 &&
+      twin_layer_ && twin_layer_->tilings_->num_tilings() == 2) {
+    twin_low_res = GetTwinTiling(low_res);
+    if (twin_low_res)
+      twin_high_res = GetTwinTiling(high_res);
+  }
+  // If this layer and its twin have different transforms, then don't compare
+  // them and only allow activating to high res tiles, since tiles on each layer
+  // will be in different places on screen.
+  if (!twin_high_res || !twin_low_res ||
+      draw_properties().screen_space_transform !=
+          twin_layer_->draw_properties().screen_space_transform) {
+    twin_high_res = NULL;
+    twin_low_res = NULL;
+  }
+
+  // As a second pass, mark as required any visible high res tiles not filled in
+  // by acceptable non-ideal tiles from the first pass.
+  if (MarkVisibleTilesAsRequired(
+      high_res, twin_high_res, contents_scale_x(), rect, missing_region)) {
+    // As an optional third pass, if a high res tile was skipped because its
+    // twin was also missing, then fall back to mark low res tiles as required
+    // in case the active twin is substituting those for missing high res
+    // content.
+    MarkVisibleTilesAsRequired(
+        low_res, twin_low_res, contents_scale_x(), rect, missing_region);
+  }
+}
+
+bool PictureLayerImpl::MarkVisibleTilesAsRequired(
+    PictureLayerTiling* tiling,
+    const PictureLayerTiling* optional_twin_tiling,
+    float contents_scale,
+    gfx::Rect rect,
+    const Region& missing_region) const {
+  bool twin_had_missing_tile = false;
+  for (PictureLayerTiling::CoverageIterator iter(tiling,
+                                                 contents_scale,
                                                  rect);
        iter;
        ++iter) {
+    Tile* tile = *iter;
     // A null tile (i.e. missing recording) can just be skipped.
-    if (!*iter)
+    if (!tile)
       continue;
 
     // This iteration is over the visible content rect which is potentially
     // less conservative than projecting the viewport into the layer.
     // Ignore tiles that are know to be outside the viewport.
-    if (iter->priority(PENDING_TREE).distance_to_visible_in_pixels != 0)
+    if (iter.priority().distance_to_visible_in_pixels != 0)
       continue;
 
     // If the missing region doesn't cover it, this tile is fully
@@ -733,8 +802,21 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
     if (!missing_region.Intersects(iter.geometry_rect()))
       continue;
 
-    iter->MarkRequiredForActivation();
+    // If the twin tile doesn't exist (i.e. missing recording or so far away
+    // that it is outside the visible tile rect) or this tile is shared between
+    // with the twin, then this tile isn't required to prevent flashing.
+    if (optional_twin_tiling) {
+      Tile* twin_tile =
+          optional_twin_tiling->TileAt(ACTIVE_TREE, iter.i(), iter.j());
+      if (!twin_tile || twin_tile == tile) {
+        twin_had_missing_tile = true;
+        continue;
+      }
+    }
+
+    tile->MarkRequiredForActivation();
   }
+  return twin_had_missing_tile;
 }
 
 void PictureLayerImpl::DoPostCommitInitialization() {
@@ -1019,7 +1101,10 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
   }
 
   for (size_t i = 0; i < to_remove.size(); ++i) {
-    if (twin)
+    const PictureLayerTiling* twin_tiling = GetTwinTiling(to_remove[i]);
+    // Only remove tilings from the twin layer if they have
+    // NON_IDEAL_RESOLUTION.
+    if (twin_tiling && twin_tiling->resolution() == NON_IDEAL_RESOLUTION)
       twin->RemoveTiling(to_remove[i]->contents_scale());
     tilings_->Remove(to_remove[i]);
   }
@@ -1070,9 +1155,6 @@ bool PictureLayerImpl::CanHaveTilings() const {
   if (!DrawsContent())
     return false;
   if (pile_->recorded_region().IsEmpty())
-    return false;
-  if (draw_properties().can_draw_directly_to_backbuffer &&
-      layer_tree_impl()->settings().force_direct_layer_drawing)
     return false;
   return true;
 }

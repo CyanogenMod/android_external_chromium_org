@@ -15,7 +15,6 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/profiles/gaia_info_update_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -119,8 +118,6 @@ void ManageProfileHandler::GetLocalizedValues(
 
   localized_strings->SetBoolean("profileShortcutsEnabled",
                                 ProfileShortcutManager::IsFeatureEnabled());
-  localized_strings->SetBoolean("managedUsersEnabled",
-                                ManagedUserService::AreManagedUsersEnabled());
 
   localized_strings->SetBoolean(
       "allowCreateExistingManagedUsers",
@@ -313,7 +310,7 @@ void ManageProfileHandler::SetProfileIconAndName(const ListValue* args) {
   if (profile->IsManaged())
     return;
 
-  string16 new_profile_name;
+  base::string16 new_profile_name;
   if (!args->GetString(2, &new_profile_name))
     return;
 
@@ -368,7 +365,7 @@ void ManageProfileHandler::ProfileIconSelectionChanged(
   size_t profile_index = cache.GetIndexOfProfileWithPath(profile_file_path);
   if (profile_index == std::string::npos)
     return;
-  string16 gaia_name = cache.GetNameOfProfileAtIndex(profile_index);
+  base::string16 gaia_name = cache.GetNameOfProfileAtIndex(profile_index);
   if (gaia_name.empty())
     return;
 
@@ -405,7 +402,7 @@ void ManageProfileHandler::RequestCreateProfileUpdate(
   Profile* profile = Profile::FromWebUI(web_ui());
   SigninManagerBase* manager =
       SigninManagerFactory::GetForProfile(profile);
-  string16 username = UTF8ToUTF16(manager->GetAuthenticatedUsername());
+  base::string16 username = UTF8ToUTF16(manager->GetAuthenticatedUsername());
   ProfileSyncService* service =
      ProfileSyncServiceFactory::GetForProfile(profile);
   GoogleServiceAuthError::State state = service->GetAuthError().state();

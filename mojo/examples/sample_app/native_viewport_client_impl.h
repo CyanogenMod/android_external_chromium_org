@@ -5,6 +5,8 @@
 #ifndef MOJO_EXAMPLES_SAMPLE_APP_NATIVE_VIEWPORT_CLIENT_IMPL_H_
 #define MOJO_EXAMPLES_SAMPLE_APP_NATIVE_VIEWPORT_CLIENT_IMPL_H_
 
+#include "base/memory/scoped_ptr.h"
+#include "mojo/examples/sample_app/gles2_client_impl.h"
 #include "mojo/public/bindings/lib/remote_ptr.h"
 #include "mojom/native_viewport.h"
 
@@ -16,18 +18,21 @@ class NativeViewportClientImpl : public NativeViewportClientStub {
   explicit NativeViewportClientImpl(ScopedMessagePipeHandle pipe);
   virtual ~NativeViewportClientImpl();
 
-  virtual void DidOpen() MOJO_OVERRIDE;
-  virtual void DidCreateGLContext(uint64_t gl) MOJO_OVERRIDE;
-
-  NativeViewport* service() {
-    return service_.get();
-  }
+  void Open();
 
  private:
+  virtual void OnCreated() MOJO_OVERRIDE;
+  virtual void OnDestroyed() MOJO_OVERRIDE;
+  virtual void OnEvent(const Event& event) MOJO_OVERRIDE;
+
+  scoped_ptr<GLES2ClientImpl> gles2_client_;
+
   RemotePtr<NativeViewport> service_;
+
+  MOJO_DISALLOW_COPY_AND_ASSIGN(NativeViewportClientImpl);
 };
 
-}  // examples
-}  // mojo
+}  // namespace examples
+}  // namespace mojo
 
 #endif  // MOJO_EXAMPLES_SAMPLE_APP_NATIVE_VIEWPORT_CLIENT_IMPL_H_

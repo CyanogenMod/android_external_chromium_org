@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_ROOT_WINDOW_HOST_X11_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_ROOT_WINDOW_HOST_X11_H_
 
+#include <X11/extensions/shape.h>
 #include <X11/Xlib.h>
 
 // Get rid of a macro from Xlib.h that conflicts with Aura's RootWindow class.
@@ -84,6 +85,7 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
       const gfx::Rect& restored_bounds) OVERRIDE;
   virtual bool IsVisible() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
+  virtual void StackAtTop() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
@@ -104,7 +106,7 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual bool HasCapture() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
-  virtual void SetWindowTitle(const string16& title) OVERRIDE;
+  virtual bool SetWindowTitle(const string16& title) OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
@@ -179,6 +181,11 @@ private:
   // different host has capture, we translate the event to its coordinate space
   // and dispatch it to that host instead.
   void DispatchMouseEvent(ui::MouseEvent* event);
+
+  // Dispatches a touch event, taking capture into account. If a different host
+  // has capture, then touch-press events are translated to its coordinate space
+  // and dispatched to that host instead.
+  void DispatchTouchEvent(ui::TouchEvent* event);
 
   // Resets the window region for the current widget bounds if necessary.
   void ResetWindowRegion();
@@ -260,6 +267,9 @@ private:
 
   ObserverList<DesktopRootWindowHostObserverX11> observer_list_;
 
+  // Copy of custom window shape specified via SetShape(), if any.
+  ::Region custom_window_shape_;
+
   // The current root window host that has capture. While X11 has something
   // like Windows SetCapture()/ReleaseCapture(), it is entirely implicit and
   // there are no notifications when this changes. We need to track this so we
@@ -270,6 +280,8 @@ private:
   // A list of all (top-level) windows that have been created but not yet
   // destroyed.
   static std::list<XID>* open_windows_;
+
+  string16 window_title_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopRootWindowHostX11);
 };

@@ -41,10 +41,9 @@ namespace {
 void CreateShortcutsInApplicationsMenu(
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   ShellIntegration::ShortcutLocations creation_locations;
-  creation_locations.in_applications_menu = true;
   // Create the shortcut in the Chrome Apps subdir.
-  creation_locations.applications_menu_subdir =
-      web_app::GetAppShortcutsSubdirName();
+  creation_locations.applications_menu_location =
+      ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS;
   web_app::CreateShortcuts(shortcut_info, creation_locations,
                            web_app::SHORTCUT_CREATION_AUTOMATED);
 }
@@ -127,7 +126,7 @@ void AppShortcutManager::Observe(int type,
         base::Callback<void(const ShellIntegration::ShortcutInfo&)>
             create_or_update;
         if (installed_info->is_update) {
-          string16 old_title = UTF8ToUTF16(installed_info->old_name);
+          base::string16 old_title = UTF8ToUTF16(installed_info->old_name);
           create_or_update = base::Bind(&web_app::UpdateAllShortcuts,
                                         old_title);
         } else {

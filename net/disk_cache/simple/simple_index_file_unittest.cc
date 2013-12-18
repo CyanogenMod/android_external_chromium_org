@@ -86,7 +86,7 @@ class WrappedSimpleIndexFile : public SimpleIndexFile {
   }
 
   bool CreateIndexFileDirectory() const {
-    return file_util::CreateDirectory(index_file_.DirName());
+    return base::CreateDirectory(index_file_.DirName());
   }
 };
 
@@ -178,13 +178,13 @@ TEST_F(SimpleIndexFileTest, LegacyIsIndexFileStale) {
 
   const base::Time past_time = base::Time::Now() -
       base::TimeDelta::FromSeconds(10);
-  EXPECT_TRUE(file_util::TouchFile(index_path, past_time, past_time));
-  EXPECT_TRUE(file_util::TouchFile(cache_path, past_time, past_time));
+  EXPECT_TRUE(base::TouchFile(index_path, past_time, past_time));
+  EXPECT_TRUE(base::TouchFile(cache_path, past_time, past_time));
   ASSERT_TRUE(simple_util::GetMTime(cache_path, &cache_mtime));
   EXPECT_FALSE(
       WrappedSimpleIndexFile::LegacyIsIndexFileStale(cache_mtime, index_path));
   const base::Time even_older = past_time - base::TimeDelta::FromSeconds(10);
-  EXPECT_TRUE(file_util::TouchFile(index_path, even_older, even_older));
+  EXPECT_TRUE(base::TouchFile(index_path, even_older, even_older));
   EXPECT_TRUE(
       WrappedSimpleIndexFile::LegacyIsIndexFileStale(cache_mtime, index_path));
 }

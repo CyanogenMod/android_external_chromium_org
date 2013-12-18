@@ -34,6 +34,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -63,9 +64,9 @@ void EnableInternalPDFPluginForContents(WebContents* preview_dialog) {
       pdf_plugin_path, &pdf_plugin))
     return;
 
-  ChromePluginServiceFilter::GetInstance()->OverridePluginForTab(
+  ChromePluginServiceFilter::GetInstance()->OverridePluginForFrame(
       preview_dialog->GetRenderProcessHost()->GetID(),
-      preview_dialog->GetRenderViewHost()->GetRoutingID(),
+      preview_dialog->GetMainFrame()->GetRoutingID(),
       GURL(), pdf_plugin);
 }
 
@@ -77,7 +78,7 @@ class PrintPreviewDialogDelegate : public WebDialogDelegate {
   virtual ~PrintPreviewDialogDelegate();
 
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -109,7 +110,7 @@ ui::ModalType PrintPreviewDialogDelegate::GetDialogModalType() const {
 
 string16 PrintPreviewDialogDelegate::GetDialogTitle() const {
   // Only used on Windows? UI folks prefer no title.
-  return string16();
+  return base::string16();
 }
 
 GURL PrintPreviewDialogDelegate::GetDialogContentURL() const {

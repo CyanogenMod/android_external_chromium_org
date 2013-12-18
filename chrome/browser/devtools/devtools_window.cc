@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -81,22 +82,21 @@ class DevToolsConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
   // and adds the inofbar to |infobar_service|.
   static void Create(InfoBarService* infobar_service,
                      const DevToolsWindow::InfoBarCallback& callback,
-                     const string16& message);
+                     const base::string16& message);
 
  private:
   DevToolsConfirmInfoBarDelegate(
-      InfoBarService* infobar_service,
       const DevToolsWindow::InfoBarCallback& callback,
-      const string16& message);
+      const base::string16& message);
   virtual ~DevToolsConfirmInfoBarDelegate();
 
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 
   DevToolsWindow::InfoBarCallback callback_;
-  const string16 message_;
+  const base::string16 message_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsConfirmInfoBarDelegate);
 };
@@ -104,21 +104,21 @@ class DevToolsConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
 void DevToolsConfirmInfoBarDelegate::Create(
     InfoBarService* infobar_service,
     const DevToolsWindow::InfoBarCallback& callback,
-    const string16& message) {
+    const base::string16& message) {
   if (!infobar_service) {
     callback.Run(false);
     return;
   }
 
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new DevToolsConfirmInfoBarDelegate(infobar_service, callback, message)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new DevToolsConfirmInfoBarDelegate(callback, message))));
 }
 
 DevToolsConfirmInfoBarDelegate::DevToolsConfirmInfoBarDelegate(
-    InfoBarService* infobar_service,
     const DevToolsWindow::InfoBarCallback& callback,
-    const string16& message)
-    : ConfirmInfoBarDelegate(infobar_service),
+    const base::string16& message)
+    : ConfirmInfoBarDelegate(),
       callback_(callback),
       message_(message) {
 }
@@ -128,11 +128,11 @@ DevToolsConfirmInfoBarDelegate::~DevToolsConfirmInfoBarDelegate() {
     callback_.Run(false);
 }
 
-string16 DevToolsConfirmInfoBarDelegate::GetMessageText() const {
+base::string16 DevToolsConfirmInfoBarDelegate::GetMessageText() const {
   return message_;
 }
 
-string16 DevToolsConfirmInfoBarDelegate::GetButtonLabel(
+base::string16 DevToolsConfirmInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_DEV_TOOLS_CONFIRM_ALLOW_BUTTON : IDS_DEV_TOOLS_CONFIRM_DENY_BUTTON);
@@ -372,7 +372,7 @@ DevToolsWindow* DevToolsWindow::CreateDevToolsWindowForWorker(
     Profile* profile) {
   content::RecordAction(content::UserMetricsAction("DevTools_InspectWorker"));
   return Create(profile, GURL(), NULL, DEVTOOLS_DOCK_SIDE_UNDOCKED, true,
-                false);
+                false, false);
 }
 
 // static
@@ -405,7 +405,7 @@ void DevToolsWindow::OpenExternalFrontend(
   DevToolsWindow* window = FindDevToolsWindow(agent_host);
   if (!window) {
     window = Create(profile, DevToolsUI::GetProxyURL(frontend_url), NULL,
-                    DEVTOOLS_DOCK_SIDE_UNDOCKED, false, true);
+                    DEVTOOLS_DOCK_SIDE_UNDOCKED, false, true, false);
     content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
         agent_host, window->frontend_host_.get());
   }
@@ -428,7 +428,8 @@ DevToolsWindow* DevToolsWindow::ToggleDevToolsWindow(
     DevToolsDockSide dock_side = GetDockSideFromPrefs(profile);
     content::RecordAction(
         content::UserMetricsAction("DevTools_InspectRenderer"));
-    window = Create(profile, GURL(), inspected_rvh, dock_side, false, false);
+    window = Create(profile, GURL(), inspected_rvh, dock_side, false, false,
+        true);
     manager->RegisterDevToolsClientHostFor(agent.get(),
                                            window->frontend_host_.get());
     do_open = true;
@@ -547,7 +548,8 @@ void DevToolsWindow::Show(const DevToolsToggleAction& action) {
     int inspected_tab_index = -1;
     // Tell inspected browser to update splitter and switch to inspected panel.
     if (!IsInspectedBrowserPopup() &&
-        FindInspectedBrowserAndTabIndex(&inspected_browser,
+        FindInspectedBrowserAndTabIndex(GetInspectedWebContents(),
+                                        &inspected_browser,
                                         &inspected_tab_index)) {
       BrowserWindow* inspected_window = inspected_browser->window();
       web_contents_->SetDelegate(this);
@@ -587,7 +589,8 @@ bool DevToolsWindow::HandleBeforeUnload(content::WebContents* frontend_contents,
     bool proceed, bool* proceed_to_fire_unload) {
   DevToolsWindow* window = AsDevToolsWindow(
       frontend_contents->GetRenderViewHost());
-  DCHECK(window);
+  if (!window)
+    return false;
   if (!window->intercepted_page_beforeunload_)
     return false;
   window->BeforeUnloadFired(frontend_contents, proceed,
@@ -633,7 +636,8 @@ bool DevToolsWindow::HasFiredBeforeUnloadEventForDevToolsBrowser(
   content::WebContents* contents =
       browser->tab_strip_model()->GetWebContentsAt(0);
   DevToolsWindow* window = AsDevToolsWindow(contents->GetRenderViewHost());
-  DCHECK(window);
+  if (!window)
+    return false;
   return window->intercepted_page_beforeunload_;
 }
 
@@ -710,11 +714,26 @@ DevToolsWindow* DevToolsWindow::Create(
     content::RenderViewHost* inspected_rvh,
     DevToolsDockSide dock_side,
     bool shared_worker_frontend,
-    bool external_frontend) {
+    bool external_frontend,
+    bool can_dock) {
+  if (inspected_rvh) {
+    // Check for a place to dock.
+    Browser* browser = NULL;
+    int tab;
+    content::WebContents* inspected_web_contents =
+        content::WebContents::FromRenderViewHost(inspected_rvh);
+    if (!FindInspectedBrowserAndTabIndex(inspected_web_contents,
+                                         &browser, &tab) ||
+        browser->is_type_popup()) {
+      can_dock = false;
+    }
+  }
+
   // Create WebContents with devtools.
   GURL url(GetDevToolsURL(profile, frontend_url, dock_side,
                           shared_worker_frontend,
-                          external_frontend));
+                          external_frontend,
+                          can_dock));
   return new DevToolsWindow(profile, url, inspected_rvh, dock_side);
 }
 
@@ -723,7 +742,8 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
                                     const GURL& base_url,
                                     DevToolsDockSide dock_side,
                                     bool shared_worker_frontend,
-                                    bool external_frontend) {
+                                    bool external_frontend,
+                                    bool can_dock) {
   if (base_url.SchemeIs("data"))
     return base_url;
 
@@ -743,6 +763,8 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
     url_string += "&isSharedWorker=true";
   if (external_frontend)
     url_string += "&remoteFrontend=true";
+  if (can_dock)
+    url_string += "&can_dock=true";
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableDevToolsExperiments))
     url_string += "&experiments=true";
@@ -946,7 +968,8 @@ content::JavaScriptDialogManager* DevToolsWindow::GetJavaScriptDialogManager() {
 
 content::ColorChooser* DevToolsWindow::OpenColorChooser(
     content::WebContents* web_contents,
-    SkColor initial_color) {
+    SkColor initial_color,
+    const std::vector<content::ColorSuggestion>& suggestions) {
   return chrome::ShowColorChooser(web_contents, initial_color);
 }
 
@@ -958,7 +981,8 @@ void DevToolsWindow::RunFileChooser(content::WebContents* web_contents,
 void DevToolsWindow::WebContentsFocused(content::WebContents* contents) {
   Browser* inspected_browser = NULL;
   int inspected_tab_index = -1;
-  if (IsDocked() && FindInspectedBrowserAndTabIndex(&inspected_browser,
+  if (IsDocked() && FindInspectedBrowserAndTabIndex(GetInspectedWebContents(),
+                                                    &inspected_browser,
                                                     &inspected_tab_index))
     inspected_browser->window()->WebContentsFocused(contents);
 }
@@ -1113,6 +1137,8 @@ void DevToolsWindow::SaveToFile(const std::string& url,
                                 bool save_as) {
   file_helper_->Save(url, content, save_as,
                      base::Bind(&DevToolsWindow::FileSavedAs,
+                                weak_factory_.GetWeakPtr(), url),
+                     base::Bind(&DevToolsWindow::CanceledFileSaveAs,
                                 weak_factory_.GetWeakPtr(), url));
 }
 
@@ -1212,6 +1238,12 @@ void DevToolsWindow::FileSavedAs(const std::string& url) {
   CallClientFunction("InspectorFrontendAPI.savedURL", &url_value, NULL, NULL);
 }
 
+void DevToolsWindow::CanceledFileSaveAs(const std::string& url) {
+  StringValue url_value(url);
+  CallClientFunction("InspectorFrontendAPI.canceledSaveURL",
+                     &url_value, NULL, NULL);
+}
+
 void DevToolsWindow::AppendedTo(const std::string& url) {
   StringValue url_value(url);
   CallClientFunction("InspectorFrontendAPI.appendedToURL", &url_value, NULL,
@@ -1289,7 +1321,7 @@ void DevToolsWindow::SearchCompleted(
 }
 
 void DevToolsWindow::ShowDevToolsConfirmInfoBar(
-    const string16& message,
+    const base::string16& message,
     const InfoBarCallback& callback) {
   DevToolsConfirmInfoBarDelegate::Create(
       IsDocked() ?
@@ -1323,9 +1355,9 @@ void DevToolsWindow::CreateDevToolsBrowser() {
   GetRenderViewHost()->SyncRendererPrefs();
 }
 
-bool DevToolsWindow::FindInspectedBrowserAndTabIndex(Browser** browser,
-                                                     int* tab) {
-  content::WebContents* inspected_web_contents = GetInspectedWebContents();
+// static
+bool DevToolsWindow::FindInspectedBrowserAndTabIndex(
+    content::WebContents* inspected_web_contents, Browser** browser, int* tab) {
   if (!inspected_web_contents)
     return false;
 
@@ -1344,14 +1376,16 @@ bool DevToolsWindow::FindInspectedBrowserAndTabIndex(Browser** browser,
 BrowserWindow* DevToolsWindow::GetInspectedBrowserWindow() {
   Browser* browser = NULL;
   int tab;
-  return FindInspectedBrowserAndTabIndex(&browser, &tab) ?
+  return FindInspectedBrowserAndTabIndex(GetInspectedWebContents(),
+                                         &browser, &tab) ?
       browser->window() : NULL;
 }
 
 bool DevToolsWindow::IsInspectedBrowserPopup() {
   Browser* browser = NULL;
   int tab;
-  return FindInspectedBrowserAndTabIndex(&browser, &tab) &&
+  return FindInspectedBrowserAndTabIndex(GetInspectedWebContents(),
+                                         &browser, &tab) &&
       browser->is_type_popup();
 }
 
@@ -1478,7 +1512,7 @@ void DevToolsWindow::CallClientFunction(const std::string& function_name,
       }
     }
   }
-  string16 javascript = ASCIIToUTF16(function_name + "(" + params + ");");
+  base::string16 javascript = ASCIIToUTF16(function_name + "(" + params + ");");
   web_contents_->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
       base::string16(), javascript);
 }

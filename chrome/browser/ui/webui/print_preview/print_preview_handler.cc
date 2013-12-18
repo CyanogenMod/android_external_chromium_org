@@ -554,7 +554,7 @@ bool PrintPreviewHandler::PrivetPrintingEnabled() {
 #if defined(ENABLE_MDNS)
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   return !command_line->HasSwitch(switches::kDisableDeviceDiscovery) &&
-      command_line->HasSwitch(switches::kEnablePrivetLocalPrinting);
+      !command_line->HasSwitch(switches::kDisablePrivetLocalPrinting);
 #else
   return false;
 #endif
@@ -758,7 +758,7 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
 #endif
 
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
   if (!GetPreviewDataAndTitle(&data, &title)) {
     // Nothing to print, no preview available.
     return;
@@ -824,7 +824,7 @@ void PrintPreviewHandler::PrintToPdf() {
     PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
         web_ui()->GetController());
     // Pre-populating select file dialog with print job title.
-    string16 print_job_title_utf16 = print_preview_ui->initiator_title();
+    base::string16 print_job_title_utf16 = print_preview_ui->initiator_title();
 
 #if defined(OS_WIN)
     base::FilePath::StringType print_job_title(print_job_title_utf16);
@@ -918,7 +918,7 @@ void PrintPreviewHandler::PrintWithCloudPrintDialog() {
   ReportStats();
 
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
   if (!GetPreviewDataAndTitle(&data, &title)) {
     // Nothing to print, no preview available.
     return;
@@ -931,7 +931,7 @@ void PrintPreviewHandler::PrintWithCloudPrintDialog() {
       modal_parent,
       data.get(),
       title,
-      string16(),
+      base::string16(),
       std::string("application/pdf"));
 
   // Once the cloud print dialog comes up we're no longer in a background
@@ -1172,9 +1172,7 @@ void PrintPreviewHandler::SendCloudPrintJob(const base::RefCountedBytes* data) {
   std::string raw_data(reinterpret_cast<const char*>(data->front()),
                        data->size());
   std::string base64_data;
-  if (!base::Base64Encode(raw_data, &base64_data)) {
-    NOTREACHED() << "Base64 encoding PDF data.";
-  }
+  base::Base64Encode(raw_data, &base64_data);
   StringValue data_value(base64_data);
 
   web_ui()->CallJavascriptFunction("printToCloud", data_value);
@@ -1215,7 +1213,7 @@ void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
       this, new ChromeSelectFilePolicy(preview_web_contents())),
   select_file_dialog_->SelectFile(
       ui::SelectFileDialog::SELECT_SAVEAS_FILE,
-      string16(),
+      base::string16(),
       sticky_settings->save_path()->Append(default_filename),
       &file_type_info,
       0,
@@ -1260,7 +1258,7 @@ void PrintPreviewHandler::FileSelected(const base::FilePath& path,
 
 void PrintPreviewHandler::PostPrintToPdfTask() {
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
   if (!GetPreviewDataAndTitle(&data, &title)) {
     NOTREACHED() << "Preview data was checked before file dialog.";
     return;
@@ -1296,7 +1294,7 @@ void PrintPreviewHandler::ClearInitiatorDetails() {
 
 bool PrintPreviewHandler::GetPreviewDataAndTitle(
     scoped_refptr<base::RefCountedBytes>* data,
-    string16* title) const {
+    base::string16* title) const {
   PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
       web_ui()->GetController());
   scoped_refptr<base::RefCountedBytes> tmp_data;
@@ -1366,11 +1364,16 @@ void PrintPreviewHandler::ConvertColorSettingToCUPSColorModel(
 void PrintPreviewHandler::LocalPrinterChanged(
     bool added,
     const std::string& name,
+    bool has_local_printing,
     const local_discovery::DeviceDescription& description) {
-  base::DictionaryValue info;
-  FillPrinterDescription(name, description, &info);
-
-  web_ui()->CallJavascriptFunction("onPrivetPrinterChanged", info);
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (has_local_printing ||
+      (command_line->HasSwitch(switches::kEnablePrintPreviewRegisterPromos) &&
+       description.id.empty())) {
+    base::DictionaryValue info;
+    FillPrinterDescription(name, description, has_local_printing, &info);
+    web_ui()->CallJavascriptFunction("onPrivetPrinterChanged", info);
+  }
 }
 
 void PrintPreviewHandler::LocalPrinterRemoved(const std::string& name) {
@@ -1431,7 +1434,7 @@ void PrintPreviewHandler::StartPrivetLocalPrint(
   privet_local_print_operation_->SetTicket(print_ticket);
 
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
 
   if (!GetPreviewDataAndTitle(&data, &title)) {
     base::FundamentalValue http_code_value(-1);
@@ -1487,7 +1490,7 @@ void PrintPreviewHandler::OnPrivetCapabilities(
     return;
   }
 
-  FillPrinterDescription(name, *description, &printer_info);
+  FillPrinterDescription(name, *description, true, &printer_info);
 
   web_ui()->CallJavascriptFunction(
       "onPrivetCapabilitiesSet",
@@ -1555,9 +1558,12 @@ void PrintPreviewHandler::OnPrivetPrintingError(
 void PrintPreviewHandler::FillPrinterDescription(
     const std::string& name,
     const local_discovery::DeviceDescription& description,
+    bool has_local_printing,
     base::DictionaryValue* printer_value) {
   printer_value->SetString("serviceName", name);
   printer_value->SetString("name", description.name);
+  printer_value->SetBoolean("hasLocalPrinting", has_local_printing);
+  printer_value->SetBoolean("isUnregistered", description.id.empty());
 }
 
 #endif

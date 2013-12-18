@@ -100,67 +100,6 @@ body {
   opacity: 0.5;
 }
 
-#butter-bar-container {
-  width: 100%;
-}
-
-#butter-bar {
-  color: #666;
-  display: -webkit-box;
-  padding: 15px;
-}
-
-#butter-bar:not(.visible) {
-  display: none;
-}
-
-#butter-bar .content {
-  -webkit-box-flex: 1.0;
-  -webkit-box-orient: block-axis;
-  -webkit-box-pack: end;
-  display: -webkit-box;
-}
-
-#butter-bar .actions {
-  -webkit-box-align: end;
-  -webkit-box-orient: horizontal;
-  -webkit-box-pack: end;
-  -webkit-margin-start: 6px;
-  display: -webkit-box;
-}
-
-#butter-bar .actions a {
-  color: rgb(17, 85, 204);
-  cursor: pointer;
-  vertical-align: middle;
-}
-
-#butter-bar .actions a.x {
-  background: center center no-repeat;
-  background-image: -webkit-image-set(
-    url('../images/files/ui/close_bar.png') 1x,
-    url('../images/files/ui/2x/close_bar.png') 2x);
-  display: inline-block;
-  height: 35px;  /* #butter-bar .content's min-height. */
-  margin-right: -12px;
-  width: 35px;
-}
-
-#butter-bar .actions a.x:first-child {
-  margin-left: -6px;
-}
-
-#butter-bar .actions a.x {
-  margin-bottom: -14px;
-}
-
-#butter-bar .butter-message.single-line {
-  line-height: 2.0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Main part of the dialog between header and footer. */
 .dialog-container {
   -webkit-box-align: stretch;
@@ -406,10 +345,6 @@ div.splitter {
 
 #navigation-list:focus .root-item[selected] > div.root-eject {
   -webkit-filter: brightness(0) invert();
-  opacity: 1;
-}
-
-#directory-tree .tree-row > div.root-eject:hover {
   opacity: 1;
 }
 
@@ -1010,10 +945,11 @@ input.rename {
 }
 
 .preview-panel[visibility=hiding] {
-  /* Using all seems to cause preview panel and checkbox flicking issue. */
   -webkit-transform: translate(0, 5px);
   opacity: 0;
-  transition: opacity 220ms ease;
+  /* Using all seems to cause preview panel and checkbox flicking issue. */
+  transition: opacity 220ms ease,
+              -webkit-transform 220ms ease;
 }
 
 .preview-panel[visibility=hidden] {

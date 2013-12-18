@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "ash/display/display_controller.h"
-#include "ash/launcher/launcher_delegate.h"
-#include "ash/launcher/launcher_item_delegate.h"
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_delegate.h"
+#include "ash/shelf/shelf_item_delegate.h"
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shelf/shelf_model_observer.h"
 #include "ash/shelf/shelf_types.h"
@@ -25,12 +25,12 @@
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/app_icon_loader.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable_observer.h"
 #include "chrome/browser/ui/ash/app_sync_ui_state_observer.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_types.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/aura/window_observer.h"
@@ -47,7 +47,7 @@ class ShellWindowLauncherController;
 class TabContents;
 
 namespace ash {
-class LauncherItemDelegateManager;
+class ShelfItemDelegateManager;
 class ShelfModel;
 }
 
@@ -57,6 +57,10 @@ class Window;
 
 namespace content {
 class WebContents;
+}
+
+namespace extensions {
+class Extension;
 }
 
 namespace ui {
@@ -86,7 +90,7 @@ class ChromeLauncherControllerUserSwitchObserver {
 // * App shell windows have ShellWindowLauncherItemController, owned by
 //   ShellWindowLauncherController.
 // * Shortcuts have no LauncherItemController.
-class ChromeLauncherController : public ash::LauncherDelegate,
+class ChromeLauncherController : public ash::ShelfDelegate,
                                  public ash::ShelfModelObserver,
                                  public ash::ShellObserver,
                                  public ash::DisplayController::Observer,
@@ -213,7 +217,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
                    int event_flags);
 
   // Returns the launch type of app for the specified id.
-  extensions::ExtensionPrefs::LaunchType GetLaunchType(ash::LauncherID id);
+  extensions::LaunchType GetLaunchType(ash::LauncherID id);
 
   // Set the image for a specific launcher item (e.g. when set by the app).
   void SetLauncherItemImage(ash::LauncherID launcher_id,
@@ -223,9 +227,9 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // pinned item in the launcher.
   bool IsWindowedAppInLauncher(const std::string& app_id);
 
-  // Updates the launche type of the app for the specified id to |launch_type|.
+  // Updates the launch type of the app for the specified id to |launch_type|.
   void SetLaunchType(ash::LauncherID id,
-                     extensions::ExtensionPrefs::LaunchType launch_type);
+                     extensions::LaunchType launch_type);
 
   // Returns true if the user is currently logged in as a guest.
   // Makes virtual for unittest in LauncherContextMenuTest.
@@ -286,7 +290,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   void ActivateWindowOrMinimizeIfActive(ui::BaseWindow* window,
                                         bool allow_minimize);
 
-  // ash::LauncherDelegate overrides:
+  // ash::ShelfDelegate overrides:
   virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
   virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
   virtual ash::LauncherID GetLauncherIDForAppID(
@@ -371,7 +375,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // Get the title for the applicatoin list entry for |web_contents|.
   // If |web_contents| has not loaded, returns "Net Tab".
-  string16 GetAppListTitle(content::WebContents* web_contents) const;
+  base::string16 GetAppListTitle(content::WebContents* web_contents) const;
 
   // Returns the LauncherItemController of BrowserShortcut.
   BrowserShortcutLauncherItemController*
@@ -404,10 +408,10 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   void SetAppIconLoaderForTest(extensions::AppIconLoader* loader);
   const std::string& GetAppIdFromLauncherIdForTest(ash::LauncherID id);
 
-  // Sets the ash::LauncherItemDelegateManager only for unittests and doesn't
+  // Sets the ash::ShelfItemDelegateManager only for unittests and doesn't
   // take an ownership of it.
-  void SetLauncherItemDelegateManagerForTest(
-      ash::LauncherItemDelegateManager* manager);
+  void SetShelfItemDelegateManagerForTest(
+      ash::ShelfItemDelegateManager* manager);
 
  private:
   friend class ChromeLauncherControllerTest;
@@ -426,9 +430,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
       const std::string& app_id,
       int index,
       ash::LauncherItemType launcher_item_type);
-
-  // Returns the profile used for new windows.
-  Profile* GetProfileForNewWindows();
 
   // Invoked when the associated browser or app is closed.
   void LauncherItemClosed(ash::LauncherID id);
@@ -520,10 +521,10 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // deleted.
   void CloseWindowedAppsFromRemovedExtension(const std::string& app_id);
 
-  // Set LauncherItemDelegate |item_delegate| for |id| and take an ownership.
+  // Set ShelfItemDelegate |item_delegate| for |id| and take an ownership.
   // TODO(simon.hong81): Make this take a scoped_ptr of |item_delegate|.
-  void SetLauncherItemDelegate(ash::LauncherID id,
-                               ash::LauncherItemDelegate* item_delegate);
+  void SetShelfItemDelegate(ash::LauncherID id,
+                            ash::ShelfItemDelegate* item_delegate);
 
   // Attach to a specific profile.
   void AttachProfile(Profile* proifile);
@@ -540,7 +541,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   ash::ShelfModel* model_;
 
-  ash::LauncherItemDelegateManager* item_delegate_manager_;
+  ash::ShelfItemDelegateManager* item_delegate_manager_;
 
   // Profile used for prefs and loading extensions. This is NOT necessarily the
   // profile new windows are created with.

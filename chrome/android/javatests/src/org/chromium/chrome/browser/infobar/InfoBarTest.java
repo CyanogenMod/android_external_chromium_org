@@ -9,29 +9,23 @@ import android.test.suitebuilder.annotation.Smoke;
 
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
-import org.chromium.chrome.browser.infobar.InfoBar;
-import org.chromium.chrome.browser.infobar.InfoBarContainer;
-import org.chromium.chrome.browser.infobar.InfoBarListeners;
-import org.chromium.content.browser.test.util.Criteria;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.chrome.test.util.InfoBarTestAnimationListener;
 import org.chromium.chrome.test.util.InfoBarUtil;
 import org.chromium.chrome.test.util.TestHttpServerClient;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
+import org.chromium.content.browser.test.util.Criteria;
+import org.chromium.content.browser.test.util.CriteriaHelper;
 
-
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeoutException;
 
 public class InfoBarTest extends ChromiumTestShellTestBase {
-    private final static int MAX_TIMEOUT = 2000;
-    private final static int CHECK_INTERVAL = 500;
-    private final static String GEOLOCATION_PAGE =
+    private static final int MAX_TIMEOUT = 2000;
+    private static final int CHECK_INTERVAL = 500;
+    private static final String GEOLOCATION_PAGE =
             "chrome/test/data/geolocation/geolocation_on_load.html";
-    private final static String POPUP_PAGE =
+    private static final String POPUP_PAGE =
             "chrome/test/data/popup_blocker/popup-window-open.html";
-    public final static String HELLO_WORLD_URL = UrlUtils.encodeHtmlDataUri(
+    public static final String HELLO_WORLD_URL = UrlUtils.encodeHtmlDataUri(
             "<html>" +
             "<head><title>Hello, World!</title></head>" +
             "<body>Hello, World!</body>" +

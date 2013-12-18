@@ -65,18 +65,19 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual ~ChromeContentRendererClient();
 
   virtual void RenderThreadStarted() OVERRIDE;
+  virtual void RenderFrameCreated(content::RenderFrame* render_frame) OVERRIDE;
   virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
   virtual void SetNumberOfViews(int number_of_views) OVERRIDE;
   virtual SkBitmap* GetSadPluginBitmap() OVERRIDE;
   virtual SkBitmap* GetSadWebViewBitmap() OVERRIDE;
   virtual std::string GetDefaultEncoding() OVERRIDE;
   virtual bool OverrideCreatePlugin(
-      content::RenderView* render_view,
+      content::RenderFrame* render_frame,
       blink::WebFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin) OVERRIDE;
   virtual blink::WebPlugin* CreatePluginReplacement(
-      content::RenderView* render_view,
+      content::RenderFrame* render_frame,
       const base::FilePath& plugin_path) OVERRIDE;
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain) OVERRIDE;
@@ -87,8 +88,8 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       const blink::WebURLError& error,
       const std::string& accept_languages,
       std::string* error_html,
-      string16* error_description) OVERRIDE;
-  virtual void DeferMediaLoad(content::RenderView* render_view,
+      base::string16* error_description) OVERRIDE;
+  virtual void DeferMediaLoad(content::RenderFrame* render_frame,
                               const base::Closure& closure) OVERRIDE;
   virtual bool RunIdleHandlerWhenWidgetsHidden() OVERRIDE;
   virtual bool AllowPopup() OVERRIDE;
@@ -116,7 +117,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
   virtual blink::WebPrescientNetworking* GetPrescientNetworking() OVERRIDE;
   virtual bool ShouldOverridePageVisibilityState(
-      const content::RenderView* render_view,
+      const content::RenderFrame* render_frame,
       blink::WebPageVisibilityState* override_state) OVERRIDE;
   virtual bool HandleGetCookieRequest(content::RenderView* sender,
                                       const GURL& url,
@@ -157,7 +158,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   void OnPurgeMemory();
 
   static blink::WebPlugin* CreatePlugin(
-      content::RenderView* render_view,
+      content::RenderFrame* render_frame,
       blink::WebFrame* frame,
       const blink::WebPluginParams& params,
       const ChromeViewHostMsg_GetPluginInfo_Output& output);

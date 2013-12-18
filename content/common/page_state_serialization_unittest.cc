@@ -208,7 +208,7 @@ class PageStateSerializationTest : public testing::Test {
     }
 
     std::string trimmed_contents;
-    EXPECT_TRUE(RemoveChars(file_contents, "\r\n", &trimmed_contents));
+    EXPECT_TRUE(base::RemoveChars(file_contents, "\r\n", &trimmed_contents));
 
     std::string encoded;
     EXPECT_TRUE(base::Base64Decode(trimmed_contents, &encoded));
@@ -373,13 +373,13 @@ TEST_F(PageStateSerializationTest, DumpExpectedPageStateForBackwardsCompat) {
   EXPECT_TRUE(EncodePageState(state, &encoded));
 
   std::string base64;
-  EXPECT_TRUE(base::Base64Encode(encoded, &base64));
+  base::Base64Encode(encoded, &base64);
 
   base::FilePath path;
   PathService::Get(base::DIR_TEMP, &path);
   path = path.AppendASCII("expected.dat");
 
-  FILE* fp = file_util::OpenFile(path, "wb");
+  FILE* fp = base::OpenFile(path, "wb");
   ASSERT_TRUE(fp);
 
   const size_t kRowSize = 76;

@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 package org.chromium.ui.autofill;
 
 import android.content.Context;
-import android.content.res.Resources;
 import android.graphics.Color;
-import android.graphics.drawable.LayerDrawable;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -17,9 +14,8 @@ import android.widget.AbsListView.LayoutParams;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
-import org.chromium.ui.R;
-
 import org.chromium.base.ApiCompatibilityUtils;
+import org.chromium.ui.R;
 
 import java.util.ArrayList;
 import java.util.Set;

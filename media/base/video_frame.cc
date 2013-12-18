@@ -32,6 +32,7 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
     case VideoFrame::YV12A:
     case VideoFrame::YV16:
     case VideoFrame::I420:
+    case VideoFrame::YV12J:
       frame->AllocateYUV();
       break;
     default:
@@ -59,6 +60,8 @@ std::string VideoFrame::FormatToString(VideoFrame::Format format) {
 #endif
     case VideoFrame::YV12A:
       return "YV12A";
+    case VideoFrame::YV12J:
+      return "YV12J";
     case VideoFrame::HISTOGRAM_MAX:
       return "HISTOGRAM_MAX";
   }
@@ -88,7 +91,7 @@ bool VideoFrame::IsValidConfig(VideoFrame::Format format,
 
 // static
 scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
-    const scoped_refptr<MailboxHolder>& mailbox_holder,
+    scoped_ptr<MailboxHolder> mailbox_holder,
     uint32 texture_target,
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
@@ -102,7 +105,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
                                                  natural_size,
                                                  timestamp,
                                                  false));
-  frame->texture_mailbox_holder_ = mailbox_holder;
+  frame->texture_mailbox_holder_ = mailbox_holder.Pass();
   frame->texture_target_ = texture_target;
   frame->read_pixels_cb_ = read_pixels_cb;
   frame->no_longer_needed_cb_ = no_longer_needed_cb;
@@ -178,6 +181,23 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
 }
 
 // static
+scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
+      const scoped_refptr<VideoFrame>& frame,
+      const base::Closure& no_longer_needed_cb) {
+  scoped_refptr<VideoFrame> wrapped_frame(new VideoFrame(
+      frame->format(), frame->coded_size(), frame->visible_rect(),
+      frame->natural_size(), frame->GetTimestamp(), frame->end_of_stream()));
+
+  for (size_t i = 0; i < NumPlanes(frame->format()); ++i) {
+    wrapped_frame->strides_[i] = frame->stride(i);
+    wrapped_frame->data_[i] = frame->data(i);
+  }
+
+  wrapped_frame->no_longer_needed_cb_ = no_longer_needed_cb;
+  return wrapped_frame;
+}
+
+// static
 scoped_refptr<VideoFrame> VideoFrame::CreateEOSFrame() {
   return new VideoFrame(VideoFrame::UNKNOWN,
                         gfx::Size(),
@@ -236,6 +256,7 @@ size_t VideoFrame::NumPlanes(Format format) {
     case VideoFrame::YV12:
     case VideoFrame::YV16:
     case VideoFrame::I420:
+    case VideoFrame::YV12J:
       return 3;
     case VideoFrame::YV12A:
       return 4;
@@ -269,6 +290,7 @@ size_t VideoFrame::PlaneAllocationSize(Format format,
       RoundUp(coded_size.width(), 2) * RoundUp(coded_size.height(), 2);
   switch (format) {
     case VideoFrame::YV12:
+    case VideoFrame::YV12J:
     case VideoFrame::I420: {
       switch (plane) {
         case VideoFrame::kYPlane:
@@ -324,7 +346,8 @@ static void ReleaseData(uint8* data) {
 
 void VideoFrame::AllocateYUV() {
   DCHECK(format_ == VideoFrame::YV12 || format_ == VideoFrame::YV16 ||
-         format_ == VideoFrame::YV12A || format_ == VideoFrame::I420);
+         format_ == VideoFrame::YV12A || format_ == VideoFrame::I420 ||
+         format_ == VideoFrame::YV12J);
   // Align Y rows at least at 16 byte boundaries.  The stride for both
   // YV12 and YV16 is 1/2 of the stride of Y.  For YV12, every row of bytes for
   // U and V applies to two rows of Y (one byte of UV for 4 bytes of Y), so in
@@ -419,6 +442,7 @@ int VideoFrame::row_bytes(size_t plane) const {
     case YV12:
     case YV16:
     case I420:
+    case YV12J:
       if (plane == kYPlane)
         return width;
       return RoundUp(width, 2) / 2;
@@ -463,10 +487,9 @@ uint8* VideoFrame::data(size_t plane) const {
   return data_[plane];
 }
 
-const scoped_refptr<VideoFrame::MailboxHolder>& VideoFrame::texture_mailbox()
-    const {
+VideoFrame::MailboxHolder* VideoFrame::texture_mailbox() const {
   DCHECK_EQ(format_, NATIVE_TEXTURE);
-  return texture_mailbox_holder_;
+  return texture_mailbox_holder_.get();
 }
 
 uint32 VideoFrame::texture_target() const {

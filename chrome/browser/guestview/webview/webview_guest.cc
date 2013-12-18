@@ -17,6 +17,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -120,7 +121,8 @@ WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
       script_executor_(new extensions::ScriptExecutor(guest_web_contents,
                                                       &script_observers_)),
       next_permission_request_id_(0),
-      is_overriding_user_agent_(false) {
+      is_overriding_user_agent_(false),
+      pending_reload_on_attachment_(false) {
   notification_registrar_.Add(
       this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
       content::Source<WebContents>(guest_web_contents));
@@ -267,9 +269,9 @@ AdViewGuest* WebViewGuest::AsAdView() {
 }
 
 void WebViewGuest::AddMessageToConsole(int32 level,
-                                       const string16& message,
+                                       const base::string16& message,
                                        int32 line_no,
-                                       const string16& source_id) {
+                                       const base::string16& source_id) {
   scoped_ptr<DictionaryValue> args(new DictionaryValue());
   // Log levels are from base/logging.h: LogSeverity.
   args->SetInteger(webview::kLevel, level);
@@ -283,6 +285,13 @@ void WebViewGuest::AddMessageToConsole(int32 level,
 void WebViewGuest::Close() {
   scoped_ptr<DictionaryValue> args(new DictionaryValue());
   DispatchEvent(new GuestView::Event(webview::kEventClose, args.Pass()));
+}
+
+void WebViewGuest::DidAttach() {
+  if (pending_reload_on_attachment_) {
+    pending_reload_on_attachment_ = false;
+    guest_web_contents()->GetController().Reload(false);
+  }
 }
 
 void WebViewGuest::EmbedderDestroyed() {
@@ -556,7 +565,7 @@ WebViewGuest::~WebViewGuest() {
 
 void WebViewGuest::DidCommitProvisionalLoadForFrame(
     int64 frame_id,
-    const string16& frame_unique_name,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& url,
     content::PageTransition transition_type,
@@ -575,15 +584,15 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
 
 void WebViewGuest::DidFailProvisionalLoad(
     int64 frame_id,
-    const string16& frame_unique_name,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& validated_url,
     int error_code,
-    const string16& error_description,
+    const base::string16& error_description,
     content::RenderViewHost* render_view_host) {
   // Translate the |error_code| into an error string.
   std::string error_type;
-  RemoveChars(net::ErrorToString(error_code), "net::", &error_type);
+  base::RemoveChars(net::ErrorToString(error_code), "net::", &error_type);
   LoadAbort(is_main_frame, validated_url, error_type);
 }
 
@@ -608,6 +617,22 @@ void WebViewGuest::DidStopLoading(content::RenderViewHost* render_view_host) {
 
 void WebViewGuest::WebContentsDestroyed(WebContents* web_contents) {
   RemoveWebViewFromExtensionRendererState(web_contents);
+}
+
+void WebViewGuest::UserAgentOverrideSet(const std::string& user_agent) {
+  content::NavigationController& controller =
+      guest_web_contents()->GetController();
+  content::NavigationEntry* entry = controller.GetVisibleEntry();
+  if (!entry)
+    return;
+  entry->SetIsOverridingUserAgent(!user_agent.empty());
+  if (!attached()) {
+    // We cannot reload now because all resource loads are suspended until
+    // attachment.
+    pending_reload_on_attachment_ = true;
+    return;
+  }
+  guest_web_contents()->GetController().Reload(false);
 }
 
 void WebViewGuest::LoadHandlerCalled() {
@@ -677,6 +702,11 @@ GURL WebViewGuest::ResolveURL(const std::string& src) {
     NOTREACHED();
     return GURL(src);
   }
+
+  // Only resolve URL to chrome-extension:// if we support such URLs.
+  if (!AllowChromeExtensionURLs())
+    return GURL(src);
+
   GURL default_url(base::StringPrintf("%s://%s/",
                                       extensions::kExtensionScheme,
                                       extension_id().c_str()));

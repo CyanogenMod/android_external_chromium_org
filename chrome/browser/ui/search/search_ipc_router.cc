@@ -25,8 +25,9 @@ void SearchIPCRouter::DetermineIfPageSupportsInstant() {
   Send(new ChromeViewMsg_DetermineIfPageSupportsInstant(routing_id()));
 }
 
-void SearchIPCRouter::SendChromeIdentityCheckResult(const string16& identity,
-                                                    bool identity_match) {
+void SearchIPCRouter::SendChromeIdentityCheckResult(
+    const base::string16& identity,
+    bool identity_match) {
   if (!policy_->ShouldProcessChromeIdentityCheck())
     return;
 
@@ -49,7 +50,8 @@ void SearchIPCRouter::SetDisplayInstantResults() {
   bool is_search_results_page = !chrome::GetSearchTerms(web_contents()).empty();
   Send(new ChromeViewMsg_SearchBoxSetDisplayInstantResults(
        routing_id(),
-       is_search_results_page && chrome::ShouldPrefetchSearchResultsOnSRP()));
+       (is_search_results_page && chrome::ShouldPrefetchSearchResultsOnSRP()) ||
+       chrome::ShouldPrefetchSearchResults()));
 }
 
 void SearchIPCRouter::SetSuggestionToPrefetch(
@@ -84,7 +86,7 @@ void SearchIPCRouter::ToggleVoiceSearch() {
   Send(new ChromeViewMsg_SearchBoxToggleVoiceSearch(routing_id()));
 }
 
-void SearchIPCRouter::Submit(const string16& text) {
+void SearchIPCRouter::Submit(const base::string16& text) {
   if (!policy_->ShouldSubmitQuery())
     return;
 
@@ -220,7 +222,7 @@ void SearchIPCRouter::OnLogEvent(int page_id, NTPLoggingEventType event) const {
 }
 
 void SearchIPCRouter::OnPasteAndOpenDropDown(int page_id,
-                                             const string16& text) const {
+                                             const base::string16& text) const {
   if (!web_contents()->IsActiveEntry(page_id))
     return;
 
@@ -231,8 +233,9 @@ void SearchIPCRouter::OnPasteAndOpenDropDown(int page_id,
   delegate_->PasteIntoOmnibox(text);
 }
 
-void SearchIPCRouter::OnChromeIdentityCheck(int page_id,
-                                            const string16& identity) const {
+void SearchIPCRouter::OnChromeIdentityCheck(
+    int page_id,
+    const base::string16& identity) const {
   if (!web_contents()->IsActiveEntry(page_id))
     return;
 

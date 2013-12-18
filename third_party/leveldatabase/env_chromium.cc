@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <deque>
 
@@ -537,7 +538,7 @@ Status ChromiumWritableFile::SyncParent() {
     s = MakeIOError(
         parent_dir_, strerror(saved_errno), kSyncParent, saved_errno);
   };
-  HANDLE_EINTR(close(parent_fd));
+  close(parent_fd);
 #endif
   return s;
 }
@@ -786,8 +787,11 @@ static base::PlatformFileError GetDirectoryEntries(
   struct dirent dent_buf;
   struct dirent* dent;
   int readdir_result;
-  while ((readdir_result = readdir_r(dir, &dent_buf, &dent)) == 0 && dent)
+  while ((readdir_result = readdir_r(dir, &dent_buf, &dent)) == 0 && dent) {
+    if (strcmp(dent->d_name, ".") == 0 || strcmp(dent->d_name, "..") == 0)
+      continue;
     result->push_back(CreateFilePath(dent->d_name));
+  }
   int saved_errno = errno;
   closedir(dir);
   if (readdir_result != 0)
@@ -807,6 +811,7 @@ Status ChromiumEnv::GetChildren(const std::string& dir_string,
     return MakeIOError(
         dir_string, "Could not open/read directory", kGetChildren, error);
   }
+  result->clear();
   for (std::vector<base::FilePath>::iterator it = entries.begin();
        it != entries.end();
        ++it) {
@@ -838,7 +843,7 @@ Status ChromiumEnv::CreateDir(const std::string& name) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   Retrier retrier(kCreateDir, this);
   do {
-    if (::file_util::CreateDirectoryAndGetError(CreateFilePath(name), &error))
+    if (base::CreateDirectoryAndGetError(CreateFilePath(name), &error))
       return result;
   } while (retrier.ShouldKeepTrying(error));
   result = MakeIOError(name, "Could not create directory.", kCreateDir, error);
@@ -859,7 +864,7 @@ Status ChromiumEnv::DeleteDir(const std::string& name) {
 Status ChromiumEnv::GetFileSize(const std::string& fname, uint64_t* size) {
   Status s;
   int64_t signed_size;
-  if (!::file_util::GetFileSize(CreateFilePath(fname), &signed_size)) {
+  if (!::base::GetFileSize(CreateFilePath(fname), &signed_size)) {
     *size = 0;
     s = MakeIOError(fname, "Could not determine file size.", kGetFileSize);
     RecordErrorAt(kGetFileSize);
@@ -983,8 +988,8 @@ Status ChromiumEnv::UnlockFile(FileLock* lock) {
 Status ChromiumEnv::GetTestDirectory(std::string* path) {
   mu_.Acquire();
   if (test_directory_.empty()) {
-    if (!::file_util::CreateNewTempDirectory(kLevelDBTestDirectoryPrefix,
-                                             &test_directory_)) {
+    if (!base::CreateNewTempDirectory(kLevelDBTestDirectoryPrefix,
+                                      &test_directory_)) {
       mu_.Release();
       RecordErrorAt(kGetTestDirectory);
       return MakeIOError(

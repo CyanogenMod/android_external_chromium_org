@@ -27,6 +27,7 @@
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTextInputInfo.h"
+#include "third_party/WebKit/public/web/WebTouchAction.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "third_party/WebKit/public/web/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -233,6 +234,22 @@ class CONTENT_EXPORT RenderWidget
   void OnSwapBuffersComplete();
   void OnSwapBuffersAborted();
 
+  // Checks if the text input state and compose inline mode have been changed.
+  // If they are changed, the new value will be sent to the browser process.
+  void UpdateTextInputType();
+
+  // Checks if the selection bounds have been changed. If they are changed,
+  // the new value will be sent to the browser process.
+  void UpdateSelectionBounds();
+
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+  // Checks if the composition range or composition character bounds have been
+  // changed. If they are changed, the new value will be sent to the browser
+  // process.
+  void UpdateCompositionInfo(bool should_update_range);
+#endif
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -314,7 +331,7 @@ class CONTENT_EXPORT RenderWidget
 
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(const blink::WebInputEvent* event,
-                          const ui::LatencyInfo& latency_info,
+                          ui::LatencyInfo latency_info,
                           bool keyboard_shortcut);
   void OnCursorVisibilityChange(bool is_visible);
   void OnMouseCaptureLost();
@@ -331,12 +348,15 @@ class CONTENT_EXPORT RenderWidget
   void OnUpdateVideoAck(int32 video_id);
   void OnRequestMoveAck();
   void OnSetInputMethodActive(bool is_active);
+  void OnCandidateWindowShown();
+  void OnCandidateWindowUpdated();
+  void OnCandidateWindowHidden();
   virtual void OnImeSetComposition(
-      const string16& text,
+      const base::string16& text,
       const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  virtual void OnImeConfirmComposition(const string16& text,
+  virtual void OnImeConfirmComposition(const base::string16& text,
                                        const gfx::Range& replacement_range,
                                        bool keep_selection);
   void OnPaintAtSize(const TransportDIB::Handle& dib_id,
@@ -428,10 +448,6 @@ class CONTENT_EXPORT RenderWidget
   void set_next_paint_is_restore_ack();
   void set_next_paint_is_repaint_ack();
 
-  // Checks if the text input state and compose inline mode have been changed.
-  // If they are changed, the new value will be sent to the browser process.
-  void UpdateTextInputType();
-
 #if defined(OS_ANDROID)
   // |show_ime_if_needed| should be true iff the update may cause the ime to be
   // displayed, e.g. after a tap on an input field on mobile.
@@ -442,10 +458,6 @@ class CONTENT_EXPORT RenderWidget
   void UpdateTextInputState(bool show_ime_if_needed, bool send_ime_ack);
 #endif
 
-  // Checks if the selection bounds have been changed. If they are changed,
-  // the new value will be sent to the browser process.
-  virtual void UpdateSelectionBounds();
-
   // Override point to obtain that the current input method state and caret
   // position.
   virtual ui::TextInputType GetTextInputType();
@@ -454,11 +466,6 @@ class CONTENT_EXPORT RenderWidget
       blink::WebTextInputType type);
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
-  // Checks if the composition range or composition character bounds have been
-  // changed. If they are changed, the new value will be sent to the browser
-  // process.
-  void UpdateCompositionInfo(bool should_update_range);
-
   // Override point to obtain that the current composition character bounds.
   // In the case of surrogate pairs, the character is treated as two characters:
   // the bounds for first character is actual one, and the bounds for second
@@ -529,6 +536,9 @@ class CONTENT_EXPORT RenderWidget
 
   // Check whether the WebWidget has any touch event handlers registered.
   virtual void hasTouchEventHandlers(bool has_handlers);
+
+  // Tell the browser about the actions permitted for a new touch point.
+  virtual void setTouchAction(blink::WebTouchAction touch_action);
 
   // Creates a 3D context associated with this view.
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateGraphicsContext3D(
@@ -641,6 +651,9 @@ class CONTENT_EXPORT RenderWidget
 
   // Are we currently handling an ime event?
   bool handling_ime_event_;
+
+  // Are we currently handling a touchstart event?
+  bool handling_touchstart_event_;
 
   // True if we have requested this widget be closed.  No more messages will
   // be sent, except for a Close.

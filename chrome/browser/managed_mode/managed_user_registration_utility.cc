@@ -105,8 +105,9 @@ class ManagedUserRegistrationUtilityImpl
 
 } // namespace
 
-ManagedUserRegistrationInfo::ManagedUserRegistrationInfo(const string16& name,
-                                                         int avatar_index)
+ManagedUserRegistrationInfo::ManagedUserRegistrationInfo(
+    const base::string16& name,
+    int avatar_index)
     : avatar_index(avatar_index),
       name(name) {
 }
@@ -149,9 +150,7 @@ ManagedUserRegistrationUtility::Create(Profile* profile) {
 // static
 std::string ManagedUserRegistrationUtility::GenerateNewManagedUserId() {
   std::string new_managed_user_id;
-  bool success = base::Base64Encode(base::RandBytesAsString(8),
-                                    &new_managed_user_id);
-  DCHECK(success);
+  base::Base64Encode(base::RandBytesAsString(8), &new_managed_user_id);
   return new_managed_user_id;
 }
 

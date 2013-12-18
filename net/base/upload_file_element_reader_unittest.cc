@@ -26,8 +26,8 @@ class UploadFileElementReaderTest : public PlatformTest {
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                    &temp_file_path_));
+    ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(),
+                                               &temp_file_path_));
     ASSERT_EQ(
         static_cast<int>(bytes_.size()),
         file_util::WriteFile(temp_file_path_, &bytes_[0], bytes_.size()));
@@ -205,7 +205,7 @@ TEST_F(UploadFileElementReaderTest, Range) {
 
 TEST_F(UploadFileElementReaderTest, FileChanged) {
   base::PlatformFileInfo info;
-  ASSERT_TRUE(file_util::GetFileInfo(temp_file_path_, &info));
+  ASSERT_TRUE(base::GetFileInfo(temp_file_path_, &info));
 
   // Expect one second before the actual modification time to simulate change.
   const base::Time expected_modification_time =
@@ -244,8 +244,8 @@ class UploadFileElementReaderSyncTest : public PlatformTest {
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                    &temp_file_path_));
+    ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(),
+                                               &temp_file_path_));
     ASSERT_EQ(
         static_cast<int>(bytes_.size()),
         file_util::WriteFile(temp_file_path_, &bytes_[0], bytes_.size()));
@@ -350,7 +350,7 @@ TEST_F(UploadFileElementReaderSyncTest, Range) {
 
 TEST_F(UploadFileElementReaderSyncTest, FileChanged) {
   base::PlatformFileInfo info;
-  ASSERT_TRUE(file_util::GetFileInfo(temp_file_path_, &info));
+  ASSERT_TRUE(base::GetFileInfo(temp_file_path_, &info));
 
   // Expect one second before the actual modification time to simulate change.
   const base::Time expected_modification_time =

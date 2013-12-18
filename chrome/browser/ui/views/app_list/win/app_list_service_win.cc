@@ -111,45 +111,28 @@ void MigrateAppLauncherEnabledPref() {
   }
 }
 
-// Icons are added to the resources of the DLL using icon names. The icon index
-// for the app list icon is named IDR_X_APP_LIST or (for official builds)
-// IDR_X_APP_LIST_SXS for Chrome Canary. Creating shortcuts needs to specify a
-// resource index, which are different to icon names.  They are 0 based and
-// contiguous. As Google Chrome builds have extra icons the icon for Google
-// Chrome builds need to be higher. Unfortunately these indexes are not in any
-// generated header file.
 int GetAppListIconIndex() {
-  const int kAppListIconIndex = 5;
-  const int kAppListIconIndexSxS = 6;
-  const int kAppListIconIndexChromium = 1;
-#if defined(GOOGLE_CHROME_BUILD)
-  if (InstallUtil::IsChromeSxSProcess())
-    return kAppListIconIndexSxS;
-  return kAppListIconIndex;
-#else
-  return kAppListIconIndexChromium;
-#endif
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  return dist->GetIconIndex(BrowserDistribution::SHORTCUT_APP_LAUNCHER);
 }
 
 string16 GetAppListIconPath() {
   base::FilePath icon_path;
   if (!PathService::Get(base::FILE_EXE, &icon_path)) {
     NOTREACHED();
-    return string16();
+    return base::string16();
   }
 
   std::stringstream ss;
   ss << "," << GetAppListIconIndex();
-  string16 result = icon_path.value();
+  base::string16 result = icon_path.value();
   result.append(UTF8ToUTF16(ss.str()));
   return result;
 }
 
 string16 GetAppListShortcutName() {
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  if (channel == chrome::VersionInfo::CHANNEL_CANARY)
-    return l10n_util::GetStringUTF16(IDS_APP_LIST_SHORTCUT_NAME_CANARY);
-  return l10n_util::GetStringUTF16(IDS_APP_LIST_SHORTCUT_NAME);
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  return dist->GetShortcutName(BrowserDistribution::SHORTCUT_APP_LAUNCHER);
 }
 
 CommandLine GetAppListCommandLine() {
@@ -220,7 +203,7 @@ void SetDidRunForNDayActiveStats() {
 // fiddle with the same shortcuts could cause race issues.
 void CreateAppListShortcuts(
     const base::FilePath& user_data_dir,
-    const string16& app_model_id,
+    const base::string16& app_model_id,
     const ShellIntegration::ShortcutLocations& creation_locations) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
@@ -242,9 +225,9 @@ void CreateAppListShortcuts(
     return;
   }
 
-  string16 app_list_shortcut_name = GetAppListShortcutName();
+  base::string16 app_list_shortcut_name = GetAppListShortcutName();
 
-  string16 wide_switches(GetAppListCommandLine().GetArgumentsString());
+  base::string16 wide_switches(GetAppListCommandLine().GetArgumentsString());
 
   base::win::ShortcutProperties shortcut_properties;
   shortcut_properties.set_target(chrome_exe);
@@ -259,7 +242,7 @@ void CreateAppListShortcuts(
         shortcut_paths[i].Append(app_list_shortcut_name).
             AddExtension(installer::kLnkExt);
     if (!base::PathExists(shortcut_file.DirName()) &&
-        !file_util::CreateDirectory(shortcut_file.DirName())) {
+        !base::CreateDirectory(shortcut_file.DirName())) {
       NOTREACHED();
       return;
     }
@@ -302,11 +285,11 @@ void SetWindowAttributes(HWND hwnd) {
 
   ui::win::SetAppIdForWindow(GetAppModelId(), hwnd);
   CommandLine relaunch = GetAppListCommandLine();
-  string16 app_name(GetAppListShortcutName());
+  base::string16 app_name(GetAppListShortcutName());
   ui::win::SetRelaunchDetailsForWindow(
       relaunch.GetCommandLineString(), app_name, hwnd);
   ::SetWindowText(hwnd, app_name.c_str());
-  string16 icon_path = GetAppListIconPath();
+  base::string16 icon_path = GetAppListIconPath();
   ui::win::SetAppIconForWindow(icon_path, hwnd);
 }
 
@@ -509,11 +492,8 @@ void AppListServiceWin::CreateShortcut() {
   ShellIntegration::ShortcutLocations shortcut_locations;
   shortcut_locations.on_desktop = true;
   shortcut_locations.in_quick_launch_bar = true;
-  shortcut_locations.in_applications_menu = true;
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  shortcut_locations.applications_menu_subdir =
-      dist->GetStartMenuShortcutSubfolder(
-          BrowserDistribution::SUBFOLDER_CHROME);
+  shortcut_locations.applications_menu_location =
+      ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROME;
   base::FilePath user_data_dir(
       g_browser_process->profile_manager()->user_data_dir());
 

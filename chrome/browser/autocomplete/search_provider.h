@@ -18,6 +18,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
@@ -29,6 +30,7 @@
 
 class Profile;
 class SearchProviderTest;
+class SuggestionDeletionHandler;
 class TemplateURLService;
 
 namespace base {
@@ -58,6 +60,9 @@ class SearchProvider : public AutocompleteProvider,
   // ID used in creating URLFetcher for keyword provider's suggest results.
   static const int kKeywordProviderURLFetcherID;
 
+  // ID used in creating URLFetcher for deleting suggestion results.
+  static const int kDeletionURLFetcherID;
+
   SearchProvider(AutocompleteProviderListener* listener, Profile* profile);
 
   // Returns an AutocompleteMatch with the given |autocomplete_provider|,
@@ -80,14 +85,14 @@ class SearchProvider : public AutocompleteProvider,
   static AutocompleteMatch CreateSearchSuggestion(
       AutocompleteProvider* autocomplete_provider,
       const AutocompleteInput& input,
-      const string16& input_text,
+      const base::string16& input_text,
       int relevance,
       AutocompleteMatch::Type type,
       bool is_keyword,
-      const string16& match_contents,
-      const string16& annotation,
+      const base::string16& match_contents,
+      const base::string16& annotation,
       const TemplateURL* template_url,
-      const string16& query_string,
+      const base::string16& query_string,
       const std::string& suggest_query_params,
       int accepted_suggestion,
       int omnibox_start_margin,
@@ -103,6 +108,7 @@ class SearchProvider : public AutocompleteProvider,
 
   // AutocompleteProvider:
   virtual void AddProviderInfo(ProvidersInfo* provider_info) const OVERRIDE;
+  virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
   virtual void ResetSession() OVERRIDE;
 
   bool field_trial_triggered_in_session() const {
@@ -113,6 +119,9 @@ class SearchProvider : public AutocompleteProvider,
   void set_current_page_url(const GURL& current_page_url) {
     current_page_url_ = current_page_url;
   }
+
+ protected:
+  virtual ~SearchProvider();
 
  private:
   // TODO(hfung): Remove ZeroSuggestProvider as a friend class after
@@ -125,6 +134,7 @@ class SearchProvider : public AutocompleteProvider,
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineSchemeSubstring);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, RemoveStaleResultsTest);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, SuggestRelevanceExperiment);
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, TestDeleteMatch);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedPrefetchTest, ClearPrefetchedResults);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedPrefetchTest, SetPrefetchQuery);
@@ -141,22 +151,22 @@ class SearchProvider : public AutocompleteProvider,
 
     // Returns true if the specified providers match the two providers cached
     // by this class.
-    bool equal(const string16& default_provider,
-               const string16& keyword_provider) const {
+    bool equal(const base::string16& default_provider,
+               const base::string16& keyword_provider) const {
       return (default_provider == default_provider_) &&
           (keyword_provider == keyword_provider_);
     }
 
     // Resets the cached providers.
-    void set(const string16& default_provider,
-             const string16& keyword_provider) {
+    void set(const base::string16& default_provider,
+             const base::string16& keyword_provider) {
       default_provider_ = default_provider;
       keyword_provider_ = keyword_provider;
     }
 
     TemplateURLService* template_url_service() { return template_url_service_; }
-    const string16& default_provider() const { return default_provider_; }
-    const string16& keyword_provider() const { return keyword_provider_; }
+    const base::string16& default_provider() const { return default_provider_; }
+    const base::string16& keyword_provider() const { return keyword_provider_; }
 
     // NOTE: These may return NULL even if the provider members are nonempty!
     const TemplateURL* GetDefaultProviderURL() const;
@@ -170,8 +180,8 @@ class SearchProvider : public AutocompleteProvider,
 
     // Cached across the life of a query so we behave consistently even if the
     // user changes their default while the query is running.
-    string16 default_provider_;
-    string16 keyword_provider_;
+    base::string16 default_provider_;
+    base::string16 keyword_provider_;
 
     DISALLOW_COPY_AND_ASSIGN(Providers);
   };
@@ -202,7 +212,7 @@ class SearchProvider : public AutocompleteProvider,
 
     // Returns if this result is inlineable against the current input |input|.
     // Non-inlineable results are stale.
-    virtual bool IsInlineable(const string16& input) const = 0;
+    virtual bool IsInlineable(const base::string16& input) const = 0;
 
     // Returns the default relevance value for this result (which may
     // be left over from a previous omnibox input) given the current
@@ -229,44 +239,51 @@ class SearchProvider : public AutocompleteProvider,
 
   class SuggestResult : public Result {
    public:
-    SuggestResult(const string16& suggestion,
-                  const string16& match_contents,
-                  const string16& annotation,
+    SuggestResult(const base::string16& suggestion,
+                  const base::string16& match_contents,
+                  const base::string16& annotation,
                   const std::string& suggest_query_params,
+                  const std::string& deletion_url,
                   bool from_keyword_provider,
                   int relevance,
                   bool relevance_from_server,
                   bool should_prefetch);
     virtual ~SuggestResult();
 
-    const string16& suggestion() const { return suggestion_; }
-    const string16& match_contents() const { return match_contents_; }
-    const string16& annotation() const { return annotation_; }
+    const base::string16& suggestion() const { return suggestion_; }
+    const base::string16& match_contents() const { return match_contents_; }
+    const base::string16& annotation() const { return annotation_; }
     const std::string& suggest_query_params() const {
       return suggest_query_params_;
     }
+    const std::string& deletion_url() const { return deletion_url_; }
     bool should_prefetch() const { return should_prefetch_; }
 
     // Result:
-    virtual bool IsInlineable(const string16& input) const OVERRIDE;
+    virtual bool IsInlineable(const base::string16& input) const OVERRIDE;
     virtual int CalculateRelevance(
         const AutocompleteInput& input,
         bool keyword_provider_requested) const OVERRIDE;
 
    private:
     // The search terms to be used for this suggestion.
-    string16 suggestion_;
+    base::string16 suggestion_;
 
     // The contents to be displayed in the autocomplete match.
-    string16 match_contents_;
+    base::string16 match_contents_;
 
     // Optional annotation for the |match_contents_| for disambiguation.
     // This may be displayed in the autocomplete match contents, but is defined
     // separately to facilitate different formatting.
-    string16 annotation_;
+    base::string16 annotation_;
 
     // Optional additional parameters to be added to the search URL.
     std::string suggest_query_params_;
+
+    // Optional deletion URL provided with suggestions. Fetching this URL
+    // should result in some reasonable deletion behaviour on the server,
+    // e.g. deleting this term out of a user's server-side search history.
+    std::string deletion_url_;
 
     // Should this result be prefetched?
     bool should_prefetch_;
@@ -278,18 +295,18 @@ class SearchProvider : public AutocompleteProvider,
     // compute |formatted_url_|.
     NavigationResult(const AutocompleteProvider& provider,
                      const GURL& url,
-                     const string16& description,
+                     const base::string16& description,
                      bool from_keyword_provider,
                      int relevance,
                      bool relevance_from_server);
     virtual ~NavigationResult();
 
     const GURL& url() const { return url_; }
-    const string16& description() const { return description_; }
-    const string16& formatted_url() const { return formatted_url_; }
+    const base::string16& description() const { return description_; }
+    const base::string16& formatted_url() const { return formatted_url_; }
 
     // Result:
-    virtual bool IsInlineable(const string16& input) const OVERRIDE;
+    virtual bool IsInlineable(const base::string16& input) const OVERRIDE;
     virtual int CalculateRelevance(
         const AutocompleteInput& input,
         bool keyword_provider_requested) const OVERRIDE;
@@ -300,10 +317,10 @@ class SearchProvider : public AutocompleteProvider,
 
     // The properly formatted ("fixed up") URL string with equivalent meaning
     // to the one in |url_|.
-    string16 formatted_url_;
+    base::string16 formatted_url_;
 
     // The suggested navigational result description; generally the site name.
-    string16 description_;
+    base::string16 description_;
   };
 
   class CompareScoredResults;
@@ -313,6 +330,7 @@ class SearchProvider : public AutocompleteProvider,
   typedef std::vector<history::KeywordSearchTermVisit> HistoryResults;
   typedef std::pair<string16, std::string> MatchKey;
   typedef std::map<MatchKey, AutocompleteMatch> MatchMap;
+  typedef ScopedVector<SuggestionDeletionHandler> SuggestionDeletionHandlers;
 
   // A simple structure bundling most of the information (including
   // both SuggestResults and NavigationResults) returned by a call to
@@ -349,11 +367,9 @@ class SearchProvider : public AutocompleteProvider,
     DISALLOW_COPY_AND_ASSIGN(Results);
   };
 
-  virtual ~SearchProvider();
-
   // Removes non-inlineable results until either the top result can inline
   // autocomplete the current input or verbatim outscores the top result.
-  static void RemoveStaleResults(const string16& input,
+  static void RemoveStaleResults(const base::string16& input,
                                  int verbatim_relevance,
                                  SuggestResults* suggest_results,
                                  NavigationResults* navigation_results);
@@ -370,6 +386,19 @@ class SearchProvider : public AutocompleteProvider,
 
   // net::URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+
+  // This gets called when we have requested a suggestion deletion from the
+  // server to handle the results of the deletion.
+  void OnDeletionComplete(bool success,
+                          SuggestionDeletionHandler* handler);
+
+  // Records in UMA whether the deletion request resulted in success.
+  // This is virtual so test code can override it to check that we
+  // correctly handle the request result.
+  virtual void RecordDeletionResult(bool success);
+
+  // Removes the deleted match from the list of |matches_|.
+  void DeleteMatchFromMatches(const AutocompleteMatch& match);
 
   // Called when timer_ expires.
   void Run();
@@ -409,6 +438,11 @@ class SearchProvider : public AutocompleteProvider,
   net::URLFetcher* CreateSuggestFetcher(int id,
                                         const TemplateURL* template_url,
                                         const AutocompleteInput& input);
+
+  // Parses JSON response received from the provider, stripping XSSI
+  // protection if needed. Returns the parsed data if successful, NULL
+  // otherwise.
+  static scoped_ptr<base::Value> DeserializeJsonData(std::string json_data);
 
   // Parses results from the suggest server and updates the appropriate suggest
   // and navigation result lists, depending on whether |is_keyword| is true.
@@ -459,7 +493,7 @@ class SearchProvider : public AutocompleteProvider,
   SuggestResults ScoreHistoryResults(const HistoryResults& results,
                                      bool base_prevent_inline_autocomplete,
                                      bool input_multiple_words,
-                                     const string16& input_text,
+                                     const base::string16& input_text,
                                      bool is_keyword);
 
   // Adds matches for |results| to |map|.
@@ -487,7 +521,7 @@ class SearchProvider : public AutocompleteProvider,
 
   // Gets the relevance score for the keyword verbatim result.
   // |relevance_from_server| is handled as in GetVerbatimRelevance().
-  // TODO(mpearson): Refactor so this duplication isn't necesary or
+  // TODO(mpearson): Refactor so this duplication isn't necessary or
   // restructure so one static function takes all the parameters it needs
   // (rather than looking at internal state).
   int GetKeywordVerbatimRelevance(bool* relevance_from_server) const;
@@ -504,20 +538,13 @@ class SearchProvider : public AutocompleteProvider,
                                    bool prevent_search_history_inlining) const;
 
   // Creates an AutocompleteMatch for "Search <engine> for |query_string|" with
-  // the supplied relevance.  Adds this match to |map|; if such a match already
+  // the supplied details.  Adds this match to |map|; if such a match already
   // exists, whichever one has lower relevance is eliminated.
-  void AddMatchToMap(const string16& input_text,
-                     int relevance,
-                     bool relevance_from_server,
-                     bool should_prefetch,
+  void AddMatchToMap(const SuggestResult& result,
+                     const base::string16& input_text,
                      const std::string& metadata,
                      AutocompleteMatch::Type type,
-                     bool is_keyword,
-                     const string16& match_contents,
-                     const string16& annotation,
-                     const string16& query_string,
                      int accepted_suggestion,
-                     const std::string& suggest_query_params,
                      MatchMap* map);
 
   // Returns an AutocompleteMatch for a navigational suggestion.
@@ -582,6 +609,9 @@ class SearchProvider : public AutocompleteProvider,
   // prefetching.
   static const char kSuggestMetadataKey[];
 
+  // Used to store a deletion request url for server-provided suggestions.
+  static const char kDeletionUrlKey[];
+
   // These are the values for the above keys.
   static const char kTrue[];
   static const char kFalse[];
@@ -617,6 +647,11 @@ class SearchProvider : public AutocompleteProvider,
   // Results from the default and keyword search providers.
   Results default_results_;
   Results keyword_results_;
+
+  // Each deletion handler in this vector corresponds to an outstanding request
+  // that a server delete a personalized suggestion. Making this a ScopedVector
+  // causes us to auto-cancel all such requests on shutdown.
+  SuggestionDeletionHandlers deletion_handlers_;
 
   // Whether a field trial, if any, has triggered in the most recent
   // autocomplete query.  This field is set to false in Start() and may be set

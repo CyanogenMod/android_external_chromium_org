@@ -14,13 +14,13 @@ DesktopMediaPickerCocoa::~DesktopMediaPickerCocoa() {
 
 void DesktopMediaPickerCocoa::Show(gfx::NativeWindow context,
                                    gfx::NativeWindow parent,
-                                   const string16& app_name,
-                                   scoped_ptr<DesktopMediaPickerModel> model,
+                                   const base::string16& app_name,
+                                   scoped_ptr<DesktopMediaList> media_list,
                                    const DoneCallback& done_callback) {
   controller_.reset(
-      [[DesktopMediaPickerController alloc] initWithModel:model.Pass()
-                                                 callback:done_callback
-                                                  appName:app_name]);
+      [[DesktopMediaPickerController alloc] initWithMediaList:media_list.Pass()
+                                                     callback:done_callback
+                                                      appName:app_name]);
   [controller_ showWindow:nil];
 }
 

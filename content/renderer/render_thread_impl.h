@@ -13,6 +13,7 @@
 #include "base/observer_list.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string16.h"
+#include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "content/child/child_thread.h"
@@ -77,6 +78,7 @@ class ContextProviderCommandBuffer;
 class DBMessageFilter;
 class DevToolsAgentFilter;
 class DomStorageDispatcher;
+class EmbeddedWorkerDispatcher;
 class GamepadSharedMemoryReader;
 class GpuChannelHost;
 class IndexedDBDispatcher;
@@ -139,7 +141,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void WidgetHidden() OVERRIDE;
   virtual void WidgetRestored() OVERRIDE;
   virtual void EnsureWebKitInitialized() OVERRIDE;
-  virtual void RecordUserMetrics(const std::string& action) OVERRIDE;
+  virtual void RecordAction(const UserMetricsAction& action) OVERRIDE;
+  virtual void RecordComputedAction(const std::string& action) OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) OVERRIDE;
   virtual void RegisterExtension(v8::Extension* extension) OVERRIDE;
@@ -201,6 +204,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   DomStorageDispatcher* dom_storage_dispatcher() const {
     return dom_storage_dispatcher_.get();
+  }
+
+  EmbeddedWorkerDispatcher* embedded_worker_dispatcher() const {
+    return embedded_worker_dispatcher_.get();
   }
 
   AudioInputMessageFilter* audio_input_message_filter() {
@@ -277,7 +284,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   media::AudioHardwareConfig* GetAudioHardwareConfig();
 
 #if defined(OS_WIN)
-  void PreCacheFontCharacters(const LOGFONT& log_font, const string16& str);
+  void PreCacheFontCharacters(const LOGFONT& log_font,
+                              const base::string16& str);
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -400,6 +408,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<DomStorageDispatcher> dom_storage_dispatcher_;
   scoped_ptr<IndexedDBDispatcher> main_thread_indexed_db_dispatcher_;
   scoped_ptr<RendererWebKitPlatformSupportImpl> webkit_platform_support_;
+  scoped_ptr<EmbeddedWorkerDispatcher> embedded_worker_dispatcher_;
 
   // Used on the render thread and deleted by WebKit at shutdown.
   blink::WebMediaStreamCenter* media_stream_center_;
@@ -497,6 +506,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<GamepadSharedMemoryReader> gamepad_shared_memory_reader_;
 
   base::ProcessId renderer_process_id_;
+
+  // TODO(reveman): Allow AllocateGpuMemoryBuffer to be called from
+  // multiple threads. Current allocation mechanism for IOSurface
+  // backed GpuMemoryBuffers prevent this. crbug.com/325045
+  base::ThreadChecker allocate_gpu_memory_buffer_thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

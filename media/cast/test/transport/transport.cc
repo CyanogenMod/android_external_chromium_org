@@ -10,8 +10,8 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
-#include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/rand_callback.h"
 #include "net/base/test_completion_callback.h"
@@ -35,7 +35,7 @@ void CreateUDPAddress(std::string ip_str, int port, net::IPEndPoint* address) {
 class LocalUdpTransportData
     : public base::RefCountedThreadSafe<LocalUdpTransportData> {
  public:
-  LocalUdpTransportData(net::DatagramServerSocket* udp_socket,
+  LocalUdpTransportData(net::UDPServerSocket* udp_socket,
                         scoped_refptr<base::TaskRunner> io_thread_proxy)
     : udp_socket_(udp_socket),
       buffer_(new net::IOBufferWithSize(kMaxPacketSize)),
@@ -93,7 +93,7 @@ class LocalUdpTransportData
  private:
   friend class base::RefCountedThreadSafe<LocalUdpTransportData>;
 
-  net::DatagramServerSocket* udp_socket_;
+  net::UDPServerSocket* udp_socket_;
   net::IPEndPoint bind_address_;
   PacketReceiver* packet_receiver_;
   scoped_refptr<net::IOBufferWithSize> buffer_;
@@ -105,7 +105,7 @@ class LocalUdpTransportData
 class LocalPacketSender : public PacketSender,
                           public base::RefCountedThreadSafe<LocalPacketSender> {
  public:
-  LocalPacketSender(net::DatagramServerSocket* udp_socket,
+  LocalPacketSender(net::UDPServerSocket* udp_socket,
                     scoped_refptr<base::TaskRunner> io_thread_proxy)
       : udp_socket_(udp_socket),
         send_address_(),
@@ -114,8 +114,7 @@ class LocalPacketSender : public PacketSender,
 
   virtual bool SendPacket(const Packet& packet) OVERRIDE {
     io_thread_proxy_->PostTask(FROM_HERE,
-    base::Bind(&LocalPacketSender::SendPacketToNetwork,
-               this, packet));
+    base::Bind(&LocalPacketSender::SendPacketToNetwork, this, packet));
     return true;
   }
 
@@ -128,6 +127,7 @@ class LocalPacketSender : public PacketSender,
         VLOG(1) << "Drop packet f:" << static_cast<int>(data[12 + 1])
                 << " p:" << static_cast<int>(data[12 + 3])
                 << " m:" << static_cast<int>(data[12 + 5]);
+        return;
       }
     }
     net::TestCompletionCallback callback;
@@ -162,7 +162,7 @@ class LocalPacketSender : public PacketSender,
  private:
   friend class base::RefCountedThreadSafe<LocalPacketSender>;
 
-  net::DatagramServerSocket* udp_socket_;  // Not owned by this class.
+  net::UDPServerSocket* udp_socket_;  // Not owned by this class.
   net::IPEndPoint send_address_;
   int loss_limit_;
   scoped_refptr<base::TaskRunner> io_thread_proxy_;

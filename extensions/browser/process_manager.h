@@ -86,11 +86,16 @@ class ProcessManager : public content::NotificationObserver {
   // When this reaches 0, we will begin the process of shutting down the page.
   // "Things" include pending events, resource loads, and API calls.
   int GetLazyKeepaliveCount(const Extension* extension);
-  int IncrementLazyKeepaliveCount(const Extension* extension);
-  int DecrementLazyKeepaliveCount(const Extension* extension);
+  void IncrementLazyKeepaliveCount(const Extension* extension);
+  void DecrementLazyKeepaliveCount(const Extension* extension);
 
   void IncrementLazyKeepaliveCountForView(
       content::RenderViewHost* render_view_host);
+
+  // Keeps a background page alive. Unlike IncrementLazyKeepaliveCount, these
+  // impulses will only keep the page alive for a limited amount of time unless
+  // called regularly.
+  void KeepaliveImpulse(const Extension* extension);
 
   // Handles a response to the ShouldSuspend message, used for lazy background
   // pages.
@@ -107,11 +112,6 @@ class ProcessManager : public content::NotificationObserver {
   // Prevents |extension|'s background page from being closed and sends the
   // onSuspendCanceled() event to it.
   void CancelSuspend(const Extension* extension);
-
-  // If |defer| is true background host creation is to be deferred until this is
-  // called again with |defer| set to false, at which point all deferred
-  // background hosts will be created.  Defaults to false.
-  void DeferBackgroundHostCreation(bool defer);
 
   // Ensures background hosts are loaded for a new browser window.
   void OnBrowserWindowReady();
@@ -164,6 +164,13 @@ class ProcessManager : public content::NotificationObserver {
   // Close the given |host| iff it's a background page.
   void CloseBackgroundHost(ExtensionHost* host);
 
+  // Internal implementation of DecrementLazyKeepaliveCount with an
+  // |extension_id| known to have a lazy background page.
+  void DecrementLazyKeepaliveCount(const std::string& extension_id);
+
+  // Checks if keepalive impulses have occured, and adjusts keep alive count.
+  void OnKeepaliveImpulseCheck();
+
   // These are called when the extension transitions between idle and active.
   // They control the process of closing the background page when idle.
   void OnLazyBackgroundPageIdle(const std::string& extension_id,
@@ -202,9 +209,6 @@ class ProcessManager : public content::NotificationObserver {
   // The time to delay between sending a ShouldSuspend message and
   // sending a Suspend message; read from command-line switch.
   base::TimeDelta event_page_suspending_time_;
-
-  // If true, then creation of background hosts is suspended.
-  bool defer_background_host_creation_;
 
   // True if we have created the startup set of background hosts.
   bool startup_background_hosts_created_;

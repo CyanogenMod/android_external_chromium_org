@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,7 +48,7 @@ public class AwTestBase
                 @Override
                 public void run() {
                     AwBrowserProcess.start(context);
-                 }
+                }
             });
         }
     }
@@ -210,6 +210,22 @@ public class AwTestBase
     }
 
     /**
+     * Reloads the current page synchronously.
+     */
+    protected void reloadSync(final AwContents awContents,
+                              CallbackHelper onPageFinishedHelper) throws Throwable {
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                awContents.getContentViewCore().reload(true);
+            }
+        });
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    /**
      * Factory class used in creation of test AwContents instances.
      *
      * Test cases can provide subclass instances to the createAwTest* methods in order to create an
@@ -365,7 +381,7 @@ public class AwTestBase
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-              awContents.clearCache(includeDiskFiles);
+                awContents.clearCache(includeDiskFiles);
             }
         });
     }

@@ -101,7 +101,6 @@
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/streams/stream_context.h"
-#include "content/browser/tracing/trace_controller_impl.h"
 #include "content/browser/tracing/trace_message_filter.h"
 #include "content/browser/vibration/vibration_message_filter.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -669,7 +668,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   peer_connection_tracker_host_ = new PeerConnectionTrackerHost(GetID());
   AddFilter(peer_connection_tracker_host_.get());
   AddFilter(new MediaStreamDispatcherHost(
-      GetID(), media_stream_manager));
+      GetID(), browser_context->GetResourceContext(), media_stream_manager));
   AddFilter(
       new DeviceRequestMessageFilter(resource_context, media_stream_manager));
 #endif
@@ -823,6 +822,10 @@ bool RenderProcessHostImpl::WaitForBackingStoreMsg(
 }
 
 void RenderProcessHostImpl::ReceivedBadMessage() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableKillAfterBadIPC))
+    return;
+
   if (run_renderer_in_process()) {
     // In single process mode it is better if we don't suicide but just
     // crash.
@@ -966,7 +969,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableUnprefixedMediaSource,
     switches::kDisableVp8AlphaPlayback,
     switches::kDisableWebAnimationsCSS,
-    switches::kDisableWebAudio,
     switches::kDisableWebKitMediaSource,
     switches::kDomAutomationController,
     switches::kEnableAcceleratedFixedRootBackground,
@@ -1035,6 +1037,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kNoReferrers,
     switches::kNoSandbox,
     switches::kPpapiInProcess,
+    switches::kProfilerTiming,
     switches::kRegisterPepperPlugins,
     switches::kRendererAssertTest,
     switches::kRendererStartupDialog,
@@ -1072,13 +1075,12 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kEnablePerTilePainting,
     cc::switches::kEnablePinchVirtualViewport,
     cc::switches::kEnableTopControlsPositionCalculation,
-    cc::switches::kForceDirectLayerDrawing,
-    cc::switches::kLowResolutionContentsScaleFactor,
     cc::switches::kMaxTilesForInterestArea,
     cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
     cc::switches::kNumRasterThreads,
     cc::switches::kShowCompositedLayerBorders,
     cc::switches::kShowFPSCounter,
+    cc::switches::kShowLayerAnimationBounds,
     cc::switches::kShowNonOccludingRects,
     cc::switches::kShowOccludingRects,
     cc::switches::kShowPropertyChangedRects,
@@ -1123,6 +1125,13 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kMediaDrmEnableNonCompositing,
     switches::kNetworkCountryIso,
 #endif
+#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
+    switches::kEnableWebAudio,
+#else
+    // Need to be able to disable webaudio on other platforms where it
+    // is enabled by default.
+    switches::kDisableWebAudio,
+#endif
 #if defined(OS_MACOSX)
     // Allow this to be set when invoking the browser and relayed along.
     switches::kEnableSandboxLogging,
@@ -1131,6 +1140,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kChildCleanExit,
 #endif
 #if defined(OS_WIN)
+    switches::kEnableDirectWrite,
     switches::kEnableHighResolutionTime,
 #endif
   };
@@ -1191,8 +1201,11 @@ bool RenderProcessHostImpl::FastShutdownIfPossible() {
   if (!SuddenTerminationAllowed())
     return false;
 
-  ProcessDied(false /* already_dead */);
+  // Set this before ProcessDied() so observers can tell if the render process
+  // died due to fast shutdown versus another cause.
   fast_shutdown_started_ = true;
+
+  ProcessDied(false /* already_dead */);
   return true;
 }
 

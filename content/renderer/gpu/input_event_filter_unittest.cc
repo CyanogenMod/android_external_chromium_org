@@ -47,7 +47,7 @@ class InputEventRecorder {
 
   InputEventAckState HandleInputEvent(int routing_id,
                                       const WebInputEvent* event,
-                                      const ui::LatencyInfo& latency_info) {
+                                      ui::LatencyInfo* latency_info) {
     DCHECK_EQ(kTestRoutingID, routing_id);
 
     records_.push_back(Record(event));
@@ -285,9 +285,9 @@ TEST_F(InputEventFilterTest, PreserveRelativeOrder) {
   messages.push_back(InputMsg_Paste(kTestRoutingID));
   messages.push_back(InputMsg_PasteAndMatchStyle(kTestRoutingID));
   messages.push_back(InputMsg_Delete(kTestRoutingID));
-  messages.push_back(InputMsg_Replace(kTestRoutingID, string16()));
+  messages.push_back(InputMsg_Replace(kTestRoutingID, base::string16()));
   messages.push_back(InputMsg_ReplaceMisspelling(kTestRoutingID,
-                                                     string16()));
+                                                     base::string16()));
   messages.push_back(InputMsg_Delete(kTestRoutingID));
   messages.push_back(InputMsg_SelectAll(kTestRoutingID));
   messages.push_back(InputMsg_Unselect(kTestRoutingID));

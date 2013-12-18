@@ -89,7 +89,7 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
   void Attach() {
     DCHECK(StorageMonitor::GetInstance()->IsInitialized());
     StorageInfo info(device_id_, ASCIIToUTF16(kDeviceName), kDevicePath,
-                     string16(), string16(), string16(), 0);
+                     base::string16(), base::string16(), base::string16(), 0);
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(info);
     content::RunAllPendingInMessageLoop();
   }
@@ -107,7 +107,8 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
 };
 
 // Fails on official Linux bot. See http://crbug.com/315276
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_LINUX)
+// Flaky on Mac trybots. See http://crbug.com/326324
+#if (defined(GOOGLE_CHROME_BUILD) && defined(OS_LINUX)) || defined(OS_MACOSX)
 #define MAYBE_DeviceAttachDetachEvents DISABLED_DeviceAttachDetachEvents
 #else
 #define MAYBE_DeviceAttachDetachEvents DeviceAttachDetachEvents

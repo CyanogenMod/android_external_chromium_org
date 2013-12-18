@@ -22,6 +22,9 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/undo/bookmark_undo_service.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#include "chrome/browser/undo/undo_manager_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -79,6 +82,7 @@ void BookmarkChangeProcessor::UpdateSyncNodeProperties(
   bookmark_specifics.set_creation_time_us(src->date_added().ToInternalValue());
   dst->SetBookmarkSpecifics(bookmark_specifics);
   SetSyncNodeFavicon(src, model, dst);
+  SetSyncNodeMetaInfo(src, dst);
 }
 
 // static
@@ -354,6 +358,11 @@ void BookmarkChangeProcessor::BookmarkNodeChanged(BookmarkModel* model,
                            std::vector<const BookmarkNode*>(1, node));
 }
 
+void BookmarkChangeProcessor::BookmarkMetaInfoChanged(
+    BookmarkModel* model, const BookmarkNode* node) {
+  BookmarkNodeChanged(model, node);
+}
+
 void BookmarkChangeProcessor::BookmarkNodeMoved(BookmarkModel* model,
       const BookmarkNode* old_parent, int old_index,
       const BookmarkNode* new_parent, int new_index) {
@@ -504,6 +513,12 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
   // changes.
   model->RemoveObserver(this);
 
+  // Changes made to the bookmark model due to sync should not be undoable.
+#if !defined(OS_ANDROID)
+  ScopedSuspendUndoTracking suspend_undo(
+      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager());
+#endif
+
   // Notify UI intensive observers of BookmarkModel that we are about to make
   // potentially significant changes to it, so the updates may be batched. For
   // example, on Mac, the bookmarks bar displays animations when bookmark items
@@ -537,7 +552,7 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
       if (!foster_parent) {
         foster_parent = model->AddFolder(model->other_node(),
                                          model->other_node()->child_count(),
-                                         string16());
+                                         base::string16());
         if (!foster_parent) {
           error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
               "Failed to create foster parent.");
@@ -696,6 +711,7 @@ void BookmarkChangeProcessor::UpdateBookmarkWithSyncData(
         base::Time::FromInternalValue(specifics.creation_time_us()));
   }
   SetBookmarkFavicon(&sync_node, node, model, profile);
+  SetBookmarkMetaInfo(&sync_node, node, model);
 }
 
 // static
@@ -738,6 +754,8 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
     if (node)
       SetBookmarkFavicon(sync_node, node, model, profile);
   }
+  if (node)
+    SetBookmarkMetaInfo(sync_node, node, model);
   return node;
 }
 
@@ -768,6 +786,39 @@ bool BookmarkChangeProcessor::SetBookmarkFavicon(
   ApplyBookmarkFavicon(bookmark_node, profile, icon_url, icon_bytes);
 
   return true;
+}
+
+// static
+void BookmarkChangeProcessor::SetBookmarkMetaInfo(
+    const syncer::BaseNode* sync_node,
+    const BookmarkNode* bookmark_node,
+    BookmarkModel* bookmark_model) {
+  const sync_pb::BookmarkSpecifics& specifics =
+      sync_node->GetBookmarkSpecifics();
+  BookmarkNode::MetaInfoMap meta_info_map;
+  for (int i = 0; i < specifics.meta_info_size(); ++i) {
+    meta_info_map[specifics.meta_info(i).key()] =
+        specifics.meta_info(i).value();
+  }
+  bookmark_model->SetNodeMetaInfoMap(bookmark_node, meta_info_map);
+}
+
+// static
+void BookmarkChangeProcessor::SetSyncNodeMetaInfo(
+    const BookmarkNode* node,
+    syncer::WriteNode* sync_node) {
+  sync_pb::BookmarkSpecifics specifics = sync_node->GetBookmarkSpecifics();
+  specifics.clear_meta_info();
+  const BookmarkNode::MetaInfoMap* meta_info_map = node->GetMetaInfoMap();
+  if (meta_info_map) {
+    for (BookmarkNode::MetaInfoMap::const_iterator it = meta_info_map->begin();
+        it != meta_info_map->end(); ++it) {
+      sync_pb::MetaInfo* meta_info = specifics.add_meta_info();
+      meta_info->set_key(it->first);
+      meta_info->set_value(it->second);
+    }
+  }
+  sync_node->SetBookmarkSpecifics(specifics);
 }
 
 // static

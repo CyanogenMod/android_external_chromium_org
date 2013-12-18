@@ -189,10 +189,15 @@ PasswordAutofillAgent::PasswordAutofillAgent(content::RenderView* render_view)
     : content::RenderViewObserver(render_view),
       usernames_usage_(NOTHING_TO_AUTOFILL),
       web_view_(render_view->GetWebView()),
+      gesture_handler_(new AutofillWebUserGestureHandler(this)),
+      user_gesture_occurred_(false),
       weak_ptr_factory_(this) {
+  blink::WebUserGestureIndicator::setHandler(gesture_handler_.get());
 }
 
 PasswordAutofillAgent::~PasswordAutofillAgent() {
+  DCHECK(gesture_handler_.get());
+  blink::WebUserGestureIndicator::setHandler(NULL);
 }
 
 bool PasswordAutofillAgent::TextFieldDidEndEditing(
@@ -244,9 +249,7 @@ bool PasswordAutofillAgent::TextDidChangeInTextField(
   if (iter->second.fill_data.wait_for_username)
     return false;
 
-  if (!IsElementEditable(element) ||
-      !element.isText() ||
-      !element.autoComplete()) {
+  if (!IsElementEditable(element) || !element.isText()) {
     return false;
   }
 
@@ -492,6 +495,11 @@ void PasswordAutofillAgent::DidStartProvisionalLoad(blink::WebFrame* frame) {
     }
     // Clear the whole map during main frame navigation.
     provisionally_saved_forms_.clear();
+
+    // We are navigating, se we need to wait for a new user gesture before
+    // filling in passwords.
+    user_gesture_occurred_ = false;
+    gesture_handler_->clearElements();
   }
 }
 
@@ -629,17 +637,13 @@ void PasswordAutofillAgent::FillFormOnPasswordRecieved(
   if (password_element.document().frame()->parent())
     return;
 
-  if (!username_element.form().autoComplete())
-    return;
-
   // If we can't modify the password, don't try to set the username
-  if (!IsElementEditable(password_element) || !password_element.autoComplete())
+  if (!IsElementEditable(password_element))
     return;
 
   // Try to set the username to the preferred name, but only if the field
   // can be set and isn't prefilled.
   if (IsElementEditable(username_element) &&
-      username_element.autoComplete() &&
       username_element.value().isEmpty()) {
     // TODO(tkent): Check maxlength and pattern.
     username_element.setValue(fill_data.basic_data.fields[0].value);
@@ -707,14 +711,11 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   // fields.
 
   // Don't fill username if password can't be set.
-  if (!IsElementEditable(*password_element) ||
-      !password_element->autoComplete()) {
+  if (!IsElementEditable(*password_element))
     return false;
-  }
 
   // Input matches the username, fill in required values.
-  if (IsElementEditable(*username_element) &&
-      username_element->autoComplete()) {
+  if (IsElementEditable(*username_element)) {
     username_element->setValue(username);
     SetElementAutofilled(username_element, true);
 
@@ -728,7 +729,16 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
     return false;
   }
 
-  password_element->setValue(password);
+  // If a user gesture has not occurred, we setup a handler to listen for the
+  // next user gesture, at which point we then fill in the password. This is to
+  // make sure that we do not fill in the DOM with a password until we believe
+  // the user is intentionally interacting with the page.
+  if (!user_gesture_occurred_) {
+    gesture_handler_->addElement(*password_element);
+    password_element->setSuggestedValue(password);
+  } else {
+    password_element->setValue(password);
+  }
   SetElementAutofilled(password_element, true);
   return true;
 }
@@ -800,5 +810,24 @@ bool PasswordAutofillAgent::FindLoginInfo(const blink::WebNode& node,
   *found_password = iter->second;
   return true;
 }
+
+void PasswordAutofillAgent::AutofillWebUserGestureHandler::onGesture() {
+  agent_->set_user_gesture_occurred(true);
+
+  std::vector<blink::WebInputElement>::iterator iter;
+  for (iter = elements_.begin(); iter != elements_.end(); ++iter) {
+    if (!iter->isNull() && !iter->suggestedValue().isNull())
+      iter->setValue(iter->suggestedValue());
+  }
+
+  elements_.clear();
+}
+
+PasswordAutofillAgent::AutofillWebUserGestureHandler::
+    AutofillWebUserGestureHandler(PasswordAutofillAgent* agent)
+    : agent_(agent) {}
+
+PasswordAutofillAgent::AutofillWebUserGestureHandler::
+    ~AutofillWebUserGestureHandler() {}
 
 }  // namespace autofill

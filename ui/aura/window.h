@@ -16,6 +16,7 @@
 #include "base/strings/string16.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/window_types.h"
+#include "ui/aura/window_layer_type.h"
 #include "ui/aura/window_observer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/layer_delegate.h"
@@ -23,6 +24,7 @@
 #include "ui/compositor/layer_type.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_target.h"
+#include "ui/events/event_targeter.h"
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
@@ -31,6 +33,7 @@
 namespace gfx {
 class Display;
 class Transform;
+class Vector2d;
 }
 
 namespace ui {
@@ -73,6 +76,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Initializes the window. This creates the window's layer.
   void Init(ui::LayerType layer_type);
 
+  // TODO(sky): replace other Init() with this once m32 is more baked.
+  void InitWithWindowLayerType(WindowLayerType layer_type);
+
   // Creates a new layer for the window. Erases the layer-owned bounds, so the
   // caller may wish to set new bounds and other state on the window/layer.
   // Returns the old layer, which can be used for animations. Caller owns the
@@ -106,7 +112,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   WindowDelegate* delegate() { return delegate_; }
   const WindowDelegate* delegate() const { return delegate_; }
 
-  const gfx::Rect& bounds() const;
+  const gfx::Rect& bounds() const { return bounds_; }
 
   Window* parent() { return parent_; }
   const Window* parent() const { return parent_; }
@@ -154,6 +160,10 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // The Window takes ownership of the LayoutManager.
   void SetLayoutManager(LayoutManager* layout_manager);
   LayoutManager* layout_manager() { return layout_manager_.get(); }
+
+  void set_event_targeter(scoped_ptr<ui::EventTargeter> targeter) {
+    targeter_ = targeter.Pass();
+  }
 
   // Changes the bounds of the window. If present, the window's parent's
   // LayoutManager may adjust the bounds.
@@ -241,6 +251,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   bool HasObserver(WindowObserver* observer);
 
   void set_ignore_events(bool ignore_events) { ignore_events_ = ignore_events; }
+  bool ignore_events() const { return ignore_events_; }
 
   // Sets the window to grab hits for mouse and touch to an area extending
   // -|mouse_insets| and -|touch_insets| pixels outside its bounds. This can be
@@ -366,6 +377,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
  private:
   friend class test::WindowTestApi;
   friend class LayoutManager;
+  friend class WindowTargeter;
   friend class RootWindow;
 
   // Used when stacking windows.
@@ -392,6 +404,13 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Schedules a paint for the Window's entire bounds.
   void SchedulePaint();
 
+  // Asks the delegate to paint the window and invokes PaintLayerlessChildren()
+  // to paint any children with no layers.
+  void Paint(gfx::Canvas* canvas);
+
+  // Paints any layerless children to |canvas|.
+  void PaintLayerlessChildren(gfx::Canvas* canvas);
+
   // Gets a Window (either this one or a subwindow) containing |local_point|.
   // If |return_tightest| is true, returns the tightest-containing (i.e.
   // furthest down the hierarchy) Window containing the point; otherwise,
@@ -405,6 +424,22 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // of an add, |new_parent| is the new parent |child| is going to be parented
   // to.
   void RemoveChildImpl(Window* child, Window* new_parent);
+
+  // If this Window has a layer the layer's parent is set to NULL, otherwise
+  // UnparentLayers() is invoked on all the children. |offset| is the offset
+  // relative to the nearest ancestor with a layer.
+  void UnparentLayers(bool has_layerless_ancestor,
+                      const gfx::Vector2d& offset);
+
+  // If this Window has a layer it is added to |parent| and the origin set to
+  // |offset|. Otherwise this recurses through the children invoking
+  // ReparentLayers(). The net effect is both setting the parent of layers to
+  // |parent| as well as updating bounds of windows with a layerless ancestor.
+  void ReparentLayers(ui::Layer* parent, const gfx::Vector2d& offset);
+
+  // Offsets the first encountered Windows with layers by |offset|. This
+  // recurses through all layerless Windows, stopping at windows with layers.
+  void OffsetLayerBounds(const gfx::Vector2d& offset);
 
   // Called when this window's parent has changed.
   void OnParentChanged();
@@ -468,11 +503,12 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Notifies this window and its parent hierarchy.
   void NotifyWindowVisibilityChangedUp(aura::Window* target, bool visible);
 
-  // Invoked from the closure returned by PrepareForLayerBoundsChange() after
-  // the bounds of the layer has changed. |old_bounds| is the previous bounds of
-  // the layer, and |contained_mouse| is true if the mouse was previously within
-  // the window's bounds.
-  void OnLayerBoundsChanged(const gfx::Rect& old_bounds, bool contained_mouse);
+  // Invoked when the bounds of the window changes. This may be invoked directly
+  // by us, or from the closure returned by PrepareForLayerBoundsChange() after
+  // the bounds of the layer has changed. |old_bounds| is the previous bounds,
+  // and |contained_mouse| is true if the mouse was previously within the
+  // window's bounds.
+  void OnWindowBoundsChanged(const gfx::Rect& old_bounds, bool contained_mouse);
 
   // Overridden from ui::LayerDelegate:
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
@@ -481,12 +517,30 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Overridden from ui::EventTarget:
   virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
   virtual EventTarget* GetParentTarget() OVERRIDE;
+  virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
+  virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
+  virtual void ConvertEventToTarget(ui::EventTarget* target,
+                                    ui::LocatedEvent* event) OVERRIDE;
 
   // Updates the layer name with a name based on the window's name and id.
   void UpdateLayerName(const std::string& name);
 
   // Returns true if the mouse is currently within our bounds.
   bool ContainsMouse();
+
+  // Returns the first ancestor (starting at |this|) with a layer. |offset| is
+  // set to the offset from |this| to the first ancestor with a layer.
+  Window* GetAncestorWithLayer(gfx::Vector2d* offset) {
+    return const_cast<Window*>(
+        const_cast<const Window*>(this)->GetAncestorWithLayer(offset));
+  }
+  const Window* GetAncestorWithLayer(gfx::Vector2d* offset) const;
+
+  // Bounds of this window relative to the parent. This is cached as the bounds
+  // of the Layer and Window are not necessarily the same. In particular bounds
+  // of the Layer are relative to the first ancestor with a Layer, where as this
+  // is relative to the parent Window.
+  gfx::Rect bounds_;
 
   WindowEventDispatcher* dispatcher_;
 
@@ -524,6 +578,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 
   scoped_ptr<ui::EventHandler> event_filter_;
   scoped_ptr<LayoutManager> layout_manager_;
+  scoped_ptr<ui::EventTargeter> targeter_;
 
   void* user_data_;
 
@@ -535,7 +590,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   gfx::Insets hit_test_bounds_override_outer_touch_;
   gfx::Insets hit_test_bounds_override_inner_;
 
-  ObserverList<WindowObserver> observers_;
+  ObserverList<WindowObserver, true> observers_;
 
   // Value struct to keep the name and deallocator for this property.
   // Key cannot be used for this purpose because it can be char* or

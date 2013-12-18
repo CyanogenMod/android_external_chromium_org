@@ -11,7 +11,6 @@
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "dbus/object_path.h"
 
 namespace chromeos {
@@ -45,7 +44,7 @@ class CHROMEOS_EXPORT IntrospectableClient : public DBusClient {
       const std::string& xml_data);
 
   // Creates the instance
-  static IntrospectableClient* Create(DBusClientImplementationType type);
+  static IntrospectableClient* Create();
 
  protected:
   IntrospectableClient();

@@ -21,6 +21,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
@@ -38,6 +39,7 @@
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/autofill_profile_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
+#include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
@@ -115,12 +117,13 @@ class AutofillTableMock : public AutofillTable {
  public:
   AutofillTableMock() : AutofillTable("en-US") {}
   MOCK_METHOD2(RemoveFormElement,
-               bool(const string16& name, const string16& value));  // NOLINT
+               bool(const base::string16& name,
+                    const base::string16& value));  // NOLINT
   MOCK_METHOD1(GetAllAutofillEntries,
                bool(std::vector<AutofillEntry>* entries));  // NOLINT
   MOCK_METHOD3(GetAutofillTimestamps,
-               bool(const string16& name,  // NOLINT
-                    const string16& value,
+               bool(const base::string16& name,  // NOLINT
+                    const base::string16& value,
                     std::vector<base::Time>* timestamps));
   MOCK_METHOD1(UpdateAutofillEntries,
                bool(const std::vector<AutofillEntry>&));  // NOLINT
@@ -529,7 +532,8 @@ class ProfileSyncServiceAutofillTest
     EXPECT_CALL(*personal_data_manager_, LoadCreditCards()).Times(1);
 
     personal_data_manager_->Init(
-        autofill::AutofillWebDataService::FromBrowserContext(profile_.get()),
+        WebDataServiceFactory::GetAutofillWebDataForProfile(
+            profile_.get(), Profile::EXPLICIT_ACCESS),
         profile_->GetPrefs(),
         profile_->IsOffTheRecord());
 
@@ -923,12 +927,12 @@ namespace {
 bool IncludesField(const AutofillProfile& profile1,
                    const AutofillProfile& profile2,
                    ServerFieldType field_type) {
-  std::vector<string16> values1;
+  std::vector<base::string16> values1;
   profile1.GetRawMultiInfo(field_type, &values1);
-  std::vector<string16> values2;
+  std::vector<base::string16> values2;
   profile2.GetRawMultiInfo(field_type, &values2);
 
-  std::set<string16> values_set;
+  std::set<base::string16> values_set;
   for (size_t i = 0; i < values1.size(); ++i)
     values_set.insert(values1[i]);
   for (size_t i = 0; i < values2.size(); ++i)

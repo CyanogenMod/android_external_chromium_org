@@ -8,9 +8,9 @@
 #include "cc/output/gl_renderer.h"
 #include "cc/resources/resource_provider.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "media/base/video_frame.h"
 #include "media/filters/skcanvas_video_renderer.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/size_conversions.h"
@@ -69,6 +69,7 @@ bool VideoResourceUpdater::VerifyFrame(
     case media::VideoFrame::YV12:
     case media::VideoFrame::YV12A:
     case media::VideoFrame::YV16:
+    case media::VideoFrame::YV12J:
     case media::VideoFrame::NATIVE_TEXTURE:
 #if defined(GOOGLE_TV)
     case media::VideoFrame::HOLE:
@@ -99,6 +100,7 @@ static gfx::Size SoftwarePlaneDimension(
     switch (input_frame_format) {
       case media::VideoFrame::YV12:
       case media::VideoFrame::YV12A:
+      case media::VideoFrame::YV12J:
         return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 0.5f));
       case media::VideoFrame::YV16:
         return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 1.f));
@@ -133,9 +135,11 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   // Only YUV software video frames are supported.
   DCHECK(input_frame_format == media::VideoFrame::YV12 ||
          input_frame_format == media::VideoFrame::YV12A ||
+         input_frame_format == media::VideoFrame::YV12J ||
          input_frame_format == media::VideoFrame::YV16);
   if (input_frame_format != media::VideoFrame::YV12 &&
       input_frame_format != media::VideoFrame::YV12A &&
+      input_frame_format != media::VideoFrame::YV12J &&
       input_frame_format != media::VideoFrame::YV16)
     return VideoFrameExternalResources();
 
@@ -201,20 +205,18 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
       if (!software_compositor) {
         DCHECK(context_provider_);
 
-        blink::WebGraphicsContext3D* context =
-            context_provider_->Context3d();
+        gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
 
-        GLC(context, context->genMailboxCHROMIUM(mailbox.name));
+        GLC(gl, gl->GenMailboxCHROMIUM(mailbox.name));
         if (mailbox.IsZero()) {
           resource_provider_->DeleteResource(resource_id);
           resource_id = 0;
         } else {
           ResourceProvider::ScopedWriteLockGL lock(
               resource_provider_, resource_id);
-          GLC(context, context->bindTexture(GL_TEXTURE_2D, lock.texture_id()));
-          GLC(context, context->produceTextureCHROMIUM(GL_TEXTURE_2D,
-                                                       mailbox.name));
-          GLC(context, context->bindTexture(GL_TEXTURE_2D, 0));
+          GLC(gl, gl->BindTexture(GL_TEXTURE_2D, lock.texture_id()));
+          GLC(gl, gl->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
+          GLC(gl, gl->BindTexture(GL_TEXTURE_2D, 0));
         }
       }
 
@@ -320,11 +322,10 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   return external_resources;
 }
 
-static void ReturnTexture(
-    scoped_refptr<media::VideoFrame::MailboxHolder> mailbox_holder,
-    unsigned sync_point,
-    bool lost_resource) {
-  mailbox_holder->Return(sync_point);
+static void ReturnTexture(const scoped_refptr<media::VideoFrame>& frame,
+                          unsigned sync_point,
+                          bool lost_resource) {
+  frame->texture_mailbox()->Resync(sync_point);
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
@@ -355,7 +356,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
       return VideoFrameExternalResources();
   }
 
-  scoped_refptr<media::VideoFrame::MailboxHolder> mailbox_holder =
+  media::VideoFrame::MailboxHolder* mailbox_holder =
       video_frame->texture_mailbox();
 
   external_resources.mailboxes.push_back(
@@ -363,7 +364,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
                      video_frame->texture_target(),
                      mailbox_holder->sync_point()));
   external_resources.release_callbacks.push_back(
-      base::Bind(&ReturnTexture, mailbox_holder));
+      base::Bind(&ReturnTexture, video_frame));
   return external_resources;
 }
 
@@ -380,8 +381,8 @@ void VideoResourceUpdater::RecycleResource(
 
   ContextProvider* context_provider = updater->context_provider_;
   if (context_provider && sync_point) {
-    GLC(context_provider->Context3d(),
-        context_provider->Context3d()->waitSyncPoint(sync_point));
+    GLC(context_provider->ContextGL(),
+        context_provider->ContextGL()->WaitSyncPointCHROMIUM(sync_point));
   }
 
   if (lost_resource) {

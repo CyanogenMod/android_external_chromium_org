@@ -165,11 +165,14 @@ class CONTENT_EXPORT BrowserAccessibility {
   gfx::Rect location() const { return location_; }
   BrowserAccessibilityManager* manager() const { return manager_; }
   const std::string& name() const { return name_; }
+  const std::string& value() const { return value_; }
   int32 renderer_id() const { return renderer_id_; }
   int32 role() const { return role_; }
   int32 state() const { return state_; }
-  const std::string& value() const { return value_; }
   bool instance_active() const { return instance_active_; }
+
+  void set_name(const std::string& name) { name_ = name; }
+  void set_value(const std::string& value) { value_ = value; }
 
 #if defined(OS_MACOSX) && __OBJC__
   BrowserAccessibilityCocoa* ToBrowserAccessibilityCocoa();
@@ -192,7 +195,7 @@ class CONTENT_EXPORT BrowserAccessibility {
   // need to distinguish between the default value and a missing attribute),
   // and another that returns the default value for that type if the
   // attribute is not present. In addition, strings can be returned as
-  // either std::string or string16, for convenience.
+  // either std::string or base::string16, for convenience.
 
   bool HasBoolAttribute(AccessibilityNodeData::BoolAttribute attr) const;
   bool GetBoolAttribute(AccessibilityNodeData::BoolAttribute attr) const;
@@ -217,8 +220,8 @@ class CONTENT_EXPORT BrowserAccessibility {
                           std::string* value) const;
 
   bool GetString16Attribute(AccessibilityNodeData::StringAttribute attribute,
-                            string16* value) const;
-  string16 GetString16Attribute(
+                            base::string16* value) const;
+  base::string16 GetString16Attribute(
       AccessibilityNodeData::StringAttribute attribute) const;
 
   bool HasIntListAttribute(
@@ -234,7 +237,7 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   // Retrieve the value of a html attribute from the attribute map and
   // returns true if found.
-  bool GetHtmlAttribute(const char* attr, string16* value) const;
+  bool GetHtmlAttribute(const char* attr, base::string16* value) const;
   bool GetHtmlAttribute(const char* attr, std::string* value) const;
 
   // Utility method to handle special cases for ARIA booleans, tristates and
@@ -278,6 +281,7 @@ class CONTENT_EXPORT BrowserAccessibility {
   // The parent of this object, may be NULL if we're the root object.
   BrowserAccessibility* parent_;
 
+ private:
   // The index of this within its parent object.
   int32 index_in_parent_;
 

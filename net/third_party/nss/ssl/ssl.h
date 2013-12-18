@@ -163,6 +163,8 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
 #define SSL_ENABLE_OCSP_STAPLING       24 /* Request OCSP stapling (client) */
 /* Request Signed Certificate Timestamps via TLS extension (client) */
 #define SSL_ENABLE_SIGNED_CERT_TIMESTAMPS 25
+#define SSL_ENABLE_FALLBACK_SCSV       26 /* Send fallback SCSV in
+                                           * handshakes. */
 
 #ifdef SSL_DEPRECATED_FUNCTION 
 /* Old deprecated function names */
@@ -264,6 +266,13 @@ SSL_IMPORT SECStatus SSL_CipherPrefSetDefault(PRInt32 cipher, PRBool enabled);
 SSL_IMPORT SECStatus SSL_CipherPrefGetDefault(PRInt32 cipher, PRBool *enabled);
 SSL_IMPORT SECStatus SSL_CipherPolicySet(PRInt32 cipher, PRInt32 policy);
 SSL_IMPORT SECStatus SSL_CipherPolicyGet(PRInt32 cipher, PRInt32 *policy);
+
+/* SSL_CipherOrderSet sets the cipher suite preference order from |ciphers|,
+ * which must be an array of cipher suite ids of length |len|. All the given
+ * cipher suite ids must appear in the array that is returned by
+ * |SSL_GetImplementedCiphers| and may only appear once, at most. */
+SSL_IMPORT SECStatus SSL_CipherOrderSet(PRFileDesc *fd, const PRUint16 *ciphers,
+                                        unsigned int len);
 
 /* SSLChannelBindingType enumerates the types of supported channel binding
  * values. See RFC 5929. */

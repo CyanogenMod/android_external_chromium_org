@@ -15,12 +15,13 @@
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/drive/drive_uploader.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/folder_creator.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace sync_file_system {
@@ -36,55 +37,26 @@ scoped_ptr<FileTracker> FindTrackerByID(MetadataDatabase* metadata_database,
   return scoped_ptr<FileTracker>();
 }
 
-void DidUpdateDatabase(const SyncStatusCallback& callback,
-                       SyncStatusCode status) {
+void ReturnRetryOnSuccess(const SyncStatusCallback& callback,
+                          SyncStatusCode status) {
   if (status == SYNC_STATUS_OK)
     status = SYNC_STATUS_RETRY;
   callback.Run(status);
 }
 
-bool FindTrackerByParentAndFileIDForUpload(MetadataDatabase* metadata_database,
-                                           int64 parent_tracker_id,
-                                           const std::string& file_id,
-                                           FileMetadata* file_metadata_out,
-                                           FileTracker* tracker_out) {
-  DCHECK(metadata_database);
-  DCHECK(file_metadata_out);
-  DCHECK(tracker_out);
-
-  FileMetadata file_metadata;
-  if (!metadata_database->FindFileByFileID(file_id, &file_metadata))
-    return false;
-
-  TrackerSet trackers;
-  if (!metadata_database->FindTrackersByFileID(file_id, &trackers))
-    return false;
-
-  // File tracker for |file_id| is just created. |trackers| should not contain
-  // more than one tracker for the file.  In addition, the tracker should not be
-  // active yet.
-  DCHECK_EQ(1u, trackers.size());
-  DCHECK(!trackers.has_active());
-
-  const FileTracker& tracker = **trackers.begin();
-  DCHECK_EQ(parent_tracker_id, tracker.parent_tracker_id());
-
-  *file_metadata_out = file_metadata;
-  *tracker_out = tracker;
-  return true;
-}
-
 }  // namespace
 
 LocalToRemoteSyncer::LocalToRemoteSyncer(SyncEngineContext* sync_context,
+                                         const SyncFileMetadata& local_metadata,
                                          const FileChange& local_change,
                                          const base::FilePath& local_path,
-                                         const SyncFileMetadata& local_metadata,
                                          const fileapi::FileSystemURL& url)
     : sync_context_(sync_context),
+      local_metadata_(local_metadata),
       local_change_(local_change),
       local_path_(local_path),
-      local_metadata_(local_metadata),
+      url_(url),
+      sync_action_(SYNC_ACTION_NONE),
       weak_ptr_factory_(this) {
 }
 
@@ -92,7 +64,7 @@ LocalToRemoteSyncer::~LocalToRemoteSyncer() {
 }
 
 void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
-  if (!drive_service() || !drive_uploader() || !metadata_database()) {
+  if (!IsContextReady()) {
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
     return;
@@ -111,7 +83,7 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
           app_id, path,
           active_ancestor_tracker.get(), &active_ancestor_path)) {
     // The app is disabled or not registered.
-    callback.Run(SYNC_STATUS_FAILED);
+    callback.Run(SYNC_STATUS_UNKNOWN_ORIGIN);
     return;
   }
   DCHECK(active_ancestor_tracker->active());
@@ -126,12 +98,16 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
          active_ancestor_details.file_kind() == FILE_KIND_FOLDER);
 
   base::FilePath missing_entries;
-  bool should_success = active_ancestor_path.AppendRelativePath(
-      path, &missing_entries);
-  if (!should_success) {
-    NOTREACHED();
-    callback.Run(SYNC_STATUS_FAILED);
-    return;
+  if (active_ancestor_path.empty()) {
+    missing_entries = path;
+  } else if (active_ancestor_path != path) {
+    bool should_success = active_ancestor_path.AppendRelativePath(
+        path, &missing_entries);
+    if (!should_success) {
+      NOTREACHED();
+      callback.Run(SYNC_STATUS_FAILED);
+      return;
+    }
   }
 
   std::vector<base::FilePath::StringType> missing_components;
@@ -139,9 +115,10 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
 
   if (!missing_components.empty()) {
     if (local_change_.IsDelete() ||
-        local_change_.file_type() == SYNC_FILE_TYPE_UNKNOWN) {
-      // !IsDelete() case is an error, handle the case as a local deletion case.
-      DCHECK(local_change_.IsDelete());
+        local_metadata_.file_type == SYNC_FILE_TYPE_UNKNOWN) {
+      // !IsDelete() but SYNC_FILE_TYPE_UNKNOWN could happen when a file is
+      // deleted by recursive deletion (which is not recorded by tracker)
+      // but there're remaining changes for the same file in the tracker.
 
       // Local file is deleted and remote file is missing, already deleted or
       // not yet synced.  There is nothing to do for the file.
@@ -220,10 +197,40 @@ void LocalToRemoteSyncer::SyncCompleted(const SyncStatusCallback& callback,
 
 void LocalToRemoteSyncer::HandleConflict(const SyncStatusCallback& callback) {
   DCHECK(remote_file_tracker_);
+  DCHECK(remote_file_tracker_->has_synced_details());
+  DCHECK(remote_file_tracker_->active());
   DCHECK(remote_file_tracker_->dirty());
 
-  NOTIMPLEMENTED();
-  callback.Run(SYNC_STATUS_FAILED);
+  if (local_change_.IsFile()) {
+    UploadNewFile(callback);
+    return;
+  }
+
+  DCHECK(local_change_.IsDirectory());
+  // Check if we can reuse the remote folder.
+  FileMetadata remote_file_metadata;
+  bool should_success = metadata_database()->FindFileByFileID(
+      remote_file_tracker_->file_id(), &remote_file_metadata);
+  if (!should_success) {
+    NOTREACHED();
+    CreateRemoteFolder(callback);
+    return;
+  }
+
+  const FileDetails& remote_details = remote_file_metadata.details();
+  base::FilePath title = fileapi::VirtualPath::BaseName(target_path_);
+  if (!remote_details.missing() &&
+      remote_details.file_kind() == FILE_KIND_FOLDER &&
+      remote_details.title() == title.AsUTF8Unsafe() &&
+      HasFileAsParent(remote_details,
+                      remote_parent_folder_tracker_->file_id())) {
+    metadata_database()->UpdateTracker(
+        remote_file_tracker_->tracker_id(), remote_details, callback);
+    return;
+  }
+
+  // Create new remote folder.
+  CreateRemoteFolder(callback);
 }
 
 void LocalToRemoteSyncer::HandleExistingRemoteFile(
@@ -234,10 +241,7 @@ void LocalToRemoteSyncer::HandleExistingRemoteFile(
   DCHECK(remote_file_tracker_->has_synced_details());
 
   if (local_change_.IsDelete() ||
-      local_change_.file_type() == SYNC_FILE_TYPE_UNKNOWN) {
-    // !IsDelete() case is an error, handle the case as a local deletion case.
-    DCHECK(local_change_.IsDelete());
-
+      local_metadata_.file_type == SYNC_FILE_TYPE_UNKNOWN) {
     // Local file deletion for existing remote file.
     DeleteRemoteFile(callback);
     return;
@@ -287,7 +291,7 @@ void LocalToRemoteSyncer::DeleteRemoteFile(
   DCHECK(remote_file_tracker_);
   DCHECK(remote_file_tracker_->has_synced_details());
 
-  set_used_network(true);
+  sync_action_ = SYNC_ACTION_DELETED;
   drive_service()->DeleteResource(
       remote_file_tracker_->file_id(),
       remote_file_tracker_->synced_details().etag(),
@@ -301,15 +305,16 @@ void LocalToRemoteSyncer::DidDeleteRemoteFile(
     google_apis::GDataErrorCode error) {
   if (error != google_apis::HTTP_SUCCESS &&
       error != google_apis::HTTP_NOT_FOUND &&
-      error != google_apis::HTTP_PRECONDITION) {
+      error != google_apis::HTTP_PRECONDITION &&
+      error != google_apis::HTTP_CONFLICT) {
     callback.Run(GDataErrorCodeToSyncStatusCode(error));
     return;
   }
 
   // Handle NOT_FOUND case as SUCCESS case.
-  // For PRECONDITION case, the remote file is modified since the last sync
-  // completed.  As our policy for deletion-modification conflict resolution,
-  // ignore the local deletion.
+  // For PRECONDITION / CONFLICT case, the remote file is modified since the
+  // last sync completed.  As our policy for deletion-modification conflict
+  // resolution, ignore the local deletion.
   callback.Run(SYNC_STATUS_OK);
 }
 
@@ -335,7 +340,7 @@ void LocalToRemoteSyncer::DidGetMD5ForUpload(
     return;
   }
 
-  set_used_network(true);
+  sync_action_ = SYNC_ACTION_UPDATED;
   drive_uploader()->UploadExistingFile(
       remote_file_tracker_->file_id(),
       local_path_,
@@ -351,47 +356,115 @@ void LocalToRemoteSyncer::DidUploadExistingFile(
     const SyncStatusCallback& callback,
     google_apis::GDataErrorCode error,
     const GURL&,
-    scoped_ptr<google_apis::ResourceEntry>) {
-  if (error == google_apis::HTTP_PRECONDITION) {
+    scoped_ptr<google_apis::ResourceEntry> entry) {
+  if (error == google_apis::HTTP_PRECONDITION ||
+      error == google_apis::HTTP_CONFLICT) {
     // The remote file has unfetched remote change.  Fetch latest metadata and
     // update database with it.
     // TODO(tzik): Consider adding local side low-priority dirtiness handling to
     // handle this as ListChangesTask.
-    UpdateRemoteMetadata(callback);
+    UpdateRemoteMetadata(remote_file_tracker_->file_id(),
+                         base::Bind(&ReturnRetryOnSuccess, callback));
     return;
   }
 
-  callback.Run(GDataErrorCodeToSyncStatusCode(error));
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
+    return;
+  }
+
+  if (!entry) {
+    NOTREACHED();
+    callback.Run(SYNC_STATUS_FAILED);
+    return;
+  }
+
+  DCHECK(entry);
+  metadata_database()->UpdateByFileResource(
+      *drive::util::ConvertResourceEntryToFileResource(*entry),
+      base::Bind(&LocalToRemoteSyncer::DidUpdateDatabaseForUploadExistingFile,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
+}
+
+void LocalToRemoteSyncer::DidUpdateDatabaseForUploadExistingFile(
+    const SyncStatusCallback& callback,
+    SyncStatusCode status) {
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
+    return;
+  }
+
+  FileMetadata file;
+  bool should_success = metadata_database()->FindFileByFileID(
+      remote_file_tracker_->file_id(), &file);
+  if (!should_success) {
+    NOTREACHED();
+    callback.Run(SYNC_STATUS_FAILED);
+    return;
+  }
+
+  const FileDetails& details = file.details();
+  base::FilePath title = fileapi::VirtualPath::BaseName(target_path_);
+  if (!details.missing() &&
+      details.file_kind() == FILE_KIND_FILE &&
+      details.title() == title.AsUTF8Unsafe() &&
+      HasFileAsParent(details,
+                      remote_parent_folder_tracker_->file_id())) {
+    metadata_database()->UpdateTracker(
+        remote_file_tracker_->tracker_id(),
+        file.details(),
+        callback);
+    return;
+  }
+
+  callback.Run(SYNC_STATUS_RETRY);
 }
 
 void LocalToRemoteSyncer::UpdateRemoteMetadata(
+    const std::string& file_id,
     const SyncStatusCallback& callback) {
   DCHECK(remote_file_tracker_);
-  set_used_network(true);
   drive_service()->GetResourceEntry(
-      remote_file_tracker_->file_id(),
+      file_id,
       base::Bind(&LocalToRemoteSyncer::DidGetRemoteMetadata,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback,
-                 metadata_database()->GetLargestKnownChangeID()));
+                 file_id, callback));
 }
 
 void LocalToRemoteSyncer::DidGetRemoteMetadata(
+    const std::string& file_id,
     const SyncStatusCallback& callback,
-    int64 change_id,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceEntry> entry) {
+  if (error == google_apis::HTTP_NOT_FOUND) {
+    metadata_database()->UpdateByDeletedRemoteFile(file_id, callback);
+    return;
+  }
+
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
+    return;
+  }
+
+  if (!entry) {
+    NOTREACHED();
+    callback.Run(SYNC_STATUS_FAILED);
+    return;
+  }
+
   metadata_database()->UpdateByFileResource(
-      change_id,
-      *drive::util::ConvertResourceEntryToFileResource(*entry),
-      base::Bind(&DidUpdateDatabase, callback));
+      *drive::util::ConvertResourceEntryToFileResource(*entry), callback);
 }
 
 void LocalToRemoteSyncer::DidDeleteForUploadNewFile(
     const SyncStatusCallback& callback,
     SyncStatusCode status) {
   if (status == SYNC_STATUS_HAS_CONFLICT) {
-    UpdateRemoteMetadata(callback);
+    UpdateRemoteMetadata(remote_file_tracker_->file_id(),
+                         base::Bind(&ReturnRetryOnSuccess, callback));
     return;
   }
 
@@ -407,7 +480,8 @@ void LocalToRemoteSyncer::DidDeleteForCreateFolder(
     const SyncStatusCallback& callback,
     SyncStatusCode status) {
   if (status == SYNC_STATUS_HAS_CONFLICT) {
-    UpdateRemoteMetadata(callback);
+    UpdateRemoteMetadata(remote_file_tracker_->file_id(),
+                         base::Bind(&ReturnRetryOnSuccess, callback));
     return;
   }
 
@@ -422,7 +496,7 @@ void LocalToRemoteSyncer::DidDeleteForCreateFolder(
 void LocalToRemoteSyncer::UploadNewFile(const SyncStatusCallback& callback) {
   DCHECK(remote_parent_folder_tracker_);
 
-  set_used_network(true);
+  sync_action_ = SYNC_ACTION_ADDED;
   base::FilePath title = fileapi::VirtualPath::BaseName(target_path_);
   drive_uploader()->UploadNewFile(
       remote_parent_folder_tracker_->file_id(),
@@ -431,139 +505,100 @@ void LocalToRemoteSyncer::UploadNewFile(const SyncStatusCallback& callback) {
       GetMimeTypeFromTitle(title),
       base::Bind(&LocalToRemoteSyncer::DidUploadNewFile,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback,
-                 metadata_database()->GetLargestKnownChangeID()),
+                 callback),
       google_apis::ProgressCallback());
 }
 
 void LocalToRemoteSyncer::DidUploadNewFile(
     const SyncStatusCallback& callback,
-    int64 change_id,
     google_apis::GDataErrorCode error,
     const GURL& upload_location,
     scoped_ptr<google_apis::ResourceEntry> entry) {
-  if (error != google_apis::HTTP_SUCCESS &&
-      error != google_apis::HTTP_CREATED) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
-    return;
-  }
-
-  // TODO(tzik): Add a function to update both FileMetadata and FileTracker to
-  // MetadataDatabase.
-  metadata_database()->UpdateByFileResource(
-      change_id,
-      *drive::util::ConvertResourceEntryToFileResource(*entry),
-      base::Bind(&LocalToRemoteSyncer::DidUpdateDatabaseForUpload,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 callback, entry->resource_id()));
-}
-
-void LocalToRemoteSyncer::DidUpdateDatabaseForUpload(
-    const SyncStatusCallback& callback,
-    const std::string& file_id,
-    SyncStatusCode status) {
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK) {
     callback.Run(status);
     return;
   }
 
-  FileMetadata metadata;
-  FileTracker tracker;
-  bool should_success =
-      FindTrackerByParentAndFileIDForUpload(
-          metadata_database(),
-          remote_parent_folder_tracker_->tracker_id(),
-          file_id,
-          &metadata,
-          &tracker);
-  if (!should_success) {
+  if (!entry) {
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
     return;
   }
 
-  metadata_database()->UpdateTracker(
-      tracker.tracker_id(),
-      metadata.details(),
+  metadata_database()->ReplaceActiveTrackerWithNewResource(
+      remote_parent_folder_tracker_->tracker_id(),
+      *drive::util::ConvertResourceEntryToFileResource(*entry),
       callback);
 }
 
 void LocalToRemoteSyncer::CreateRemoteFolder(
     const SyncStatusCallback& callback) {
-  base::FilePath title = fileapi::VirtualPath::BaseName(target_path_);
   DCHECK(remote_parent_folder_tracker_);
-  drive_service()->AddNewDirectory(
+
+  base::FilePath title = fileapi::VirtualPath::BaseName(target_path_);
+  sync_action_ = SYNC_ACTION_ADDED;
+
+  DCHECK(!folder_creator_);
+  folder_creator_.reset(new FolderCreator(
+      drive_service(), metadata_database(),
       remote_parent_folder_tracker_->file_id(),
-      title.AsUTF8Unsafe(),
-      base::Bind(&LocalToRemoteSyncer::DidCreateRemoteFolder,
-                 weak_ptr_factory_.GetWeakPtr(), callback));
+      title.AsUTF8Unsafe()));
+  folder_creator_->Run(base::Bind(
+      &LocalToRemoteSyncer::DidCreateRemoteFolder,
+      weak_ptr_factory_.GetWeakPtr(),
+      callback));
 }
 
 void LocalToRemoteSyncer::DidCreateRemoteFolder(
     const SyncStatusCallback& callback,
-    google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceEntry> entry) {
-  if (error != google_apis::HTTP_SUCCESS &&
-      error != google_apis::HTTP_CREATED) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+    const std::string& file_id,
+    SyncStatusCode status) {
+  scoped_ptr<FolderCreator> deleter = folder_creator_.Pass();
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 
-  // Check if any other browser instance created the folder.
-  // TODO(tzik): Do similar in RegisterAppTask.
-  drive_service()->SearchByTitle(
-      entry->title(),
-      remote_parent_folder_tracker_->file_id(),
-      base::Bind(&LocalToRemoteSyncer::DidListFolderForEnsureUniqueness,
+  if (metadata_database()->TryNoSideEffectActivation(
+          remote_parent_folder_tracker_->tracker_id(),
+          file_id, callback)) {
+    // |callback| will be invoked by MetadataDatabase in this case.
+    return;
+  }
+
+  drive_service()->RemoveResourceFromDirectory(
+      remote_parent_folder_tracker_->file_id(), file_id,
+      base::Bind(&LocalToRemoteSyncer::DidDetachResourceForCreationConflict,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback,
-                 base::Passed(ScopedVector<google_apis::ResourceEntry>())));
+                 callback));
 }
 
-void LocalToRemoteSyncer::DidListFolderForEnsureUniqueness(
+void LocalToRemoteSyncer::DidDetachResourceForCreationConflict(
     const SyncStatusCallback& callback,
-    ScopedVector<google_apis::ResourceEntry> candidates,
-    google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+    google_apis::GDataErrorCode error) {
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 
-  candidates.reserve(candidates.size() + resource_list->entries().size());
-  candidates.insert(candidates.end(),
-                    resource_list->entries().begin(),
-                    resource_list->entries().end());
-  resource_list->mutable_entries()->weak_clear();
+  callback.Run(SYNC_STATUS_RETRY);
+}
 
-  GURL next_feed;
-  if (resource_list->GetNextFeedURL(&next_feed)) {
-    drive_service()->GetRemainingFileList(
-        next_feed,
-        base::Bind(&LocalToRemoteSyncer::DidListFolderForEnsureUniqueness,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   callback,
-                   base::Passed(&candidates)));
-    return;
-  }
-
-  scoped_ptr<google_apis::ResourceEntry> oldest =
-      GetOldestCreatedFolderResource(candidates.Pass());
-  if (!oldest) {
-    callback.Run(SYNC_STATUS_FAILED);
-    return;
-  }
-
-  DCHECK(oldest);
-  // TODO(tzik): Delete all remote resource but |oldest|.
-  callback.Run(SYNC_STATUS_OK);
+bool LocalToRemoteSyncer::IsContextReady() {
+  return sync_context_->GetDriveService() &&
+      sync_context_->GetDriveUploader() &&
+      sync_context_->GetMetadataDatabase();
 }
 
 drive::DriveServiceInterface* LocalToRemoteSyncer::drive_service() {
+  set_used_network(true);
   return sync_context_->GetDriveService();
 }
 
 drive::DriveUploaderInterface* LocalToRemoteSyncer::drive_uploader() {
+  set_used_network(true);
   return sync_context_->GetDriveUploader();
 }
 

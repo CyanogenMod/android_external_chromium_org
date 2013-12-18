@@ -79,7 +79,10 @@ class OneClickSigninHelper
   // Argument to CanOffer().
   enum CanOfferFor {
     CAN_OFFER_FOR_ALL,
-    CAN_OFFER_FOR_INTERSTITAL_ONLY
+    CAN_OFFER_FOR_INTERSTITAL_ONLY,
+    CAN_OFFER_FOR_SECONDARY_ACCOUNT
+    // TODO(guohui): needs to handle adding secondary account through
+    // interstitial.
   };
 
   static void CreateForWebContentsWithPasswordManager(
@@ -119,6 +122,13 @@ class OneClickSigninHelper
                                     ProfileIOData* io_data,
                                     int child_id,
                                     int route_id);
+
+  // If the |source| is not settings page/webstore, redirects to
+  // the NTP/Apps page.
+  static void RedirectToNtpOrAppsPageIfNecessary(
+      content::WebContents* contents, signin::Source source);
+
+  static void ShowSigninErrorBubble(Browser* browser, const std::string& error);
 
   // Remove the item currently at the top of the history list if it's
   // the Gaia redirect URL. Due to limitations of the NavigationController
@@ -208,7 +218,6 @@ class OneClickSigninHelper
                                   int route_id);
 
   void RedirectToSignin();
-  void ShowSigninErrorBubble(Browser* browser, const std::string& error);
 
   // Clear all data member of the helper, except for the error.
   void CleanTransientState();

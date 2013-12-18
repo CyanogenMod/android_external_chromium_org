@@ -9,6 +9,7 @@
 #include "chrome/browser/guestview/guestview_constants.h"
 #include "chrome/browser/guestview/webview/webview_guest.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/content_settings.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
@@ -30,9 +31,9 @@ static base::LazyInstance<WebContentsGuestViewMap> webcontents_guestview_map =
 
 }  // namespace
 
-GuestView::Event::Event(const std::string& event_name,
+GuestView::Event::Event(const std::string& name,
                         scoped_ptr<DictionaryValue> args)
-    : event_name_(event_name),
+    : name_(name),
       args_(args.Pass()) {
 }
 
@@ -118,6 +119,24 @@ bool GuestView::GetGuestPartitionConfigForSite(const GURL& site,
   return true;
 }
 
+// static
+void GuestView::GetDefaultContentSettingRules(
+    RendererContentSettingRules* rules, bool incognito) {
+  rules->image_rules.push_back(ContentSettingPatternSource(
+    ContentSettingsPattern::Wildcard(),
+    ContentSettingsPattern::Wildcard(),
+    CONTENT_SETTING_ALLOW,
+    std::string(),
+    incognito));
+
+  rules->script_rules.push_back(ContentSettingPatternSource(
+    ContentSettingsPattern::Wildcard(),
+    ContentSettingsPattern::Wildcard(),
+    CONTENT_SETTING_ALLOW,
+    std::string(),
+    incognito));
+}
+
 void GuestView::Attach(content::WebContents* embedder_web_contents,
                        const base::DictionaryValue& args) {
   embedder_web_contents_ = embedder_web_contents;
@@ -181,7 +200,7 @@ void GuestView::DispatchEvent(Event* event) {
 
   extensions::EventRouter::DispatchEvent(
       embedder_web_contents_, profile, extension_id_,
-      event->event_name(), args.Pass(),
+      event->name(), args.Pass(),
       extensions::EventRouter::USER_GESTURE_UNKNOWN, info);
 
   delete event;

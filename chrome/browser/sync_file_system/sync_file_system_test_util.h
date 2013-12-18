@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_SYNC_FILE_SYSTEM_TEST_UTIL_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_SYNC_FILE_SYSTEM_TEST_UTIL_H_
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -13,14 +15,33 @@ namespace base {
 class RunLoop;
 }
 
+namespace fileapi {
+class FileSystemURL;
+}
+
 namespace sync_file_system {
 
-template <typename Arg1, typename Arg2>
+template <typename T>
+struct TypeTraits {
+  typedef T ParamType;
+};
+
+template <>
+struct TypeTraits<fileapi::FileSystemURL> {
+  typedef const fileapi::FileSystemURL& ParamType;
+};
+
+template <typename T>
+struct TypeTraits<std::vector<T> > {
+  typedef const std::vector<T>& ParamType;
+};
+
+template <typename Arg1, typename Arg2, typename Param1, typename Param2>
 void ReceiveResult2(bool* done,
                     Arg1* arg1_out,
                     Arg2* arg2_out,
-                    Arg1 arg1,
-                    Arg2 arg2) {
+                    Param1 arg1,
+                    Param2 arg2) {
   EXPECT_FALSE(*done);
   *done = true;
   *arg1_out = base::internal::CallbackForward(arg1);
@@ -34,12 +55,17 @@ template <typename R> base::Callback<void(R)>
 AssignAndQuitCallback(base::RunLoop* run_loop, R* result);
 
 template <typename Arg>
-base::Callback<void(Arg)> CreateResultReceiver(Arg* arg_out);
+base::Callback<void(typename TypeTraits<Arg>::ParamType)>
+CreateResultReceiver(Arg* arg_out);
 
 template <typename Arg1, typename Arg2>
-base::Callback<void(Arg1, Arg2)> CreateResultReceiver(Arg1* arg1_out,
-                                                      Arg2* arg2_out) {
-  return base::Bind(&ReceiveResult2<Arg1, Arg2>,
+base::Callback<void(typename TypeTraits<Arg1>::ParamType,
+                    typename TypeTraits<Arg2>::ParamType)>
+CreateResultReceiver(Arg1* arg1_out,
+                     Arg2* arg2_out) {
+  typedef typename TypeTraits<Arg1>::ParamType Param1;
+  typedef typename TypeTraits<Arg2>::ParamType Param2;
+  return base::Bind(&ReceiveResult2<Arg1, Arg2, Param1, Param2>,
                     base::Owned(new bool(false)),
                     arg1_out, arg2_out);
 }

@@ -53,6 +53,7 @@ import android.widget.FrameLayout;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.base.CalledByNative;
+import org.chromium.base.CommandLine;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.WeakContext;
 import org.chromium.content.R;
@@ -66,7 +67,9 @@ import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFacto
 import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.InsertionHandleController;
 import org.chromium.content.browser.input.SelectPopupDialog;
+import org.chromium.content.browser.input.SelectPopupItem;
 import org.chromium.content.browser.input.SelectionHandleController;
+import org.chromium.content.common.ContentSwitches;
 import org.chromium.content.common.TraceEvent;
 import org.chromium.ui.base.ViewAndroid;
 import org.chromium.ui.base.ViewAndroidDelegate;
@@ -75,8 +78,10 @@ import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -346,6 +351,7 @@ public class ContentViewCore
     private final Context mContext;
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
+    private WebContents mWebContents;
     private WebContentsObserverAndroid mWebContentsObserver;
 
     private ContentViewClient mContentViewClient;
@@ -501,6 +507,13 @@ public class ContentViewCore
      */
     public ViewGroup getContainerView() {
         return mContainerView;
+    }
+
+    /**
+     * @return The WebContents currently being rendered.
+     */
+    public WebContents getWebContents() {
+        return mWebContents;
     }
 
     /**
@@ -757,6 +770,7 @@ public class ContentViewCore
 
         mNativeContentViewCore = nativeInit(mHardwareAccelerated,
                 nativeWebContents, viewAndroidNativePointer, windowNativePointer);
+        mWebContents = nativeGetWebContentsAndroid(mNativeContentViewCore);
         mContentSettings = new ContentSettings(this, mNativeContentViewCore);
         initializeContainerView(internalDispatcher);
 
@@ -828,7 +842,7 @@ public class ContentViewCore
         TraceEvent.end();
     }
 
-    private void initPopupZoomer(Context context){
+    private void initPopupZoomer(Context context) {
         mPopupZoomer = new PopupZoomer(context);
         mPopupZoomer.setOnVisibilityChangedListener(new PopupZoomer.OnVisibilityChangedListener() {
             @Override
@@ -895,6 +909,7 @@ public class ContentViewCore
         if (mNativeContentViewCore != 0) {
             nativeOnJavaContentViewCoreDestroyed(mNativeContentViewCore);
         }
+        mWebContents = null;
         resetVSyncNotification();
         mVSyncProvider = null;
         if (mViewAndroid != null) mViewAndroid.destroy();
@@ -1164,18 +1179,20 @@ public class ContentViewCore
                 scale);
     }
 
+    // TODO(teddchoc): Remove all these navigation controller methods from here and have the
+    //                 embedders manage it.
     /**
      * @return Whether the current WebContents has a previous navigation entry.
      */
     public boolean canGoBack() {
-        return mNativeContentViewCore != 0 && nativeCanGoBack(mNativeContentViewCore);
+        return mWebContents != null && mWebContents.getNavigationController().canGoBack();
     }
 
     /**
      * @return Whether the current WebContents has a navigation entry after the current one.
      */
     public boolean canGoForward() {
-        return mNativeContentViewCore != 0 && nativeCanGoForward(mNativeContentViewCore);
+        return mWebContents != null && mWebContents.getNavigationController().canGoForward();
     }
 
     /**
@@ -1183,7 +1200,8 @@ public class ContentViewCore
      * @return Whether we can move in history by given offset
      */
     public boolean canGoToOffset(int offset) {
-        return mNativeContentViewCore != 0 && nativeCanGoToOffset(mNativeContentViewCore, offset);
+        return mWebContents != null &&
+                mWebContents.getNavigationController().canGoToOffset(offset);
     }
 
     /**
@@ -1192,27 +1210,28 @@ public class ContentViewCore
      * @param offset The offset into the navigation history.
      */
     public void goToOffset(int offset) {
-        if (mNativeContentViewCore != 0) nativeGoToOffset(mNativeContentViewCore, offset);
+        if (mWebContents != null) mWebContents.getNavigationController().goToOffset(offset);
     }
 
     @Override
     public void goToNavigationIndex(int index) {
-        if (mNativeContentViewCore != 0) nativeGoToNavigationIndex(mNativeContentViewCore, index);
+        if (mWebContents != null) {
+            mWebContents.getNavigationController().goToNavigationIndex(index);
+        }
     }
 
     /**
      * Goes to the navigation entry before the current one.
      */
     public void goBack() {
-        reportActionAfterDoubleTapUMA(ContentViewCore.UMAActionAfterDoubleTap.NAVIGATE_BACK);
-        if (mNativeContentViewCore != 0) nativeGoBack(mNativeContentViewCore);
+        if (mWebContents != null) mWebContents.getNavigationController().goBack();
     }
 
     /**
      * Goes to the navigation entry following the current one.
      */
     public void goForward() {
-        if (mNativeContentViewCore != 0) nativeGoForward(mNativeContentViewCore);
+        if (mWebContents != null) mWebContents.getNavigationController().goForward();
     }
 
     /**
@@ -1541,12 +1560,6 @@ public class ContentViewCore
      */
     public ContentSettings getContentSettings() {
         return mContentSettings;
-    }
-
-    @Override
-    public boolean didUIStealScroll(float x, float y) {
-        return getContentViewClient().shouldOverrideScroll(
-                x, y, computeHorizontalScrollOffset(), computeVerticalScrollOffset());
     }
 
     private void onRenderCoordinatesUpdated() {
@@ -2522,7 +2535,12 @@ public class ContentViewCore
     @CalledByNative
     private void showSelectPopup(String[] items, int[] enabled, boolean multiple,
             int[] selectedIndices) {
-        SelectPopupDialog.show(this, items, enabled, multiple, selectedIndices);
+        assert items.length == enabled.length;
+        List<SelectPopupItem> popupItems = new ArrayList<SelectPopupItem>();
+        for (int i = 0; i < items.length; i++) {
+            popupItems.add(new SelectPopupItem(items[i], enabled[i]));
+        }
+        SelectPopupDialog.show(this, popupItems, multiple, selectedIndices);
     }
 
     @SuppressWarnings("unused")
@@ -2861,6 +2879,7 @@ public class ContentViewCore
      * once the texture is actually ready.
      */
     public boolean isReady() {
+        if (mNativeContentViewCore == 0) return false;
         return nativeIsRenderWidgetHostViewReady(mNativeContentViewCore);
     }
 
@@ -2982,6 +3001,11 @@ public class ContentViewCore
      */
     public boolean isDeviceAccessibilityScriptInjectionEnabled() {
         try {
+            if (CommandLine.getInstance().hasSwitch(
+                    ContentSwitches.DISABLE_ACCESSIBILITY_SCRIPT_INJECTION)) {
+                return false;
+            }
+
             if (!mContentSettings.getJavaScriptEnabled()) {
                 return false;
             }
@@ -3204,6 +3228,8 @@ public class ContentViewCore
         return getContentViewClient().shouldBlockMediaRequest(url);
     }
 
+    private native WebContents nativeGetWebContentsAndroid(long nativeContentViewCoreImpl);
+
     private native void nativeOnJavaContentViewCoreDestroyed(long nativeContentViewCoreImpl);
 
     private native void nativeLoadUrl(
@@ -3294,13 +3320,6 @@ public class ContentViewCore
 
     private native void nativeMoveCaret(long nativeContentViewCoreImpl, float x, float y);
 
-    private native boolean nativeCanGoBack(long nativeContentViewCoreImpl);
-    private native boolean nativeCanGoForward(long nativeContentViewCoreImpl);
-    private native boolean nativeCanGoToOffset(long nativeContentViewCoreImpl, int offset);
-    private native void nativeGoBack(long nativeContentViewCoreImpl);
-    private native void nativeGoForward(long nativeContentViewCoreImpl);
-    private native void nativeGoToOffset(long nativeContentViewCoreImpl, int offset);
-    private native void nativeGoToNavigationIndex(long nativeContentViewCoreImpl, int index);
     private native void nativeLoadIfNecessary(long nativeContentViewCoreImpl);
     private native void nativeRequestRestoreLoad(long nativeContentViewCoreImpl);
 

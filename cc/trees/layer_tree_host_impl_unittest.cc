@@ -11,6 +11,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "cc/animation/scrollbar_animation_controller_thinning.h"
+#include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/math_util.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/delegated_renderer_layer_impl.h"
@@ -82,7 +83,6 @@ class LayerTreeHostImplTest : public testing::Test,
         did_request_redraw_(false),
         did_request_manage_tiles_(false),
         did_upload_visible_tile_(false),
-        did_lose_output_surface_(false),
         reduce_memory_result_(true),
         current_limit_bytes_(0),
         current_priority_cutoff_value_(0) {
@@ -103,9 +103,7 @@ class LayerTreeHostImplTest : public testing::Test,
 
   virtual void TearDown() OVERRIDE {}
 
-  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {
-    did_lose_output_surface_ = true;
-  }
+  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
   virtual void DidSwapBuffersOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE {}
@@ -155,7 +153,7 @@ class LayerTreeHostImplTest : public testing::Test,
   bool CreateHostImpl(const LayerTreeSettings& settings,
                       scoped_ptr<OutputSurface> output_surface) {
     host_impl_ = LayerTreeHostImpl::Create(
-        settings, this, &proxy_, &stats_instrumentation_, NULL);
+        settings, this, &proxy_, &stats_instrumentation_, NULL, 0);
     bool init = host_impl_->InitializeRenderer(output_surface.Pass());
     host_impl_->SetViewportSize(gfx::Size(10, 10));
     return init;
@@ -363,7 +361,6 @@ class LayerTreeHostImplTest : public testing::Test,
   bool did_request_redraw_;
   bool did_request_manage_tiles_;
   bool did_upload_visible_tile_;
-  bool did_lose_output_surface_;
   bool reduce_memory_result_;
   base::TimeDelta requested_scrollbar_animation_delay_;
   size_t current_limit_bytes_;
@@ -475,7 +472,7 @@ TEST_F(LayerTreeHostImplTest, ScrollWithoutRootLayer) {
 TEST_F(LayerTreeHostImplTest, ScrollWithoutRenderer) {
   scoped_ptr<TestWebGraphicsContext3D> context_owned =
       TestWebGraphicsContext3D::Create();
-  context_owned->set_times_make_current_succeeds(0);
+  context_owned->set_context_lost(true);
 
   scoped_ptr<FakeOutputSurface> output_surface(FakeOutputSurface::Create3d(
       context_owned.Pass()));
@@ -734,7 +731,9 @@ TEST_F(LayerTreeHostImplTest, ScrollVerticallyByPageReturnsCorrectValue) {
       gfx::Point(), SCROLL_BACKWARD));
 }
 
-TEST_F(LayerTreeHostImplTest, ScrollWithUserUnscrollableLayers) {
+// The user-scrollability breaks for zoomed-in pages. So disable this.
+// http://crbug.com/322223
+TEST_F(LayerTreeHostImplTest, DISABLED_ScrollWithUserUnscrollableLayers) {
   LayerImpl* scroll_layer = SetupScrollAndContentsLayers(gfx::Size(200, 200));
   host_impl_->SetViewportSize(gfx::Size(100, 100));
 
@@ -1128,7 +1127,8 @@ class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
                           client,
                           proxy,
                           rendering_stats_instrumentation,
-                          NULL) {}
+                          NULL,
+                          0) {}
 
   virtual base::TimeTicks CurrentPhysicalTimeTicks() const OVERRIDE {
     return fake_current_physical_time_;
@@ -3399,14 +3399,13 @@ TEST_F(LayerTreeHostImplTest, ReshapeNotCalledUntilDraw) {
 // Make sure damage tracking propagates all the way to the graphics context,
 // where it should request to swap only the sub-buffer that is damaged.
 TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
-  scoped_refptr<TestContextProvider> provider(
+  scoped_refptr<TestContextProvider> context_provider(
       TestContextProvider::Create());
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(provider));
+  context_provider->BindToCurrentThread();
+  context_provider->TestContext3d()->set_have_post_sub_buffer(true);
 
-  provider->BindToCurrentThread();
-  TestWebGraphicsContext3D* context = provider->TestContext3d();
-  context->set_have_post_sub_buffer(true);
+  scoped_ptr<OutputSurface> output_surface(
+      FakeOutputSurface::Create3d(context_provider));
 
   // This test creates its own LayerTreeHostImpl, so
   // that we can force partial swap enabled.
@@ -3414,7 +3413,7 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   settings.partial_swap_enabled = true;
   scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl =
       LayerTreeHostImpl::Create(
-          settings, this, &proxy_, &stats_instrumentation_, NULL);
+          settings, this, &proxy_, &stats_instrumentation_, NULL, 0);
   layer_tree_host_impl->InitializeRenderer(output_surface.Pass());
   layer_tree_host_impl->SetViewportSize(gfx::Size(500, 500));
 
@@ -3441,14 +3440,9 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   layer_tree_host_impl->DrawLayers(&frame, gfx::FrameTime::Now());
   layer_tree_host_impl->DidDrawAllLayers(frame);
   layer_tree_host_impl->SwapBuffers(frame);
-  gfx::Rect actual_swap_rect = context->update_rect();
-  gfx::Rect expected_swap_rect = gfx::Rect(0, 0, 500, 500);
-  EXPECT_EQ(expected_swap_rect.x(), actual_swap_rect.x());
-  EXPECT_EQ(expected_swap_rect.y(), actual_swap_rect.y());
-  EXPECT_EQ(expected_swap_rect.width(), actual_swap_rect.width());
-  EXPECT_EQ(expected_swap_rect.height(), actual_swap_rect.height());
-  EXPECT_EQ(context->last_update_type(),
-            TestWebGraphicsContext3D::PrepareTexture);
+  EXPECT_EQ(TestContextSupport::SWAP,
+            context_provider->support()->last_swap_type());
+
   // Second frame, only the damaged area should get swapped. Damage should be
   // the union of old and new child rects.
   // expected damage rect: gfx::Rect(26, 28);
@@ -3459,18 +3453,17 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   layer_tree_host_impl->DrawLayers(&frame, gfx::FrameTime::Now());
   host_impl_->DidDrawAllLayers(frame);
   layer_tree_host_impl->SwapBuffers(frame);
-  actual_swap_rect = context->update_rect();
-  expected_swap_rect = gfx::Rect(0, 500-28, 26, 28);
-  EXPECT_EQ(expected_swap_rect.x(), actual_swap_rect.x());
-  EXPECT_EQ(expected_swap_rect.y(), actual_swap_rect.y());
-  EXPECT_EQ(expected_swap_rect.width(), actual_swap_rect.width());
-  EXPECT_EQ(expected_swap_rect.height(), actual_swap_rect.height());
-  EXPECT_EQ(context->last_update_type(),
-            TestWebGraphicsContext3D::PostSubBuffer);
 
   // Make sure that partial swap is constrained to the viewport dimensions
   // expected damage rect: gfx::Rect(500, 500);
   // expected swap rect: flipped damage rect, but also clamped to viewport
+  EXPECT_EQ(TestContextSupport::PARTIAL_SWAP,
+            context_provider->support()->last_swap_type());
+  gfx::Rect expected_swap_rect(0, 500-28, 26, 28);
+  EXPECT_EQ(expected_swap_rect.ToString(),
+            context_provider->support()->
+                last_partial_swap_rect().ToString());
+
   layer_tree_host_impl->SetViewportSize(gfx::Size(10, 10));
   // This will damage everything.
   layer_tree_host_impl->active_tree()->root_layer()->SetBackgroundColor(
@@ -3479,14 +3472,9 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   layer_tree_host_impl->DrawLayers(&frame, gfx::FrameTime::Now());
   host_impl_->DidDrawAllLayers(frame);
   layer_tree_host_impl->SwapBuffers(frame);
-  actual_swap_rect = context->update_rect();
-  expected_swap_rect = gfx::Rect(10, 10);
-  EXPECT_EQ(expected_swap_rect.x(), actual_swap_rect.x());
-  EXPECT_EQ(expected_swap_rect.y(), actual_swap_rect.y());
-  EXPECT_EQ(expected_swap_rect.width(), actual_swap_rect.width());
-  EXPECT_EQ(expected_swap_rect.height(), actual_swap_rect.height());
-  EXPECT_EQ(context->last_update_type(),
-            TestWebGraphicsContext3D::PrepareTexture);
+
+  EXPECT_EQ(TestContextSupport::SWAP,
+            context_provider->support()->last_swap_type());
 }
 
 TEST_F(LayerTreeHostImplTest, RootLayerDoesntCreateExtraSurface) {
@@ -3718,7 +3706,7 @@ static scoped_ptr<LayerTreeHostImpl> SetupLayersForOpacity(
   LayerTreeSettings settings;
   settings.partial_swap_enabled = partial_swap;
   scoped_ptr<LayerTreeHostImpl> my_host_impl = LayerTreeHostImpl::Create(
-      settings, client, proxy, stats_instrumentation, NULL);
+      settings, client, proxy, stats_instrumentation, NULL, 0);
   my_host_impl->InitializeRenderer(output_surface.Pass());
   my_host_impl->SetViewportSize(gfx::Size(100, 100));
 
@@ -4961,12 +4949,10 @@ TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_0) {
 
   // Fail initialization of the onscreen context before the OutputSurface binds
   // it to the thread.
-  onscreen_context_provider_->UnboundTestContext3d()
-      ->set_times_make_current_succeeds(0);
+  onscreen_context_provider_->UnboundTestContext3d()->set_context_lost(true);
 
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-  EXPECT_FALSE(did_lose_output_surface_);
 
   // DeferredInitialize fails.
   EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
@@ -4982,68 +4968,50 @@ TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_1) {
   // Software draw.
   DrawFrame();
 
-  // Fail initialization of the onscreen context after the OutputSurface binds
-  // it to the thread.
-  onscreen_context_provider_->UnboundTestContext3d()
-      ->set_times_make_current_succeeds(2);
-
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-  EXPECT_FALSE(did_lose_output_surface_);
 
+  onscreen_context_provider_->UnboundTestContext3d()->set_context_lost(true);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   // DeferredInitialize fails.
   EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
       onscreen_context_provider_, offscreen_context_provider_));
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-
-  // We lose the output surface.
-  EXPECT_TRUE(did_lose_output_surface_);
 }
 
 TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_2) {
   // Software draw.
   DrawFrame();
 
-  // Fail initialization of the onscreen context after the OutputSurface binds
-  // it to the thread and during renderer initialization.
-  onscreen_context_provider_->UnboundTestContext3d()
-      ->set_times_make_current_succeeds(1);
-
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-  EXPECT_FALSE(did_lose_output_surface_);
+
+  onscreen_context_provider_->UnboundTestContext3d()->set_context_lost(true);
 
   // DeferredInitialize fails.
   EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
       onscreen_context_provider_, offscreen_context_provider_));
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-
-  // We lose the output surface.
-  EXPECT_TRUE(did_lose_output_surface_);
 }
 
 TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OffscreenContext) {
   // Software draw.
   DrawFrame();
 
-  // Fail initialization of the offscreen context.
-  offscreen_context_provider_->UnboundTestContext3d()
-      ->set_times_make_current_succeeds(0);
-
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-  EXPECT_FALSE(did_lose_output_surface_);
+
+  // Fail initialization of the offscreen context.
+  onscreen_context_provider_->UnboundTestContext3d()->set_context_lost(true);
 
   // DeferredInitialize fails.
   EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
       onscreen_context_provider_, offscreen_context_provider_));
   EXPECT_FALSE(host_impl_->output_surface()->context_provider());
   EXPECT_FALSE(host_impl_->offscreen_context_provider());
-
-  // We lose the output surface.
-  EXPECT_TRUE(did_lose_output_surface_);
 }
 
 // Checks that we have a non-0 default allocation if we pass a context that
@@ -5051,7 +5019,7 @@ TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OffscreenContext) {
 TEST_F(LayerTreeHostImplTest, DefaultMemoryAllocation) {
   LayerTreeSettings settings;
   host_impl_ = LayerTreeHostImpl::Create(
-      settings, this, &proxy_, &stats_instrumentation_, NULL);
+      settings, this, &proxy_, &stats_instrumentation_, NULL, 0);
 
   scoped_ptr<OutputSurface> output_surface(
       FakeOutputSurface::Create3d(TestWebGraphicsContext3D::Create()));
@@ -5332,6 +5300,118 @@ TEST_F(LayerTreeHostImplTest, WheelFlingShouldBubble) {
     ExpectContains(*scroll_info.get(),
                    host_impl_->active_tree()->root_layer()->id(),
                    gfx::Vector2d(0, 10));
+  }
+}
+
+// Make sure LatencyInfo carried by LatencyInfoSwapPromise are passed
+// to CompositorFrameMetadata after SwapBuffers();
+TEST_F(LayerTreeHostImplTest, LatencyInfoPassedToCompositorFrameMetadata) {
+  scoped_ptr<SolidColorLayerImpl> root =
+      SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
+  root->SetAnchorPoint(gfx::PointF());
+  root->SetPosition(gfx::PointF());
+  root->SetBounds(gfx::Size(10, 10));
+  root->SetContentBounds(gfx::Size(10, 10));
+  root->SetDrawsContent(true);
+
+  host_impl_->active_tree()->SetRootLayer(root.PassAs<LayerImpl>());
+
+  FakeOutputSurface* fake_output_surface =
+      static_cast<FakeOutputSurface*>(host_impl_->output_surface());
+
+  const ui::LatencyInfo& metadata_latency_before =
+      fake_output_surface->last_sent_frame().metadata.latency_info;
+  EXPECT_FALSE(metadata_latency_before.FindLatency(
+      ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0, NULL));
+
+  ui::LatencyInfo latency_info;
+  latency_info.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0, 0);
+  scoped_ptr<SwapPromise> swap_promise(
+      new LatencyInfoSwapPromise(latency_info));
+  host_impl_->active_tree()->QueueSwapPromise(swap_promise.Pass());
+  host_impl_->SetNeedsRedraw();
+
+  gfx::Rect full_frame_damage(host_impl_->DrawViewportSize());
+  LayerTreeHostImpl::FrameData frame;
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
+  host_impl_->DrawLayers(&frame, gfx::FrameTime::Now());
+  host_impl_->DidDrawAllLayers(frame);
+  EXPECT_TRUE(host_impl_->SwapBuffers(frame));
+
+  const ui::LatencyInfo& metadata_latency_after =
+      fake_output_surface->last_sent_frame().metadata.latency_info;
+  EXPECT_TRUE(metadata_latency_after.FindLatency(
+      ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0, NULL));
+}
+
+class SimpleSwapPromiseMonitor : public SwapPromiseMonitor {
+ public:
+  SimpleSwapPromiseMonitor(LayerTreeHost* layer_tree_host,
+                           LayerTreeHostImpl* layer_tree_host_impl,
+                           int* set_needs_commit_count,
+                           int* set_needs_redraw_count)
+      : SwapPromiseMonitor(layer_tree_host, layer_tree_host_impl),
+        set_needs_commit_count_(set_needs_commit_count),
+        set_needs_redraw_count_(set_needs_redraw_count) {}
+
+  virtual ~SimpleSwapPromiseMonitor() {}
+
+  virtual void OnSetNeedsCommitOnMain() OVERRIDE {
+    (*set_needs_commit_count_)++;
+  }
+
+  virtual void OnSetNeedsRedrawOnImpl() OVERRIDE {
+    (*set_needs_redraw_count_)++;
+  }
+
+ private:
+  int* set_needs_commit_count_;
+  int* set_needs_redraw_count_;
+};
+
+TEST_F(LayerTreeHostImplTest, SimpleSwapPromiseMonitor) {
+  int set_needs_commit_count = 0;
+  int set_needs_redraw_count = 0;
+
+  {
+    scoped_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
+        new SimpleSwapPromiseMonitor(NULL,
+                                     host_impl_.get(),
+                                     &set_needs_commit_count,
+                                     &set_needs_redraw_count));
+    host_impl_->SetNeedsRedraw();
+    EXPECT_EQ(0, set_needs_commit_count);
+    EXPECT_EQ(1, set_needs_redraw_count);
+  }
+
+  // Now the monitor is destroyed, SetNeedsRedraw() is no longer being
+  // monitored.
+  host_impl_->SetNeedsRedraw();
+  EXPECT_EQ(0, set_needs_commit_count);
+  EXPECT_EQ(1, set_needs_redraw_count);
+
+  {
+    scoped_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
+        new SimpleSwapPromiseMonitor(NULL,
+                                     host_impl_.get(),
+                                     &set_needs_commit_count,
+                                     &set_needs_redraw_count));
+    host_impl_->SetNeedsRedrawRect(gfx::Rect(10, 10));
+    EXPECT_EQ(0, set_needs_commit_count);
+    EXPECT_EQ(2, set_needs_redraw_count);
+  }
+
+  {
+    scoped_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
+        new SimpleSwapPromiseMonitor(NULL,
+                                     host_impl_.get(),
+                                     &set_needs_commit_count,
+                                     &set_needs_redraw_count));
+    // Empty damage rect won't signal the monitor.
+    host_impl_->SetNeedsRedrawRect(gfx::Rect());
+    EXPECT_EQ(0, set_needs_commit_count);
+    EXPECT_EQ(2, set_needs_redraw_count);
   }
 }
 

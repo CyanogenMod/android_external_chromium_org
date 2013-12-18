@@ -31,7 +31,11 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
 
-namespace blink { class WebGraphicsContext3D; }
+namespace gpu {
+namespace gles {
+class GLES2Interface;
+}
+}
 
 namespace gfx {
 class Rect;
@@ -138,10 +142,10 @@ class CC_EXPORT ResourceProvider {
   // Check upload status.
   size_t NumBlockingUploads();
   void MarkPendingUploadsAsNonBlocking();
-  double EstimatedUploadsPerSecond();
+  size_t EstimatedUploadsPerTick();
   void FlushUploads();
   void ReleaseCachedData();
-  base::TimeDelta TextureUpdateTickRate();
+  base::TimeTicks EstimatedUploadCompletionTime(size_t uploads_per_tick);
 
   // Flush all context operations, kicking uploads and ensuring ordering with
   // respect to other contexts.
@@ -355,7 +359,7 @@ class CC_EXPORT ResourceProvider {
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  static GLint GetActiveTextureUnit(blink::WebGraphicsContext3D* context);
+  static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
  private:
   struct Resource {
@@ -451,7 +455,7 @@ class CC_EXPORT ResourceProvider {
   static void PopulateSkBitmapWithResource(SkBitmap* sk_bitmap,
                                            const Resource* resource);
 
-  void TransferResource(blink::WebGraphicsContext3D* context,
+  void TransferResource(gpu::gles2::GLES2Interface* gl,
                         ResourceId id,
                         TransferableResource* resource);
   enum DeleteStyle {
@@ -474,7 +478,7 @@ class CC_EXPORT ResourceProvider {
                          GLenum filter);
 
   // Returns NULL if the output_surface_ does not have a ContextProvider.
-  blink::WebGraphicsContext3D* Context3d() const;
+  gpu::gles2::GLES2Interface* ContextGL() const;
 
   OutputSurface* output_surface_;
   SharedBitmapManager* shared_bitmap_manager_;
@@ -488,7 +492,6 @@ class CC_EXPORT ResourceProvider {
   ResourceType default_resource_type_;
   bool use_texture_storage_ext_;
   bool use_texture_usage_hint_;
-  bool use_shallow_flush_;
   bool use_compressed_texture_etc1_;
   scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;

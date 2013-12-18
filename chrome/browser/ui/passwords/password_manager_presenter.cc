@@ -17,6 +17,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 
 PasswordManagerPresenter::PasswordManagerPresenter(
     PasswordUIView* password_view)
@@ -24,8 +25,8 @@ PasswordManagerPresenter::PasswordManagerPresenter(
       exception_populater_(this),
       password_view_(password_view) {
   DCHECK(password_view_);
-  require_reauthentication_ = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnablePasswordManagerReauthentication);
+  require_reauthentication_ = !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisablePasswordManagerReauthentication);
 }
 
 PasswordManagerPresenter::~PasswordManagerPresenter() {
@@ -93,15 +94,18 @@ void PasswordManagerPresenter::RemovePasswordException(size_t index) {
 }
 
 void PasswordManagerPresenter::RequestShowPassword(size_t index) {
+#if !defined(OS_ANDROID) // This is never called on Android.
   DCHECK_LT(index, password_list_.size());
   if (IsAuthenticationRequired()) {
-    if (password_manager_util::AuthenticateUser())
+    if (password_manager_util::AuthenticateUser(
+        password_view_->GetNativeWindow()))
       last_authentication_time_ = base::TimeTicks::Now();
     else
       return;
   }
   // Call back the front end to reveal the password.
   password_view_->ShowPassword(index, password_list_[index]->password_value);
+#endif
 }
 
 const autofill::PasswordForm& PasswordManagerPresenter::GetPassword(

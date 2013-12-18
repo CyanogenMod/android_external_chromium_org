@@ -151,7 +151,7 @@ AppShortcutLauncherItemController::GetApplicationList(int event_flags) {
     content::WebContents* web_contents = content_list[i];
     // Get the icon.
     gfx::Image app_icon = launcher_controller()->GetAppListIcon(web_contents);
-    string16 title = launcher_controller()->GetAppListTitle(web_contents);
+    base::string16 title = launcher_controller()->GetAppListTitle(web_contents);
     items.push_back(new ChromeLauncherAppMenuItemTab(
         title, &app_icon, web_contents, i == 0));
   }
@@ -220,8 +220,8 @@ ui::MenuModel* AppShortcutLauncherItemController::CreateContextMenu(
   return new LauncherContextMenu(launcher_controller(), &item, root_window);
 }
 
-ash::LauncherMenuModel*
-AppShortcutLauncherItemController::CreateApplicationMenu(int event_flags) {
+ash::ShelfMenuModel* AppShortcutLauncherItemController::CreateApplicationMenu(
+    int event_flags) {
   return new LauncherApplicationMenuItemModel(GetApplicationList(event_flags));
 }
 

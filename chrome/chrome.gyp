@@ -38,7 +38,7 @@
           '../content/content.gyp:content_gpu',
           '../content/content.gyp:content_ppapi_plugin',
           '../content/content.gyp:content_worker',
-          '../third_party/WebKit/Source/devtools/devtools.gyp:devtools_frontend_resources',
+          '../third_party/WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources',
         ],
       }],
       ['enable_printing!=0', {
@@ -256,6 +256,7 @@
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
+            'common/extensions/api/api.gyp:api',
             '../base/base.gyp:base',
             '../content/content.gyp:content_utility',
             '../media/media.gyp:media',
@@ -303,6 +304,8 @@
             'utility/importer/safari_importer.mm',
             'utility/media_galleries/itunes_pref_parser_win.cc',
             'utility/media_galleries/itunes_pref_parser_win.h',
+            'utility/media_galleries/media_metadata_parser.cc',
+            'utility/media_galleries/media_metadata_parser.h',
             'utility/profile_import_handler.cc',
             'utility/profile_import_handler.h',
             'utility/utility_message_handler.h',
@@ -356,6 +359,7 @@
             ['OS=="android"', {
               'sources/': [
                 ['exclude', '^utility/importer/'],
+                ['exclude', '^utility/media_galleries/'],
                 ['exclude', '^utility/profile_import_handler\.cc'],
               ],
             }],

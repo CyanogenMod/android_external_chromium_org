@@ -8,15 +8,14 @@
 #include <stack>
 #include <string>
 
+#include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/synchronization/lock.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
@@ -43,14 +42,7 @@
 #include "ui/gfx/size_conversions.h"
 
 namespace {
-static base::LazyInstance<base::Lock>::Leaky
-    s_next_tree_id_lock = LAZY_INSTANCE_INITIALIZER;
-
-inline int GetNextTreeId() {
-  static int s_next_tree_id = 1;
-  base::AutoLock lock(s_next_tree_id_lock.Get());
-  return s_next_tree_id++;
-}
+static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
 }
 
 namespace cc {
@@ -58,7 +50,6 @@ namespace cc {
 RendererCapabilities::RendererCapabilities()
     : best_texture_format(RGBA_8888),
       using_partial_swap(false),
-      using_set_visibility(false),
       using_egl_image(false),
       allow_partial_texture_updates(false),
       using_offscreen_context3d(false),
@@ -125,7 +116,7 @@ LayerTreeHost::LayerTreeHost(
       partial_texture_update_requests_(0),
       in_paint_layer_contents_(false),
       total_frames_used_for_lcd_text_metrics_(0),
-      tree_id_(GetNextTreeId()),
+      id_(s_layer_tree_host_sequence_number.GetNext() + 1),
       next_commit_forces_redraw_(false),
       shared_bitmap_manager_(manager) {
   if (settings_.accelerated_animation_enabled)
@@ -382,8 +373,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
                                          min_page_scale_factor_,
                                          max_page_scale_factor_);
   sync_tree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
-  sync_tree->SetLatencyInfo(latency_info_);
-  latency_info_.Clear();
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
@@ -425,6 +414,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     // If we're not in impl-side painting, the tree is immediately
     // considered active.
     sync_tree->DidBecomeActive();
+    devtools_instrumentation::didActivateLayerTree(id_, source_frame_number_);
   }
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
@@ -465,7 +455,8 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
                                 client,
                                 proxy_.get(),
                                 rendering_stats_instrumentation_.get(),
-                                shared_bitmap_manager_);
+                                shared_bitmap_manager_,
+                                id_);
   shared_bitmap_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
@@ -530,9 +521,13 @@ const RendererCapabilities& LayerTreeHost::GetRendererCapabilities() const {
 
 void LayerTreeHost::SetNeedsAnimate() {
   proxy_->SetNeedsAnimate();
+  NotifySwapPromiseMonitorsOfSetNeedsCommit();
 }
 
-void LayerTreeHost::SetNeedsUpdateLayers() { proxy_->SetNeedsUpdateLayers(); }
+void LayerTreeHost::SetNeedsUpdateLayers() {
+  proxy_->SetNeedsUpdateLayers();
+  NotifySwapPromiseMonitorsOfSetNeedsCommit();
+}
 
 void LayerTreeHost::SetNeedsCommit() {
   if (!prepaint_callback_.IsCancelled()) {
@@ -542,6 +537,7 @@ void LayerTreeHost::SetNeedsCommit() {
     prepaint_callback_.Cancel();
   }
   proxy_->SetNeedsCommit();
+  NotifySwapPromiseMonitorsOfSetNeedsCommit();
 }
 
 void LayerTreeHost::SetNeedsFullTreeSync() {
@@ -703,10 +699,6 @@ void LayerTreeHost::SetVisible(bool visible) {
   if (!visible)
     ReduceMemoryUsage();
   proxy_->SetVisible(visible);
-}
-
-void LayerTreeHost::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
-  latency_info_.MergeWith(latency_info);
 }
 
 void LayerTreeHost::StartPageScaleAnimation(gfx::Vector2d target_offset,
@@ -987,10 +979,6 @@ void LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
 
   Layer* mask_layer = render_surface_layer->mask_layer();
   if (mask_layer) {
-    devtools_instrumentation::ScopedLayerTreeTask
-        update_layer(devtools_instrumentation::kUpdateLayer,
-                     mask_layer->id(),
-                     id());
     *did_paint_content |= mask_layer->Update(queue, NULL);
     *need_more_updates |= mask_layer->NeedMoreUpdates();
   }
@@ -999,10 +987,6 @@ void LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
       render_surface_layer->replica_layer() ?
       render_surface_layer->replica_layer()->mask_layer() : NULL;
   if (replica_mask_layer) {
-    devtools_instrumentation::ScopedLayerTreeTask
-        update_layer(devtools_instrumentation::kUpdateLayer,
-                     replica_mask_layer->id(),
-                     id());
     *did_paint_content |= replica_mask_layer->Update(queue, NULL);
     *need_more_updates |= replica_mask_layer->NeedMoreUpdates();
   }
@@ -1045,8 +1029,6 @@ void LayerTreeHost::PaintLayerContents(
       PaintMasksForRenderSurface(
           *it, queue, did_paint_content, need_more_updates);
     } else if (it.represents_itself() && it->DrawsContent()) {
-      devtools_instrumentation::ScopedLayerTreeTask
-          update_layer(devtools_instrumentation::kUpdateLayer, it->id(), id());
       DCHECK(!it->paint_properties().bounds.IsEmpty());
       *did_paint_content |= it->Update(queue, &occlusion_tracker);
       *need_more_updates |= it->NeedMoreUpdates();
@@ -1270,10 +1252,21 @@ bool LayerTreeHost::ScheduleMicroBenchmark(
       benchmark_name, value.Pass(), callback);
 }
 
+void LayerTreeHost::InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor) {
+  swap_promise_monitor_.insert(monitor);
+}
+
+void LayerTreeHost::RemoveSwapPromiseMonitor(SwapPromiseMonitor* monitor) {
+  swap_promise_monitor_.erase(monitor);
+}
+
+void LayerTreeHost::NotifySwapPromiseMonitorsOfSetNeedsCommit() {
+  std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
+  for (; it != swap_promise_monitor_.end(); it++)
+    (*it)->OnSetNeedsCommitOnMain();
+}
+
 void LayerTreeHost::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
-  if (proxy_->HasImplThread()) {
-    DCHECK(proxy_->CommitRequested() || proxy_->BeginMainFrameRequested());
-  }
   DCHECK(swap_promise);
   if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
     BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);

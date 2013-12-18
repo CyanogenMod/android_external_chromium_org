@@ -125,7 +125,7 @@ int SetCloseOnExec(int fd) {
 
 // Close a socket and check return value.
 void CloseSocket(int fd) {
-  int rv = HANDLE_EINTR(close(fd));
+  int rv = IGNORE_EINTR(close(fd));
   DCHECK_EQ(0, rv) << "Error closing socket: " << safe_strerror(errno);
 }
 
@@ -296,11 +296,11 @@ bool ParseLockPath(const base::FilePath& path,
 bool DisplayProfileInUseError(const base::FilePath& lock_path,
                               const std::string& hostname,
                               int pid) {
-  string16 error = l10n_util::GetStringFUTF16(
+  base::string16 error = l10n_util::GetStringFUTF16(
       IDS_PROFILE_IN_USE_LINUX,
       base::IntToString16(pid),
       ASCIIToUTF16(hostname));
-  string16 relaunch_button_text = l10n_util::GetStringUTF16(
+  base::string16 relaunch_button_text = l10n_util::GetStringUTF16(
       IDS_PROFILE_IN_USE_LINUX_RELAUNCH);
   LOG(ERROR) << base::SysWideToNativeMB(UTF16ToWide(error)).c_str();
   if (!g_disable_prompt)

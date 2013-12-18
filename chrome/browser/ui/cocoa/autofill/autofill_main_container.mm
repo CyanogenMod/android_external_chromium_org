@@ -15,12 +15,14 @@
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_button.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_details_container.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_notification_container.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_tooltip_controller.h"
 #import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "ui/base/cocoa/controls/blue_label_button.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/range/range.h"
@@ -80,14 +82,14 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   [saveInChromeCheckbox_ sizeToFit];
   [[self view] addSubview:saveInChromeCheckbox_];
 
-  saveInChromeTooltip_.reset([[NSImageView alloc] initWithFrame:NSZeroRect]);
+  saveInChromeTooltip_.reset(
+      [[AutofillTooltipController alloc] init]);
   [saveInChromeTooltip_ setImage:
       ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
           IDR_AUTOFILL_TOOLTIP_ICON).ToNSImage()];
-  [saveInChromeTooltip_ setToolTip:
+  [saveInChromeTooltip_ setMessage:
       base::SysUTF16ToNSString(delegate_->SaveLocallyTooltip())];
-  [saveInChromeTooltip_ setFrameSize:[[saveInChromeTooltip_ image] size]];
-  [[self view] addSubview:saveInChromeTooltip_];
+  [[self view] addSubview:[saveInChromeTooltip_ view]];
   [self updateSaveInChrome];
 
   detailsContainer_.reset(
@@ -130,8 +132,7 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   return YES;
 }
 
-- (NSSize)preferredSize {
-  // Overall width is determined by |detailsContainer_|.
+- (NSSize)decorationSizeForWidth:(CGFloat)width {
   NSSize buttonSize = [buttonContainer_ frame].size;
   NSSize buttonStripImageSize = [buttonStripImage_ frame].size;
   NSSize buttonStripSize =
@@ -141,21 +142,29 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
                           buttonStripImageSize.height) +
                      chrome_style::kClientBottomPadding);
 
-  NSSize detailsSize = [detailsContainer_ preferredSize];
-
-  NSSize size = NSMakeSize(std::max(buttonStripSize.width, detailsSize.width),
-                           buttonStripSize.height + detailsSize.height);
-  size.height += 2 * autofill::kDetailVerticalPadding;
-
+  NSSize size = NSMakeSize(std::max(buttonStripSize.width, width),
+                           buttonStripSize.height);
   if (![legalDocumentsView_ isHidden]) {
     NSSize legalDocumentSize =
-        [self preferredLegalDocumentSizeForWidth:detailsSize.width];
+        [self preferredLegalDocumentSizeForWidth:width];
     size.height += legalDocumentSize.height + autofill::kVerticalSpacing;
   }
 
   NSSize notificationSize =
-      [notificationContainer_ preferredSizeForWidth:detailsSize.width];
+      [notificationContainer_ preferredSizeForWidth:width];
   size.height += notificationSize.height;
+
+  return size;
+}
+
+- (NSSize)preferredSize {
+  NSSize detailsSize = [detailsContainer_ preferredSize];
+  NSSize decorationSize = [self decorationSizeForWidth:detailsSize.width];
+
+  NSSize size = NSMakeSize(std::max(decorationSize.width, detailsSize.width),
+                           decorationSize.height + detailsSize.height);
+  size.height += autofill::kDetailVerticalPadding;
+
   return size;
 }
 
@@ -184,8 +193,8 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
       NSMakePoint(chrome_style::kHorizontalPadding,
                   NSMidY(buttonFrame) - NSHeight(checkboxFrame) / 2.0)];
 
-  NSRect tooltipFrame = [saveInChromeTooltip_ frame];
-  [saveInChromeTooltip_ setFrameOrigin:
+  NSRect tooltipFrame = [[saveInChromeTooltip_ view] frame];
+  [[saveInChromeTooltip_ view] setFrameOrigin:
       NSMakePoint(NSMaxX([saveInChromeCheckbox_ frame]) + autofill::kButtonGap,
                   NSMidY(buttonFrame) - (NSHeight(tooltipFrame) / 2.0))];
 
@@ -196,15 +205,13 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   // Buttons/checkbox/legal take up lower part of view, notifications the
   // upper part. Adjust the detailsContainer to take up the remainder.
   CGFloat remainingHeight =
-      NSHeight(bounds) - currentY - NSHeight(notificationFrame) -
-      autofill::kDetailVerticalPadding;
+      NSHeight(bounds) - currentY - NSHeight(notificationFrame);
   NSRect containerFrame =
       NSMakeRect(0, currentY, NSWidth(bounds), remainingHeight);
   [[detailsContainer_ view] setFrame:containerFrame];
   [detailsContainer_ performLayout];
 
-  notificationFrame.origin =
-      NSMakePoint(0, NSMaxY(containerFrame) + autofill::kDetailVerticalPadding);
+  notificationFrame.origin = NSMakePoint(0, NSMaxY(containerFrame));
   [[notificationContainer_ view] setFrame:notificationFrame];
   [notificationContainer_ performLayout];
 }
@@ -227,7 +234,7 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   [buttonContainer_ addSubview:button];
 
   CGFloat nextX = NSMaxX([button frame]) + autofill::kButtonGap;
-  button.reset([[ConstrainedWindowButton alloc] initWithFrame:NSZeroRect]);
+  button.reset([[BlueLabelButton alloc] initWithFrame:NSZeroRect]);
   [button setFrameOrigin:NSMakePoint(nextX, 0)];
   [button setKeyEquivalent:kKeyEquivalentReturn];
   [button setTarget:target_];
@@ -245,6 +252,21 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   base::scoped_nsobject<GTMUILocalizerAndLayoutTweaker> layoutTweaker(
       [[GTMUILocalizerAndLayoutTweaker alloc] init]);
   [layoutTweaker tweakUI:buttonContainer_];
+
+  // Now ensure both buttons have the same height. The second button is
+  // known to be the larger one.
+  CGFloat buttonHeight =
+      NSHeight([[[buttonContainer_ subviews] objectAtIndex:1] frame]);
+
+  // Account for a rendering issue in BlueLabelButton.
+  // TODO(groby): Fix that rendering instead.
+  buttonHeight -= 1.0;
+
+  // Force first button to be the same height.
+  NSView* button = [[buttonContainer_ subviews] objectAtIndex:0];
+  NSSize buttonSize = [button frame].size;
+  buttonSize.height = buttonHeight;
+  [button setFrameSize:buttonSize];
 }
 
 - (void)updateButtons {
@@ -345,7 +367,7 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
 
 - (void)updateSaveInChrome {
   [saveInChromeCheckbox_ setHidden:!delegate_->ShouldOfferToSaveInChrome()];
-  [saveInChromeTooltip_ setHidden:[saveInChromeCheckbox_ isHidden]];
+  [[saveInChromeTooltip_ view] setHidden:[saveInChromeCheckbox_ isHidden]];
   [saveInChromeCheckbox_ setState:
       (delegate_->ShouldSaveInChrome() ? NSOnState : NSOffState)];
 }
@@ -385,8 +407,8 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   return buttonStripImage_.get();
 }
 
-- (NSImageView*)saveInChromeTooltipForTesting {
-  return saveInChromeTooltip_.get();
+- (NSButton*)saveInChromeTooltipForTesting {
+  return base::mac::ObjCCast<NSButton>([saveInChromeTooltip_ view]);
 }
 
 @end

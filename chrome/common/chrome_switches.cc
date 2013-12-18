@@ -146,6 +146,17 @@ const char kAutomationReinitializeOnChannelError[] =
 // will not occur in subsequent runs either.
 const char kCancelFirstRun[]                = "cancel-first-run";
 
+// Certificate Transparency: Uses the provided log for checking Signed
+// Certificate Timestamps provided with certificates.
+// The switch's value is:
+//   log_description:log_key
+// where:
+//   log_description is a textual description of the log
+//   log_key is a Base64'd DER-encoded SubjectPublicKeyInfo of the log's
+//   public key.
+const char kCertificateTransparencyLog[] =
+    "certificate-transparency-log";
+
 // How often (in seconds) to check for updates. Should only be used for testing
 // purposes.
 const char kCheckForUpdateIntervalSec[]     = "check-for-update-interval";
@@ -376,6 +387,11 @@ const char kDisableOmniboxAutoCompletionForIme[] =
 const char kDisablePasswordAutofillPublicSuffixDomainMatching[] =
     "disable-password-autofill-public-suffix-domain-matching";
 
+// Disable the setting to prompt the user for their OS account password before
+// revealing plaintext passwords in the password manager.
+const char kDisablePasswordManagerReauthentication[] =
+    "disable-password-manager-reauthentication";
+
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
 
@@ -385,6 +401,9 @@ const char kDisablePreconnect[]             = "disable-preconnect";
 // Disable prerendering based on local browsing history.
 const char kDisablePrerenderLocalPredictor[] =
     "disable-prerender-local-predictor";
+
+// Disable Privet local printing.
+const char kDisablePrivetLocalPrinting[]     = "disable-privet-local-printing";
 
 // Normally when the user attempts to navigate to a page that was the result of
 // a post we prompt to make sure they want to. This switch may be used to
@@ -549,11 +568,6 @@ const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
 const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
     "enable-password-autofill-public-suffix-domain-matching";
 
-// Enable the setting to prompt the user for their OS account password before
-// revealing plaintext passwords in the password manager.
-const char kEnablePasswordManagerReauthentication[] =
-    "enable-password-manager-reauthentication";
-
 // Enables the pre- and auto-login features. When a user signs in to sync, the
 // browser's cookie jar is pre-filled with GAIA cookies. When the user visits a
 // GAIA login page, an info bar can help the user login.
@@ -564,6 +578,9 @@ const char kEnableBenchmarking[]            = "enable-benchmarking";
 
 // Enables client hints, which adds hints about browser state to HTTP requests.
 const char kEnableClientHints[]             = "enable-client-hints";
+
+// Enables the multi-level undo system for bookmarks.
+const char kEnableBookmarkUndo[]            = "enable-bookmark-undo";
 
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
@@ -626,15 +643,8 @@ const char kEnableIPv6[]                    = "enable-ipv6";
 // attempt to use the existing connection.
 const char kEnableIPPooling[]               = "enable-ip-pooling";
 
-// Enables experimentation with launching ephemeral apps via hyperlinks.
-const char kEnableLinkableEphemeralApps[]   = "enable-linkable-ephemeral-apps";
-
 // Enable always using the local NTP for the first NTP load of a new window.
 const char kEnableLocalFirstLoadNTP[] = "enable-local-first-load-ntp";
-
-// Enables support for user profiles that are managed by another user and can
-// have restrictions applied.
-const char kEnableManagedUsers[]            = "enable-managed-users";
 
 // Make the values returned to window.performance.memory more granular and more
 // up to date. Without this flag, the memory information is still available, but
@@ -679,8 +689,9 @@ const char kDisablePnacl[]                  = "disable-pnacl";
 // are likely to be needed in future page fetches.
 const char kEnablePrecache[]                = "enable-precache";
 
-// Enable Privet local printing.
-const char kEnablePrivetLocalPrinting[]     = "enable-privet-local-printing";
+// Enables showing unregistered printers in print preview
+const char kEnablePrintPreviewRegisterPromos[] =
+    "enable-print-preview-register-promos";
 
 // Enables tracking of tasks in profiler for viewing via about:profiler.
 // To predominantly disable tracking (profiling), use the command line switch:
@@ -688,9 +699,6 @@ const char kEnablePrivetLocalPrinting[]     = "enable-privet-local-printing";
 // Some tracking will still take place at startup, but it will be turned off
 // during chrome_browser_main.
 const char kEnableProfiling[]               = "enable-profiling";
-
-// Enables forwarding preconnection hints to suitable proxy servers.
-const char kEnableProxyPreconnectHints[]    = "enable-proxy-preconnect-hints";
 
 // Enables query in the omnibox.
 const char kEnableQueryExtraction[]         = "enable-query-extraction";
@@ -704,11 +712,6 @@ const char kEnableQuicHttps[]               = "enable-quic-https";
 
 // Enables the Quickoffoce/Chrome document viewer rather than the editor.
 const char kEnableQuickofficeViewing[]      = "enable-quickoffice-viewing";
-
-// Enables content settings based on host *and* plug-in in the user
-// preferences.
-const char kEnableResourceContentSettings[] =
-    "enable-resource-content-settings";
 
 // Enables save password prompt bubble.
 const char kEnableSavePasswordBubble[]      = "enable-save-password-bubble";
@@ -776,8 +779,6 @@ const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 // With this switch, SSL 3.0 fallback will be enabled for all sites.
 // Without this switch, SSL 3.0 fallback will be disabled for a site
 // pinned to the Google pin list (indicating that it is a Google site).
-// Note: until http://crbug/237055 is resolved, unrestricted SSL 3.0
-// fallback is always enabled, with or without this switch.
 const char kEnableUnrestrictedSSL3Fallback[] =
     "enable-unrestricted-ssl3-fallback";
 
@@ -853,7 +854,7 @@ const char kForceAppMode[]                  = "force-app-mode";
 const char kForceFirstRun[]                 = "force-first-run";
 
 // Forces additional Chrome Variation Ids that will be sent in
-// X-Chrome-Variations header, specified as a comma-separated list of numeric
+// X-Client-Data header, specified as a 64-bit encoded list of numeric
 // experiment ids.
 const char kForceVariationIds[]             = "force-variation-ids";
 
@@ -939,6 +940,9 @@ const char kInstallFromWebstore[]           = "install-from-webstore";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
+
+// Specifies the testcase used by the IPC fuzzer.
+const char kIpcFuzzerTestcase[]             = "ipc-fuzzer-testcase";
 
 // Used for testing - keeps browser alive after last browser window closes.
 const char kKeepAliveForTest[]              = "keep-alive-for-test";
@@ -1517,6 +1521,9 @@ const char kDisableAddToHomescreen[]         = "disable-add-to-homescreen";
 // Disables the new NTP.
 const char kDisableNewNTP[]                  = "disable-new-ntp";
 
+// Disables zero suggest experiment on Dev channel.
+const char kDisableZeroSuggest[] = "disable-zero-suggest";
+
 // Enable the accessibility tab switcher.
 const char kEnableAccessibilityTabSwitcher[] =
     "enable-accessibility-tab-switcher";
@@ -1532,6 +1539,21 @@ const char kEnableTranslate[]               = "enable-translate";
 
 // Enables support for playing videos on Chromecast devices.
 const char kEnableCast[]                    = "enable-cast";
+
+// Enables zero suggest functionality on Dev channel, showing contextual
+// suggestions (EtherSuggest) for http pages and google.com search queries.
+const char kEnableZeroSuggestEtherSerp[] =
+    "enable-zero-suggest-ether-serp";
+
+// Enables zero suggest functionality on Dev channel, showing contextual
+// suggestions (EtherSuggest) for http pages.
+const char kEnableZeroSuggestEtherNoSerp[] =
+    "enable-zero-suggest-ether-noserp";
+
+// Enables zero suggest functionality on Dev channel, showing most visited
+// sites as default suggestions.
+const char kEnableZeroSuggestMostVisited[] =
+    "enable-zero-suggest-most-visited";
 
 #endif
 

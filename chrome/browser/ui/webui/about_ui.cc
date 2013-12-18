@@ -824,7 +824,7 @@ std::string AboutSandbox() {
   AboutSandboxRow(&data,
                   std::string(),
                   IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
-                  status & content::kSandboxLinuxSeccompBpf);
+                  status & content::kSandboxLinuxSeccompBPF);
 
   data.append("</table>");
 
@@ -833,7 +833,7 @@ std::string AboutSandbox() {
                      status & content::kSandboxLinuxPIDNS &&
                      status & content::kSandboxLinuxNetNS;
   // A second-layer sandbox is also required to be adequately sandboxed.
-  bool good_layer2 = status & content::kSandboxLinuxSeccompBpf;
+  bool good_layer2 = status & content::kSandboxLinuxSeccompBPF;
   bool good = good_layer1 && good_layer2;
 
   if (good) {
@@ -904,7 +904,7 @@ void AboutMemoryHandler::OnDetailsAvailable() {
   const std::vector<ProcessData>& browser_processes = processes();
 
   // Aggregate per-process data into browser summary data.
-  string16 log_string;
+  base::string16 log_string;
   for (size_t index = 0; index < browser_processes.size(); index++) {
     if (browser_processes[index].processes.empty())
       continue;

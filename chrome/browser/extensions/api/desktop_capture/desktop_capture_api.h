@@ -9,8 +9,9 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
+#include "chrome/browser/media/desktop_media_list.h"
 #include "chrome/browser/media/desktop_media_picker.h"
-#include "chrome/browser/media/desktop_media_picker_model.h"
+#include "chrome/browser/media/native_desktop_media_list.h"
 #include "chrome/common/extensions/api/desktop_capture.h"
 #include "url/gurl.h"
 
@@ -22,13 +23,12 @@ class DesktopCaptureChooseDesktopMediaFunction
   DECLARE_EXTENSION_FUNCTION("desktopCapture.chooseDesktopMedia",
                              DESKTOPCAPTURE_CHOOSEDESKTOPMEDIA)
 
-  // Factory creating DesktopMediaPickerModel and DesktopMediaPicker instances.
+  // Factory creating DesktopMediaList and DesktopMediaPicker instances.
   // Used for tests to supply fake picker.
   class PickerFactory {
    public:
-    virtual scoped_ptr<DesktopMediaPickerModel> CreateModel(
-        scoped_ptr<webrtc::ScreenCapturer> screen_capturer,
-        scoped_ptr<webrtc::WindowCapturer> window_capturer) = 0;
+    virtual scoped_ptr<DesktopMediaList> CreateModel(bool show_screens,
+                                                     bool show_windows) = 0;
     virtual scoped_ptr<DesktopMediaPicker> CreatePicker() = 0;
    protected:
     virtual ~PickerFactory() {}

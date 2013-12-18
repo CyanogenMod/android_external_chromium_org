@@ -16,11 +16,11 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/policy/user_policy_disk_cache.h"
 #include "chrome/browser/chromeos/policy/user_policy_token_loader.h"
-#include "chrome/browser/policy/proto/cloud/device_management_local.pb.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "policy/proto/cloud_policy.pb.h"
+#include "policy/proto/device_management_local.pb.h"
 
 namespace em = enterprise_management;
 
@@ -499,13 +499,13 @@ void UserCloudPolicyStoreChromeOS::LoadPolicyKey(const base::FilePath& path,
   }
 
   int64 size;
-  if (!file_util::GetFileSize(path, &size)) {
+  if (!base::GetFileSize(path, &size)) {
     LOG(ERROR) << "Could not get size of " << path.value();
   } else if (size == 0 || size > kKeySizeLimit) {
     LOG(ERROR) << "Key at " << path.value() << " has bad size " << size;
   } else {
     key->resize(size);
-    int read_size = file_util::ReadFile(
+    int read_size = base::ReadFile(
         path, reinterpret_cast<char*>(vector_as_array(key)), size);
     if (read_size != size) {
       LOG(ERROR) << "Failed to read key at " << path.value();

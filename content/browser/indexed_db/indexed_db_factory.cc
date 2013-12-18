@@ -90,6 +90,11 @@ bool IndexedDBFactory::HasLastBackingStoreReference(const GURL& origin_url)
   return ptr->HasOneRef();
 }
 
+void IndexedDBFactory::ForceClose(const GURL& origin_url) {
+  if (backing_store_map_.find(origin_url) != backing_store_map_.end())
+    ReleaseBackingStore(origin_url, true /* immediate */);
+}
+
 void IndexedDBFactory::ContextDestroyed() {
   // Timers on backing stores hold a reference to this factory. When the
   // context (which nominally owns this factory) is destroyed during thread
@@ -127,10 +132,11 @@ void IndexedDBFactory::GetDatabaseNames(
   }
 
   callbacks->OnSuccess(backing_store->GetDatabaseNames());
+  ReleaseBackingStore(origin_url, false /* immediate */);
 }
 
 void IndexedDBFactory::DeleteDatabase(
-    const string16& name,
+    const base::string16& name,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     const GURL& origin_url,
     const base::FilePath& data_directory) {
@@ -177,6 +183,7 @@ void IndexedDBFactory::DeleteDatabase(
   database_map_[unique_identifier] = database;
   database->DeleteDatabase(callbacks);
   database_map_.erase(unique_identifier);
+  ReleaseBackingStore(origin_url, false /* immediate */);
 }
 
 void IndexedDBFactory::HandleBackingStoreFailure(const GURL& origin_url) {
@@ -189,6 +196,15 @@ void IndexedDBFactory::HandleBackingStoreFailure(const GURL& origin_url) {
 bool IndexedDBFactory::IsBackingStoreOpenForTesting(const GURL& origin_url)
     const {
   return backing_store_map_.find(origin_url) != backing_store_map_.end();
+}
+
+bool IndexedDBFactory::IsBackingStorePendingCloseForTesting(
+    const GURL& origin_url) const {
+  IndexedDBBackingStoreMap::const_iterator it =
+      backing_store_map_.find(origin_url);
+  if (it == backing_store_map_.end())
+    return false;
+  return it->second->close_timer()->IsRunning();
 }
 
 scoped_refptr<IndexedDBBackingStore> IndexedDBFactory::OpenBackingStore(
@@ -233,7 +249,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBFactory::OpenBackingStore(
 }
 
 void IndexedDBFactory::Open(
-    const string16& name,
+    const base::string16& name,
     int64 version,
     int64 transaction_id,
     scoped_refptr<IndexedDBCallbacks> callbacks,

@@ -44,7 +44,7 @@ bool FileExists(const base::FilePath& path) {
 
 int64 GetSize(const base::FilePath& path) {
   int64 size;
-  EXPECT_TRUE(file_util::GetFileSize(path, &size));
+  EXPECT_TRUE(base::GetFileSize(path, &size));
   return size;
 }
 
@@ -2407,7 +2407,7 @@ TEST_F(ObfuscatedFileUtilTest, MigrationBackFromIsolated) {
 
     // Populate the origin directory with some fake data.
     old_directory_db_path = data_dir_path().Append(path);
-    ASSERT_TRUE(file_util::CreateDirectory(old_directory_db_path));
+    ASSERT_TRUE(base::CreateDirectory(old_directory_db_path));
     EXPECT_EQ(static_cast<int>(kFakeDirectoryData.size()),
               file_util::WriteFile(old_directory_db_path.AppendASCII("dummy"),
                                    kFakeDirectoryData.data(),

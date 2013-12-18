@@ -76,6 +76,13 @@ class PictureLayerImplTest : public testing::Test {
         host_impl_.active_tree()->LayerById(id_));
   }
 
+  void SetupDefaultTreesWithFixedTileSize(gfx::Size layer_bounds,
+                                          gfx::Size tile_size) {
+    SetupDefaultTrees(layer_bounds);
+    pending_layer_->set_fixed_tile_size(tile_size);
+    active_layer_->set_fixed_tile_size(tile_size);
+  }
+
   void SetupTrees(
       scoped_refptr<PicturePileImpl> pending_pile,
       scoped_refptr<PicturePileImpl> active_pile) {
@@ -84,15 +91,28 @@ class PictureLayerImplTest : public testing::Test {
     SetupPendingTree(pending_pile);
   }
 
+  void CreateHighLowResAndSetAllTilesVisible() {
+    // Active layer must get updated first so pending layer can share from it.
+    active_layer_->CreateDefaultTilingsAndTiles(ACTIVE_TREE);
+    active_layer_->SetAllTilesVisible();
+    pending_layer_->CreateDefaultTilingsAndTiles(PENDING_TREE);
+    pending_layer_->SetAllTilesVisible();
+  }
+
   void AddDefaultTilingsWithInvalidation(const Region& invalidation) {
     active_layer_->AddTiling(2.3f);
     active_layer_->AddTiling(1.0f);
     active_layer_->AddTiling(0.5f);
-    for (size_t i = 0; i < active_layer_->tilings()->num_tilings(); ++i)
-      active_layer_->tilings()->tiling_at(i)->CreateAllTilesForTesting();
+    for (size_t i = 0; i < active_layer_->tilings()->num_tilings(); ++i) {
+      active_layer_->tilings()->tiling_at(i)->CreateTilesForTesting(
+          ACTIVE_TREE);
+    }
     pending_layer_->set_invalidation(invalidation);
-    for (size_t i = 0; i < pending_layer_->tilings()->num_tilings(); ++i)
-      pending_layer_->tilings()->tiling_at(i)->CreateAllTilesForTesting();
+    for (size_t i = 0; i < pending_layer_->tilings()->num_tilings(); ++i) {
+      pending_layer_->tilings()
+          ->tiling_at(i)
+          ->CreateTilesForTesting(PENDING_TREE);
+    }
   }
 
   void SetupPendingTree(
@@ -151,6 +171,20 @@ class PictureLayerImplTest : public testing::Test {
   void ResetTilingsAndRasterScales() {
     pending_layer_->DidLoseOutputSurface();
     active_layer_->DidLoseOutputSurface();
+  }
+
+  void AssertAllTilesRequired(PictureLayerTiling* tiling) {
+    std::vector<Tile*> tiles = tiling->TilesForTesting(PENDING_TREE);
+    for (size_t i = 0; i < tiles.size(); ++i)
+      EXPECT_TRUE(tiles[i]->required_for_activation()) << "i: " << i;
+    EXPECT_GT(tiles.size(), 0u);
+  }
+
+  void AssertNoTilesRequired(PictureLayerTiling* tiling) {
+    std::vector<Tile*> tiles = tiling->TilesForTesting(PENDING_TREE);
+    for (size_t i = 0; i < tiles.size(); ++i)
+      EXPECT_FALSE(tiles[i]->required_for_activation()) << "i: " << i;
+    EXPECT_GT(tiles.size(), 0u);
   }
 
  protected:
@@ -1188,7 +1222,6 @@ TEST_F(PictureLayerImplTest, MarkRequiredOffscreenTiles) {
        ++iter) {
     if (!*iter)
       continue;
-    Tile* tile = *iter;
     TilePriority priority;
     priority.resolution = HIGH_RESOLUTION;
     if (++tile_count % 2) {
@@ -1198,7 +1231,7 @@ TEST_F(PictureLayerImplTest, MarkRequiredOffscreenTiles) {
       priority.time_to_visible_in_seconds = 1.f;
       priority.distance_to_visible_in_pixels = 1.f;
     }
-    tile->SetPriority(PENDING_TREE, priority);
+    iter.SetPriorityForTesting(priority);
   }
 
   pending_layer_->MarkVisibleResourcesAsRequired();
@@ -1215,7 +1248,7 @@ TEST_F(PictureLayerImplTest, MarkRequiredOffscreenTiles) {
     if (!*iter)
       continue;
     const Tile* tile = *iter;
-    if (tile->priority(PENDING_TREE).distance_to_visible_in_pixels == 0.f) {
+    if (iter.priority().distance_to_visible_in_pixels == 0.f) {
       EXPECT_TRUE(tile->required_for_activation());
       num_visible++;
     } else {
@@ -1226,6 +1259,100 @@ TEST_F(PictureLayerImplTest, MarkRequiredOffscreenTiles) {
 
   EXPECT_GT(num_visible, 0);
   EXPECT_GT(num_offscreen, 0);
+}
+
+TEST_F(PictureLayerImplTest, HighResRequiredWhenUnsharedActiveAllReady) {
+  gfx::Size layer_bounds(400, 400);
+  gfx::Size tile_size(100, 100);
+  SetupDefaultTreesWithFixedTileSize(layer_bounds, tile_size);
+
+  // No tiles shared.
+  pending_layer_->set_invalidation(gfx::Rect(layer_bounds));
+
+  CreateHighLowResAndSetAllTilesVisible();
+
+  active_layer_->SetAllTilesReady();
+
+  // No shared tiles and all active tiles ready, so pending can only
+  // activate with all high res tiles.
+  pending_layer_->MarkVisibleResourcesAsRequired();
+  AssertAllTilesRequired(pending_layer_->HighResTiling());
+  AssertNoTilesRequired(pending_layer_->LowResTiling());
+}
+
+TEST_F(PictureLayerImplTest, NothingRequiredIfAllHighResTilesShared) {
+  gfx::Size layer_bounds(400, 400);
+  gfx::Size tile_size(100, 100);
+  SetupDefaultTreesWithFixedTileSize(layer_bounds, tile_size);
+
+  CreateHighLowResAndSetAllTilesVisible();
+
+  Tile* some_active_tile =
+      active_layer_->HighResTiling()->AllTilesForTesting()[0];
+  EXPECT_FALSE(some_active_tile->IsReadyToDraw());
+
+  // All tiles shared (no invalidation), so even though the active tree's
+  // tiles aren't ready, there is nothing required.
+  pending_layer_->MarkVisibleResourcesAsRequired();
+  AssertNoTilesRequired(pending_layer_->HighResTiling());
+  AssertNoTilesRequired(pending_layer_->LowResTiling());
+}
+
+TEST_F(PictureLayerImplTest, NothingRequiredIfActiveMissingTiles) {
+  gfx::Size layer_bounds(400, 400);
+  gfx::Size tile_size(100, 100);
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  // An arbitrary bogus outside the layer recording.  Enough for the layer to
+  // think it can create tiles, but not in bounds so all tiles are null.
+  Region active_recorded_region;
+  active_recorded_region.Union(gfx::Rect(1000, 1000, 1, 1));
+  scoped_refptr<FakePicturePileImpl> active_pile =
+      FakePicturePileImpl::CreatePileWithRecordedRegion(
+          tile_size, layer_bounds, active_recorded_region);
+  SetupTrees(pending_pile, active_pile);
+  pending_layer_->set_fixed_tile_size(tile_size);
+  active_layer_->set_fixed_tile_size(tile_size);
+
+  CreateHighLowResAndSetAllTilesVisible();
+
+  // Active layer has tilings, but no tiles due to missing recordings.
+  EXPECT_TRUE(active_layer_->CanHaveTilings());
+  EXPECT_EQ(active_layer_->tilings()->num_tilings(), 2u);
+  EXPECT_EQ(active_layer_->HighResTiling()->TilesForTesting(ACTIVE_TREE).size(),
+            0u);
+
+  // Since the active layer has no tiles at all, the pending layer doesn't
+  // need content in order to activate.  This is attempting to simulate
+  // scrolling past the end of recorded content on the active layer.
+  pending_layer_->MarkVisibleResourcesAsRequired();
+  AssertNoTilesRequired(pending_layer_->HighResTiling());
+  AssertNoTilesRequired(pending_layer_->LowResTiling());
+}
+
+TEST_F(PictureLayerImplTest, HighResRequiredIfActiveCantHaveTiles) {
+  gfx::Size layer_bounds(400, 400);
+  gfx::Size tile_size(100, 100);
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  scoped_refptr<FakePicturePileImpl> active_pile =
+      FakePicturePileImpl::CreateEmptyPile(tile_size, layer_bounds);
+  SetupTrees(pending_pile, active_pile);
+  pending_layer_->set_fixed_tile_size(tile_size);
+  active_layer_->set_fixed_tile_size(tile_size);
+
+  CreateHighLowResAndSetAllTilesVisible();
+
+  // Active layer can't have tiles.
+  EXPECT_FALSE(active_layer_->CanHaveTilings());
+
+  // All high res tiles required.  This should be considered identical
+  // to the case where there is no active layer, to avoid flashing content.
+  // This can happen if a layer exists for a while and switches from
+  // not being able to have content to having content.
+  pending_layer_->MarkVisibleResourcesAsRequired();
+  AssertAllTilesRequired(pending_layer_->HighResTiling());
+  AssertNoTilesRequired(pending_layer_->LowResTiling());
 }
 
 TEST_F(PictureLayerImplTest, ActivateUninitializedLayer) {

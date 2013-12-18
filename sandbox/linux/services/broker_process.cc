@@ -21,6 +21,7 @@
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
+#include "base/process/process_metrics.h"
 #include "build/build_config.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
@@ -131,7 +132,7 @@ BrokerProcess::BrokerProcess(int denied_errno,
 
 BrokerProcess::~BrokerProcess() {
   if (initialized_ && ipc_socketpair_ != -1) {
-    void (HANDLE_EINTR(close(ipc_socketpair_)));
+    close(ipc_socketpair_);
   }
 }
 
@@ -146,15 +147,16 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     return false;
   }
 
+  DCHECK_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
   int child_pid = fork();
   if (child_pid == -1) {
-    ignore_result(HANDLE_EINTR(close(socket_pair[0])));
-    ignore_result(HANDLE_EINTR(close(socket_pair[1])));
+    close(socket_pair[0]);
+    close(socket_pair[1]);
     return false;
   }
   if (child_pid) {
     // We are the parent and we have just forked our broker process.
-    ignore_result(HANDLE_EINTR(close(socket_pair[0])));
+    close(socket_pair[0]);
     // We should only be able to write to the IPC channel. We'll always send
     // a new file descriptor to receive the reply on.
     shutdown(socket_pair[1], SHUT_RD);
@@ -165,7 +167,7 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     return true;
   } else {
     // We are the broker.
-    ignore_result(HANDLE_EINTR(close(socket_pair[1])));
+    close(socket_pair[1]);
     // We should only be able to read from this IPC channel. We will send our
     // replies on a new file descriptor attached to the requests.
     shutdown(socket_pair[0], SHUT_WR);
@@ -329,7 +331,7 @@ bool BrokerProcess::HandleRequest() const {
         r = false;
         break;
     }
-    int ret = HANDLE_EINTR(close(temporary_ipc));
+    int ret = IGNORE_EINTR(close(temporary_ipc));
     DCHECK(!ret) << "Could not close temporary IPC channel";
     return r;
   }
@@ -374,7 +376,7 @@ bool BrokerProcess::HandleRemoteCommand(IPCCommands command_type, int reply_ipc,
   // Close anything we have opened in this process.
   for (std::vector<int>::iterator it = opened_files.begin();
        it < opened_files.end(); ++it) {
-    int ret = HANDLE_EINTR(close(*it));
+    int ret = IGNORE_EINTR(close(*it));
     DCHECK(!ret) << "Could not close file descriptor";
   }
 

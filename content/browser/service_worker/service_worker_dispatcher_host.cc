@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
@@ -37,8 +38,11 @@ ServiceWorkerDispatcherHost::ServiceWorkerDispatcherHost(
 }
 
 ServiceWorkerDispatcherHost::~ServiceWorkerDispatcherHost() {
-  if (context_)
+  if (context_) {
     context_->RemoveAllProviderHostsForProcess(render_process_id_);
+    context_->embedded_worker_registry()->RemoveChildProcessSender(
+        render_process_id_);
+  }
 }
 
 void ServiceWorkerDispatcherHost::Init(
@@ -51,6 +55,8 @@ void ServiceWorkerDispatcherHost::Init(
       return;
   }
   context_ = context_wrapper->context()->AsWeakPtr();
+  context_->embedded_worker_registry()->AddChildProcessSender(
+      render_process_id_, this);
 }
 
 void ServiceWorkerDispatcherHost::OnDestruct() const {
@@ -83,7 +89,7 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
 void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     int32 thread_id,
     int32 request_id,
-    const GURL& scope,
+    const GURL& pattern,
     const GURL& script_url) {
   if (!context_ || !context_->IsEnabled()) {
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
@@ -97,7 +103,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
   // TODO(alecflett): This check is insufficient for release. Add a
   // ServiceWorker-specific policy query in
   // ChildProcessSecurityImpl. See http://crbug.com/311631.
-  if (scope.GetOrigin() != script_url.GetOrigin()) {
+  if (pattern.GetOrigin() != script_url.GetOrigin()) {
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
@@ -110,9 +116,10 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
       thread_id, request_id, NextWorkerId()));
 }
 
-void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(int32 thread_id,
-                                                            int32 request_id,
-                                                            const GURL& scope) {
+void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
+    int32 thread_id,
+    int32 request_id,
+    const GURL& pattern) {
   // TODO(alecflett): This check is insufficient for release. Add a
   // ServiceWorker-specific policy query in
   // ChildProcessSecurityImpl. See http://crbug.com/311631.

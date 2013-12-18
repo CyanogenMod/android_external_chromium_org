@@ -21,11 +21,10 @@ class TranslateInfoBarBase : public InfoBarView {
  public:
   // Sets the text of the provided language menu button.
   void UpdateLanguageButtonText(views::MenuButton* button,
-                                const string16& text);
+                                const base::string16& text);
 
  protected:
-  TranslateInfoBarBase(InfoBarService* owner,
-                       TranslateInfoBarDelegate* delegate);
+  explicit TranslateInfoBarBase(scoped_ptr<TranslateInfoBarDelegate> delegate);
   virtual ~TranslateInfoBarBase();
 
   // InfoBarView:

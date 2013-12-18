@@ -12,11 +12,6 @@ var FEEDBACK_WIDTH = 500;
  * @const
  */
 var FEEDBACK_HEIGHT = 625;
-/**
- * @type {number}
- * @const
- */
-var TRACING_CHECKBOX_HEIGHT = 29;
 
 var initialFeedbackInfo = null;
 
@@ -84,8 +79,7 @@ function startFeedbackUI(feedbackInfo) {
       width: FEEDBACK_WIDTH,
       height: FEEDBACK_HEIGHT,
       hidden: true,
-      resizable: false,
-      singleton: true },
+      resizable: false },
       function(appWindow) {});
 }
 

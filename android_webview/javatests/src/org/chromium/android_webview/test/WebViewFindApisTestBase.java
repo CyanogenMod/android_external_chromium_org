@@ -1,15 +1,14 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
-import java.util.concurrent.Callable;
+import org.chromium.android_webview.AwContents;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import org.chromium.android_webview.AwContents;
 
 /**
  * Base class for WebView find-in-page API tests.
@@ -131,7 +130,7 @@ public class WebViewFindApisTestBase extends AwTestBase {
     }
 
     // Similar to java.util.concurrent.Future, but without the ability to cancel.
-    private static abstract class IntegerFuture implements Runnable {
+    private abstract static class IntegerFuture implements Runnable {
         private CountDownLatch mLatch = new CountDownLatch(1);
         private int mValue;
 

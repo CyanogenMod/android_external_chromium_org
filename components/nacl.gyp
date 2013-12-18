@@ -137,6 +137,31 @@
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
         },
+        {
+          'target_name': 'nacl_renderer',
+          'type': 'static_library',
+          'sources': [
+            'nacl/renderer/pnacl_translation_resource_host.cc',
+            'nacl/renderer/pnacl_translation_resource_host.h',
+            'nacl/renderer/ppb_nacl_private_impl.cc',
+            'nacl/renderer/ppb_nacl_private_impl.h',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            '../content/content.gyp:content_renderer',
+            '../webkit/common/webkit_common.gyp:webkit_common',
+          ],
+          'defines': [
+            '<@(nacl_defines)',
+          ],
+          'direct_dependent_settings': {
+            'defines': [
+              '<@(nacl_defines)',
+            ],
+          },
+        }
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -163,6 +188,7 @@
                 'nacl/loader/nacl_helper_linux.h',
                 '../base/posix/unix_domain_socket_linux.cc',
                 '../content/common/child_process_sandbox_support_impl_shm_linux.cc',
+                '../content/common/sandbox_bpf_base_policy_linux.cc',
                 '../content/common/sandbox_init_linux.cc',
                 '../content/common/sandbox_seccomp_bpf_linux.cc',
                 '../content/public/common/content_switches.cc',
@@ -292,6 +318,11 @@
           'targets': [
             {
               'target_name': 'nacl_win64',
+              'type': 'none',
+              'sources': [],
+            },
+            {
+              'target_name': 'nacl_switches_win64',
               'type': 'none',
               'sources': [],
             },

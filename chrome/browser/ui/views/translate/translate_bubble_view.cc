@@ -39,7 +39,7 @@
 namespace {
 
 views::LabelButton* CreateLabelButton(views::ButtonListener* listener,
-                                      const string16& label, int id) {
+                                      const base::string16& label, int id) {
   views::LabelButton* button = new views::LabelButton(listener, label);
   button->set_id(id);
   button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
@@ -81,8 +81,6 @@ void GetTranslateLanguages(content::WebContents* web_contents,
   *target = TranslateManager::GetTargetLanguage(prefs);
 }
 
-// TODO(hajimehoshi): The interface to offer denial choices should be another
-// control instead of Combobox. See crbug/305494.
 class TranslateDenialComboboxModel : public ui::ComboboxModel {
  public:
   enum {
@@ -92,7 +90,7 @@ class TranslateDenialComboboxModel : public ui::ComboboxModel {
   };
 
   explicit TranslateDenialComboboxModel(
-      const string16& original_language_name) {
+      const base::string16& original_language_name) {
     items_.push_back(l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_DENY));
     items_.push_back(string16());
     items_.push_back(l10n_util::GetStringFUTF16(
@@ -109,7 +107,7 @@ class TranslateDenialComboboxModel : public ui::ComboboxModel {
   virtual int GetItemCount() const OVERRIDE {
     return items_.size();
   }
-  virtual string16 GetItemAt(int index) OVERRIDE {
+  virtual base::string16 GetItemAt(int index) OVERRIDE {
     return items_[index];
   }
   virtual bool IsItemSeparatorAt(int index) OVERRIDE {
@@ -141,7 +139,19 @@ TranslateBubbleView::~TranslateBubbleView() {
 void TranslateBubbleView::ShowBubble(views::View* anchor_view,
                                      content::WebContents* web_contents,
                                      TranslateBubbleModel::ViewState type,
+                                     TranslateErrors::Type error_type,
                                      Browser* browser) {
+  // During auto-translating, the bubble should not be shown.
+  if (type == TranslateBubbleModel::VIEW_STATE_TRANSLATING ||
+      type == TranslateBubbleModel::VIEW_STATE_AFTER_TRANSLATE) {
+    TranslateTabHelper* translate_tab_helper =
+        TranslateTabHelper::FromWebContents(web_contents);
+    if (!translate_tab_helper ||
+        translate_tab_helper->language_state().InTranslateNavigation()) {
+      return;
+    }
+  }
+
   if (IsShowing()) {
     // When the user reads the advanced setting panel, the bubble should not be
     // changed because he/she is focusing on the bubble.
@@ -151,6 +161,7 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
       return;
     }
     translate_bubble_view_->SwitchView(type);
+    translate_bubble_view_->model()->SetErrorType(error_type);
     return;
   }
 
@@ -159,7 +170,8 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
   GetTranslateLanguages(web_contents, &source_language, &target_language);
 
   scoped_ptr<TranslateUIDelegate> ui_delegate(
-      new TranslateUIDelegate(web_contents, source_language, target_language));
+      new TranslateUIDelegate(web_contents, source_language, target_language,
+                              error_type));
   scoped_ptr<TranslateBubbleModel> model(
       new TranslateBubbleModelImpl(type, ui_delegate.Pass()));
   TranslateBubbleView* view = new TranslateBubbleView(anchor_view,
@@ -268,6 +280,32 @@ void TranslateBubbleView::OnSelectedIndexChanged(views::Combobox* combobox) {
   HandleComboboxSelectedIndexChanged(static_cast<ComboboxID>(combobox->id()));
 }
 
+void TranslateBubbleView::OnComboboxTextButtonClicked(
+    views::Combobox* combobox) {
+  if (combobox != denial_combobox_)
+    return;
+
+  int index = combobox->selected_index();
+  switch (index) {
+    case TranslateDenialComboboxModel::INDEX_NOPE:
+      if (!translate_executed_)
+        model_->TranslationDeclined();
+      StartFade(false);
+      break;
+    case TranslateDenialComboboxModel::INDEX_NEVER_TRANSLATE_LANGUAGE:
+      model_->SetNeverTranslateLanguage(true);
+      StartFade(false);
+      break;
+    case TranslateDenialComboboxModel::INDEX_NEVER_TRANSLATE_SITE:
+      model_->SetNeverTranslateSite(true);
+      StartFade(false);
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
+}
+
 void TranslateBubbleView::LinkClicked(views::Link* source, int event_flags) {
   HandleLinkClicked(static_cast<LinkID>(source->id()));
 }
@@ -297,6 +335,8 @@ TranslateBubbleView::TranslateBubbleView(
       source_language_combobox_(NULL),
       target_language_combobox_(NULL),
       always_translate_checkbox_(NULL),
+      advanced_cancel_button_(NULL),
+      advanced_done_button_(NULL),
       model_(model.Pass()),
       is_in_incognito_window_(
           web_contents ?
@@ -342,8 +382,15 @@ void TranslateBubbleView::HandleButtonPressed(
     case BUTTON_ID_DONE: {
       if (always_translate_checkbox_)
         model_->SetAlwaysTranslate(always_translate_checkbox_->checked());
-      translate_executed_ = true;
-      model_->Translate();
+      if (model_->IsPageTranslatedInCurrentLanguages()) {
+        model_->GoBackFromAdvanced();
+        UpdateChildVisibilities();
+        SizeToContents();
+      } else {
+        translate_executed_ = true;
+        model_->Translate();
+        SwitchView(TranslateBubbleModel::VIEW_STATE_TRANSLATING);
+      }
       break;
     }
     case BUTTON_ID_CANCEL: {
@@ -393,25 +440,7 @@ void TranslateBubbleView::HandleComboboxSelectedIndexChanged(
     TranslateBubbleView::ComboboxID sender_id) {
   switch (sender_id) {
     case COMBOBOX_ID_DENIAL: {
-      int index = denial_combobox_->selected_index();
-      switch (index) {
-        case TranslateDenialComboboxModel::INDEX_NOPE:
-          if (!translate_executed_)
-            model_->TranslationDeclined();
-          StartFade(false);
-          break;
-        case TranslateDenialComboboxModel::INDEX_NEVER_TRANSLATE_LANGUAGE:
-          model_->SetNeverTranslateLanguage(true);
-          StartFade(false);
-          break;
-        case TranslateDenialComboboxModel::INDEX_NEVER_TRANSLATE_SITE:
-          model_->SetNeverTranslateSite(true);
-          StartFade(false);
-          break;
-        default:
-          NOTREACHED();
-          break;
-      }
+      // do nothing
       break;
     }
     case COMBOBOX_ID_SOURCE_LANGUAGE: {
@@ -448,12 +477,13 @@ views::View* TranslateBubbleView::CreateViewBeforeTranslate() {
   views::Label* message_label = new views::Label(
       l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_BEFORE_TRANSLATE));
 
-  string16 original_language_name =
+  base::string16 original_language_name =
       model_->GetLanguageNameAt(model_->GetOriginalLanguageIndex());
   denial_combobox_ = new views::Combobox(
       new TranslateDenialComboboxModel(original_language_name));
   denial_combobox_->set_id(COMBOBOX_ID_DENIAL);
   denial_combobox_->set_listener(this);
+  denial_combobox_->SetStyle(views::Combobox::STYLE_NOTIFY_ON_CLICK);
 
   views::View* view = new views::View();
   views::GridLayout* layout = new views::GridLayout(view);
@@ -501,7 +531,7 @@ views::View* TranslateBubbleView::CreateViewBeforeTranslate() {
 }
 
 views::View* TranslateBubbleView::CreateViewTranslating() {
-  string16 target_language_name =
+  base::string16 target_language_name =
       model_->GetLanguageNameAt(model_->GetTargetLanguageIndex());
   views::Label* label = new views::Label(
       l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_TRANSLATING));
@@ -719,13 +749,13 @@ views::View* TranslateBubbleView::CreateViewAdvanced() {
   layout->AddView(CreateLink(this,
                              IDS_TRANSLATE_BUBBLE_LEARN_MORE,
                              LINK_ID_LEARN_MORE));
-  views::LabelButton* cancel_button = CreateLabelButton(
+  advanced_cancel_button_ = CreateLabelButton(
       this, l10n_util::GetStringUTF16(IDS_CANCEL), BUTTON_ID_CANCEL);
-  layout->AddView(cancel_button);
-  views::LabelButton* done_button = CreateLabelButton(
+  layout->AddView(advanced_cancel_button_);
+  advanced_done_button_ = CreateLabelButton(
       this, l10n_util::GetStringUTF16(IDS_DONE), BUTTON_ID_DONE);
-  done_button->SetIsDefault(true);
-  layout->AddView(done_button);
+  advanced_done_button_->SetIsDefault(true);
+  layout->AddView(advanced_done_button_);
 
   UpdateAdvancedView();
 
@@ -739,16 +769,19 @@ void TranslateBubbleView::SwitchView(
 
   model_->SetViewState(view_state);
   UpdateChildVisibilities();
+  if (view_state == TranslateBubbleModel::VIEW_STATE_ADVANCED)
+    UpdateAdvancedView();
   SizeToContents();
 }
 
 void TranslateBubbleView::UpdateAdvancedView() {
   DCHECK(source_language_combobox_);
   DCHECK(target_language_combobox_);
+  DCHECK(advanced_done_button_);
 
-  string16 source_language_name =
+  base::string16 source_language_name =
       model_->GetLanguageNameAt(model_->GetOriginalLanguageIndex());
-  string16 target_language_name =
+  base::string16 target_language_name =
       model_->GetLanguageNameAt(model_->GetTargetLanguageIndex());
 
   // "Always translate" checkbox doesn't exist in an incognito window.
@@ -758,4 +791,11 @@ void TranslateBubbleView::UpdateAdvancedView() {
     always_translate_checkbox_->SetChecked(
         model_->ShouldAlwaysTranslate());
   }
+
+  base::string16 label;
+  if (model_->IsPageTranslatedInCurrentLanguages())
+    label = l10n_util::GetStringUTF16(IDS_DONE);
+  else
+    label = l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_ACCEPT);
+  advanced_done_button_->SetText(label);
 }

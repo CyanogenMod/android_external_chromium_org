@@ -46,6 +46,7 @@
         '../base/base.gyp:base',
         '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl',
+        '../ui/gfx/gfx.gyp:gfx',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
@@ -67,6 +68,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../third_party/khronos/khronos.gyp:khronos_headers',
+        '../ui/gfx/gfx.gyp:gfx',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
@@ -176,8 +178,6 @@
         'command_buffer/client/client_test_helper.h',
         'command_buffer/client/cmd_buffer_helper_test.cc',
         'command_buffer/client/fenced_allocator_test.cc',
-        'command_buffer/client/gles2_interface_stub.cc',
-        'command_buffer/client/gles2_interface_stub.h',
         'command_buffer/client/gles2_implementation_unittest.cc',
         'command_buffer/client/mapped_memory_unittest.cc',
         'command_buffer/client/query_tracker_unittest.cc',
@@ -349,6 +349,8 @@
       'sources': [
         'command_buffer/service/gles2_cmd_decoder_mock.cc',
         'command_buffer/service/error_state_mock.cc',
+        'command_buffer/client/gles2_interface_stub.cc',
+        'command_buffer/client/gles2_interface_stub.h',
       ],
     },
   ],

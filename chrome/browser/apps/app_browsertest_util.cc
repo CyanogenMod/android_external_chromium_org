@@ -36,8 +36,8 @@ void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   ExtensionBrowserTest::SetUpCommandLine(command_line);
 
   // Make event pages get suspended quicker.
-  command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "1");
-  command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "1");
+  command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "1000");
+  command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "1000");
 }
 
 // static
@@ -65,8 +65,8 @@ const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name));
   EXPECT_TRUE(extension);
 
-  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
 
   app_loaded_observer.Wait();
 
@@ -90,8 +90,8 @@ const Extension* PlatformAppBrowserTest::InstallAndLaunchPlatformApp(
 
   const Extension* extension = InstallPlatformApp(name);
 
-  OpenApplication(AppLaunchParams(browser()->profile(), extension, LAUNCH_NONE,
-                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
 
   app_loaded_observer.Wait();
 

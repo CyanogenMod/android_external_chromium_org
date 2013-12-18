@@ -20,8 +20,6 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/ui/options/options_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_switches.h"
@@ -32,6 +30,8 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/shill_property_util.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using google::protobuf::RepeatedField;
@@ -51,6 +51,7 @@ const char* kKnownSettings[] = {
   kAccountsPrefDeviceLocalAccountAutoLoginBailoutEnabled,
   kAccountsPrefDeviceLocalAccountAutoLoginDelay,
   kAccountsPrefDeviceLocalAccountAutoLoginId,
+  kAccountsPrefDeviceLocalAccountPromptForNetworkWhenOffline,
   kAccountsPrefEphemeralUsersEnabled,
   kAccountsPrefShowUserNamesOnSignIn,
   kAccountsPrefSupervisedUsersEnabled,
@@ -307,6 +308,15 @@ void DeviceSettingsProvider::SetInPolicy() {
       device_local_accounts->set_enable_auto_login_bailout(enabled);
     else
       NOTREACHED();
+  } else if (prop ==
+             kAccountsPrefDeviceLocalAccountPromptForNetworkWhenOffline) {
+    em::DeviceLocalAccountsProto* device_local_accounts =
+        device_settings_.mutable_device_local_accounts();
+    bool should_prompt;
+    if (value->GetAsBoolean(&should_prompt))
+      device_local_accounts->set_prompt_for_network_when_offline(should_prompt);
+    else
+      NOTREACHED();
   } else if (prop == kSignedDataRoamingEnabled) {
     em::DataRoamingEnabledProto* roam =
         device_settings_.mutable_data_roaming_enabled();
@@ -554,6 +564,9 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
   new_values_cache->SetBoolean(
       kAccountsPrefDeviceLocalAccountAutoLoginBailoutEnabled,
       policy.device_local_accounts().enable_auto_login_bailout());
+  new_values_cache->SetBoolean(
+      kAccountsPrefDeviceLocalAccountPromptForNetworkWhenOffline,
+      policy.device_local_accounts().prompt_for_network_when_offline());
 
   if (policy.has_start_up_flags()) {
     base::ListValue* list = new base::ListValue();
@@ -816,9 +829,9 @@ void DeviceSettingsProvider::ApplyMetricsSetting(bool use_file,
     migration_values_.SetValue(kStatsReportingPref,
                                base::Value::CreateBooleanValue(new_value));
     AttemptMigration();
-    LOG(INFO) << "No metrics policy set will revert to checking "
-              << "consent file which is "
-              << (new_value ? "on." : "off.");
+    VLOG(1) << "No metrics policy set will revert to checking "
+            << "consent file which is "
+            << (new_value ? "on." : "off.");
     UMA_HISTOGRAM_COUNTS("DeviceSettings.MetricsMigrated", 1);
   }
   VLOG(1) << "Metrics policy is being set to : " << new_value

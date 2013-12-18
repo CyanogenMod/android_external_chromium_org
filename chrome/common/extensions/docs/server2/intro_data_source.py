@@ -7,9 +7,9 @@ import logging
 import os
 import re
 
+from compiled_file_system import Unicode
 from data_source import DataSource
 from docs_server_utils import FormatKey
-from document_parser import ParseDocument
 from extensions_paths import INTROS_TEMPLATES, ARTICLES_TEMPLATES
 from file_system import FileNotFoundError
 from future import Future
@@ -25,7 +25,6 @@ class IntroDataSource(DataSource):
   '''
 
   def __init__(self, server_instance, request):
-    self._template_renderer = server_instance.template_renderer
     self._request = request
     self._cache = server_instance.compiled_fs_factory.Create(
         server_instance.host_file_system_provider.GetTrunk(),
@@ -33,11 +32,14 @@ class IntroDataSource(DataSource):
         IntroDataSource)
     self._ref_resolver = server_instance.ref_resolver_factory.Create()
 
+  @Unicode
   def _MakeIntro(self, intro_path, intro):
     # Guess the name of the API from the path to the intro.
     api_name = os.path.splitext(intro_path.split('/')[-1])[0]
     return Handlebar(
-        self._ref_resolver.ResolveAllLinks(intro, namespace=api_name),
+        self._ref_resolver.ResolveAllLinks(intro,
+                                           relative_to=self._request.path,
+                                           namespace=api_name),
         name=intro_path)
 
   def get(self, key):

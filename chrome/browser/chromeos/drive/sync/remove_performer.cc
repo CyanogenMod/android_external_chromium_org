@@ -9,6 +9,7 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
+#include "chrome/browser/chromeos/drive/sync/entry_revert_performer.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -46,11 +47,16 @@ void RemoveEntryOnUIThread(base::SequencedTaskRunner* blocking_task_runner,
 
 RemovePerformer::RemovePerformer(
     base::SequencedTaskRunner* blocking_task_runner,
+    file_system::OperationObserver* observer,
     JobScheduler* scheduler,
     ResourceMetadata* metadata)
     : blocking_task_runner_(blocking_task_runner),
       scheduler_(scheduler),
       metadata_(metadata),
+      entry_revert_performer_(new EntryRevertPerformer(blocking_task_runner,
+                                                       observer,
+                                                       scheduler,
+                                                       metadata)),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -125,6 +131,12 @@ void RemovePerformer::DeleteResourceAfterUpdateRemoteState(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
+  if (status == google_apis::HTTP_FORBIDDEN) {
+    // Editing this entry is not allowed, revert local changes.
+    entry_revert_performer_->RevertEntry(local_id, callback);
+    return;
+  }
+
   FileError error = GDataToFileError(status);
   if (error == FILE_ERROR_NOT_FOUND) {  // Remove local entry when not found.
     RemoveEntryOnUIThread(blocking_task_runner_.get(), metadata_, local_id,
@@ -175,6 +187,20 @@ void RemovePerformer::UnparentResourceAfterGetResourceEntry(
   std::string parent_resource_id;
   if (!ConvertToResourceEntry(*resource_entry, &entry, &parent_resource_id)) {
     callback.Run(FILE_ERROR_NOT_A_FILE);
+    return;
+  }
+
+  if (!entry.shared_with_me()) {
+    // shared_with_me() has changed on the server.
+    UnparentResourceAfterUpdateRemoteState(callback, local_id,
+                                           google_apis::HTTP_CONFLICT);
+    return;
+  }
+
+  if (parent_resource_id == util::kDriveOtherDirLocalId) {
+    // This entry is unparented already.
+    UnparentResourceAfterUpdateRemoteState(callback, local_id,
+                                           google_apis::HTTP_NO_CONTENT);
     return;
   }
 

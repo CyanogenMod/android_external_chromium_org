@@ -26,12 +26,15 @@
 #include "ui/message_center/views/bounded_label.h"
 #include "ui/message_center/views/padded_button.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/progress_bar.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -321,8 +324,9 @@ class NotificationButton : public views::CustomButton {
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
 
   // Overridden from views::CustomButton:
   virtual void StateChanged() OVERRIDE;
@@ -330,12 +334,18 @@ class NotificationButton : public views::CustomButton {
  private:
   views::ImageView* icon_;
   views::Label* title_;
+  scoped_ptr<views::Painter> focus_painter_;
+
+  DISALLOW_COPY_AND_ASSIGN(NotificationButton);
 };
 
 NotificationButton::NotificationButton(views::ButtonListener* listener)
     : views::CustomButton(listener),
       icon_(NULL),
-      title_(NULL) {
+      title_(NULL),
+      focus_painter_(views::Painter::CreateSolidFocusPainter(
+                         message_center::kFocusBorderColor,
+                         gfx::Insets(1, 2, 2, 2))) {
   set_focusable(true);
   set_request_focus_on_press(false);
   set_notify_enter_exit_on_child(true);
@@ -392,16 +402,22 @@ int NotificationButton::GetHeightForWidth(int width) {
   return message_center::kButtonHeight;
 }
 
+void NotificationButton::OnPaint(gfx::Canvas* canvas) {
+  CustomButton::OnPaint(canvas);
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+}
+
 void NotificationButton::OnFocus() {
   views::CustomButton::OnFocus();
   ScrollRectToVisible(GetLocalBounds());
+  // We render differently when focused.
+  SchedulePaint();
 }
 
-void NotificationButton::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (HasFocus()) {
-    canvas->DrawRect(gfx::Rect(2, 1, width() - 4, height() - 3),
-                     message_center::kFocusBorderColor);
-  }
+void NotificationButton::OnBlur() {
+  views::CustomButton::OnBlur();
+  // We render differently when focused.
+  SchedulePaint();
 }
 
 void NotificationButton::StateChanged() {

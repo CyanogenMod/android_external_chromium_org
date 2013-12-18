@@ -13,6 +13,7 @@
 #include "sync/sessions/nudge_tracker.h"
 #include "sync/sessions/status_controller.h"
 #include "sync/syncable/directory.h"
+#include "sync/test/engine/fake_model_worker.h"
 #include "sync/test/engine/test_directory_setter_upper.h"
 #include "sync/test/sessions/mock_debug_info_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,9 +32,9 @@ class DownloadUpdatesTest : public ::testing::Test {
   virtual void SetUp() {
     dir_maker_.SetUp();
 
-    AddUpdateHandler(AUTOFILL);
-    AddUpdateHandler(BOOKMARKS);
-    AddUpdateHandler(PREFERENCES);
+    AddUpdateHandler(AUTOFILL, GROUP_DB);
+    AddUpdateHandler(BOOKMARKS, GROUP_UI);
+    AddUpdateHandler(PREFERENCES, GROUP_UI);
   }
 
   virtual void TearDown() {
@@ -57,12 +58,26 @@ class DownloadUpdatesTest : public ::testing::Test {
     return &update_handler_map_;
   }
 
+  void InitFakeUpdateResponse(sync_pb::GetUpdatesResponse* response) {
+    ModelTypeSet types = proto_request_types();
+
+    for (ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
+      sync_pb::DataTypeProgressMarker* marker =
+          response->add_new_progress_marker();
+      marker->set_data_type_id(GetSpecificsFieldNumberFromModelType(it.Get()));
+      marker->set_token("foobarbaz");
+    }
+
+    response->set_changes_remaining(0);
+  }
+
  private:
-  void AddUpdateHandler(ModelType type) {
+  void AddUpdateHandler(ModelType type, ModelSafeGroup group) {
     DCHECK(directory());
-    update_handler_map_.insert(
-        std::make_pair(type,
-                       new SyncDirectoryUpdateHandler(directory(), type)));
+    scoped_refptr<ModelSafeWorker> worker = new FakeModelWorker(group);
+    SyncDirectoryUpdateHandler* handler =
+        new SyncDirectoryUpdateHandler(directory(), type, worker);
+    update_handler_map_.insert(std::make_pair(type, handler));
   }
 
   base::MessageLoop loop_;  // Needed for directory init.
@@ -202,6 +217,51 @@ TEST_F(DownloadUpdatesTest, PollTest) {
     progress_types.Put(type);
   }
   EXPECT_TRUE(proto_request_types().Equals(progress_types));
+}
+
+// Verify that a bogus response message is detected.
+TEST_F(DownloadUpdatesTest, InvalidResponse) {
+  sync_pb::GetUpdatesResponse gu_response;
+  InitFakeUpdateResponse(&gu_response);
+
+  // This field is essential for making the client stop looping.  If it's unset
+  // then something is very wrong.  The client should detect this.
+  gu_response.clear_changes_remaining();
+
+  sessions::StatusController status;
+  SyncerError error = download::ProcessResponse(gu_response,
+                                                proto_request_types(),
+                                                update_handler_map(),
+                                                &status);
+  EXPECT_EQ(error, SERVER_RESPONSE_VALIDATION_FAILED);
+}
+
+// Verify that we correctly detect when there's more work to be done.
+TEST_F(DownloadUpdatesTest, MoreToDownloadResponse) {
+  sync_pb::GetUpdatesResponse gu_response;
+  InitFakeUpdateResponse(&gu_response);
+  gu_response.set_changes_remaining(1);
+
+  sessions::StatusController status;
+  SyncerError error = download::ProcessResponse(gu_response,
+                                                proto_request_types(),
+                                                update_handler_map(),
+                                                &status);
+  EXPECT_EQ(error, SERVER_MORE_TO_DOWNLOAD);
+}
+
+// A simple scenario: No updates returned and nothing more to download.
+TEST_F(DownloadUpdatesTest, NormalResponseTest) {
+  sync_pb::GetUpdatesResponse gu_response;
+  InitFakeUpdateResponse(&gu_response);
+  gu_response.set_changes_remaining(0);
+
+  sessions::StatusController status;
+  SyncerError error = download::ProcessResponse(gu_response,
+                                                proto_request_types(),
+                                                update_handler_map(),
+                                                &status);
+  EXPECT_EQ(error, SYNCER_OK);
 }
 
 class DownloadUpdatesDebugInfoTest : public ::testing::Test {

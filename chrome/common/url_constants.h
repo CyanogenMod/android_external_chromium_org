@@ -69,6 +69,7 @@ extern const char kChromeUIPolicyURL[];
 extern const char kChromeUIProfileSigninConfirmationURL[];
 extern const char kChromeUIUserManagerURL[];
 extern const char kChromeUIPrintURL[];
+extern const char kChromeUIQuitURL[];
 extern const char kChromeUIRestartURL[];
 extern const char kChromeUISessionFaviconURL[];
 extern const char kChromeUISettingsURL[];
@@ -195,6 +196,7 @@ extern const char kChromeUIPredictorsHost[];
 extern const char kChromeUIPrintHost[];
 extern const char kChromeUIProfilerHost[];
 extern const char kChromeUIQuotaInternalsHost[];
+extern const char kChromeUIQuitHost[];
 extern const char kChromeUIRestartHost[];
 extern const char kChromeUISessionFaviconHost[];
 extern const char kChromeUISettingsHost[];
@@ -293,6 +295,7 @@ extern const char kLanguageOptionsSubPage[];
 extern const char kManagedUserSettingsSubPage[];
 extern const char kManageProfileSubPage[];
 extern const char kPasswordManagerSubPage[];
+extern const char kResetProfileSettingsSubPage[];
 extern const char kSearchEnginesSubPage[];
 extern const char kSearchSubPage[];
 extern const char kSearchUsersSubPage[];
@@ -326,6 +329,8 @@ extern const char kChromeHelpViaWebUIURL[];
 #if defined(OS_CHROMEOS)
 // Accessibility help link for Chrome.
 extern const char kChromeAccessibilityHelpURL[];
+// Accessibility settings link for Chrome.
+extern const char kChromeAccessibilitySettingsURL[];
 #endif
 
 #if defined (ENABLE_ONE_CLICK_SIGNIN)
@@ -428,6 +433,9 @@ extern const char kNaturalScrollHelpURL[];
 // The URL for the Learn More page about enterprise enrolled devices.
 extern const char kLearnMoreEnterpriseURL[];
 #endif
+
+// The URL for the Learn More link of the non-CWS bubble.
+extern const char kRemoveNonCWSExtensionURL[];
 
 extern const char kNotificationsHelpURL[];
 

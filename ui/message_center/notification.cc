@@ -106,9 +106,13 @@ Notification& Notification::operator=(const Notification& other) {
 
 Notification::~Notification() {}
 
+bool Notification::IsRead() const {
+  return is_read_ || optional_fields_.priority == MIN_PRIORITY;
+}
+
 void Notification::CopyState(Notification* base) {
   shown_as_popup_ = base->shown_as_popup();
-  is_read_ = base->is_read();
+  is_read_ = base->is_read_;
   is_expanded_ = base->is_expanded();
   if (!delegate_.get())
     delegate_ = base->delegate();
@@ -132,7 +136,7 @@ scoped_ptr<Notification> Notification::CreateSystemNotification(
     const base::string16& title,
     const base::string16& message,
     const gfx::Image& icon,
-    int system_component_id,
+    const std::string& system_component_id,
     const base::Closure& click_callback) {
   scoped_ptr<Notification> notification(
       new Notification(
@@ -142,7 +146,7 @@ scoped_ptr<Notification> Notification::CreateSystemNotification(
           message,
           icon,
           base::string16()  /* display_source */,
-          NotifierId(system_component_id),
+          NotifierId(NotifierId::SYSTEM_COMPONENT, system_component_id),
           RichNotificationData(),
           new HandleNotificationClickedDelegate(click_callback)));
   notification->SetSystemPriority();

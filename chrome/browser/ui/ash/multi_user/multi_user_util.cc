@@ -22,7 +22,9 @@ std::string GetUserIDFromProfile(Profile* profile) {
 }
 
 std::string GetUserIDFromEmail(const std::string& email) {
-  return gaia::CanonicalizeEmail(gaia::SanitizeEmail(email));
+  // |email| and profile name could be empty if not yet logged in or guest mode.
+  return email.empty() ?
+      email : gaia::CanonicalizeEmail(gaia::SanitizeEmail(email));
 }
 
 Profile* GetProfileFromUserID(const std::string& user_id) {
@@ -46,7 +48,9 @@ bool IsProfileFromActiveUser(Profile* profile) {
   return GetUserIDFromProfile(profile) ==
          chromeos::UserManager::Get()->GetActiveUser()->email();
 #else
-  return profile->GetOriginalProfile() == ProfileManager::GetDefaultProfile();
+  // In non Chrome OS configurations this will be always true since this only
+  // makes sense in separate desktop mode.
+  return true;
 #endif
 }
 

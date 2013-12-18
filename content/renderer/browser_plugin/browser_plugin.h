@@ -60,6 +60,11 @@ class CONTENT_EXPORT BrowserPlugin :
   std::string GetNameAttribute() const;
   // Parse the name attribute value.
   void ParseNameAttribute();
+  // Get the allowtransparency attribute value.
+  bool GetAllowTransparencyAttribute() const;
+  // Parse the allowtransparency attribute and adjust transparency of
+  // BrowserPlugin accordingly.
+  void ParseAllowTransparencyAttribute();
   // Get the src attribute value of the BrowserPlugin instance.
   std::string GetSrcAttribute() const;
   // Parse the src attribute value of the BrowserPlugin instance.
@@ -135,10 +140,6 @@ class CONTENT_EXPORT BrowserPlugin :
   // sent, if needed.
   void DidCommitCompositorFrame();
 
-  // Apply opacity settings on the composited layers in embedder and send a
-  // message to the guest renderer to enable or disable transparent background.
-  void SetContentsOpaque(bool opaque);
-
   // Returns whether a message should be forwarded to BrowserPlugin.
   static bool ShouldForwardToBrowserPlugin(const IPC::Message& message);
 
@@ -202,16 +203,11 @@ class CONTENT_EXPORT BrowserPlugin :
   friend class MockBrowserPlugin;
 
   // A BrowserPlugin object is a controller that represents an instance of a
-  // browser plugin within the embedder renderer process. Each BrowserPlugin
-  // within a RenderView has a unique instance_id that is used to track per-
-  // BrowserPlugin state in the browser process. Once a BrowserPlugin does
-  // an initial navigation or is attached to a newly created guest, it acquires
-  // a guest_instance_id as well. The guest instance ID uniquely identifies a
-  // guest WebContents that's hosted by this BrowserPlugin.
-  BrowserPlugin(
-      RenderViewImpl* render_view,
-      blink::WebFrame* frame,
-      const blink::WebPluginParams& params);
+  // browser plugin within the embedder renderer process. Once a BrowserPlugin
+  // does an initial navigation or is attached to a newly created guest, it
+  // acquires a guest_instance_id as well. The guest instance ID uniquely
+  // identifies a guest WebContents that's hosted by this BrowserPlugin.
+  BrowserPlugin(RenderViewImpl* render_view, blink::WebFrame* frame);
 
   virtual ~BrowserPlugin();
 
@@ -290,6 +286,10 @@ class CONTENT_EXPORT BrowserPlugin :
   void OnBuffersSwapped(int instance_id,
                         const BrowserPluginMsg_BuffersSwapped_Params& params);
   void OnCompositorFrameSwapped(const IPC::Message& message);
+  void OnCopyFromCompositingSurface(int instance_id,
+                                    int request_id,
+                                    gfx::Rect source_rect,
+                                    gfx::Size dest_size);
   void OnGuestContentWindowReady(int instance_id,
                                  int content_window_routing_id);
   void OnGuestGone(int instance_id);
@@ -335,18 +335,12 @@ class CONTENT_EXPORT BrowserPlugin :
   // Tracks the visibility of the browser plugin regardless of the whole
   // embedder RenderView's visibility.
   bool visible_;
-  // Tracks the opacity of the compositing helper's layers and the guest
-  // renderer process.
-  bool opaque_;
 
   WebCursor cursor_;
 
   gfx::Size last_view_size_;
   bool before_first_navigation_;
   bool mouse_locked_;
-
-  typedef std::pair<int, base::WeakPtr<BrowserPlugin> > TrackedV8ObjectID;
-  std::map<int, TrackedV8ObjectID*> tracked_v8_objects_;
 
   // BrowserPlugin outlives RenderViewImpl in Chrome Apps and so we need to
   // store the BrowserPlugin's BrowserPluginManager in a member variable to

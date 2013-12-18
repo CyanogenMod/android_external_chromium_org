@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,6 +20,7 @@
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_renderer.h"
 #include "content/renderer/media/webrtc_local_audio_renderer.h"
+#include "content/renderer/media/webrtc_logging.h"
 #include "content/renderer/media/webrtc_uma_histograms.h"
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/audio_hardware_config.h"
@@ -188,6 +188,12 @@ void MediaStreamImpl::requestUserMedia(
            << ", video=" << (options.video_type) << " ], "
            << security_origin.spec() << ")";
 
+  WebRtcLogMessage(base::StringPrintf(
+      "MSI::requestUserMedia. request_id=%d"
+      ", audio device id=%s",
+      request_id,
+      options.audio_device_id.c_str()));
+
   user_media_requests_.push_back(
       new UserMediaRequestInfo(request_id, frame, user_media_request,
           enable_automatic_output_device_selection));
@@ -242,11 +248,12 @@ MediaStreamImpl::GetVideoFrameProvider(
   DVLOG(1) << "MediaStreamImpl::GetVideoFrameProvider stream:"
            << UTF16ToUTF8(web_stream.id());
 
-  webrtc::MediaStreamInterface* stream = GetNativeMediaStream(web_stream);
-  if (stream)
-    return CreateVideoFrameProvider(stream, error_cb, repaint_cb);
-  NOTREACHED();
-  return NULL;
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
+  web_stream.videoTracks(video_tracks);
+  if (video_tracks.isEmpty())
+    return NULL;
+
+  return new RTCVideoRenderer(video_tracks[0], error_cb, repaint_cb);
 }
 
 scoped_refptr<MediaStreamAudioRenderer>
@@ -265,7 +272,14 @@ MediaStreamImpl::GetAudioRenderer(const GURL& url) {
 
   if (extra_data->is_local()) {
     // Create the local audio renderer if the stream contains audio tracks.
-    return CreateLocalAudioRenderer(extra_data->stream().get());
+    blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
+    web_stream.audioTracks(audio_tracks);
+    if (audio_tracks.isEmpty())
+      return NULL;
+
+    // TODO(xians): Add support for the case that the media stream contains
+    // multiple audio tracks.
+    return CreateLocalAudioRenderer(audio_tracks[0]);
   }
 
   webrtc::MediaStreamInterface* stream = extra_data->stream().get();
@@ -322,6 +336,16 @@ void MediaStreamImpl::OnStreamGenerated(
 
   blink::WebVector<blink::WebMediaStreamSource> audio_source_vector(
         audio_array.size());
+
+  // Log the device names for this request.
+  for (StreamDeviceInfoArray::const_iterator it = audio_array.begin();
+       it != audio_array.end(); ++it) {
+    WebRtcLogMessage(base::StringPrintf(
+        "Generated media stream for request id %d contains audio device name"
+        " \"%s\"",
+        request_id,
+        it->device.name.c_str()));
+  }
 
   StreamDeviceInfoArray overridden_audio_array = audio_array;
   if (!request_info->enable_automatic_output_device_selection) {
@@ -449,12 +473,6 @@ void MediaStreamImpl::CreateWebKitSourceVector(
     blink::WebVector<blink::WebMediaStreamSource>& webkit_sources) {
   CHECK_EQ(devices.size(), webkit_sources.size());
   for (size_t i = 0; i < devices.size(); ++i) {
-    const char* track_type =
-        (type == blink::WebMediaStreamSource::TypeAudio) ? "a" : "v";
-    std::string source_id = base::StringPrintf("%s%s%u", label.c_str(),
-                                               track_type,
-                                               static_cast<unsigned int>(i));
-
     const blink::WebMediaStreamSource* existing_source =
         FindLocalSource(devices[i]);
     if (existing_source) {
@@ -464,7 +482,7 @@ void MediaStreamImpl::CreateWebKitSourceVector(
       continue;
     }
     webkit_sources[i].initialize(
-        UTF8ToUTF16(source_id),
+        UTF8ToUTF16(devices[i].device.id),
         type,
         UTF8ToUTF16(devices[i].device.name));
     MediaStreamSourceExtraData* source_extra_data(
@@ -517,12 +535,6 @@ void MediaStreamImpl::OnDevicesEnumerated(
   NOTIMPLEMENTED();
 }
 
-void MediaStreamImpl::OnDevicesEnumerationFailed(int request_id) {
-  DVLOG(1) << "MediaStreamImpl::OnDevicesEnumerationFailed("
-           << request_id << ")";
-  NOTIMPLEMENTED();
-}
-
 void MediaStreamImpl::OnDeviceOpened(
     int request_id,
     const std::string& label,
@@ -558,6 +570,7 @@ const blink::WebMediaStreamSource* MediaStreamImpl::FindLocalSource(
             it->source.extraData());
     const StreamDeviceInfo& active_device = extra_data->device_info();
     if (active_device.device.id == device.device.id &&
+        active_device.device.type == device.device.type &&
         active_device.session_id == device.session_id) {
       return &it->source;
     }
@@ -754,23 +767,6 @@ void MediaStreamImpl::StopUnreferencedSources(bool notify_dispatcher) {
   }
 }
 
-scoped_refptr<VideoFrameProvider>
-MediaStreamImpl::CreateVideoFrameProvider(
-    webrtc::MediaStreamInterface* stream,
-    const base::Closure& error_cb,
-    const VideoFrameProvider::RepaintCB& repaint_cb) {
-  if (stream->GetVideoTracks().empty())
-    return NULL;
-
-  DVLOG(1) << "MediaStreamImpl::CreateRemoteVideoFrameProvider label:"
-           << stream->label();
-
-  return new RTCVideoRenderer(
-      stream->GetVideoTracks()[0],
-      error_cb,
-      repaint_cb);
-}
-
 scoped_refptr<WebRtcAudioRenderer> MediaStreamImpl::CreateRemoteAudioRenderer(
     webrtc::MediaStreamInterface* stream) {
   if (stream->GetAudioTracks().empty())
@@ -794,19 +790,8 @@ scoped_refptr<WebRtcAudioRenderer> MediaStreamImpl::CreateRemoteAudioRenderer(
 
 scoped_refptr<WebRtcLocalAudioRenderer>
 MediaStreamImpl::CreateLocalAudioRenderer(
-    webrtc::MediaStreamInterface* stream) {
-  if (stream->GetAudioTracks().empty())
-    return NULL;
-
-  DVLOG(1) << "MediaStreamImpl::CreateLocalAudioRenderer label:"
-           << stream->label();
-
-  webrtc::AudioTrackVector audio_tracks = stream->GetAudioTracks();
-  DCHECK_EQ(audio_tracks.size(), 1u);
-  webrtc::AudioTrackInterface* audio_track = audio_tracks[0];
-  DVLOG(1) << "audio_track.kind   : " << audio_track->kind()
-           << "audio_track.id     : " << audio_track->id()
-           << "audio_track.enabled: " << audio_track->enabled();
+    const blink::WebMediaStreamTrack& audio_track) {
+  DVLOG(1) << "MediaStreamImpl::CreateLocalAudioRenderer";
 
   int session_id = 0, sample_rate = 0, buffer_size = 0;
   if (!GetAuthorizedDeviceInfoForAudioRenderer(&session_id,
@@ -818,7 +803,7 @@ MediaStreamImpl::CreateLocalAudioRenderer(
   // Create a new WebRtcLocalAudioRenderer instance and connect it to the
   // existing WebRtcAudioCapturer so that the renderer can use it as source.
   return new WebRtcLocalAudioRenderer(
-      static_cast<WebRtcLocalAudioTrack*>(audio_track),
+      audio_track,
       RenderViewObserver::routing_id(),
       session_id,
       buffer_size);

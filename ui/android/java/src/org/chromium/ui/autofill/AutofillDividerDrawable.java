@@ -7,12 +7,11 @@ package org.chromium.ui.autofill;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
-import android.graphics.Rect;
-import android.graphics.RectF;
-import android.graphics.drawable.Drawable;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 
-public class AutofillDividerDrawable extends Drawable {
+class AutofillDividerDrawable extends Drawable {
 
     private Paint mPaint;
     private Rect mDividerRect;

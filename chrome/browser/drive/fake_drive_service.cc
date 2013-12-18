@@ -17,11 +17,11 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
+#include "google_apis/drive/time_util.h"
 #include "net/base/escape.h"
 #include "net/base/url_util.h"
 
@@ -47,6 +47,7 @@ using google_apis::GetShareUrlCallback;
 using google_apis::HTTP_BAD_REQUEST;
 using google_apis::HTTP_CREATED;
 using google_apis::HTTP_NOT_FOUND;
+using google_apis::HTTP_NO_CONTENT;
 using google_apis::HTTP_PRECONDITION;
 using google_apis::HTTP_RESUME_INCOMPLETE;
 using google_apis::HTTP_SUCCESS;
@@ -83,7 +84,7 @@ bool EntryMatchWithQuery(const ResourceEntry& entry,
     std::string key, value;
     const std::string& token = tokenizer.token();
     if (token.find(':') == std::string::npos) {
-      TrimString(token, "\"'", &value);
+      base::TrimString(token, "\"'", &value);
     } else {
       base::StringTokenizer key_value(token, ":");
       key_value.set_quote_chars("\"'");
@@ -92,7 +93,7 @@ bool EntryMatchWithQuery(const ResourceEntry& entry,
       key = key_value.token();
       if (!key_value.GetNext())
         return false;
-      TrimString(key_value.token(), "\"'", &value);
+      base::TrimString(key_value.token(), "\"'", &value);
     }
 
     // TODO(peria): Deal with other attributes than title.
@@ -581,7 +582,7 @@ CancelCallback FakeDriveService::DeleteResource(
           error = HTTP_NOT_FOUND;
         } else {
           entry->Set("gd$deleted", new DictionaryValue);
-          AddNewChangestampAndETag(entry);
+          AddNewChangestamp(entry);
           error = HTTP_SUCCESS;
         }
         base::MessageLoop::current()->PostTask(
@@ -734,7 +735,8 @@ CancelCallback FakeDriveService::CopyResource(
               google_apis::util::FormatTimeAsString(last_modified));
         }
 
-        AddNewChangestampAndETag(copied_entry.get());
+        AddNewChangestamp(copied_entry.get());
+        UpdateETag(copied_entry.get());
 
         // Parse the new entry.
         scoped_ptr<ResourceEntry> resource_entry =
@@ -833,7 +835,8 @@ CancelCallback FakeDriveService::UpdateResource(
           google_apis::util::FormatTimeAsString(last_viewed_by_me));
     }
 
-    AddNewChangestampAndETag(entry);
+    AddNewChangestamp(entry);
+    UpdateETag(entry);
 
     // Parse the new entry.
     scoped_ptr<ResourceEntry> resource_entry =
@@ -861,47 +864,6 @@ CancelCallback FakeDriveService::RenameResource(
   return UpdateResource(
       resource_id, std::string(), new_title, base::Time(), base::Time(),
       base::Bind(&EntryActionCallbackAdapter, callback));
-}
-
-CancelCallback FakeDriveService::TouchResource(
-    const std::string& resource_id,
-    const base::Time& modified_date,
-    const base::Time& last_viewed_by_me_date,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!modified_date.is_null());
-  DCHECK(!last_viewed_by_me_date.is_null());
-  DCHECK(!callback.is_null());
-
-  if (offline_) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, GDATA_NO_CONNECTION,
-                   base::Passed(scoped_ptr<ResourceEntry>())));
-    return CancelCallback();
-  }
-
-  base::DictionaryValue* entry = FindEntryByResourceId(resource_id);
-  if (!entry) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, HTTP_NOT_FOUND,
-                   base::Passed(scoped_ptr<ResourceEntry>())));
-    return CancelCallback();
-  }
-
-  entry->SetString("updated.$t",
-                   google_apis::util::FormatTimeAsString(modified_date));
-  entry->SetString(
-      "gd$lastViewed.$t",
-      google_apis::util::FormatTimeAsString(last_viewed_by_me_date));
-  AddNewChangestampAndETag(entry);
-
-  scoped_ptr<ResourceEntry> parsed_entry(ResourceEntry::CreateFrom(*entry));
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback, HTTP_SUCCESS, base::Passed(&parsed_entry)));
-  return CancelCallback();
 }
 
 CancelCallback FakeDriveService::AddResourceToDirectory(
@@ -935,7 +897,7 @@ CancelCallback FakeDriveService::AddResourceToDirectory(
         "href", GetFakeLinkUrl(parent_resource_id).spec());
     links->Append(link);
 
-    AddNewChangestampAndETag(entry);
+    AddNewChangestamp(entry);
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
     return CancelCallback();
@@ -974,9 +936,9 @@ CancelCallback FakeDriveService::RemoveResourceFromDirectory(
             rel == "http://schemas.google.com/docs/2007#parent" &&
             GURL(href) == parent_content_url) {
           links->Remove(i, NULL);
-          AddNewChangestampAndETag(entry);
+          AddNewChangestamp(entry);
           base::MessageLoop::current()->PostTask(
-              FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
+              FROM_HERE, base::Bind(callback, HTTP_NO_CONTENT));
           return CancelCallback();
         }
       }
@@ -1224,7 +1186,8 @@ CancelCallback FakeDriveService::ResumeUpload(
              base::BinaryValue::CreateWithCopiedBuffer(
                  content_data.data(), content_data.size()));
   entry->SetString("docs$size.$t", base::Int64ToString(end_position));
-  AddNewChangestampAndETag(entry);
+  AddNewChangestamp(entry);
+  UpdateETag(entry);
 
   completion_callback.Run(HTTP_SUCCESS, ResourceEntry::CreateFrom(*entry));
   return CancelCallback();
@@ -1434,12 +1397,15 @@ std::string FakeDriveService::GetNewResourceId() {
   return base::StringPrintf("resource_id_%d", resource_id_count_);
 }
 
-void FakeDriveService::AddNewChangestampAndETag(base::DictionaryValue* entry) {
+void FakeDriveService::UpdateETag(base::DictionaryValue* entry) {
+  entry->SetString("gd$etag",
+                   "etag_" + base::Int64ToString(largest_changestamp_));
+}
+
+void FakeDriveService::AddNewChangestamp(base::DictionaryValue* entry) {
   ++largest_changestamp_;
   entry->SetString("docs$changestamp.value",
                    base::Int64ToString(largest_changestamp_));
-  entry->SetString("gd$etag",
-                   "etag_" + base::Int64ToString(largest_changestamp_));
 }
 
 const base::DictionaryValue* FakeDriveService::AddNewEntry(
@@ -1532,7 +1498,8 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
   links->Append(share_link);
   new_entry->Set("link", links);
 
-  AddNewChangestampAndETag(new_entry.get());
+  AddNewChangestamp(new_entry.get());
+  UpdateETag(new_entry.get());
 
   base::Time published_date =
       base::Time() + base::TimeDelta::FromMilliseconds(++published_date_seq_);

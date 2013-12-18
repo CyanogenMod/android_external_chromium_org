@@ -87,6 +87,13 @@ void TestWebContentsView::SetAllowOverlappingViews(bool overlapping) {
 bool TestWebContentsView::GetAllowOverlappingViews() const {
   return false;
 }
+
+void TestWebContentsView::SetOverlayView(
+    WebContentsView* overlay, const gfx::Point& offset) {
+}
+
+void TestWebContentsView::RemoveOverlayView() {
+}
 #endif
 
 void TestWebContentsView::CreateView(const gfx::Size& initial_size,
@@ -103,7 +110,7 @@ RenderWidgetHostView* TestWebContentsView::CreateViewForPopupWidget(
   return NULL;
 }
 
-void TestWebContentsView::SetPageTitle(const string16& title) {
+void TestWebContentsView::SetPageTitle(const base::string16& title) {
 }
 
 void TestWebContentsView::RenderViewCreated(RenderViewHost* host) {

@@ -22,9 +22,9 @@
 #include "gpu/command_buffer/client/gl_in_process_context.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
+#include "gpu/skia_bindings/gl_bindings_skia_cmd_buffer.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_surface.h"
-#include "webkit/common/gpu/gl_bindings_skia_cmd_buffer.h"
 
 using gpu::gles2::GLES2Implementation;
 using gpu::GLInProcessContext;
@@ -334,15 +334,12 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::name(              \
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::prepareTexture() {
-  if (!isContextLost()) {
-    gl_->SwapBuffers();
-    gl_->ShallowFlushCHROMIUM();
-  }
+  NOTREACHED();
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::postSubBufferCHROMIUM(
     int x, int y, int width, int height) {
-  gl_->PostSubBufferCHROMIUM(x, y, width, height);
+  NOTREACHED();
 }
 
 DELEGATE_TO_GL_3(reshapeWithScaleFactor, ResizeCHROMIUM, int, int, float)
@@ -1057,9 +1054,6 @@ DELEGATE_TO_GL_1(deleteProgram, DeleteProgram, WebGLId);
 
 DELEGATE_TO_GL_1(deleteShader, DeleteShader, WebGLId);
 
-void WebGraphicsContext3DInProcessCommandBufferImpl::OnSwapBuffersComplete() {
-}
-
 void WebGraphicsContext3DInProcessCommandBufferImpl::setContextLostCallback(
     WebGraphicsContext3D::WebGraphicsContextLostCallback* cb) {
   context_lost_callback_ = cb;
@@ -1133,7 +1127,12 @@ WGC3Dboolean WebGraphicsContext3DInProcessCommandBufferImpl::
 
 GrGLInterface* WebGraphicsContext3DInProcessCommandBufferImpl::
     createGrGLInterface() {
-  return CreateCommandBufferSkiaGLBinding();
+  return skia_bindings::CreateCommandBufferSkiaGLBinding();
+}
+
+::gpu::gles2::GLES2Interface*
+WebGraphicsContext3DInProcessCommandBufferImpl::GetGLInterface() {
+  return gl_;
 }
 
 ::gpu::ContextSupport*
@@ -1184,10 +1183,7 @@ DELEGATE_TO_GL_2(consumeTextureCHROMIUM, ConsumeTextureCHROMIUM,
 DELEGATE_TO_GL_2(drawBuffersEXT, DrawBuffersEXT,
                  WGC3Dsizei, const WGC3Denum*)
 
-unsigned WebGraphicsContext3DInProcessCommandBufferImpl::insertSyncPoint() {
-  shallowFlushCHROMIUM();
-  return 0;
-}
+DELEGATE_TO_GL_R(insertSyncPoint, InsertSyncPointCHROMIUM, unsigned)
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::loseContextCHROMIUM(
     WGC3Denum current, WGC3Denum other) {

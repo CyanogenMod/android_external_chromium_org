@@ -28,6 +28,7 @@
 #include "gpu/command_buffer/client/ref_counted.h"
 #include "gpu/command_buffer/client/ring_buffer.h"
 #include "gpu/command_buffer/client/share_group.h"
+#include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
@@ -116,7 +117,7 @@ class VertexArrayObjectManager;
 // GLES2CmdHelper but that entails changing your code to use and deal with
 // shared memory and synchronization issues.
 class GLES2_IMPL_EXPORT GLES2Implementation
-    : public GLES2Interface,
+    : NON_EXPORTED_BASE(public GLES2Interface),
       NON_EXPORTED_BASE(public ContextSupport) {
  public:
   enum MappedMemoryLimit {
@@ -184,6 +185,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       ShareGroup* share_group,
       TransferBufferInterface* transfer_buffer,
       bool bind_generates_resource,
+      bool free_everything_when_invisible,
       GpuControl* gpu_control);
 
   virtual ~GLES2Implementation();
@@ -213,6 +215,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   virtual void GetVertexAttribiv(
       GLuint index, GLenum pname, GLint* params) OVERRIDE;
 
+  // ContextSupport implementation.
+  virtual void Swap() OVERRIDE;
+  virtual void PartialSwapBuffers(gfx::Rect sub_buffer) OVERRIDE;
+  virtual void SetSwapBuffersCompleteCallback(
+      const base::Closure& swap_buffers_complete_callback)
+          OVERRIDE;
+
   void GetProgramInfoCHROMIUMHelper(GLuint program, std::vector<int8>* result);
   GLint GetAttribLocationHelper(GLuint program, const char* name);
   GLint GetUniformLocationHelper(GLuint program, const char* name);
@@ -231,6 +240,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
                                const base::Closure& callback) OVERRIDE;
   virtual void SignalQuery(uint32 query,
                            const base::Closure& callback) OVERRIDE;
+  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(const ManagedMemoryStats& stats)
       OVERRIDE;
 
@@ -240,6 +250,14 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   ShareGroup* share_group() const {
     return share_group_.get();
+  }
+
+  const Capabilities& capabilities() const {
+    return capabilities_;
+  }
+
+  GpuControl* gpu_control() {
+    return gpu_control_;
   }
 
  private:
@@ -571,6 +589,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   void RunIfContextNotLost(const base::Closure& callback);
 
+  void OnSwapBuffersComplete();
+
   bool GetBoundPixelTransferBuffer(
       GLenum target, const char* function_name, GLuint* buffer_id);
   BufferTracker::Buffer* GetBoundPixelUnpackTransferBufferIfValid(
@@ -689,6 +709,14 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   scoped_ptr<std::string> current_trace_name_;
 
   GpuControl* gpu_control_;
+
+  bool surface_visible_;
+  bool free_everything_when_invisible_;
+
+  Capabilities capabilities_;
+
+  bool use_echo_for_swap_ack_;
+  base::Closure swap_buffers_complete_callback_;
 
   base::WeakPtrFactory<GLES2Implementation> weak_ptr_factory_;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.test.ActivityInstrumentationTestCase2;
 import android.text.TextUtils;
+import android.util.Log;
 
 import org.chromium.base.CommandLine;
 import org.chromium.base.ThreadUtils;
@@ -17,6 +18,7 @@ import org.chromium.chrome.test.util.ApplicationData;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
+import org.chromium.content.common.ProcessInitException;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -27,6 +29,7 @@ public class ChromiumTestShellTestBase extends
         ActivityInstrumentationTestCase2<ChromiumTestShellActivity> {
     /** The maximum time the waitForActiveShellToBeDoneLoading method will wait. */
     private static final long WAIT_FOR_ACTIVE_SHELL_LOADING_TIMEOUT = 10000;
+    private static final String TAG = "ChromiumTestShellTestBase";
 
     public ChromiumTestShellTestBase() {
         super(ChromiumTestShellActivity.class);
@@ -37,8 +40,13 @@ public class ChromiumTestShellTestBase extends
             @Override
             public void run() {
                 CommandLine.initFromFile("/data/local/tmp/chromium-testshell-command-line");
-                BrowserStartupController.get(targetContext).startBrowserProcessesSync(
-                        BrowserStartupController.MAX_RENDERERS_LIMIT);
+                try {
+                    BrowserStartupController.get(targetContext).startBrowserProcessesSync(
+                            BrowserStartupController.MAX_RENDERERS_LIMIT);
+                } catch (ProcessInitException e) {
+                    Log.e(TAG, "Unable to load native library.", e);
+                    fail("Unable to load native library");
+                }
             }
         });
     }
@@ -125,5 +133,22 @@ public class ChromiumTestShellTestBase extends
             }
         });
         waitForActiveShellToBeDoneLoading();
+    }
+
+    // TODO(aelias): This method needs to be removed once http://crbug.com/179511 is fixed.
+    // Meanwhile, we have to wait if the page has the <meta viewport> tag.
+    /**
+     * Waits till the ContentViewCore receives the expected page scale factor
+     * from the compositor and asserts that this happens.
+     */
+    protected void assertWaitForPageScaleFactorMatch(final float expectedScale)
+            throws InterruptedException {
+        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                return getActivity().getActiveTab().getContentViewCore().getScale() ==
+                        expectedScale;
+            }
+        }));
     }
 }

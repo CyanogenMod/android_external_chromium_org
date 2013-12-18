@@ -15,6 +15,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
@@ -199,9 +200,9 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
     bool permitted,
     views::View* container,
     int trailing_vertical_space) {
-  string16 label = gallery.GetGalleryDisplayName();
-  string16 tooltip_text = gallery.GetGalleryTooltip();
-  string16 details = gallery.GetGalleryAdditionalDetails();
+  base::string16 label = gallery.GetGalleryDisplayName();
+  base::string16 tooltip_text = gallery.GetGalleryTooltip();
+  base::string16 details = gallery.GetGalleryAdditionalDetails();
 
   CheckboxMap::iterator iter = checkbox_map_.find(gallery.pref_id);
   if (iter != checkbox_map_.end() &&

@@ -74,6 +74,7 @@ const char kChromeUIProfileSigninConfirmationURL[] =
     "chrome://profile-signin-confirmation/";
 const char kChromeUIUserManagerURL[] = "chrome://user-manager/";
 const char kChromeUIPrintURL[] = "chrome://print/";
+const char kChromeUIQuitURL[] = "chrome://quit/";
 const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISettingsURL[] = "chrome://settings/";
 const char kChromeUISettingsFrameURL[] = "chrome://settings-frame/";
@@ -203,6 +204,7 @@ const char kChromeUIPredictorsHost[] = "predictors";
 const char kChromeUIPrintHost[] = "print";
 const char kChromeUIProfilerHost[] = "profiler";
 const char kChromeUIQuotaInternalsHost[] = "quota-internals";
+const char kChromeUIQuitHost[] = "quit";
 const char kChromeUIRestartHost[] = "restart";
 const char kChromeUISettingsHost[] = "settings";
 const char kChromeUISettingsFrameHost[] = "settings-frame";
@@ -302,6 +304,7 @@ const char kLanguageOptionsSubPage[] = "languages";
 const char kManagedUserSettingsSubPage[] = "managedUser";
 const char kManageProfileSubPage[] = "manageProfile";
 const char kPasswordManagerSubPage[] = "passwords";
+const char kResetProfileSettingsSubPage[] = "resetProfileSettings";
 const char kSearchEnginesSubPage[] = "searchEngines";
 const char kSearchSubPage[] = "search";
 const char kSearchUsersSubPage[] = "search#Users";
@@ -369,6 +372,8 @@ const char kChromeHelpViaWebUIURL[] =
 #if defined(OS_CHROMEOS)
 const char kChromeAccessibilityHelpURL[] =
     "https://support.google.com/chromeos/?p=accessibility_menu";
+const char kChromeAccessibilitySettingsURL[] =
+    "/chromevox/background/options.html";
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -512,6 +517,10 @@ const char kLearnMoreEnterpriseURL[] =
     "https://support.google.com/chromeos/bin/answer.py?answer=2535613";
 #endif
 
+const char kRemoveNonCWSExtensionURL[] =
+    "https://support.google.com/chrome/answer/2811969?"
+    "p=ui_remove_non_cws_extensions&rd=1";
+
 const char kNotificationsHelpURL[] =
     "https://support.google.com/chrome/?p=ui_notifications";
 
@@ -521,12 +530,13 @@ const char kNotificationWelcomeLearnMoreURL[] =
 // Add hosts here to be included in chrome://chrome-urls (about:about).
 // These hosts will also be suggested by BuiltinProvider.
 const char* const kChromeHostURLs[] = {
-  kChromeUIAppLauncherPageHost,
   kChromeUICacheHost,
   kChromeUIChromeURLsHost,
   kChromeUICrashesHost,
   kChromeUICreditsHost,
+#if defined(ENABLE_MDNS)
   kChromeUIDevicesHost,
+#endif
   kChromeUIDNSHost,
   kChromeUIFlagsHost,
   kChromeUIHelpHost,
@@ -554,6 +564,7 @@ const char* const kChromeHostURLs[] = {
 #if defined(OS_ANDROID)
   kChromeUIWelcomeHost,
 #else
+  kChromeUIAppLauncherPageHost,
   kChromeUIBookmarksHost,
   kChromeUIDownloadsHost,
   kChromeUIFlashHost,
@@ -623,6 +634,7 @@ const char* const kChromeDebugURLs[] = {
   content::kChromeUIGpuHangURL,
   content::kChromeUIPpapiFlashCrashURL,
   content::kChromeUIPpapiFlashHangURL,
+  chrome::kChromeUIQuitURL,
   chrome::kChromeUIRestartURL
 };
 const int kNumberOfChromeDebugURLs =

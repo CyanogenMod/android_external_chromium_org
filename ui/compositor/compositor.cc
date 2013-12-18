@@ -12,11 +12,13 @@
 #include "base/debug/trace_event.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
@@ -91,7 +93,7 @@ Texture::~Texture() {
 }
 
 std::string Texture::Produce() {
-  return EmptyString();
+  return std::string();
 }
 
 CompositorLock::CompositorLock(Compositor* compositor)
@@ -270,6 +272,8 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       command_line->HasSwitch(cc::switches::kUIShowCompositedLayerBorders);
   settings.initial_debug_state.show_fps_counter =
       command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
+  settings.initial_debug_state.show_layer_animation_bounds_rects =
+      command_line->HasSwitch(cc::switches::kUIShowLayerAnimationBounds);
   settings.initial_debug_state.show_paint_rects =
       command_line->HasSwitch(switches::kUIShowPaintRects);
   settings.initial_debug_state.show_property_changed_rects =
@@ -285,12 +289,15 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
   settings.initial_debug_state.show_non_occluding_rects =
       command_line->HasSwitch(cc::switches::kUIShowNonOccludingRects);
 
+  base::TimeTicks before_create = base::TimeTicks::Now();
   if (!!g_compositor_thread) {
     host_ = cc::LayerTreeHost::CreateThreaded(
         this, NULL, settings, g_compositor_thread->message_loop_proxy());
   } else {
     host_ = cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
   }
+  UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
+                      base::TimeTicks::Now() - before_create);
   host_->SetRootLayer(root_web_layer_);
   host_->SetLayerTreeHostClientReady();
 }
@@ -437,7 +444,9 @@ void Compositor::ScheduleRedrawRect(const gfx::Rect& damage_rect) {
 }
 
 void Compositor::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
-  host_->SetLatencyInfo(latency_info);
+  scoped_ptr<cc::SwapPromise> swap_promise(
+      new cc::LatencyInfoSwapPromise(latency_info));
+  host_->QueueSwapPromise(swap_promise.Pass());
 }
 
 bool Compositor::ReadPixels(SkBitmap* bitmap,
@@ -505,7 +514,7 @@ void Compositor::Layout() {
 }
 
 scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface(bool fallback) {
-  return ContextFactory::GetInstance()->CreateOutputSurface(this);
+  return ContextFactory::GetInstance()->CreateOutputSurface(this, fallback);
 }
 
 void Compositor::DidCommit() {

@@ -8,6 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/common/content_switches.h"
 #include "content/shell/common/shell_switches.h"
 
 #if defined(OS_ANDROID)
@@ -28,8 +29,8 @@ void ShellBreakpadClient::GetProductNameAndVersion(
     base::string16* channel_name) {
   *product_name = ASCIIToUTF16("content_shell");
   *version = ASCIIToUTF16(CONTENT_SHELL_VERSION);
-  *special_build = string16();
-  *channel_name = string16();
+  *special_build = base::string16();
+  *channel_name = base::string16();
 }
 #endif
 
@@ -58,5 +59,14 @@ int ShellBreakpadClient::GetAndroidMinidumpDescriptor() {
   return kAndroidMinidumpDescriptor;
 }
 #endif
+
+bool ShellBreakpadClient::EnableBreakpadForProcess(
+    const std::string& process_type) {
+  return process_type == switches::kRendererProcess ||
+         process_type == switches::kPluginProcess ||
+         process_type == switches::kPpapiPluginProcess ||
+         process_type == switches::kZygoteProcess ||
+         process_type == switches::kGpuProcess;
+}
 
 }  // namespace content

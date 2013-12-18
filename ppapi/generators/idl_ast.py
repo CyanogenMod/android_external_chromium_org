@@ -5,19 +5,10 @@
 """Nodes for PPAPI IDL AST."""
 
 from idl_namespace import IDLNamespace
-from idl_node import IDLAttribute, IDLFile, IDLNode
+from idl_node import IDLNode
 from idl_option import GetOption
 from idl_visitor import IDLVisitor
-from idl_release import IDLReleaseList, IDLReleaseMap
-
-#
-# IDL Predefined types
-#
-BuiltIn = set(['int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t',
-               'uint16_t', 'uint32_t', 'uint64_t', 'double_t', 'float_t',
-               'handle_t', 'interface_t', 'char', 'mem_t', 'mem_ptr_t',
-               'str_t', 'void'])
-
+from idl_release import IDLReleaseMap
 
 #
 # IDLLabelResolver
@@ -42,7 +33,7 @@ class IDLLabelResolver(IDLVisitor):
 
     # For File objects, set the minimum version
     if node.IsA('File'):
-      file_min, file_max = node.release_map.GetReleaseRange()
+      file_min, _ = node.release_map.GetReleaseRange()
       node.SetMin(file_min)
 
     return None
@@ -69,7 +60,7 @@ class IDLNamespaceVersionResolver(IDLVisitor):
 
     # Set the min version on any non Label within the File
     if not node.IsA('AST', 'File', 'Label', 'LabelItem'):
-      my_min, my_max = node.GetMinMax()
+      my_min, _ = node.GetMinMax()
       if not my_min:
         node.SetMin(self.rmin)
 
@@ -78,7 +69,7 @@ class IDLNamespaceVersionResolver(IDLVisitor):
       node.namespace = parent_namespace
     else:
     # otherwise create one.
-      node.namespace = IDLNamespace(parent_namespace, node.GetName())
+      node.namespace = IDLNamespace(parent_namespace)
 
     # If this node is named, place it in its parent's namespace
     if parent_namespace and node.cls in IDLNode.NamedSet:
@@ -118,13 +109,13 @@ class IDLFileTypeResolver(IDLVisitor):
       filenode = node
 
     if not node.IsA('AST'):
-      file_min, file_max = filenode.release_map.GetReleaseRange()
+      file_min, _ = filenode.release_map.GetReleaseRange()
       if not file_min:
         print 'Resetting min on %s to %s' % (node, file_min)
         node.SetMinRange(file_min)
 
     # If this node has a TYPEREF, resolve it to a version list
-    typeref = node.property_node.GetPropertyLocal('TYPEREF')
+    typeref = node.GetPropertyLocal('TYPEREF')
     if typeref:
       node.typelist = node.parent.namespace.FindList(typeref)
       if not node.typelist:
@@ -164,7 +155,7 @@ class IDLAst(IDLNode):
     IDLLabelResolver().Visit(self, None)
 
     # Generate the Namesapce Tree
-    self.namespace = IDLNamespace(None, 'AST')
+    self.namespace = IDLNamespace(None)
     IDLNamespaceVersionResolver().Visit(self, self.namespace)
 
     # Using the namespace, resolve type references
@@ -179,6 +170,8 @@ class IDLAst(IDLNode):
     IDLReleaseResolver().Visit(self, sorted(releases))
 
     for filenode in self.GetListOf('File'):
-      self.errors += int(filenode.GetProperty('ERRORS', 0))
+      errors = filenode.GetProperty('ERRORS')
+      if errors:
+        self.errors += errors
 
 

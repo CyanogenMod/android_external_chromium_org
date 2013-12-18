@@ -59,9 +59,10 @@ int PepperMediaDeviceManager::EnumerateDevices(
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(
-          &PepperMediaDeviceManager::OnDevicesEnumerationFailed,
+          &PepperMediaDeviceManager::OnDevicesEnumerated,
           AsWeakPtr(),
-          request_id));
+          request_id,
+          StreamDeviceInfoArray()));
 #endif
 
   return request_id;
@@ -161,12 +162,22 @@ void PepperMediaDeviceManager::OnDeviceStopped(
 void PepperMediaDeviceManager::OnDevicesEnumerated(
     int request_id,
     const StreamDeviceInfoArray& device_array) {
-  NotifyDevicesEnumerated(request_id, true, device_array);
-}
+  EnumerateCallbackMap::iterator iter = enumerate_callbacks_.find(request_id);
+  if (iter == enumerate_callbacks_.end()) {
+    // This might be enumerated result sent before StopEnumerateDevices is
+    // called since EnumerateDevices is persistent request.
+    return;
+  }
 
-void PepperMediaDeviceManager::OnDevicesEnumerationFailed(
-    int request_id) {
-  NotifyDevicesEnumerated(request_id, false, StreamDeviceInfoArray());
+  EnumerateDevicesCallback callback = iter->second;
+
+  std::vector<ppapi::DeviceRefData> devices;
+  devices.reserve(device_array.size());
+  for (StreamDeviceInfoArray::const_iterator info =
+      device_array.begin(); info != device_array.end(); ++info) {
+    devices.push_back(FromStreamDeviceInfo(*info));
+  }
+  callback.Run(request_id, devices);
 }
 
 void PepperMediaDeviceManager::OnDeviceOpened(
@@ -210,30 +221,6 @@ PP_DeviceType_Dev PepperMediaDeviceManager::FromMediaStreamType(
       NOTREACHED();
       return PP_DEVICETYPE_DEV_INVALID;
   }
-}
-
-void PepperMediaDeviceManager::NotifyDevicesEnumerated(
-    int request_id,
-    bool succeeded,
-    const StreamDeviceInfoArray& device_array) {
-  EnumerateCallbackMap::iterator iter = enumerate_callbacks_.find(request_id);
-  if (iter == enumerate_callbacks_.end()) {
-    // This might be enumerated result sent before StopEnumerateDevices is
-    // called since EnumerateDevices is persistent request.
-    return;
-  }
-
-  EnumerateDevicesCallback callback = iter->second;
-
-  std::vector<ppapi::DeviceRefData> devices;
-  if (succeeded) {
-    devices.reserve(device_array.size());
-    for (StreamDeviceInfoArray::const_iterator info =
-             device_array.begin(); info != device_array.end(); ++info) {
-      devices.push_back(FromStreamDeviceInfo(*info));
-    }
-  }
-  callback.Run(request_id, succeeded, devices);
 }
 
 void PepperMediaDeviceManager::NotifyDeviceOpened(

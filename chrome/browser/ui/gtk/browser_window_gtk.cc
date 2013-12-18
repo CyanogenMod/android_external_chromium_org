@@ -738,7 +738,7 @@ StatusBubble* BrowserWindowGtk::GetStatusBubble() {
 
 void BrowserWindowGtk::UpdateTitleBar() {
   TRACE_EVENT0("ui::gtk", "BrowserWindowGtk::UpdateTitleBar");
-  string16 title = browser_->GetWindowTitleForCurrentTab();
+  base::string16 title = browser_->GetWindowTitleForCurrentTab();
   gtk_window_set_title(window_, UTF16ToUTF8(title).c_str());
   if (ShouldShowWindowIcon())
     titlebar_->UpdateTitleAndIcon();
@@ -1035,14 +1035,16 @@ void BrowserWindowGtk::ShowBookmarkBubble(const GURL& url,
 
 void BrowserWindowGtk::ShowTranslateBubble(
     content::WebContents* contents,
-    TranslateBubbleModel::ViewState view_state) {
+    TranslateBubbleModel::ViewState view_state,
+    TranslateErrors::Type error_type) {
+  NOTIMPLEMENTED();
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserWindowGtk::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
-    const string16& email,
-    const string16& error_message,
+    const base::string16& email,
+    const base::string16& error_message,
     const StartSyncCallback& start_sync_callback) {
 
   new OneClickSigninBubbleGtk(this, type, email,

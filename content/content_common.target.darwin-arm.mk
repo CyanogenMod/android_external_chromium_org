@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_gyp)/webkit_glue_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
@@ -33,6 +34,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	content/public/common/child_process_host_delegate.cc \
+	content/public/common/color_suggestion.cc \
 	content/public/common/content_constants.cc \
 	content/public/common/content_switches.cc \
 	content/public/common/context_menu_params.cc \
@@ -50,6 +52,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/pepper_plugin_info.cc \
 	content/public/common/renderer_preferences.cc \
 	content/public/common/show_desktop_notification_params.cc \
+	content/public/common/signed_certificate_timestamp_id_and_status.cc \
 	content/public/common/speech_recognition_result.cc \
 	content/public/common/ssl_status.cc \
 	content/public/common/url_constants.cc \
@@ -63,7 +66,6 @@ LOCAL_SRC_FILES := \
 	content/common/android/hash_set.cc \
 	content/common/android/surface_texture_peer.cc \
 	content/common/android/trace_event_binding.cc \
-	content/common/android/view_configuration.cc \
 	content/common/browser_plugin/browser_plugin_constants.cc \
 	content/common/browser_rendering_stats.cc \
 	content/common/cc_messages.cc \
@@ -76,6 +78,7 @@ LOCAL_SRC_FILES := \
 	content/common/content_paths.cc \
 	content/common/cookie_data.cc \
 	content/common/dom_storage/dom_storage_map.cc \
+	content/common/font_list.cc \
 	content/common/font_list_android.cc \
 	content/common/gamepad_user_gesture.cc \
 	content/common/gpu/client/command_buffer_proxy_impl.cc \
@@ -84,6 +87,8 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/gl_helper_scaling.cc \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl.cc \
+	content/common/gpu/client/gpu_memory_buffer_impl_android.cc \
+	content/common/gpu/client/gpu_memory_buffer_impl_shm.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
 	content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc \
@@ -118,6 +123,8 @@ LOCAL_SRC_FILES := \
 	content/common/input/synthetic_gesture_params.cc \
 	content/common/input/synthetic_pinch_gesture_params.cc \
 	content/common/input/synthetic_smooth_scroll_gesture_params.cc \
+	content/common/input/synthetic_tap_gesture_params.cc \
+	content/common/input/synthetic_web_input_event_builders.cc \
 	content/common/input/web_input_event_traits.cc \
 	content/common/inter_process_time_ticks_converter.cc \
 	content/common/media/media_param_traits.cc \
@@ -184,6 +191,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -193,9 +201,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -210,6 +220,9 @@ MY_DEFS_Debug := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMEDIA_DISABLE_LIBVPX' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -233,6 +246,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -247,6 +261,17 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -303,6 +328,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -312,9 +338,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -329,6 +357,9 @@ MY_DEFS_Release := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMEDIA_DISABLE_LIBVPX' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -353,6 +384,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -367,6 +399,17 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

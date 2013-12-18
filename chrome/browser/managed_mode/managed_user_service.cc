@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
-#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -53,8 +52,6 @@
 using base::DictionaryValue;
 using content::BrowserThread;
 
-const char kManagedModeFinchActive[] = "Active";
-const char kManagedModeFinchName[] = "ManagedModeLaunch";
 const char kManagedUserAccessRequestKeyPrefix[] =
     "X-ManagedUser-AccessRequests";
 const char kManagedUserAccessRequestTime[] = "timestamp";
@@ -186,15 +183,6 @@ void ManagedUserService::RegisterProfilePrefs(
 }
 
 // static
-bool ManagedUserService::AreManagedUsersEnabled() {
-  // Allow enabling by command line for now for easier development.
-  return base::FieldTrialList::FindFullName(kManagedModeFinchName) ==
-             kManagedModeFinchActive ||
-         CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kEnableManagedUsers);
-}
-
-// static
 void ManagedUserService::MigrateUserPrefs(PrefService* prefs) {
   if (!prefs->HasPrefPath(prefs::kProfileIsManaged))
     return;
@@ -287,8 +275,8 @@ std::string ManagedUserService::GetDebugPolicyProviderName() const {
 }
 
 bool ManagedUserService::UserMayLoad(const extensions::Extension* extension,
-                                     string16* error) const {
-  string16 tmp_error;
+                                     base::string16* error) const {
+  base::string16 tmp_error;
   if (ExtensionManagementPolicyImpl(extension, &tmp_error))
     return true;
 
@@ -325,7 +313,7 @@ bool ManagedUserService::UserMayLoad(const extensions::Extension* extension,
 
 bool ManagedUserService::UserMayModifySettings(
     const extensions::Extension* extension,
-    string16* error) const {
+    base::string16* error) const {
   return ExtensionManagementPolicyImpl(extension, error);
 }
 
@@ -388,7 +376,7 @@ void ManagedUserService::SetupSync() {
 
 bool ManagedUserService::ExtensionManagementPolicyImpl(
     const extensions::Extension* extension,
-    string16* error) const {
+    base::string16* error) const {
   // |extension| can be NULL in unit_tests.
   if (!ProfileIsManaged() || (extension && extension->is_theme()))
     return true;
@@ -595,7 +583,7 @@ void ManagedUserService::RegisterAndInitSync(
   DCHECK(ProfileIsManaged());
   DCHECK(!custodian_profile->IsManaged());
 
-  string16 name = UTF8ToUTF16(
+  base::string16 name = UTF8ToUTF16(
       profile_->GetPrefs()->GetString(prefs::kProfileName));
   int avatar_index = profile_->GetPrefs()->GetInteger(
       prefs::kProfileAvatarIndex);
@@ -618,7 +606,7 @@ void ManagedUserService::RegisterAndInitSync(
 }
 
 void ManagedUserService::OnCustodianProfileDownloaded(
-    const string16& full_name) {
+    const base::string16& full_name) {
   profile_->GetPrefs()->SetString(prefs::kManagedUserCustodianName,
                                   UTF16ToUTF8(full_name));
 }

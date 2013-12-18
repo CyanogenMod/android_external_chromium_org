@@ -54,8 +54,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
@@ -92,7 +90,7 @@ const base::FilePath::CharType kRLZDisabledFlagName[] =
     FILE_PATH_LITERAL(".rlz_disabled");
 
 base::FilePath GetRlzDisabledFlagPath() {
-  return file_util::GetHomeDir().Append(kRLZDisabledFlagName);
+  return base::GetHomeDir().Append(kRLZDisabledFlagName);
 }
 #endif
 
@@ -142,7 +140,6 @@ class LoginUtilsImpl
       Profile* user_profile,
       OAuth2LoginManager::SessionRestoreState state) OVERRIDE;
   virtual void OnNewRefreshTokenAvaiable(Profile* user_profile) OVERRIDE;
-  virtual void OnSessionAuthenticated(Profile* user_profile) OVERRIDE;
 
   // net::NetworkChangeNotifier::ConnectionTypeObserver overrides.
   virtual void OnConnectionTypeChanged(
@@ -197,9 +194,6 @@ class LoginUtilsImpl
 
   // Initializes RLZ. If |disabled| is true, RLZ pings are disabled.
   void InitRlz(Profile* user_profile, bool disabled);
-
-  // Starts signing related services. Initiates token retrieval.
-  void StartSignedInServices(Profile* profile);
 
   // Attempts exiting browser process and esures this does not happen
   // while we are still fetching new OAuth refresh tokens.
@@ -410,7 +404,7 @@ void LoginUtilsImpl::PrepareProfile(
       user_manager->GetUserProfileDir(user_context.username),
       base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr(),
                  user_context.username),
-      string16(), string16(), std::string());
+      base::string16(), base::string16(), std::string());
 }
 
 void LoginUtilsImpl::DelegateDeleted(LoginUtils::Delegate* delegate) {
@@ -419,7 +413,7 @@ void LoginUtilsImpl::DelegateDeleted(LoginUtils::Delegate* delegate) {
 }
 
 void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
-    const std::string& email) {
+                                            const std::string& user_id) {
   if (UserManager::Get()->IsCurrentUserNew())
     SetFirstLoginPrefs(user_profile->GetPrefs());
 
@@ -443,8 +437,7 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
     StringPrefMember google_services_username;
     google_services_username.Init(prefs::kGoogleServicesUsername,
                                   user_profile->GetPrefs());
-    const User* user = UserManager::Get()->FindUser(email);
-    google_services_username.SetValue(user ? user->display_email() : email);
+    google_services_username.SetValue(user_id);
   }
 }
 
@@ -489,14 +482,14 @@ void LoginUtilsImpl::InitSessionRestoreStrategy() {
 
 
 void LoginUtilsImpl::OnProfileCreated(
-    const std::string& email,
+    const std::string& user_id,
     Profile* user_profile,
     Profile::CreateStatus status) {
   CHECK(user_profile);
 
   switch (status) {
     case Profile::CREATE_STATUS_CREATED:
-      InitProfilePreferences(user_profile, email);
+      InitProfilePreferences(user_profile, user_id);
       break;
     case Profile::CREATE_STATUS_INITIALIZED:
       UserProfileInitialized(user_profile);
@@ -545,8 +538,9 @@ void LoginUtilsImpl::RestoreAuthSession(Profile* user_profile,
 
   if (chrome::IsRunningInForcedAppMode() ||
       CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kOobeSkipPostLogin))
+          chromeos::switches::kOobeSkipPostLogin)) {
     return;
+  }
 
   exit_after_session_restore_ = false;
   // Remove legacy OAuth1 token if we have one. If it's valid, we should already
@@ -642,39 +636,6 @@ void LoginUtilsImpl::InitRlz(Profile* user_profile, bool disabled) {
   if (delegate_)
     delegate_->OnRlzInitialized(user_profile);
 #endif
-}
-
-void LoginUtilsImpl::StartSignedInServices(Profile* user_profile) {
-  SigninManagerBase* signin =
-      SigninManagerFactory::GetForProfile(user_profile);
-  DCHECK(signin);
-  // Make sure SigninManager is connected to our current user (this should
-  // happen automatically because we set kGoogleServicesUsername in
-  // OnProfileCreated()).
-  DCHECK_EQ(UserManager::Get()->GetLoggedInUser()->display_email(),
-            signin->GetAuthenticatedUsername());
-  static bool initialized = false;
-  if (!initialized) {
-    initialized = true;
-    // Notify the sync service that signin was successful. Note: Since the sync
-    // service is lazy-initialized, we need to make sure it has been created.
-    ProfileSyncService* sync_service =
-        ProfileSyncServiceFactory::GetInstance()->GetForProfile(user_profile);
-    // We may not always have a passphrase (for example, on a restart after a
-    // browser crash). Only notify the sync service if we have a passphrase,
-    // so it can do any required re-encryption.
-    if (!user_context_.password.empty() && sync_service) {
-      GoogleServiceSigninSuccessDetails details(
-          signin->GetAuthenticatedUsername(),
-          user_context_.password);
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-          content::Source<Profile>(user_profile),
-          content::Details<const GoogleServiceSigninSuccessDetails>(&details));
-    }
-  }
-  user_context_.password.clear();
-  user_context_.auth_code.clear();
 }
 
 void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {
@@ -809,6 +770,7 @@ void LoginUtilsImpl::OnSessionRestoreStateChanged(
         UserManager::Get()->GetLoggedInUser()->email(),
         user_status);
   }
+
   login_manager->RemoveObserver(this);
 }
 
@@ -830,10 +792,6 @@ void LoginUtilsImpl::OnNewRefreshTokenAvaiable(Profile* user_profile) {
   // We need to exit cleanly in this case to make sure OAuth2 RT is actually
   // saved.
   chrome::ExitCleanly();
-}
-
-void LoginUtilsImpl::OnSessionAuthenticated(Profile* user_profile) {
-  StartSignedInServices(user_profile);
 }
 
 void LoginUtilsImpl::OnConnectionTypeChanged(
@@ -898,6 +856,12 @@ void LoginUtils::Set(LoginUtils* mock) {
 
 // static
 bool LoginUtils::IsWhitelisted(const std::string& username) {
+  // Skip whitelist check for tests.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      chromeos::switches::kOobeSkipPostLogin)) {
+    return true;
+  }
+
   CrosSettings* cros_settings = CrosSettings::Get();
   bool allow_new_user = false;
   cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);

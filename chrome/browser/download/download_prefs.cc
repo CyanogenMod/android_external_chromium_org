@@ -46,7 +46,7 @@ namespace {
 // to the desktop on any platform.
 bool DownloadPathIsDangerous(const base::FilePath& download_path) {
 #if defined(OS_LINUX)
-  base::FilePath home_dir = file_util::GetHomeDir();
+  base::FilePath home_dir = base::GetHomeDir();
   if (download_path == home_dir) {
     return true;
   }
@@ -172,7 +172,7 @@ void DownloadPrefs::RegisterProfilePrefs(
   // Ensure that the download directory specified in the preferences exists.
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(base::IgnoreResult(&file_util::CreateDirectory),
+      base::Bind(base::IgnoreResult(&base::CreateDirectory),
                  default_download_path));
 #endif  // defined(OS_CHROMEOS)
 }

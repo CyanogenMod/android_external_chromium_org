@@ -52,8 +52,8 @@ class MockSearchIPCRouterDelegate : public SearchIPCRouter::Delegate {
   MOCK_METHOD1(OnUndoMostVisitedDeletion, void(const GURL& url));
   MOCK_METHOD0(OnUndoAllMostVisitedDeletions, void());
   MOCK_METHOD1(OnLogEvent, void(NTPLoggingEventType event));
-  MOCK_METHOD1(PasteIntoOmnibox, void(const string16&));
-  MOCK_METHOD1(OnChromeIdentityCheck, void(const string16& identity));
+  MOCK_METHOD1(PasteIntoOmnibox, void(const base::string16&));
+  MOCK_METHOD1(OnChromeIdentityCheck, void(const base::string16& identity));
 };
 
 class MockSearchIPCRouterPolicy : public SearchIPCRouter::Policy {
@@ -355,7 +355,7 @@ TEST_F(SearchIPCRouterTest, ProcessChromeIdentityCheckMsg) {
   NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
   SetupMockDelegateAndPolicy();
   MockSearchIPCRouterPolicy* policy = GetSearchIPCRouterPolicy();
-  const string16 test_identity = ASCIIToUTF16("foo@bar.com");
+  const base::string16 test_identity = ASCIIToUTF16("foo@bar.com");
   EXPECT_CALL(*mock_delegate(), OnChromeIdentityCheck(test_identity)).Times(1);
   EXPECT_CALL(*policy, ShouldProcessChromeIdentityCheck()).Times(1)
       .WillOnce(testing::Return(true));
@@ -373,7 +373,7 @@ TEST_F(SearchIPCRouterTest, IgnoreChromeIdentityCheckMsg) {
   SetupMockDelegateAndPolicy();
   MockSearchIPCRouterPolicy* policy = GetSearchIPCRouterPolicy();
 
-  const string16 test_identity = ASCIIToUTF16("foo@bar.com");
+  const base::string16 test_identity = ASCIIToUTF16("foo@bar.com");
   EXPECT_CALL(*mock_delegate(), OnChromeIdentityCheck(test_identity)).Times(0);
   EXPECT_CALL(*policy, ShouldProcessChromeIdentityCheck()).Times(1)
       .WillOnce(testing::Return(false));
@@ -538,7 +538,7 @@ TEST_F(SearchIPCRouterTest, IgnoreMessageIfThePageIsNotActive) {
                                                invalid_page_id, NTP_MOUSEOVER));
   OnMessageReceived(*message);
 
-  string16 text;
+  base::string16 text;
   EXPECT_CALL(*mock_delegate(), PasteIntoOmnibox(text)).Times(0);
   EXPECT_CALL(*policy, ShouldProcessPasteIntoOmnibox(is_active_tab)).Times(0);
   message.reset(new ChromeViewHostMsg_PasteAndOpenDropdown(
@@ -555,7 +555,7 @@ TEST_F(SearchIPCRouterTest, ProcessPasteAndOpenDropdownMsg) {
   bool is_active_tab = IsActiveTab(contents);
   EXPECT_TRUE(is_active_tab);
 
-  string16 text;
+  base::string16 text;
   EXPECT_CALL(*mock_delegate(), PasteIntoOmnibox(text)).Times(1);
   EXPECT_CALL(*policy, ShouldProcessPasteIntoOmnibox(is_active_tab)).Times(1)
       .WillOnce(testing::Return(true));
@@ -568,7 +568,7 @@ TEST_F(SearchIPCRouterTest, ProcessPasteAndOpenDropdownMsg) {
 TEST_F(SearchIPCRouterTest, IgnorePasteAndOpenDropdownMsg) {
   NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
   SetupMockDelegateAndPolicy();
-  string16 text;
+  base::string16 text;
   EXPECT_CALL(*mock_delegate(), PasteIntoOmnibox(text)).Times(0);
 
   content::WebContents* contents = web_contents();
@@ -640,6 +640,31 @@ TEST_F(SearchIPCRouterTest,
 
   // Make sure ChromeViewMsg_SearchBoxSetDisplayInstantResults param is set to
   // false if the underlying page is not a search results page.
+  VerifyDisplayInstantResultsMsg(false);
+}
+
+TEST_F(SearchIPCRouterTest,
+       SendSetDisplayInstantResultsMsg_InstantSearchEnabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:42 prefetch_results:1 use_cacheable_ntp:1"));
+  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
+
+  // If the "prefetch_results" flag is enabled via field trials, then
+  // ChromeViewMsg_SearchBoxSetDisplayInstantResults message param is set to
+  // true irrespective of the underlying page.
+  VerifyDisplayInstantResultsMsg(true);
+}
+
+TEST_F(SearchIPCRouterTest,
+       SendSetDisplayInstantResultsMsg_InstantSearchDisabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:42 use_cacheable_ntp:1 prefetch_results:0"));
+  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
+
+  // Make sure ChromeViewMsg_SearchBoxSetDisplayInstantResults param is set to
+  // false if the "prefetch_results" flag is disabled via field trials.
   VerifyDisplayInstantResultsMsg(false);
 }
 

@@ -150,7 +150,7 @@ def GetBotStepMap():
         H(compile_step + std_host_tests, experimental, target_arch='x86')),
       B('fyi-builder-dbg',
         H(std_build_steps + std_host_tests, experimental,
-          extra_gyp='emma_coverage=1')),
+          extra_gyp='emma_coverage=1 android_lint=1')),
       B('x86-builder-dbg',
         H(compile_step + std_host_tests, target_arch='x86')),
       B('fyi-builder-rel', H(std_build_steps,  experimental)),
@@ -161,7 +161,8 @@ def GetBotStepMap():
         H(compile_step, extra_gyp='component=shared_library'),
         T(std_tests, ['--experimental', flakiness_server])),
       B('gpu-builder-tests-dbg', H(compile_step), T(['gpu'])),
-      B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression'])),
+      # Pass empty T([]) so that logcat monitor and device status check are run.
+      B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression']), T([])),
       B('perf-tests-rel', H(std_test_steps),
         T([], ['--install=ChromiumTestShell'])),
       B('webkit-latest-webkit-tests', H(std_test_steps),

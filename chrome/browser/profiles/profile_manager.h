@@ -45,6 +45,28 @@ class ProfileManager : public base::NonThreadSafe,
   // Physically remove deleted profile directories from disk.
   static void NukeDeletedProfilesFromDisk();
 
+  // Only to be used in ChromeOS:
+  // This is a temporary solution to get rid of the DEPRICATED GetDefaultProfile
+  // functions below. Going forward we will do architectural changes to reduce
+  // the Profile to get the browser context instead and by moving it into ash,
+  // but for the short time fix we add these two functions here, enabling us to
+  // get rid of GetDefaultProfile as a first step.
+  // TODO(skuhne): Move into ash's new user management function.
+
+  // Get the profile for the user which created the current session.
+  static Profile* GetPrimaryUserProfile();
+
+  // Get the profile for the currently active user.
+  static Profile* GetActiveUserProfile();
+
+  // Same as GetPrimaryUsersProfile only it will return the OffTheRecord profile
+  // when in guest login.
+  static Profile* GetPrimaryUserProfileOrOffTheRecord();
+
+  // Same as GetCurrentUsersProfile only it will return the OffTheRecord profile
+  // when in guest login.
+  static Profile* GetActiveUserProfileOrOffTheRecord();
+
   // The following DEPRECATED functions should be removed: crbug.com/83792.
 
   // DEPRECATED: DO NOT USE unless in ChromeOS.
@@ -83,8 +105,8 @@ class ProfileManager : public base::NonThreadSafe,
   // immediately. Should be called on the UI thread.
   void CreateProfileAsync(const base::FilePath& profile_path,
                           const CreateCallback& callback,
-                          const string16& name,
-                          const string16& icon_url,
+                          const base::string16& name,
+                          const base::string16& icon_url,
                           const std::string& managed_user_id);
 
   // Returns true if the profile pointer is known to point to an existing
@@ -158,8 +180,8 @@ class ProfileManager : public base::NonThreadSafe,
   // prohibited. Returns the file path to the profile that will be created
   // asynchronously.
   static base::FilePath CreateMultiProfileAsync(
-      const string16& name,
-      const string16& icon_url,
+      const base::string16& name,
+      const base::string16& icon_url,
       const CreateCallback& callback,
       const std::string& managed_user_id);
 
@@ -276,7 +298,7 @@ class ProfileManager : public base::NonThreadSafe,
   // RegisterProfile.
   ProfileInfo* GetProfileInfoByPath(const base::FilePath& path) const;
 
-  typedef std::pair<base::FilePath, string16> ProfilePathAndName;
+  typedef std::pair<base::FilePath, base::string16> ProfilePathAndName;
   typedef std::vector<ProfilePathAndName> ProfilePathAndNames;
   ProfilePathAndNames GetSortedProfilesFromDirectoryMap();
 

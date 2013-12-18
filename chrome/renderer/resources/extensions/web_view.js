@@ -34,9 +34,10 @@ var WEB_VIEW_ATTRIBUTE_MINWIDTH = 'minwidth';
 
 /** @type {Array.<string>} */
 var WEB_VIEW_ATTRIBUTES = [
+    'allowtransparency',
+    'autosize',
     'name',
     'partition',
-    'autosize',
     WEB_VIEW_ATTRIBUTE_MINHEIGHT,
     WEB_VIEW_ATTRIBUTE_MINWIDTH,
     WEB_VIEW_ATTRIBUTE_MAXHEIGHT,
@@ -639,7 +640,7 @@ WebViewInternal.prototype.setupEventProperty_ = function(eventName) {
  * @private
  */
 WebViewInternal.prototype.getPermissionTypes_ = function() {
-  return ['media', 'geolocation', 'pointerLock', 'download'];
+  return ['media', 'geolocation', 'pointerLock', 'download', 'loadplugin'];
 };
 
 /**
@@ -787,6 +788,7 @@ WebViewInternal.prototype.handlePermissionEvent_ =
   };
 
   var requestId = event.requestId;
+  var self = this;
 
   var PERMISSION_TYPES = this.getPermissionTypes_().concat(
                              this.maybeGetExperimentalPermissions_());
@@ -802,7 +804,6 @@ WebViewInternal.prototype.handlePermissionEvent_ =
     return;
   }
 
-  var self = this;
   var browserPluginNode = this.browserPluginNode_;
   var webviewNode = this.webviewNode_;
 
@@ -931,6 +932,11 @@ function registerBrowserPluginElement() {
     }
     var internal = this.internal_(secret);
     internal.handleBrowserPluginAttributeMutation_(name, newValue);
+  };
+
+  proto.enteredViewCallback = function() {
+    // Load the plugin immediately.
+    var unused = this.nonExistentAttribute;
   };
 
   WebViewInternal.BrowserPlugin =

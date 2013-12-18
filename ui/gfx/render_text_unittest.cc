@@ -8,6 +8,7 @@
 
 #include "base/format_macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -1156,11 +1157,14 @@ TEST_F(RenderTextTest, StringSizeEmptyString) {
 }
 #endif  // !defined(OS_MACOSX)
 
-// Disabled. http://crbug.com/316955
-TEST_F(RenderTextTest, DISABLED_StringSizeRespectsFontListMetrics) {
+TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   // Check that Arial and Symbol have different font metrics.
   Font arial_font("Arial", 16);
+  ASSERT_EQ("arial",
+            StringToLowerASCII(arial_font.GetActualFontNameForTesting()));
   Font symbol_font("Symbol", 16);
+  ASSERT_EQ("symbol",
+            StringToLowerASCII(symbol_font.GetActualFontNameForTesting()));
   EXPECT_NE(arial_font.GetHeight(), symbol_font.GetHeight());
   EXPECT_NE(arial_font.GetBaseline(), symbol_font.GetBaseline());
   // "a" should be rendered with Arial, not with Symbol.
@@ -1213,8 +1217,7 @@ TEST_F(RenderTextTest, SetFont) {
   EXPECT_EQ(12, render_text->GetPrimaryFont().GetFontSize());
 }
 
-// Disabled. http://crbug.com/316955
-TEST_F(RenderTextTest, DISABLED_SetFontList) {
+TEST_F(RenderTextTest, SetFontList) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(FontList("Arial,Symbol, 13px"));
   const std::vector<Font>& fonts = render_text->font_list().GetFonts();
@@ -1732,6 +1735,53 @@ TEST_F(RenderTextTest, Multiline_SufficientWidth) {
     EXPECT_EQ(1U, render_text->lines_.size());
   }
 }
+
+TEST_F(RenderTextTest, Multiline_Newline) {
+  const struct {
+    const wchar_t* const text;
+    // Ranges of the characters on each line preceding the newline.
+    const Range first_line_char_range;
+    const Range second_line_char_range;
+  } kTestStrings[] = {
+    { L"abc\ndef", Range(0, 3), Range(4, 7) },
+    { L"a \n b ", Range(0, 2), Range(3, 6) },
+    { L"\n" , Range::InvalidRange(), Range::InvalidRange() }
+  };
+
+  scoped_ptr<RenderTextWin> render_text(
+      static_cast<RenderTextWin*>(RenderText::CreateInstance()));
+  render_text->SetDisplayRect(Rect(200, 1000));
+  render_text->SetMultiline(true);
+  Canvas canvas;
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestStrings); ++i) {
+    SCOPED_TRACE(base::StringPrintf("kTestStrings[%" PRIuS "]", i));
+    render_text->SetText(WideToUTF16(kTestStrings[i].text));
+    render_text->Draw(&canvas);
+
+    ASSERT_EQ(2U, render_text->lines_.size());
+
+    const Range first_expected_range = kTestStrings[i].first_line_char_range;
+    ASSERT_EQ(first_expected_range.IsValid() ? 2U : 1U,
+              render_text->lines_[0].segments.size());
+    if (first_expected_range.IsValid())
+      EXPECT_EQ(first_expected_range,
+                render_text->lines_[0].segments[0].char_range);
+
+    const internal::LineSegment& newline_segment =
+        render_text->lines_[0].segments[first_expected_range.IsValid() ? 1 : 0];
+    ASSERT_EQ(1U, newline_segment.char_range.length());
+    EXPECT_EQ(L'\n', kTestStrings[i].text[newline_segment.char_range.start()]);
+
+    const Range second_expected_range = kTestStrings[i].second_line_char_range;
+    ASSERT_EQ(second_expected_range.IsValid() ? 1U : 0U,
+              render_text->lines_[1].segments.size());
+    if (second_expected_range.IsValid())
+      EXPECT_EQ(second_expected_range,
+                render_text->lines_[1].segments[0].char_range);
+  }
+}
+
 
 TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
   scoped_ptr<RenderTextWin> render_text(

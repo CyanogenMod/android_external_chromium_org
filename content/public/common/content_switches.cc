@@ -123,7 +123,7 @@ const char kDisableAudio[]                  = "disable-audio";
 // users with many windows/tabs and lots of memory.
 const char kDisableBackingStoreLimit[]      = "disable-backing-store-limit";
 
-// Enables browser plugin compositing experiment.
+// Disable browser plugin compositing experiment.
 const char kDisableBrowserPluginCompositing[] =
     "disable-browser-plugin-compositing";
 
@@ -150,6 +150,10 @@ const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
 
 // Disables desktop notifications (default enabled on windows).
 const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
+
+// Disables experimental navigator content utils implementation.
+const char kDisableNavigatorContentUtils[]  =
+      "disable-navigator-content-utils";
 
 // Disable device motion events.
 const char kDisableDeviceMotion[]           = "disable-device-motion";
@@ -245,6 +249,11 @@ const char kDisableJava[]                   = "disable-java";
 // Don't execute JavaScript (browser JS like the new tab page still runs).
 const char kDisableJavaScript[]             = "disable-javascript";
 
+// Don't kill a child process when it sends a bad IPC message.  Apart
+// from testing, it is a bad idea from a security perspective to enable
+// this switch.
+const char kDisableKillAfterBadIPC[]        = "disable-kill-after-bad-ipc";
+
 // Disables prefixed Encrypted Media API (e.g. webkitGenerateKeyRequest()).
 const char kDisablePrefixedEncryptedMedia[] =
     "disable-prefixed-encrypted-media";
@@ -255,6 +264,11 @@ const char kDisableLocalStorage[]           = "disable-local-storage";
 // Force logging to be disabled.  Logging is enabled by default in debug
 // builds.
 const char kDisableLogging[]                = "disable-logging";
+
+// Allows P2P sockets to talk UDP to other servers without using STUN first.
+// For development only, use with caution.
+// TODO(hubbe): Remove this flag.
+const char kDisableP2PSocketSTUNFilter[]    = "disable-p2psocket-stun-filter";
 
 // Disable Pepper3D.
 const char kDisablePepper3d[]               = "disable-pepper-3d";
@@ -320,9 +334,6 @@ const char kDisableUnprefixedMediaSource[]  = "disable-unprefixed-media-source";
 
 // Disable CSS Transitions / Animations on the Web Animations model.
 const char kDisableWebAnimationsCSS[]        = "disable-web-animations-css";
-
-// Disable web audio API.
-const char kDisableWebAudio[]               = "disable-webaudio";
 
 // Disables prefixed Media Source API (i.e., the WebKitMediaSource object).
 const char kDisableWebKitMediaSource[]      = "disable-webkit-media-source";
@@ -453,6 +464,9 @@ const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
 
 #if defined(OS_WIN)
+// Enables the DirectWrite font rendering system on windows.
+const char kEnableDirectWrite[]             = "enable-direct-write";
+
 // Use high resolution timers for TimeTicks.
 const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
 #endif
@@ -851,6 +865,10 @@ const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 // Runs the security test for the renderer sandbox.
 const char kTestSandbox[]                   = "test-sandbox";
 
+// Enable timeout-based touch event cancellation if a touch ack is delayed.
+// If unspecified, touch timeout behavior will be disabled.
+const char kTouchAckTimeoutDelayMs[]        = "touch-ack-timeout-delay-ms";
+
 // Causes TRACE_EVENT flags to be recorded beginning with shutdown. Optionally,
 // can specify the specific trace categories to include (e.g.
 // --trace-shutdown=base,net) otherwise, all events are recorded.
@@ -1006,6 +1024,13 @@ const char kNetworkCountryIso[] = "network-country-iso";
 
 // Enables remote debug over HTTP on the specified socket name.
 const char kRemoteDebuggingSocketName[]     = "remote-debugging-socket-name";
+#endif
+
+#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
+const char kEnableWebAudio[]                = "enable-webaudio";
+#else
+// Disable web audio API.
+const char kDisableWebAudio[]               = "disable-webaudio";
 #endif
 
 #if defined(OS_CHROMEOS)

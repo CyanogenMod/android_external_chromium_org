@@ -129,7 +129,7 @@ bool TextContentsEqual(const FilePath& filename1, const FilePath& filename2) {
 bool ReadFileToString(const FilePath& path, std::string* contents) {
   if (path.ReferencesParent())
     return false;
-  FILE* file = file_util::OpenFile(path, "rb");
+  FILE* file = OpenFile(path, "rb");
   if (!file) {
     return false;
   }
@@ -140,20 +140,10 @@ bool ReadFileToString(const FilePath& path, std::string* contents) {
     if (contents)
       contents->append(buf, len);
   }
-  file_util::CloseFile(file);
+  CloseFile(file);
 
   return true;
 }
-
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::FileEnumerator;
-using base::FilePath;
-using base::kMaxUniqueFiles;
 
 bool IsDirectoryEmpty(const FilePath& dir_path) {
   FileEnumerator files(dir_path, false,
@@ -171,12 +161,12 @@ FILE* CreateAndOpenTemporaryFile(FilePath* path) {
   return CreateAndOpenTemporaryFileInDir(directory, path);
 }
 
-bool CreateDirectory(const base::FilePath& full_path) {
+bool CreateDirectory(const FilePath& full_path) {
   return CreateDirectoryAndGetError(full_path, NULL);
 }
 
 bool GetFileSize(const FilePath& file_path, int64* file_size) {
-  base::PlatformFileInfo info;
+  PlatformFileInfo info;
   if (!GetFileInfo(file_path, &info))
     return false;
   *file_size = info.size;
@@ -184,30 +174,24 @@ bool GetFileSize(const FilePath& file_path, int64* file_size) {
 }
 
 bool TouchFile(const FilePath& path,
-               const base::Time& last_accessed,
-               const base::Time& last_modified) {
-  int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE_ATTRIBUTES;
+               const Time& last_accessed,
+               const Time& last_modified) {
+  int flags = PLATFORM_FILE_OPEN | PLATFORM_FILE_WRITE_ATTRIBUTES;
 
 #if defined(OS_WIN)
   // On Windows, FILE_FLAG_BACKUP_SEMANTICS is needed to open a directory.
   if (DirectoryExists(path))
-    flags |= base::PLATFORM_FILE_BACKUP_SEMANTICS;
+    flags |= PLATFORM_FILE_BACKUP_SEMANTICS;
 #endif  // OS_WIN
 
-  const base::PlatformFile file =
-      base::CreatePlatformFile(path, flags, NULL, NULL);
-  if (file != base::kInvalidPlatformFileValue) {
-    bool result = base::TouchPlatformFile(file, last_accessed, last_modified);
-    base::ClosePlatformFile(file);
+  const PlatformFile file = CreatePlatformFile(path, flags, NULL, NULL);
+  if (file != kInvalidPlatformFileValue) {
+    bool result = TouchPlatformFile(file, last_accessed, last_modified);
+    ClosePlatformFile(file);
     return result;
   }
 
   return false;
-}
-
-bool SetLastModifiedTime(const FilePath& path,
-                         const base::Time& last_modified) {
-  return TouchFile(path, last_modified, last_modified);
 }
 
 bool CloseFile(FILE* file) {
@@ -233,6 +217,15 @@ bool TruncateFile(FILE* file) {
 #endif
   return true;
 }
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::FilePath;
+using base::kMaxUniqueFiles;
 
 int GetUniquePathNumber(
     const FilePath& path,

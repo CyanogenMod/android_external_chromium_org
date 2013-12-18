@@ -37,27 +37,6 @@ class ContextProviderInProcess::LostContextCallbackProxy
   ContextProviderInProcess* provider_;
 };
 
-class ContextProviderInProcess::SwapBuffersCompleteCallbackProxy
-    : public blink::WebGraphicsContext3D::
-          WebGraphicsSwapBuffersCompleteCallbackCHROMIUM {
- public:
-  explicit SwapBuffersCompleteCallbackProxy(ContextProviderInProcess* provider)
-      : provider_(provider) {
-    provider_->context3d_->setSwapBuffersCompleteCallbackCHROMIUM(this);
-  }
-
-  virtual ~SwapBuffersCompleteCallbackProxy() {
-    provider_->context3d_->setSwapBuffersCompleteCallbackCHROMIUM(NULL);
-  }
-
-  virtual void onSwapBuffersComplete() {
-    provider_->OnSwapBuffersComplete();
-  }
-
- private:
-  ContextProviderInProcess* provider_;
-};
-
 // static
 scoped_refptr<ContextProviderInProcess> ContextProviderInProcess::Create(
     scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d,
@@ -110,58 +89,53 @@ bool ContextProviderInProcess::BindToCurrentThread() {
   if (!context3d_->makeContextCurrent())
     return false;
 
+  InitializeCapabilities();
+
   std::string unique_context_name =
       base::StringPrintf("%s-%p", debug_name_.c_str(), context3d_.get());
   context3d_->pushGroupMarkerEXT(unique_context_name.c_str());
 
   lost_context_callback_proxy_.reset(new LostContextCallbackProxy(this));
-  swap_buffers_complete_callback_proxy_.reset(
-      new SwapBuffersCompleteCallbackProxy(this));
   return true;
+}
+
+void ContextProviderInProcess::InitializeCapabilities() {
+  capabilities_ = Capabilities(context3d_->GetImplementation()->capabilities());
 }
 
 cc::ContextProvider::Capabilities
 ContextProviderInProcess::ContextCapabilities() {
-  // We always use a WebGraphicsContext3DInProcessCommandBufferImpl which
-  // provides the following capabilities:
-  Capabilities caps;
-  caps.discard_backbuffer = true;
-  caps.map_image = true;
-  caps.map_sub = true;
-  caps.set_visibility = true;
-  caps.shallow_flush = true;
-  caps.texture_format_bgra8888 = true;
-  caps.texture_rectangle = true;
-
-  blink::WebString extensions =
-      context3d_->getString(0x1F03 /* GL_EXTENSIONS */);
-  std::vector<std::string> extension_list;
-  base::SplitString(extensions.utf8(), ' ', &extension_list);
-  std::set<std::string> extension_set(extension_list.begin(),
-                                      extension_list.end());
-
-  caps.post_sub_buffer = extension_set.count("GL_CHROMIUM_post_sub_buffer") > 0;
-  return caps;
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+  return capabilities_;
 }
 
 blink::WebGraphicsContext3D* ContextProviderInProcess::Context3d() {
-  DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   return context3d_.get();
 }
 
-::gpu::ContextSupport* ContextProviderInProcess::ContextSupport() {
+::gpu::gles2::GLES2Interface* ContextProviderInProcess::ContextGL() {
   DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return context3d_->GetGLInterface();
+}
+
+::gpu::ContextSupport* ContextProviderInProcess::ContextSupport() {
+  DCHECK(context3d_);
+  if (!lost_context_callback_proxy_)
+    return NULL;  // Not bound to anything.
+
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   return context3d_->GetContextSupport();
 }
 
 class GrContext* ContextProviderInProcess::GrContext() {
-  DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
@@ -173,8 +147,15 @@ class GrContext* ContextProviderInProcess::GrContext() {
   return gr_context_->get();
 }
 
+void ContextProviderInProcess::MakeGrContextCurrent() {
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+  DCHECK(gr_context_);
+
+  context3d_->makeContextCurrent();
+}
+
 bool ContextProviderInProcess::IsContextLost() {
-  DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
@@ -182,7 +163,6 @@ bool ContextProviderInProcess::IsContextLost() {
 }
 
 void ContextProviderInProcess::VerifyContexts() {
-  DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
@@ -202,12 +182,6 @@ void ContextProviderInProcess::OnLostContext() {
     base::ResetAndReturn(&lost_context_callback_).Run();
 }
 
-void ContextProviderInProcess::OnSwapBuffersComplete() {
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-  if (!swap_buffers_complete_callback_.is_null())
-    swap_buffers_complete_callback_.Run();
-}
-
 bool ContextProviderInProcess::DestroyedOnMainThread() {
   DCHECK(main_thread_checker_.CalledOnValidThread());
 
@@ -221,14 +195,6 @@ void ContextProviderInProcess::SetLostContextCallback(
   DCHECK(lost_context_callback_.is_null() ||
          lost_context_callback.is_null());
   lost_context_callback_ = lost_context_callback;
-}
-
-void ContextProviderInProcess::SetSwapBuffersCompleteCallback(
-    const SwapBuffersCompleteCallback& swap_buffers_complete_callback) {
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-  DCHECK(swap_buffers_complete_callback_.is_null() ||
-         swap_buffers_complete_callback.is_null());
-  swap_buffers_complete_callback_ = swap_buffers_complete_callback;
 }
 
 void ContextProviderInProcess::SetMemoryPolicyChangedCallback(

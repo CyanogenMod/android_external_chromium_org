@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,9 +19,9 @@ import android.view.Surface;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.content.browser.ChildProcessConnection;
+import org.chromium.content.browser.ChildProcessLauncher;
 import org.chromium.content.common.IChildProcessCallback;
 import org.chromium.content.common.IChildProcessService;
-import org.chromium.content.browser.ChildProcessLauncher;
 import org.chromium.content.common.ProcessInitException;
 
 import java.util.ArrayList;
@@ -125,8 +125,9 @@ public class ChildProcessService extends Service {
 
                     if (useLinker) {
                         synchronized (mMainThread) {
-                            while (!mIsBound)
+                            while (!mIsBound) {
                                 mMainThread.wait();
+                            }
                         }
                         if (mLinkerParams != null) {
                             if (mLinkerParams.mWaitForSharedRelro)
@@ -141,7 +142,7 @@ public class ChildProcessService extends Service {
                         LibraryLoader.loadNow();
                     } catch (ProcessInitException e) {
                         Log.e(TAG, "Failed to load native library, exiting child process", e);
-                        return;
+                        System.exit(-1);
                     }
                     synchronized (mMainThread) {
                         while (mCommandLineParams == null) {
@@ -245,9 +246,9 @@ public class ChildProcessService extends Service {
         Surface surface = null;
         boolean needRelease = false;
         if (surfaceObject instanceof Surface) {
-            surface = (Surface)surfaceObject;
+            surface = (Surface) surfaceObject;
         } else if (surfaceObject instanceof SurfaceTexture) {
-            surface = new Surface((SurfaceTexture)surfaceObject);
+            surface = new Surface((SurfaceTexture) surfaceObject);
             needRelease = true;
         } else {
             Log.e(TAG, "Not a valid surfaceObject: " + surfaceObject);

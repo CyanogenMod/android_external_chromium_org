@@ -217,7 +217,7 @@ TEST_F(IndexedDBFactoryTest, QuotaErrorOnDiskFull) {
       new LookingForQuotaErrorMockCallbacks;
   scoped_refptr<IndexedDBDatabaseCallbacks> dummy_database_callbacks =
       new IndexedDBDatabaseCallbacks(NULL, 0, 0);
-  const string16 name(ASCIIToUTF16("name"));
+  const base::string16 name(ASCIIToUTF16("name"));
   factory->Open(name,
                 1, /* version */
                 2, /* transaction_id */
@@ -250,8 +250,12 @@ TEST_F(IndexedDBFactoryTest, BackingStoreReleasedOnForcedClose) {
   EXPECT_TRUE(callbacks->connection());
 
   EXPECT_TRUE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+
   callbacks->connection()->ForceClose();
+
   EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
 }
 
 TEST_F(IndexedDBFactoryTest, BackingStoreReleaseDelayedOnClose) {
@@ -283,6 +287,7 @@ TEST_F(IndexedDBFactoryTest, BackingStoreReleaseDelayedOnClose) {
   callbacks->connection()->Close();
   EXPECT_TRUE(store->HasOneRef());  // Factory.
   EXPECT_TRUE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_TRUE(factory->IsBackingStorePendingCloseForTesting(origin));
   EXPECT_TRUE(store->close_timer()->IsRunning());
 
   // Take a ref so it won't be destroyed out from under the test.
@@ -292,6 +297,98 @@ TEST_F(IndexedDBFactoryTest, BackingStoreReleaseDelayedOnClose) {
   EXPECT_TRUE(store->HasOneRef());  // Local.
   EXPECT_FALSE(store->close_timer()->IsRunning());
   EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+}
+
+TEST_F(IndexedDBFactoryTest, DeleteDatabaseClosesBackingStore) {
+  GURL origin("http://localhost:81");
+
+  base::ScopedTempDir temp_directory;
+  ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
+
+  scoped_refptr<IndexedDBFactory> factory = new IndexedDBFactory(NULL);
+  EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+
+  const bool expect_connection = false;
+  scoped_refptr<MockIndexedDBCallbacks> callbacks(
+      new MockIndexedDBCallbacks(expect_connection));
+  factory->DeleteDatabase(ASCIIToUTF16("db"),
+                          callbacks,
+                          origin,
+                          temp_directory.path());
+
+  EXPECT_TRUE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+
+  // Now simulate shutdown, which should stop the timer.
+  factory->ContextDestroyed();
+
+  EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+}
+
+TEST_F(IndexedDBFactoryTest, GetDatabaseNamesClosesBackingStore) {
+  GURL origin("http://localhost:81");
+
+  base::ScopedTempDir temp_directory;
+  ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
+
+  scoped_refptr<IndexedDBFactory> factory = new IndexedDBFactory(NULL);
+  EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+
+  const bool expect_connection = false;
+  scoped_refptr<MockIndexedDBCallbacks> callbacks(
+      new MockIndexedDBCallbacks(expect_connection));
+  factory->GetDatabaseNames(callbacks,
+                            origin,
+                            temp_directory.path());
+
+  EXPECT_TRUE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+
+  // Now simulate shutdown, which should stop the timer.
+  factory->ContextDestroyed();
+
+  EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+}
+
+TEST_F(IndexedDBFactoryTest, ForceCloseReleasesBackingStore) {
+  GURL origin("http://localhost:81");
+
+  base::ScopedTempDir temp_directory;
+  ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
+
+  scoped_refptr<IndexedDBFactory> factory = new IndexedDBFactory(NULL);
+
+  scoped_refptr<MockIndexedDBCallbacks> callbacks(new MockIndexedDBCallbacks());
+  scoped_refptr<MockIndexedDBDatabaseCallbacks> db_callbacks(
+      new MockIndexedDBDatabaseCallbacks());
+  const int64 transaction_id = 1;
+  factory->Open(ASCIIToUTF16("db"),
+                IndexedDBDatabaseMetadata::DEFAULT_INT_VERSION,
+                transaction_id,
+                callbacks,
+                db_callbacks,
+                origin,
+                temp_directory.path());
+
+  EXPECT_TRUE(callbacks->connection());
+  EXPECT_TRUE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+
+  callbacks->connection()->Close();
+
+  EXPECT_TRUE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_TRUE(factory->IsBackingStorePendingCloseForTesting(origin));
+
+  factory->ForceClose(origin);
+
+  EXPECT_FALSE(factory->IsBackingStoreOpenForTesting(origin));
+  EXPECT_FALSE(factory->IsBackingStorePendingCloseForTesting(origin));
+
+  // Ensure it is safe if the store is not open.
+  factory->ForceClose(origin);
 }
 
 }  // namespace

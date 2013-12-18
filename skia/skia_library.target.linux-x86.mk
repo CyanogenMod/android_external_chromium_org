@@ -62,7 +62,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkAnnotation.cpp \
 	third_party/skia/src/core/SkAdvancedTypefaceMetrics.cpp \
 	third_party/skia/src/core/SkAlphaRuns.cpp \
-	third_party/skia/src/core/SkBBoxHierarchy.cpp \
 	third_party/skia/src/core/SkBBoxRecord.cpp \
 	third_party/skia/src/core/SkBBoxHierarchyRecord.cpp \
 	third_party/skia/src/core/SkBitmap.cpp \
@@ -78,7 +77,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBlitRow_D16.cpp \
 	third_party/skia/src/core/SkBlitRow_D32.cpp \
 	third_party/skia/src/core/SkBlitter.cpp \
-	third_party/skia/src/core/SkBlitter_A1.cpp \
 	third_party/skia/src/core/SkBlitter_A8.cpp \
 	third_party/skia/src/core/SkBlitter_ARGB32.cpp \
 	third_party/skia/src/core/SkBlitter_RGB16.cpp \
@@ -102,6 +100,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkDevice.cpp \
 	third_party/skia/src/core/SkDeviceLooper.cpp \
 	third_party/skia/src/core/SkDeviceProfile.cpp \
+	third_party/skia/src/lazy/SkDiscardableMemoryPool.cpp \
 	third_party/skia/src/lazy/SkDiscardablePixelRef.cpp \
 	third_party/skia/src/core/SkDither.cpp \
 	third_party/skia/src/core/SkDraw.cpp \
@@ -126,6 +125,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkInstCnt.cpp \
 	third_party/skia/src/core/SkImageFilter.cpp \
 	third_party/skia/src/core/SkImageFilterUtils.cpp \
+	third_party/skia/src/core/SkImageInfo.cpp \
 	third_party/skia/src/core/SkLineClipper.cpp \
 	third_party/skia/src/core/SkMallocPixelRef.cpp \
 	third_party/skia/src/core/SkMask.cpp \
@@ -158,7 +158,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
 	third_party/skia/src/core/SkRect.cpp \
-	third_party/skia/src/core/SkRefCnt.cpp \
 	third_party/skia/src/core/SkRefDict.cpp \
 	third_party/skia/src/core/SkRegion.cpp \
 	third_party/skia/src/core/SkRegion_path.cpp \
@@ -204,13 +203,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/image/SkSurface_Raster.cpp \
 	third_party/skia/src/pipe/SkGPipeRead.cpp \
 	third_party/skia/src/pipe/SkGPipeWrite.cpp \
-	third_party/skia/src/lazy/SkBitmapFactory.cpp \
-	third_party/skia/src/lazy/SkLazyPixelRef.cpp \
-	third_party/skia/src/lazy/SkLruImageCache.cpp \
-	third_party/skia/src/lazy/SkPurgeableMemoryBlock_common.cpp \
-	third_party/skia/src/lazy/SkPurgeableImageCache.cpp \
 	third_party/skia/src/lazy/SkCachingPixelRef.cpp \
-	third_party/skia/src/lazy/SkLazyCachingPixelRef.cpp \
 	third_party/skia/src/pathops/SkAddIntersections.cpp \
 	third_party/skia/src/pathops/SkDCubicIntersection.cpp \
 	third_party/skia/src/pathops/SkDCubicLineIntersection.cpp \
@@ -294,6 +287,20 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/gradients/SkTwoPointRadialGradient.cpp \
 	third_party/skia/src/effects/gradients/SkTwoPointConicalGradient.cpp \
 	third_party/skia/src/effects/gradients/SkSweepGradient.cpp \
+	third_party/skia/src/pdf/SkPDFCatalog.cpp \
+	third_party/skia/src/pdf/SkPDFDevice.cpp \
+	third_party/skia/src/pdf/SkPDFDeviceFlattener.cpp \
+	third_party/skia/src/pdf/SkPDFDocument.cpp \
+	third_party/skia/src/pdf/SkPDFFont.cpp \
+	third_party/skia/src/pdf/SkPDFFormXObject.cpp \
+	third_party/skia/src/pdf/SkPDFGraphicState.cpp \
+	third_party/skia/src/pdf/SkPDFImage.cpp \
+	third_party/skia/src/pdf/SkPDFPage.cpp \
+	third_party/skia/src/pdf/SkPDFResourceDict.cpp \
+	third_party/skia/src/pdf/SkPDFShader.cpp \
+	third_party/skia/src/pdf/SkPDFStream.cpp \
+	third_party/skia/src/pdf/SkPDFTypes.cpp \
+	third_party/skia/src/pdf/SkPDFUtils.cpp \
 	third_party/skia/src/gpu/GrAAHairLinePathRenderer.cpp \
 	third_party/skia/src/gpu/GrAAConvexPathRenderer.cpp \
 	third_party/skia/src/gpu/GrAARectRenderer.cpp \
@@ -310,7 +317,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrDrawState.cpp \
 	third_party/skia/src/gpu/GrDrawTarget.cpp \
 	third_party/skia/src/gpu/GrEffect.cpp \
-	third_party/skia/src/gpu/GrGeometryBuffer.cpp \
 	third_party/skia/src/gpu/GrClipMaskCache.cpp \
 	third_party/skia/src/gpu/GrClipMaskManager.cpp \
 	third_party/skia/src/gpu/GrGpu.cpp \
@@ -339,7 +345,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrTextStrike.cpp \
 	third_party/skia/src/gpu/GrTexture.cpp \
 	third_party/skia/src/gpu/GrTextureAccess.cpp \
-	third_party/skia/src/gpu/gr_unittests.cpp \
 	third_party/skia/src/gpu/effects/GrConfigConversionEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBezierEffect.cpp \
 	third_party/skia/src/gpu/effects/GrConvolutionEffect.cpp \
@@ -347,7 +352,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrCustomCoordsTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
-	third_party/skia/src/gpu/effects/GrTextureDomainEffect.cpp \
+	third_party/skia/src/gpu/effects/GrTextureDomain.cpp \
 	third_party/skia/src/gpu/effects/GrTextureStripAtlas.cpp \
 	third_party/skia/src/gpu/gl/GrGLBufferImpl.cpp \
 	third_party/skia/src/gpu/gl/GrGLCaps.cpp \
@@ -423,6 +428,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -432,9 +438,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -470,6 +478,7 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/images \
@@ -553,6 +562,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -562,9 +572,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -600,6 +612,7 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/images \

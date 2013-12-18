@@ -15,9 +15,9 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -688,7 +688,7 @@ TEST_F(ResourceMetadataTest, EncodedNames) {
       CreateDirectoryEntry("\\(^o^)/", root_local_id), &dir_id));
   ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryById(
       dir_id, &entry));
-  EXPECT_EQ("\\(^o^)\xE2\x88\x95", entry.base_name());
+  EXPECT_EQ("\\(^o^)_", entry.base_name());
 
   std::string file_id;
   ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->AddEntry(
@@ -696,11 +696,11 @@ TEST_F(ResourceMetadataTest, EncodedNames) {
       &file_id));
   ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryById(
       file_id, &entry));
-  EXPECT_EQ("Slash \xE2\x88\x95.txt", entry.base_name());
+  EXPECT_EQ("Slash _.txt", entry.base_name());
 
   ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryByPath(
       base::FilePath::FromUTF8Unsafe(
-          "drive/root/\\(^o^)\xE2\x88\x95/Slash \xE2\x88\x95.txt"),
+          "drive/root/\\(^o^)_/Slash _.txt"),
       &entry));
   EXPECT_EQ("myfile", entry.resource_id());
 }

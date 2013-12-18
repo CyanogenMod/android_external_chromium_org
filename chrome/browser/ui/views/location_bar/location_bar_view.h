@@ -59,6 +59,7 @@ namespace views {
 class BubbleDelegateView;
 class ImageButton;
 class Label;
+class LabelButton;
 class Widget;
 }
 
@@ -208,23 +209,21 @@ class LocationBarView : public LocationBar,
   // Shows |text| as an inline autocompletion.  This is useful for IMEs, where
   // we can't show the autocompletion inside the actual OmniboxView.  See
   // comments on |ime_inline_autocomplete_view_|.
-  void SetImeInlineAutocompletion(const string16& text);
+  void SetImeInlineAutocompletion(const base::string16& text);
 
   // Invoked from OmniboxViewWin to show gray text autocompletion.
-  void SetGrayTextAutocompletion(const string16& text);
+  void SetGrayTextAutocompletion(const base::string16& text);
 
   // Returns the current gray text autocompletion.
-  string16 GetGrayTextAutocompletion() const;
+  base::string16 GetGrayTextAutocompletion() const;
 
   // Sizing functions
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // Layout and Painting functions
   virtual void Layout() OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-
-  // No focus border for the location bar, the caret is enough.
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE {}
 
   // Set if we should show a focus rect while the location entry field is
   // focused. Used when the toolbar is in full keyboard accessibility mode.
@@ -259,8 +258,8 @@ class LocationBarView : public LocationBar,
 
   // views::View:
   virtual const char* GetClassName() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual bool HasFocus() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
   // views::ButtonListener:
@@ -416,7 +415,7 @@ class LocationBarView : public LocationBar,
   // Handles a request to change the value of this text field from software
   // using an accessibility API (typically automation software, screen readers
   // don't normally use this). Sets the value and clears the selection.
-  void AccessibilitySetValue(const string16& new_value);
+  void AccessibilitySetValue(const base::string16& new_value);
 
   // The Browser this LocationBarView is in.  Note that at least
   // chromeos::SimpleWebViewDialog uses a LocationBarView outside any browser
@@ -495,6 +494,9 @@ class LocationBarView : public LocationBar,
 
   // The star.
   StarView* star_view_;
+
+  // The search/go button.
+  views::LabelButton* search_button_;
 
   // Whether we're in popup mode. This value also controls whether the location
   // bar is read-only.

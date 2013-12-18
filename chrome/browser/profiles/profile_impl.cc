@@ -68,6 +68,7 @@
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/search_engines/template_url_fetcher.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
@@ -174,7 +175,7 @@ const char* const kPrefExitTypeSessionEnded = "SessionEnded";
 void CreateDirectoryAndSignal(const base::FilePath& path,
                               base::WaitableEvent* done_creating) {
   DVLOG(1) << "Creating directory " << path.value();
-  file_util::CreateDirectory(path);
+  base::CreateDirectory(path);
   done_creating->Signal();
 }
 
@@ -277,7 +278,7 @@ Profile* Profile::CreateProfile(const base::FilePath& path,
       // TODO(tc): http://b/1094718 Bad things happen if we can't write to the
       // profile directory.  We should eventually be able to run in this
       // situation.
-      if (!file_util::CreateDirectory(path))
+      if (!base::CreateDirectory(path))
         return NULL;
     }
   } else {
@@ -437,6 +438,9 @@ ProfileImpl::ProfileImpl(
   else
 #endif
   chrome::RegisterUserProfilePrefs(pref_registry_.get());
+
+  BrowserContextDependencyManager::GetInstance()->
+      RegisterProfilePrefsForServices(this, pref_registry_.get());
 
   ManagedUserSettingsService* managed_user_settings = NULL;
 #if defined(ENABLE_MANAGED_USERS)
@@ -1190,6 +1194,7 @@ void ProfileImpl::UpdateProfileUserNameCache() {
     std::string user_name =
         GetPrefs()->GetString(prefs::kGoogleServicesUsername);
     cache.SetUserNameOfProfileAtIndex(index, UTF8ToUTF16(user_name));
+    ProfileMetrics::UpdateReportedProfilesStatistics(profile_manager);
   }
 }
 

@@ -10,15 +10,14 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/input/gesture_event_filter.h"
-#include "content/browser/renderer_host/input/immediate_input_router.h"
-#include "content/browser/renderer_host/input/synthetic_web_input_event_builders.h"
+#include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/input/tap_suppression_controller.h"
 #include "content/browser/renderer_host/input/tap_suppression_controller_client.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
+#include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_port.h"
@@ -29,6 +28,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/test/test_render_view_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
@@ -48,6 +48,7 @@
 using base::TimeDelta;
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
 using blink::WebMouseWheelEvent;
 using blink::WebTouchEvent;
 using blink::WebTouchPoint;
@@ -165,6 +166,7 @@ class MockInputRouter : public InputRouter {
     return NULL;
   }
   virtual bool ShouldForwardTouchEvent() const OVERRIDE { return true; }
+  virtual void OnViewUpdated(int view_flags) OVERRIDE {}
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
@@ -197,8 +199,7 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
       int routing_id)
       : RenderWidgetHostImpl(delegate, process, routing_id, false),
         unresponsive_timer_fired_(false) {
-    immediate_input_router_ =
-        static_cast<ImmediateInputRouter*>(input_router_.get());
+    input_router_impl_ = static_cast<InputRouterImpl*>(input_router_.get());
   }
 
   // Allow poking at a few private members.
@@ -258,11 +259,12 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   void DisableGestureDebounce() {
-    gesture_event_filter()->debounce_enabled_ = false;
+    gesture_event_filter()->set_debounce_enabled_for_testing(false);
   }
 
   void set_debounce_interval_time_ms(int delay_ms) {
-    gesture_event_filter()->debounce_interval_time_ms_ = delay_ms;
+    gesture_event_filter()->
+        set_debounce_interval_time_ms_for_testing(delay_ms);
   }
 
   bool TouchEventQueueEmpty() const {
@@ -316,24 +318,24 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   const TouchEventQueue* touch_event_queue() const {
-    return immediate_input_router_->touch_event_queue_.get();
+    return input_router_impl_->touch_event_queue_.get();
   }
 
   const GestureEventFilter* gesture_event_filter() const {
-    return immediate_input_router_->gesture_event_filter_.get();
+    return input_router_impl_->gesture_event_filter_.get();
   }
 
   GestureEventFilter* gesture_event_filter() {
-    return immediate_input_router_->gesture_event_filter_.get();
+    return input_router_impl_->gesture_event_filter_.get();
   }
 
  private:
   bool unresponsive_timer_fired_;
 
-  // |immediate_input_router_| and |mock_input_router_| are owned by
-  // RenderWidgetHostImpl |input_router_|. Below are provided for convenience so
+  // |input_router_impl_| and |mock_input_router_| are owned by
+  // RenderWidgetHostImpl.  The handles below are provided for convenience so
   // that we don't have to reinterpret_cast it all the time.
-  ImmediateInputRouter* immediate_input_router_;
+  InputRouterImpl* input_router_impl_;
   MockInputRouter* mock_input_router_;
 
   scoped_ptr<TestOverscrollDelegate> overscroll_delegate_;
@@ -651,7 +653,10 @@ class RenderWidgetHostTest : public testing::Test {
   }
 
   void SimulateKeyboardEvent(WebInputEvent::Type type) {
-    host_->ForwardKeyboardEvent(SyntheticWebKeyboardEventBuilder::Build(type));
+  WebKeyboardEvent event = SyntheticWebKeyboardEventBuilder::Build(type);
+  NativeWebKeyboardEvent native_event;
+  memcpy(&native_event, &event, sizeof(event));
+    host_->ForwardKeyboardEvent(native_event);
   }
 
   void SimulateMouseEvent(WebInputEvent::Type type) {

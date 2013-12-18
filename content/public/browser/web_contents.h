@@ -24,6 +24,10 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/scoped_java_ref.h"
+#endif
+
 namespace base {
 class TimeTicks;
 }
@@ -42,6 +46,7 @@ namespace content {
 class BrowserContext;
 class InterstitialPage;
 class PageState;
+class RenderFrameHost;
 class RenderProcessHost;
 class RenderViewHost;
 class RenderWidgetHostView;
@@ -159,6 +164,9 @@ class WebContents : public PageNavigator,
   // these may change over time.
   virtual RenderProcessHost* GetRenderProcessHost() const = 0;
 
+  // Returns the main frame for the currently active view.
+  virtual RenderFrameHost* GetMainFrame() = 0;
+
   // Gets the current RenderViewHost for this tab.
   virtual RenderViewHost* GetRenderViewHost() const = 0;
 
@@ -222,7 +230,7 @@ class WebContents : public PageNavigator,
   // Returns the current navigation properties, which if a navigation is
   // pending may be provisional (e.g., the navigation could result in a
   // download, in which case the URL would revert to what it was previously).
-  virtual const string16& GetTitle() const = 0;
+  virtual const base::string16& GetTitle() const = 0;
 
   // The max page ID for any page that the current SiteInstance has loaded in
   // this WebContents.  Page IDs are specific to a given SiteInstance and
@@ -250,7 +258,7 @@ class WebContents : public PageNavigator,
 
   // Return the current load state and the URL associated with it.
   virtual const net::LoadStateWithParam& GetLoadState() const = 0;
-  virtual const string16& GetLoadStateHost() const = 0;
+  virtual const base::string16& GetLoadStateHost() const = 0;
 
   // Return the upload progress.
   virtual uint64 GetUploadSize() const = 0;
@@ -457,6 +465,12 @@ class WebContents : public PageNavigator,
                             bool is_favicon,
                             uint32_t max_bitmap_size,
                             const ImageDownloadCallback& callback) = 0;
+
+#if defined(OS_ANDROID)
+  CONTENT_EXPORT static WebContents* FromJavaWebContents(
+      jobject jweb_contents_android);
+  virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() = 0;
+#endif  // OS_ANDROID
 
  private:
   // This interface should only be implemented inside content.

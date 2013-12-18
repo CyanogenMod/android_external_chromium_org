@@ -35,8 +35,6 @@ class CandidateWindowControllerImpl
   virtual ~CandidateWindowControllerImpl();
 
   // CandidateWindowController overrides:
-  virtual bool Init() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
   virtual void AddObserver(
       CandidateWindowController::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(
@@ -73,7 +71,7 @@ class CandidateWindowControllerImpl
 
  private:
   // CandidateWindowView::Observer implementation.
-  virtual void OnCandidateCommitted(int index, int button, int flags) OVERRIDE;
+  virtual void OnCandidateCommitted(int index) OVERRIDE;
   virtual void OnCandidateWindowOpened() OVERRIDE;
   virtual void OnCandidateWindowClosed() OVERRIDE;
 

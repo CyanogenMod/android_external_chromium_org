@@ -959,7 +959,7 @@ TEST(ImagePreReader, PreReadImage) {
   ASSERT_TRUE(PathService::Get(base::FILE_EXE, &current_exe));
 
   int64 file_size_64 = 0;
-  ASSERT_TRUE(file_util::GetFileSize(current_exe, &file_size_64));
+  ASSERT_TRUE(base::GetFileSize(current_exe, &file_size_64));
   ASSERT_TRUE(file_size_64 < std::numeric_limits<std::size_t>::max());
   size_t file_size = static_cast<size_t>(file_size_64);
 
@@ -1340,7 +1340,7 @@ class EtwPerfSession {
     // To ensure there is no session leftover from crashes, previous runs, etc.
     base::win::EtwTraceProperties ignore;
     base::win::EtwTraceController::Stop(L"cf_perf", &ignore);
-    ASSERT_TRUE(file_util::CreateTemporaryFile(&etl_log_file_));
+    ASSERT_TRUE(base::CreateTemporaryFile(&etl_log_file_));
     ASSERT_HRESULT_SUCCEEDED(controller_.StartFileSession(L"cf_perf",
         etl_log_file_.value().c_str(), false));
     ASSERT_HRESULT_SUCCEEDED(controller_.EnableProvider(

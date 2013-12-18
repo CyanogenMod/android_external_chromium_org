@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,19 @@ package org.chromium.chrome.browser;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.view.ContextMenu;
 import android.view.View;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
+import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItemDelegate;
+import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
+import org.chromium.chrome.browser.contextmenu.ContextMenuParams;
+import org.chromium.chrome.browser.contextmenu.ContextMenuPopulator;
+import org.chromium.chrome.browser.contextmenu.ContextMenuPopulatorWrapper;
+import org.chromium.chrome.browser.contextmenu.EmptyChromeContextMenuItemDelegate;
 import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.chrome.browser.infobar.InfoBarContainer;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -22,6 +30,7 @@ import org.chromium.content.browser.NavigationClient;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageInfo;
 import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.ui.base.Clipboard;
 import org.chromium.ui.base.WindowAndroid;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -93,6 +102,37 @@ public abstract class TabBase implements NavigationClient {
     private TabBaseChromeWebContentsDelegateAndroid mWebContentsDelegate;
 
     /**
+     * A default {@link ChromeContextMenuItemDelegate} that supports some of the context menu
+     * functionality.
+     */
+    protected class TabBaseChromeContextMenuItemDelegate
+            extends EmptyChromeContextMenuItemDelegate {
+        private final Clipboard mClipboard;
+
+        /**
+         * Builds a {@link TabBaseChromeContextMenuItemDelegate} instance.
+         */
+        public TabBaseChromeContextMenuItemDelegate() {
+            mClipboard = new Clipboard(getApplicationContext());
+        }
+
+        @Override
+        public boolean isIncognito() {
+            return mIncognito;
+        }
+
+        @Override
+        public void onSaveToClipboard(String text, boolean isUrl) {
+            mClipboard.setText(text, text);
+        }
+
+        @Override
+        public void onSaveImageToClipboard(String url) {
+            mClipboard.setHTMLText("<img src=\"" + url + "\">", url, url);
+        }
+    }
+
+    /**
      * A basic {@link ChromeWebContentsDelegateAndroid} that forwards some calls to the registered
      * {@link TabObserver}s.  Meant to be overridden by subclasses.
      */
@@ -130,9 +170,21 @@ public abstract class TabBase implements NavigationClient {
 
         @Override
         public void toggleFullscreenModeForTab(boolean enableFullscreen) {
-            for (TabObserver observer: mObservers) {
+            for (TabObserver observer : mObservers) {
                 observer.onToggleFullscreenMode(TabBase.this, enableFullscreen);
             }
+        }
+    }
+
+    private class TabBaseContextMenuPopulator extends ContextMenuPopulatorWrapper {
+        public TabBaseContextMenuPopulator(ContextMenuPopulator populator) {
+            super(populator);
+        }
+
+        @Override
+        public void buildContextMenu(ContextMenu menu, Context context, ContextMenuParams params) {
+            super.buildContextMenu(menu, context, params);
+            for (TabObserver observer : mObservers) observer.onContextMenuShown(TabBase.this, menu);
         }
     }
 
@@ -470,7 +522,8 @@ public abstract class TabBase implements NavigationClient {
     /**
      * @return An {@link ObserverList.RewindableIterator} instance that points to all of
      *         the current {@link TabObserver}s on this class.  Note that calling
-     *         {@link Iterator#remove()} will throw an {@link UnsupportedOperationException}.
+     *         {@link java.util.Iterator#remove()} will throw an
+     *         {@link UnsupportedOperationException}.
      */
     protected ObserverList.RewindableIterator<TabObserver> getTabObservers() {
         return mObservers.rewindableIterator();
@@ -566,7 +619,8 @@ public abstract class TabBase implements NavigationClient {
 
         assert mNativeTabAndroid != 0;
         nativeInitWebContents(
-                mNativeTabAndroid, mIncognito, mContentViewCore, mWebContentsDelegate);
+                mNativeTabAndroid, mIncognito, mContentViewCore, mWebContentsDelegate,
+                new TabBaseContextMenuPopulator(createContextMenuPopulator()));
 
         // In the case where restoring a Tab or showing a prerendered one we already have a
         // valid infobar container, no need to recreate one.
@@ -600,6 +654,13 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
+     * @return Whether or not this Tab has a live native component.
+     */
+    public boolean isInitialized() {
+        return mNativeTabAndroid != 0;
+    }
+
+    /**
      * @return The url associated with the tab.
      */
     @CalledByNative
@@ -613,6 +674,15 @@ public abstract class TabBase implements NavigationClient {
     @CalledByNative
     public String getTitle() {
         return getPageInfo() != null ? getPageInfo().getTitle() : "";
+    }
+
+    /**
+     * @return The bitmap of the favicon scaled to 16x16dp. null if no favicon
+     *         is specified or it requires the default favicon.
+     *         TODO(bauerb): Upstream implementation.
+     */
+    public Bitmap getFavicon() {
+        return null;
     }
 
     /**
@@ -672,6 +742,14 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
+     * A helper method to allow subclasses to build their own menu populator.
+     * @return An instance of a {@link ContextMenuPopulator}.
+     */
+    protected ContextMenuPopulator createContextMenuPopulator() {
+        return new ChromeContextMenuPopulator(new TabBaseChromeContextMenuItemDelegate());
+    }
+
+    /**
      * @return The {@link WindowAndroid} associated with this {@link TabBase}.
      */
     protected WindowAndroid getWindowAndroid() {
@@ -713,6 +791,7 @@ public abstract class TabBase implements NavigationClient {
         mContentViewCore.attachImeAdapter();
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
         destroyNativePageInternal(previousNativePage);
+        for (TabObserver observer : mObservers) observer.onWebContentsSwapped(this);
     }
 
     @CalledByNative
@@ -775,7 +854,8 @@ public abstract class TabBase implements NavigationClient {
     }
 
     private native void nativeInitWebContents(long nativeTabAndroid, boolean incognito,
-            ContentViewCore contentViewCore, ChromeWebContentsDelegateAndroid delegate);
+            ContentViewCore contentViewCore, ChromeWebContentsDelegateAndroid delegate,
+            ContextMenuPopulator contextMenuPopulator);
     private native void nativeDestroyWebContents(long nativeTabAndroid, boolean deleteNative);
     private native Profile nativeGetProfileAndroid(long nativeTabAndroid);
     private native int nativeGetSecurityLevel(long nativeTabAndroid);

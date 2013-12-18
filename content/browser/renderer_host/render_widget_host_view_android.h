@@ -15,7 +15,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
-#include "cc/layers/delegated_renderer_layer_client.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/output/begin_frame_args.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
@@ -112,8 +111,8 @@ class RenderWidgetHostViewAndroid
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
-  virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
-  virtual void SelectionChanged(const string16& text,
+  virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
+  virtual void SelectionChanged(const base::string16& text,
                                 size_t offset,
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
@@ -257,9 +256,7 @@ class RenderWidgetHostViewAndroid
   void AttachLayers();
   void RemoveLayers();
 
-  void CreateOverscrollEffectIfNecessary();
   void UpdateAnimationSize(const cc::CompositorFrameMetadata& frame_metadata);
-  void ScheduleAnimationIfNecessary();
 
   // Called after async screenshot task completes. Scales and crops the result
   // of the copy.
@@ -271,6 +268,12 @@ class RenderWidgetHostViewAndroid
       const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
+
+  // DevTools ScreenCast support for Android WebView.
+  void SynchronousCopyContents(
+      const gfx::Rect& src_subrect_in_pixel,
+      const gfx::Size& dst_size_in_pixel,
+      const base::Callback<void(bool, const SkBitmap&)>& callback);
 
   // The model object.
   RenderWidgetHostImpl* host_;
@@ -323,8 +326,9 @@ class RenderWidgetHostViewAndroid
 
   std::queue<base::Closure> ack_callbacks_;
 
+  const bool overscroll_effect_enabled_;
   // Used to render overscroll overlays.
-  bool overscroll_effect_enabled_;
+  // Note: |overscroll_effect_| will never be NULL, even if it's never enabled.
   scoped_ptr<OverscrollGlow> overscroll_effect_;
 
   bool flush_input_requested_;

@@ -57,11 +57,13 @@ RenderFrameHostManager::PendingNavigationParams::PendingNavigationParams(
 RenderFrameHostManager::PendingNavigationParams::~PendingNavigationParams() {}
 
 RenderFrameHostManager::RenderFrameHostManager(
+    RenderFrameHostDelegate* render_frame_delegate,
     RenderViewHostDelegate* render_view_delegate,
     RenderWidgetHostDelegate* render_widget_delegate,
     Delegate* delegate)
     : delegate_(delegate),
       cross_navigation_pending_(false),
+      render_frame_delegate_(render_frame_delegate),
       render_view_delegate_(render_view_delegate),
       render_widget_delegate_(render_widget_delegate),
       render_view_host_(NULL),
@@ -98,8 +100,8 @@ void RenderFrameHostManager::Init(BrowserContext* browser_context,
     site_instance = SiteInstance::Create(browser_context);
   render_view_host_ = static_cast<RenderViewHostImpl*>(
       RenderViewHostFactory::Create(
-          site_instance, render_view_delegate_, render_widget_delegate_,
-          routing_id, main_frame_routing_id, false,
+          site_instance, render_view_delegate_, render_frame_delegate_,
+          render_widget_delegate_, routing_id, main_frame_routing_id, false,
           delegate_->IsHidden()));
   render_view_host_->AttachToFrameTree();
 
@@ -745,6 +747,7 @@ int RenderFrameHostManager::CreateRenderView(
     new_render_view_host = static_cast<RenderViewHostImpl*>(
         RenderViewHostFactory::Create(instance,
                                       render_view_delegate_,
+                                      render_frame_delegate_,
                                       render_widget_delegate_,
                                       MSG_ROUTING_NONE,
                                       MSG_ROUTING_NONE,
@@ -783,9 +786,13 @@ bool RenderFrameHostManager::InitRenderView(RenderViewHost* render_view_host,
     render_view_host->AllowBindings(pending_web_ui()->GetBindings());
   } else {
     // Ensure that we don't create an unprivileged RenderView in a WebUI-enabled
-    // process.
-    CHECK(!ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
-              render_view_host->GetProcess()->GetID()));
+    // process unless it's swapped out.
+    RenderViewHostImpl* rvh_impl =
+        static_cast<RenderViewHostImpl*>(render_view_host);
+    if (!rvh_impl->is_swapped_out()) {
+      CHECK(!ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+                render_view_host->GetProcess()->GetID()));
+    }
   }
 
   return delegate_->CreateRenderViewForRenderManager(render_view_host,
@@ -798,6 +805,13 @@ void RenderFrameHostManager::CommitPending() {
   // committed yet, so if we've already cleared |pending_web_ui_| the call chain
   // this triggers won't be able to figure out what's going on.
   bool will_focus_location_bar = delegate_->FocusLocationBarByDefault();
+
+  // We expect SwapOutOldPage to have canceled any modal dialogs and told the
+  // renderer to suppress any further dialogs until it is swapped out.  However,
+  // crash reports indicate that it's still possible for modal dialogs to exist
+  // at this point, which poses a risk if we delete their RenderViewHost below.
+  // Cancel them again to be safe.  http://crbug.com/324320.
+  delegate_->CancelModalDialogsForRenderManager();
 
   // Next commit the Web UI, if any. Either replace |web_ui_| with
   // |pending_web_ui_|, or clear |web_ui_| if there is no pending WebUI, or

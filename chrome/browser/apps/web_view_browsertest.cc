@@ -449,8 +449,8 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
   void ExecuteScriptWaitForTitle(content::WebContents* web_contents,
                                  const char* script,
                                  const char* title) {
-    string16 expected_title(ASCIIToUTF16(title));
-    string16 error_title(ASCIIToUTF16("error"));
+    base::string16 expected_title(ASCIIToUTF16(title));
+    base::string16 error_title(ASCIIToUTF16("error"));
 
     content::TitleWatcher title_watcher(web_contents, expected_title);
     title_watcher.AlsoWaitForTitle(error_title);
@@ -636,18 +636,20 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
 #if !defined(OS_CHROMEOS)
 // This test ensures <webview> doesn't crash in SW rendering when autosize is
 // turned on.
-IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSizeSW) {
+// Flaky on Windows http://crbug.com/299507
 #if defined(OS_WIN)
-  // Flaky on XP bot http://crbug.com/299507
-  if (base::win::GetVersion() <= base::win::VERSION_XP)
-    return;
+#define MAYBE_AutoSizeSW DISABLED_AutoSizeSW
+#else
+#define MAYBE_AutoSizeSW AutoSizeSW
 #endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_AutoSizeSW) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
       << message_;
 }
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeAfterNavigation) {
+// http://crbug.com/326332
+IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_Shim_TestAutosizeAfterNavigation) {
   TestHelper("testAutosizeAfterNavigation", "web_view/shim", NO_TEST_SERVER);
 }
 
@@ -734,13 +736,16 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestCannotMutateEventName) {
   TestHelper("testCannotMutateEventName", "web_view/shim", NO_TEST_SERVER);
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestPartitionRaisesException) {
+// http://crbug.com/267304
 #if defined(OS_WIN)
-  // Flaky on XP bot http://crbug.com/267304
-  if (base::win::GetVersion() <= base::win::VERSION_XP)
-    return;
+#define MAYBE_Shim_TestPartitionRaisesException \
+  DISABLED_Shim_TestPartitionRaisesException
+#else
+#define MAYBE_Shim_TestPartitionRaisesException \
+  Shim_TestPartitionRaisesException
 #endif
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_Shim_TestPartitionRaisesException) {
   TestHelper("testPartitionRaisesException",
              "web_view/shim",
              NO_TEST_SERVER);
@@ -819,7 +824,9 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestContentLoadEvent) {
   TestHelper("testContentLoadEvent", "web_view/shim", NO_TEST_SERVER);
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestDeclarativeWebRequestAPI) {
+// http://crbug.com/326330
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       DISABLED_Shim_TestDeclarativeWebRequestAPI) {
   TestHelper("testDeclarativeWebRequestAPI",
              "web_view/shim",
              NEEDS_TEST_SERVER);
@@ -1539,8 +1546,8 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognition) {
   // way that this will trigger clicking on speech recognition input mic.
   SimulateMouseClick(guest_web_contents, 0, blink::WebMouseEvent::ButtonLeft);
 
-  string16 expected_title(ASCIIToUTF16("PASSED"));
-  string16 error_title(ASCIIToUTF16("FAILED"));
+  base::string16 expected_title(ASCIIToUTF16("PASSED"));
+  base::string16 error_title(ASCIIToUTF16("FAILED"));
   content::TitleWatcher title_watcher(guest_web_contents, expected_title);
   title_watcher.AlsoWaitForTitle(error_title);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
@@ -1703,7 +1710,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, WhitelistedContentScript) {
   // Load the extension.
   const extensions::Extension* content_script_whitelisted_extension =
       LoadExtension(test_data_dir_.AppendASCII(
-                        "platform_apps/web_view/legacy/content_script"));
+                        "platform_apps/web_view/extension_api/content_script"));
   ASSERT_TRUE(content_script_whitelisted_extension);
   ASSERT_EQ(extension_id, content_script_whitelisted_extension->id());
 
@@ -1746,9 +1753,14 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognitionAPI_NoPermission) {
 
 // Tests overriding user agent.
 IN_PROC_BROWSER_TEST_F(WebViewTest, UserAgent) {
-  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTestWithArg(
               "platform_apps/web_view/common", "useragent")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, UserAgent_NewWindow) {
+  ASSERT_TRUE(RunPlatformAppTestWithArg(
+              "platform_apps/web_view/common",
+              "useragent_newwindow")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, NoPermission) {
@@ -1796,6 +1808,16 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_Dialog_TestPromptDialog) {
   TestHelper("testPromptDialog", "web_view/dialog", NO_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, NoContentSettingsAPI) {
+  // Load the extension.
+  const extensions::Extension* content_settings_extension =
+      LoadExtension(
+          test_data_dir_.AppendASCII(
+              "platform_apps/web_view/extension_api/content_settings"));
+  ASSERT_TRUE(content_settings_extension);
+  TestHelper("testPostMessageCommChannel", "web_view/shim", NO_TEST_SERVER);
+}
+
 #if defined(ENABLE_PLUGINS)
 class WebViewPluginTest : public WebViewTest {
  protected:
@@ -1821,3 +1843,34 @@ IN_PROC_BROWSER_TEST_F(WebViewPluginTest, TestLoadPluginEvent) {
   TestHelper("testPluginLoadPermission", "web_view/shim", NO_TEST_SERVER);
 }
 #endif  // defined(ENABLE_PLUGINS)
+
+// Taking a screenshot does not work with threaded compositing, so disable
+// threaded compositing for this test (http://crbug.com/326756).
+class WebViewCaptureTest : public WebViewTest,
+  public testing::WithParamInterface<std::string> {
+ public:
+  WebViewCaptureTest() {}
+  virtual ~WebViewCaptureTest() {}
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(GetParam());
+    // http://crbug.com/327035
+    command_line->AppendSwitch(switches::kDisableDelegatedRenderer);
+    WebViewTest::SetUpCommandLine(command_line);
+  }
+};
+
+IN_PROC_BROWSER_TEST_P(WebViewCaptureTest,
+                       Shim_ScreenshotCapture) {
+  TestHelper("testScreenshotCapture", "web_view/shim", NO_TEST_SERVER);
+}
+
+INSTANTIATE_TEST_CASE_P(WithoutThreadedCompositor,
+    WebViewCaptureTest,
+    ::testing::Values(std::string(switches::kDisableThreadedCompositing)));
+
+// http://crbug.com/171744
+#if !defined(OS_MACOSX)
+INSTANTIATE_TEST_CASE_P(WithThreadedCompositor,
+    WebViewCaptureTest,
+    ::testing::Values(std::string(switches::kEnableThreadedCompositing)));
+#endif

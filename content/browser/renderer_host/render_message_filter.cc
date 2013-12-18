@@ -33,6 +33,8 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/cookie_data.h"
 #include "content/common/desktop_notification_messages.h"
+#include "content/common/frame_messages.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_child_process_host.h"
@@ -68,7 +70,9 @@
 #include "ui/gfx/color_profile.h"
 
 #if defined(OS_MACOSX)
+#include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
 #include "content/common/mac/font_descriptor.h"
+#include "ui/gl/io_surface_support_mac.h"
 #else
 #include "gpu/GLES2/gl2extchromium.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -204,6 +208,23 @@ class OpenChannelToPpapiBrokerCallback
   int routing_id_;
 };
 
+#if defined(OS_MACOSX)
+void AddBooleanValue(CFMutableDictionaryRef dictionary,
+                     const CFStringRef key,
+                     bool value) {
+  CFDictionaryAddValue(
+      dictionary, key, value ? kCFBooleanTrue : kCFBooleanFalse);
+}
+
+void AddIntegerValue(CFMutableDictionaryRef dictionary,
+                     const CFStringRef key,
+                     int32 value) {
+  base::ScopedCFTypeRef<CFNumberRef> number(
+      CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
+  CFDictionaryAddValue(dictionary, key, number.get());
+}
+#endif
+
 }  // namespace
 
 class RenderMessageFilter::OpenChannelToNpapiPluginCallback
@@ -276,8 +297,8 @@ class RenderMessageFilter::OpenChannelToNpapiPluginCallback
 
  private:
   void WriteReplyAndDeleteThis(const IPC::ChannelHandle& handle) {
-    ViewHostMsg_OpenChannelToPlugin::WriteReplyParams(reply_msg(),
-                                                      handle, info_);
+    FrameHostMsg_OpenChannelToPlugin::WriteReplyParams(reply_msg(),
+                                                       handle, info_);
     filter()->OnCompletedOpenChannelToNpapiPlugin(this);
     SendReplyAndDeleteThis();
   }
@@ -380,8 +401,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_DownloadUrl, OnDownloadUrl)
 #if defined(ENABLE_PLUGINS)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_GetPlugins, OnGetPlugins)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetPluginInfo, OnGetPluginInfo)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPlugin,
+    IPC_MESSAGE_HANDLER(FrameHostMsg_GetPluginInfo, OnGetPluginInfo)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_OpenChannelToPlugin,
                                     OnOpenChannelToPlugin)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPepperPlugin,
                                     OnOpenChannelToPepperPlugin)
@@ -714,7 +735,7 @@ void RenderMessageFilter::GetPluginsCallback(
 }
 
 void RenderMessageFilter::OnGetPluginInfo(
-    int routing_id,
+    int render_frame_id,
     const GURL& url,
     const GURL& page_url,
     const std::string& mime_type,
@@ -723,12 +744,12 @@ void RenderMessageFilter::OnGetPluginInfo(
     std::string* actual_mime_type) {
   bool allow_wildcard = true;
   *found = plugin_service_->GetPluginInfo(
-      render_process_id_, routing_id, resource_context_,
+      render_process_id_, render_frame_id, resource_context_,
       url, page_url, mime_type, allow_wildcard,
       NULL, info, actual_mime_type);
 }
 
-void RenderMessageFilter::OnOpenChannelToPlugin(int routing_id,
+void RenderMessageFilter::OnOpenChannelToPlugin(int render_frame_id,
                                                 const GURL& url,
                                                 const GURL& policy_url,
                                                 const std::string& mime_type,
@@ -738,7 +759,7 @@ void RenderMessageFilter::OnOpenChannelToPlugin(int routing_id,
   DCHECK(!ContainsKey(plugin_host_clients_, client));
   plugin_host_clients_.insert(client);
   plugin_service_->OpenChannelToNpapiPlugin(
-      render_process_id_, routing_id,
+      render_process_id_, render_frame_id,
       url, policy_url, mime_type, client);
 }
 
@@ -843,7 +864,7 @@ void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
                                         const GURL& url,
                                         const Referrer& referrer,
-                                        const string16& suggested_name) {
+                                        const base::string16& suggested_name) {
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
   scoped_ptr<net::URLRequest> request(
@@ -1112,7 +1133,7 @@ void RenderMessageFilter::OnDidLose3DContext(
 
 #if defined(OS_WIN)
 void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
-                                                   const string16& str) {
+                                                   const base::string16& str) {
   // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
   // Except that for True Type fonts,
   // GetTextMetrics will not load the font in memory.
@@ -1156,21 +1177,78 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
 #endif
 
 void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
-    uint32 buffer_size,
+    uint32 width,
+    uint32 height,
+    uint32 internalformat,
     gfx::GpuMemoryBufferHandle* handle) {
-  // TODO(reveman): Implement allocation of real GpuMemoryBuffer.
-  // Currently this function creates a fake GpuMemoryBuffer that is
-  // backed by shared memory and requires an upload before it can
-  // be used as a texture. The plan is to instead have this function
-  // allocate a real GpuMemoryBuffer in whatever form is supported
-  // by platform and drivers.
-  //
-  // Note: |buffer_size| likely needs to be replaced by a more
-  // specific buffer description but is enough for the shared memory
-  // backed GpuMemoryBuffer currently returned.
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat)) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+
+#if defined(OS_MACOSX)
+  if (GpuMemoryBufferImplIOSurface::IsFormatSupported(internalformat)) {
+    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
+    if (io_surface_support) {
+      base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
+      properties.reset(
+          CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                    0,
+                                    &kCFTypeDictionaryKeyCallBacks,
+                                    &kCFTypeDictionaryValueCallBacks));
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfaceWidth(),
+                      width);
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfaceHeight(),
+                      height);
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfaceBytesPerElement(),
+                      GpuMemoryBufferImpl::BytesPerPixel(internalformat));
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfacePixelFormat(),
+                      GpuMemoryBufferImplIOSurface::PixelFormat(
+                          internalformat));
+      // TODO(reveman): Remove this when using a mach_port_t to transfer
+      // IOSurface to renderer process. crbug.com/323304
+      AddBooleanValue(properties,
+                      io_surface_support->GetKIOSurfaceIsGlobal(),
+                      true);
+
+      base::ScopedCFTypeRef<CFTypeRef> io_surface(
+          io_surface_support->IOSurfaceCreate(properties));
+      if (io_surface) {
+        handle->type = gfx::IO_SURFACE_BUFFER;
+        handle->io_surface_id = io_surface_support->IOSurfaceGetID(io_surface);
+
+        // TODO(reveman): This makes the assumption that the renderer will
+        // grab a reference to the surface before sending another message.
+        // crbug.com/325045
+        last_io_surface_ = io_surface;
+        return;
+      }
+    }
+  }
+#endif
+
+  uint64 stride = static_cast<uint64>(width) *
+      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
+  if (stride > std::numeric_limits<uint32>::max()) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+
+  uint64 buffer_size = stride * static_cast<uint64>(height);
+  if (buffer_size > std::numeric_limits<size_t>::max()) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+
+  // Fallback to fake GpuMemoryBuffer that is backed by shared memory and
+  // requires an upload before it can be used as a texture.
   handle->type = gfx::SHARED_MEMORY_BUFFER;
   ChildProcessHostImpl::AllocateSharedMemory(
-      buffer_size, PeerHandle(), &handle->handle);
+      static_cast<size_t>(buffer_size), PeerHandle(), &handle->handle);
 }
 
 }  // namespace content

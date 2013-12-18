@@ -103,10 +103,12 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_proc_android.cc \
 	net/cert/cert_verify_result.cc \
 	net/cert/crl_set.cc \
+	net/cert/ct_known_logs.cc \
 	net/cert/ct_log_verifier.cc \
 	net/cert/ct_log_verifier_openssl.cc \
 	net/cert/ct_objects_extractor_openssl.cc \
 	net/cert/ct_serialization.cc \
+	net/cert/ct_signed_certificate_timestamp_log_param.cc \
 	net/cert/ct_verify_result.cc \
 	net/cert/ev_root_ca_metadata.cc \
 	net/cert/jwk_serializer_openssl.cc \
@@ -294,7 +296,6 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/leaky_bucket.cc \
 	net/quic/congestion_control/paced_sender.cc \
 	net/quic/congestion_control/pacing_sender.cc \
-	net/quic/congestion_control/quic_congestion_manager.cc \
 	net/quic/congestion_control/receive_algorithm_interface.cc \
 	net/quic/congestion_control/send_algorithm_interface.cc \
 	net/quic/congestion_control/tcp_cubic_sender.cc \
@@ -382,6 +383,7 @@ LOCAL_SRC_FILES := \
 	net/socket/ssl_client_socket_pool.cc \
 	net/socket/ssl_error_params.cc \
 	net/socket/ssl_server_socket_openssl.cc \
+	net/socket/ssl_session_cache_openssl.cc \
 	net/socket/stream_listen_socket.cc \
 	net/socket/stream_socket.cc \
 	net/socket/tcp_client_socket.cc \
@@ -417,6 +419,7 @@ LOCAL_SRC_FILES := \
 	net/ssl/openssl_client_key_store.cc \
 	net/ssl/server_bound_cert_service.cc \
 	net/ssl/server_bound_cert_store.cc \
+	net/ssl/signed_certificate_timestamp_and_status.cc \
 	net/ssl/ssl_cert_request_info.cc \
 	net/ssl/ssl_cipher_suite_names.cc \
 	net/ssl/ssl_client_auth_cache.cc \
@@ -462,6 +465,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_request_throttler_header_adapter.cc \
 	net/url_request/url_request_throttler_manager.cc \
 	net/url_request/view_cache_helper.cc \
+	net/url_request/websocket_handshake_userdata_key.cc \
 	net/websockets/websocket_basic_handshake_stream.cc \
 	net/websockets/websocket_basic_stream.cc \
 	net/websockets/websocket_channel.cc \
@@ -475,6 +479,7 @@ LOCAL_SRC_FILES := \
 	net/websockets/websocket_frame_parser.cc \
 	net/websockets/websocket_handshake_constants.cc \
 	net/websockets/websocket_handshake_handler.cc \
+	net/websockets/websocket_handshake_stream_create_helper.cc \
 	net/websockets/websocket_inflater.cc \
 	net/websockets/websocket_job.cc \
 	net/websockets/websocket_net_log_params.cc \
@@ -516,6 +521,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -525,9 +531,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -609,6 +617,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -618,9 +627,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \

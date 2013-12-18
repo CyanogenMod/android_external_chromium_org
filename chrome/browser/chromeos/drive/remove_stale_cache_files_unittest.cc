@@ -15,8 +15,8 @@
 #include "chrome/browser/chromeos/drive/remove_stale_cache_files.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -58,8 +58,7 @@ class RemoveStaleCacheFilesTest : public testing::Test {
 
 TEST_F(RemoveStaleCacheFilesTest, RemoveStaleCacheFiles) {
   base::FilePath dummy_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                  &dummy_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_file));
   std::string local_id("pdf:1a2b3c");
   std::string md5("abcdef0123456789");
 
@@ -85,8 +84,7 @@ TEST_F(RemoveStaleCacheFilesTest, RemoveStaleCacheFiles) {
 
 TEST_F(RemoveStaleCacheFilesTest, DirtyCacheFiles) {
   base::FilePath dummy_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                  &dummy_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_file));
 
   // Dirty and deleted (= absent in resource_metada) cache entry.
   std::string local_id_1("file:1");

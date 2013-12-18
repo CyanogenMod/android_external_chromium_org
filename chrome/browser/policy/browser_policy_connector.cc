@@ -25,21 +25,22 @@
 #include "base/sys_info.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/policy/async_policy_provider.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/cloud_policy_refresh_scheduler.h"
-#include "chrome/browser/policy/cloud/cloud_policy_service.h"
-#include "chrome/browser/policy/cloud/device_management_service.h"
-#include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_service_impl.h"
-#include "chrome/browser/policy/policy_statistics_collector.h"
+#include "chrome/browser/policy/configuration_policy_handler_list_factory.h"
 #include "chrome/browser/policy/policy_transformations.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/policy/core/common/async_policy_provider.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
+#include "components/policy/core/common/cloud/cloud_policy_service.h"
+#include "components/policy/core/common/cloud/device_management_service.h"
+#include "components/policy/core/common/configuration_policy_provider.h"
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_pref_names.h"
+#include "components/policy/core/common/policy_service_impl.h"
+#include "components/policy/core/common/policy_statistics_collector.h"
 #include "components/policy/core/common/schema.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_client.h"
@@ -52,13 +53,13 @@
 #include "url/gurl.h"
 
 #if defined(OS_WIN)
-#include "chrome/browser/policy/policy_loader_win.h"
+#include "components/policy/core/common/policy_loader_win.h"
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include <CoreFoundation/CoreFoundation.h>
-#include "chrome/browser/policy/policy_loader_mac.h"
-#include "chrome/browser/policy/preferences_mac.h"
+#include "components/policy/core/common/policy_loader_mac.h"
+#include "components/policy/core/common/preferences_mac.h"
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
-#include "chrome/browser/policy/config_dir_policy_loader.h"
+#include "components/policy/core/common/config_dir_policy_loader.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -154,10 +155,6 @@ class DeviceManagementServiceConfiguration
       return command_line->GetSwitchValueASCII(switches::kDeviceManagementUrl);
     else
       return kDefaultDeviceManagementServerUrl;
-  }
-
-  virtual std::string GetUserAgent() OVERRIDE {
-    return content::GetUserAgent(GURL(GetServerUrl()));
   }
 
   virtual std::string GetAgentParameter() OVERRIDE {
@@ -284,7 +281,7 @@ void BrowserPolicyConnector::Init(
   scoped_ptr<DeviceManagementService::Configuration> configuration(
       new DeviceManagementServiceConfiguration);
   device_management_service_.reset(
-      new DeviceManagementService(configuration.Pass(), request_context));
+      new DeviceManagementService(configuration.Pass()));
   device_management_service_->ScheduleInitialization(
       kServiceInitializationStartupDelay);
 
@@ -502,7 +499,7 @@ void BrowserPolicyConnector::SetPolicyProviderForTesting(
 namespace {
 
 // Returns true if |domain| matches the regex |pattern|.
-bool MatchDomain(const string16& domain, const string16& pattern) {
+bool MatchDomain(const base::string16& domain, const base::string16& pattern) {
   UErrorCode status = U_ZERO_ERROR;
   const icu::UnicodeString icu_pattern(pattern.data(), pattern.length());
   icu::RegexMatcher matcher(icu_pattern, UREGEX_CASE_INSENSITIVE, status);
@@ -541,10 +538,10 @@ bool BrowserPolicyConnector::IsNonEnterpriseUser(const std::string& username) {
     L"yahoo(\\.co|\\.com|)\\.[^.]+", // yahoo.com, yahoo.co.uk, yahoo.com.tw
     L"yandex\\.ru",
   };
-  const string16 domain =
+  const base::string16 domain =
       UTF8ToUTF16(gaia::ExtractDomainName(gaia::CanonicalizeEmail(username)));
   for (size_t i = 0; i < arraysize(kNonManagedDomainPatterns); i++) {
-    string16 pattern = WideToUTF16(kNonManagedDomainPatterns[i]);
+    base::string16 pattern = WideToUTF16(kNonManagedDomainPatterns[i]);
     if (MatchDomain(domain, pattern))
       return true;
   }

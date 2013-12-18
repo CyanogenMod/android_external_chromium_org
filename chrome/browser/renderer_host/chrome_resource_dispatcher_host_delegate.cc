@@ -11,6 +11,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_resource_throttle.h"
@@ -56,6 +57,10 @@
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
+#include "components/policy/core/browser/policy_header_io_helper.h"
+#endif
+
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_mode_resource_throttle.h"
 #endif
@@ -71,7 +76,6 @@
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #else
 #include "chrome/browser/apps/app_url_redirector.h"
-#include "chrome/browser/apps/ephemeral_app_throttle.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -160,12 +164,13 @@ void AppendComponentUpdaterThrottles(
   ComponentUpdateService* cus = g_browser_process->component_updater();
   if (!cus)
     return;
-  // Check for PNaCL nexe request.
+  // Check for PNaCl pexe request.
   if (resource_type == ResourceType::OBJECT) {
     const net::HttpRequestHeaders& headers = request->extra_request_headers();
     std::string accept_headers;
     if (headers.GetHeader("Accept", &accept_headers)) {
-      if (accept_headers.find("application/x-pnacl") != std::string::npos)
+      if (accept_headers.find("application/x-pnacl") != std::string::npos &&
+          pnacl::NeedsOnDemandUpdate())
         crx_id = "hnimpnehoodheedghdeeijklkeaacbdc";
     }
   }
@@ -251,13 +256,6 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
         AppUrlRedirector::MaybeCreateThrottleFor(request, io_data);
     if (url_to_app_throttle)
       throttles->push_back(url_to_app_throttle);
-
-    // Experimental: Launch ephemeral apps from search results.
-    content::ResourceThrottle* ephemeral_app_throttle =
-        EphemeralAppThrottle::MaybeCreateThrottleForLaunch(
-            request, io_data);
-    if (ephemeral_app_throttle)
-      throttles->push_back(ephemeral_app_throttle);
 #endif
   }
 
@@ -294,6 +292,11 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   AppendChromeSyncGaiaHeader(request, resource_context);
+#endif
+
+#if defined(ENABLE_CONFIGURATION_POLICY)
+  if (io_data->policy_header_helper())
+    io_data->policy_header_helper()->AddPolicyHeaders(request);
 #endif
 
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);

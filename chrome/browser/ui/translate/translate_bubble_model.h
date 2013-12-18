@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/strings/string16.h"
+#include "chrome/common/translate/translate_errors.h"
 
 // The model for the Translate bubble UX. This manages the user's manipulation
 // of the bubble and offers the data to show on the bubble.
@@ -39,6 +40,12 @@ class TranslateBubbleModel {
   // Transitions the view state.
   virtual void SetViewState(ViewState view_state) = 0;
 
+  // Returns the error type.
+  virtual TranslateErrors::Type GetErrorType() const = 0;
+
+  // Sets the error type.
+  virtual void SetErrorType(TranslateErrors::Type error_type) = 0;
+
   // Goes back from the 'Advanced' view state.
   virtual void GoBackFromAdvanced() = 0;
 
@@ -46,7 +53,7 @@ class TranslateBubbleModel {
   virtual int GetNumberOfLanguages() const = 0;
 
   // Returns the displayable name for the language at |index|.
-  virtual string16 GetLanguageNameAt(int index) const = 0;
+  virtual base::string16 GetLanguageNameAt(int index) const = 0;
 
   // Returns the original language index.
   virtual int GetOriginalLanguageIndex() const = 0;
@@ -84,6 +91,10 @@ class TranslateBubbleModel {
 
   // Processes when the user declines translation.
   virtual void TranslationDeclined() = 0;
+
+  // Returns true if the page is translated in the currently selected source
+  // and target language.
+  virtual bool IsPageTranslatedInCurrentLanguages() const = 0;
 };
 
 #endif  // CHROME_BROWSER_UI_TRANSLATE_TRANSLATE_BUBBLE_MODEL_H_

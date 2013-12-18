@@ -333,10 +333,10 @@ TrayBackgroundView::TrayBackgroundView(
   set_notify_enter_exit_on_child(true);
 
   // Initially we want to paint the background, but without the hover effect.
-  hide_background_animator_.SetPaintsBackground(true,
-      internal::BackgroundAnimator::CHANGE_IMMEDIATE);
-  hover_background_animator_.SetPaintsBackground(false,
-      internal::BackgroundAnimator::CHANGE_IMMEDIATE);
+  hide_background_animator_.SetPaintsBackground(
+      true, BACKGROUND_CHANGE_IMMEDIATE);
+  hover_background_animator_.SetPaintsBackground(
+      false, BACKGROUND_CHANGE_IMMEDIATE);
 
   tray_container_ = new TrayContainer(shelf_alignment_);
   SetContents(tray_container_);
@@ -362,8 +362,8 @@ void TrayBackgroundView::OnMouseEntered(const ui::MouseEvent& event) {
   if (!background_ || draw_background_as_active_ ||
       ash::switches::UseAlternateShelfLayout())
     return;
-  hover_background_animator_.SetPaintsBackground(true,
-      internal::BackgroundAnimator::CHANGE_ANIMATE);
+  hover_background_animator_.SetPaintsBackground(
+      true, BACKGROUND_CHANGE_ANIMATE);
 }
 
 void TrayBackgroundView::OnMouseExited(const ui::MouseEvent& event) {
@@ -371,20 +371,12 @@ void TrayBackgroundView::OnMouseExited(const ui::MouseEvent& event) {
   if (!background_ || draw_background_as_active_ ||
       ash::switches::UseAlternateShelfLayout())
     return;
-  hover_background_animator_.SetPaintsBackground(false,
-      internal::BackgroundAnimator::CHANGE_ANIMATE);
+  hover_background_animator_.SetPaintsBackground(
+      false, BACKGROUND_CHANGE_ANIMATE);
 }
 
 void TrayBackgroundView::ChildPreferredSizeChanged(views::View* child) {
   PreferredSizeChanged();
-}
-
-void TrayBackgroundView::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  // The tray itself expands to the right and bottom edge of the screen to make
-  // sure clicking on the edges brings up the popup. However, the focus border
-  // should be only around the container.
-  if (HasFocus())
-    DrawBorder(canvas, GetContentsBounds());
 }
 
 void TrayBackgroundView::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -403,6 +395,13 @@ bool TrayBackgroundView::PerformAction(const ui::Event& event) {
   return false;
 }
 
+gfx::Rect TrayBackgroundView::GetFocusBounds() {
+  // The tray itself expands to the right and bottom edge of the screen to make
+  // sure clicking on the edges brings up the popup. However, the focus border
+  // should be only around the container.
+  return GetContentsBounds();
+}
+
 void TrayBackgroundView::UpdateBackground(int alpha) {
   // The animator should never fire when the alternate shelf layout is used.
   if (!background_ || draw_background_as_active_)
@@ -419,8 +418,7 @@ void TrayBackgroundView::SetContents(views::View* contents) {
 }
 
 void TrayBackgroundView::SetPaintsBackground(
-    bool value,
-    internal::BackgroundAnimator::ChangeType change_type) {
+    bool value, BackgroundAnimatorChangeType change_type) {
   DCHECK(!ash::switches::UseAlternateShelfLayout());
   hide_background_animator_.SetPaintsBackground(value, change_type);
 }

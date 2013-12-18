@@ -10,13 +10,13 @@
 
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_action.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 #include "chrome/browser/sync_file_system/sync_task.h"
+#include "google_apis/drive/gdata_errorcode.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
 namespace drive {
@@ -41,22 +41,17 @@ class SyncEngineContext;
 
 class RemoteToLocalSyncer : public SyncTask {
  public:
-  enum Priority {
-    PRIORITY_NORMAL = 1 << 0,
-    PRIORITY_LOW = 1 << 1,
-  };
-
-  // |priorities| must be a bitwise-or'd value of Priority.
   // Conflicting trackers will have low priority for RemoteToLocalSyncer so that
   // it should be resolved by LocatToRemoteSyncer.
-  RemoteToLocalSyncer(SyncEngineContext* sync_context,
-                      int priorities);
+  explicit RemoteToLocalSyncer(SyncEngineContext* sync_context);
   virtual ~RemoteToLocalSyncer();
 
   virtual void Run(const SyncStatusCallback& callback) OVERRIDE;
 
   const fileapi::FileSystemURL& url() const { return url_; }
   SyncAction sync_action() const { return sync_action_; }
+
+  bool is_sync_root_deletion() const { return sync_root_deletion_; }
 
  private:
   typedef std::vector<std::string> FileIDList;
@@ -139,6 +134,8 @@ class RemoteToLocalSyncer : public SyncTask {
   void DidPrepareForFolderUpdate(const SyncStatusCallback& callback,
                                  SyncStatusCode status);
 
+  void HandleSyncRootDeletion(const SyncStatusCallback& callback);
+
   // Handles deleted remote file.  Needs Prepare() call.
   // If the deleted tracker is the sync-root:
   //  - TODO(tzik): Needs special handling.
@@ -166,6 +163,8 @@ class RemoteToLocalSyncer : public SyncTask {
       scoped_ptr<google_apis::ResourceList> resource_list);
 
   void SyncCompleted(const SyncStatusCallback& callback, SyncStatusCode status);
+  void FinalizeSync(const SyncStatusCallback& callback, SyncStatusCode status);
+
 
   void Prepare(const SyncStatusCallback& callback);
   void DidPrepare(const SyncStatusCallback& callback,
@@ -196,12 +195,14 @@ class RemoteToLocalSyncer : public SyncTask {
 
   SyncEngineContext* sync_context_;  // Not owned.
 
-  int priorities_;
   scoped_ptr<FileTracker> dirty_tracker_;
   scoped_ptr<FileMetadata> remote_metadata_;
 
   fileapi::FileSystemURL url_;
   SyncAction sync_action_;
+
+  bool prepared_;
+  bool sync_root_deletion_;
 
   scoped_ptr<SyncFileMetadata> local_metadata_;
   scoped_ptr<FileChangeList> local_changes_;

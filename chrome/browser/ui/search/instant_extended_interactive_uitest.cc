@@ -229,7 +229,7 @@ class InstantExtendedTest : public InProcessBrowserTest,
     GURL search(template_url->url_ref().ReplaceSearchTerms(
         TemplateURLRef::SearchTermsArgs(term)));
     history->AddPageWithDetails(
-        search, string16(), visit_count, visit_count,
+        search, base::string16(), visit_count, visit_count,
         base::Time::Now(), false, history::SOURCE_BROWSED);
     history->SetKeywordSearchTermsForURL(
         search, template_url->id(), term);
@@ -279,6 +279,12 @@ class InstantExtendedPrefetchTest : public InstantExtendedTest {
     GURL instant_url = https_test_server().GetURL(
         "files/instant_extended.html?strk=1&");
     InstantTestBase::Init(instant_url, true);
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitchASCII(
+        switches::kForceFieldTrials,
+        "EmbeddedSearch/Group11 prefetch_results_srp:1 use_cacheable_ntp:0/");
   }
 
   net::FakeURLFetcherFactory* fake_factory() { return fake_factory_.get(); }
@@ -907,6 +913,20 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedPrefetchTest, SetPrefetchQuery) {
   omnibox()->model()->autocomplete_controller()->search_provider()->
       kMinimumTimeBetweenSuggestQueriesMs = 0;
 
+  // Set the fake response for search query.
+  fake_factory()->SetFakeResponse(instant_url().Resolve("#q=flowers"),
+                                  "",
+                                  net::HTTP_OK,
+                                  net::URLRequestStatus::SUCCESS);
+
+  // Navigate to a search results page.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+  SetOmniboxText("flowers");
+  PressEnterAndWaitForNavigation();
+  observer.Wait();
+
   // Set the fake response for suggest request. Response has prefetch details.
   // Ensure that the page received the prefetch query.
   fake_factory()->SetFakeResponse(
@@ -952,6 +972,20 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedPrefetchTest, ClearPrefetchedResults) {
 
   omnibox()->model()->autocomplete_controller()->search_provider()->
       kMinimumTimeBetweenSuggestQueriesMs = 0;
+
+  // Set the fake response for search query.
+  fake_factory()->SetFakeResponse(instant_url().Resolve("#q=flowers"),
+                                  "",
+                                  net::HTTP_OK,
+                                  net::URLRequestStatus::SUCCESS);
+
+  // Navigate to a search results page.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+  SetOmniboxText("flowers");
+  PressEnterAndWaitForNavigation();
+  observer.Wait();
 
   // Set the fake response for suggest request. Response has no prefetch
   // details. Ensure that the page received a blank query to clear the

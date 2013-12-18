@@ -14,12 +14,14 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -36,27 +38,24 @@
 #include "chrome/browser/chromeos/login/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/user_image_manager.h"
+#include "chrome/browser/chromeos/login/user_image_manager_impl.h"
+#include "chrome/browser/chromeos/login/user_image_manager_test_util.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/webui_login_view.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/policy/cloud_external_data_manager_base.h"
 #include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_core.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
-#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
 #include "chrome/browser/policy/test/local_policy_test_server.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
@@ -74,13 +73,15 @@
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/dbus/cryptohome_client.h"
-#include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/session_manager_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
@@ -101,9 +102,10 @@
 #include "net/url_request/url_request_status.h"
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
+//#include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace em = enterprise_management;
 
@@ -249,8 +251,8 @@ bool DoesInstallSuccessReferToId(const std::string& id,
 bool DoesInstallFailureReferToId(const std::string& id,
                                  const content::NotificationSource& source,
                                  const content::NotificationDetails& details) {
-  return content::Details<const string16>(details)->find(UTF8ToUTF16(id)) !=
-      string16::npos;
+  return content::Details<const base::string16>(details)->find(UTF8ToUTF16(id)) !=
+      base::string16::npos;
 }
 
 scoped_ptr<net::FakeURLFetcher> RunCallbackAndReturnFakeURLFetcher(
@@ -268,7 +270,8 @@ scoped_ptr<net::FakeURLFetcher> RunCallbackAndReturnFakeURLFetcher(
 
 }  // namespace
 
-class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest {
+class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
+                               public chromeos::UserManager::Observer {
  protected:
   DeviceLocalAccountTest()
       : user_id_1_(GenerateDeviceLocalAccountUserId(
@@ -296,18 +299,14 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest {
     external_data_cache_dir_override_.reset(new base::ScopedPathOverride(
         chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTERNAL_DATA,
         external_data_cache_dir_.path()));
-
     DevicePolicyCrosBrowserTest::SetUp();
   }
 
-  void SetUpCommandLineExceptDeviceManagementURL(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    DevicePolicyCrosBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
-  }
-
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    SetUpCommandLineExceptDeviceManagementURL(command_line);
     command_line->AppendSwitchASCII(
         switches::kDeviceManagementUrl, test_server_.GetServiceURL().spec());
   }
@@ -336,6 +335,10 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest {
     base::RunLoop().RunUntilIdle();
   }
 
+  virtual void LocalStateChanged(chromeos::UserManager* user_manager) OVERRIDE {
+    run_loop_->Quit();
+  }
+
   void InitializePolicy() {
     device_policy()->policy_data().set_public_key_version(1);
     em::ChromeDeviceSettingsProto& proto(device_policy()->payload());
@@ -358,8 +361,6 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest {
 
   void UploadDeviceLocalAccountPolicy() {
     BuildDeviceLocalAccountPolicy();
-    ASSERT_TRUE(session_manager_client()->device_local_account_policy(
-        kAccountId1).empty());
     test_server_.UpdatePolicy(
         dm_protocol::kChromePublicAccountPolicyType, kAccountId1,
         device_local_account_policy_.payload().SerializeAsString());
@@ -402,16 +403,27 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest {
         .Append(base::StringPrintf("%s-%s.crx", id.c_str(), version.c_str()));
   }
 
+  // Returns a profile which can be used for testing.
+  Profile* GetProfileForTest() {
+    // Any profile can be used here since this test does not test multi profile.
+    return ProfileManager::GetActiveUserProfile();
+  }
+
   const std::string user_id_1_;
   const std::string user_id_2_;
 
+  scoped_ptr<base::RunLoop> run_loop_;
+
+  UserPolicyBuilder device_local_account_policy_;
+  LocalPolicyTestServer test_server_;
+
+ private:
   base::ScopedTempDir extension_cache_root_dir_;
   base::ScopedTempDir external_data_cache_dir_;
   scoped_ptr<base::ScopedPathOverride> extension_cache_root_dir_override_;
   scoped_ptr<base::ScopedPathOverride> external_data_cache_dir_override_;
 
-  UserPolicyBuilder device_local_account_policy_;
-  LocalPolicyTestServer test_server_;
+  DISALLOW_COPY_AND_ASSIGN(DeviceLocalAccountTest);
 };
 
 static bool IsKnownUser(const std::string& account_id) {
@@ -608,8 +620,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, FullscreenDisallowed) {
                                         base::Bind(IsSessionStarted)).Wait();
 
   // Open a browser window.
-  chrome::NewEmptyWindow(ProfileManager::GetDefaultProfile(),
-                         chrome::HOST_DESKTOP_TYPE_ASH);
+  chrome::NewEmptyWindow(GetProfileForTest(), chrome::HOST_DESKTOP_TYPE_ASH);
   BrowserList* browser_list =
     BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
   EXPECT_EQ(1U, browser_list->size());
@@ -702,7 +713,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsUncached) {
   extension_observer.Wait();
 
   // Verify that the hosted app was installed.
-  Profile* profile = ProfileManager::GetDefaultProfile();
+  Profile* profile = GetProfileForTest();
   ASSERT_TRUE(profile);
   ExtensionService* extension_service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -728,7 +739,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
 
   // Pre-populate the device local account's extension cache with a hosted app
   // and an extension.
-  EXPECT_TRUE(file_util::CreateDirectory(
+  EXPECT_TRUE(base::CreateDirectory(
       GetCacheDirectoryForAccountID(kAccountId1)));
   base::FilePath test_dir;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
@@ -800,7 +811,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
   extension_observer.Wait();
 
   // Verify that the hosted app was installed.
-  Profile* profile = ProfileManager::GetDefaultProfile();
+  Profile* profile = GetProfileForTest();
   ASSERT_TRUE(profile);
   ExtensionService* extension_service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -816,35 +827,17 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
   EXPECT_FALSE(PathExists(cached_extension));
 }
 
-class DeviceLocalAccountExternalDataTest : public DeviceLocalAccountTest {
- protected:
-  DeviceLocalAccountExternalDataTest();
-  virtual ~DeviceLocalAccountExternalDataTest();
+IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExternalData) {
+  // chromeos::UserImageManagerImpl requests an external data fetch whenever the
+  // key::kUserAvatarImage policy is set. Since this test wants to verify that
+  // the underlying policy subsystem will start a fetch without this request as
+  // well, the chromeos::UserImageManagerImpl must be prevented from seeing the
+  // policy change.
+  reinterpret_cast<chromeos::UserImageManagerImpl*>(
+      chromeos::UserManager::Get()->GetUserImageManager())->
+          StopPolicyObserverForTesting();
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
-};
-
-DeviceLocalAccountExternalDataTest::DeviceLocalAccountExternalDataTest() {
-}
-
-DeviceLocalAccountExternalDataTest::~DeviceLocalAccountExternalDataTest() {
-}
-
-void DeviceLocalAccountExternalDataTest::SetUpCommandLine(
-    CommandLine* command_line) {
-  // This test modifies policy in memory by injecting an ExternalDataFetcher. Do
-  // not point the browser at the test_server_ so that no policy can be received
-  // from it and the modification does not get undone while the test is running.
-  // TODO(bartfab): Remove this and the whole DeviceLocalAccountExternalDataTest
-  // class once the first policy referencing external data is added and it is no
-  // longer necessary to inject an ExternalDataFetcher.
-  SetUpCommandLineExceptDeviceManagementURL(command_line);
-}
-
-IN_PROC_BROWSER_TEST_F(DeviceLocalAccountExternalDataTest, ExternalData) {
-  CloudExternalDataManagerBase::SetMaxExternalDataSizeForTesting(1000);
-
-  UploadAndInstallDeviceLocalAccountPolicy();
+  UploadDeviceLocalAccountPolicy();
   AddPublicSessionToDevicePolicy(kAccountId1);
 
   // This observes the display name becoming available as this indicates
@@ -852,13 +845,6 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountExternalDataTest, ExternalData) {
   content::WindowedNotificationObserver(
       chrome::NOTIFICATION_USER_LIST_CHANGED,
       base::Bind(&DisplayNameMatches, user_id_1_, kDisplayName)).Wait();
-
-  scoped_ptr<base::DictionaryValue> metadata =
-      test::ConstructExternalDataReference(kExternalDataURL, kExternalData);
-  DeviceLocalAccountPolicyBroker* broker =
-      g_browser_process->browser_policy_connector()->
-          GetDeviceLocalAccountPolicyService()->GetBrokerForUser(user_id_1_);
-  ASSERT_TRUE(broker);
 
   // Start serving external data at |kExternalDataURL|.
   scoped_ptr<base::RunLoop> run_loop(new base::RunLoop);
@@ -873,13 +859,19 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountExternalDataTest, ExternalData) {
                                    net::HTTP_OK,
                                    net::URLRequestStatus::SUCCESS);
 
-  // TODO(bartfab): The test injects an ExternalDataFetcher for an arbitrary
-  // policy. This is only done because there are no policies that reference
-  // external data yet. Once the first such policy is added, switch the test to
-  // that policy and stop injecting a manually instantiated ExternalDataFetcher.
-  test::SetExternalDataReference(broker->core(),
-                                 key::kHomepageLocation,
-                                 make_scoped_ptr(metadata->DeepCopy()));
+  // Specify an external data reference for the key::kUserAvatarImage policy.
+  scoped_ptr<base::DictionaryValue> metadata =
+      test::ConstructExternalDataReference(kExternalDataURL, kExternalData);
+  std::string policy;
+  base::JSONWriter::Write(metadata.get(), &policy);
+  device_local_account_policy_.payload().mutable_useravatarimage()->set_value(
+      policy);
+  UploadAndInstallDeviceLocalAccountPolicy();
+  DeviceLocalAccountPolicyBroker* broker =
+      g_browser_process->browser_policy_connector()->
+          GetDeviceLocalAccountPolicyService()->GetBrokerForUser(user_id_1_);
+  ASSERT_TRUE(broker);
+  broker->core()->store()->Load();
 
   // The external data should be fetched and cached automatically. Wait for this
   // fetch.
@@ -889,7 +881,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountExternalDataTest, ExternalData) {
   fetcher_factory.reset();
 
   const PolicyMap::Entry* policy_entry =
-      broker->core()->store()->policy_map().Get(key::kHomepageLocation);
+      broker->core()->store()->policy_map().Get(key::kUserAvatarImage);
   ASSERT_TRUE(policy_entry);
   ASSERT_TRUE(policy_entry->external_data_fetcher);
 
@@ -937,12 +929,11 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountExternalDataTest, ExternalData) {
   // Verify that the external data reference has propagated to the device-local
   // account's ProfilePolicyConnector.
   ProfilePolicyConnector* policy_connector =
-      ProfilePolicyConnectorFactory::GetForProfile(
-          ProfileManager::GetDefaultProfile());
+      ProfilePolicyConnectorFactory::GetForProfile(GetProfileForTest());
   ASSERT_TRUE(policy_connector);
   const PolicyMap& policies = policy_connector->policy_service()->GetPolicies(
       PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
-  policy_entry = policies.Get(key::kHomepageLocation);
+  policy_entry = policies.Get(key::kUserAvatarImage);
   ASSERT_TRUE(policy_entry);
   EXPECT_TRUE(base::Value::Equals(metadata.get(), policy_entry->value));
   ASSERT_TRUE(policy_entry->external_data_fetcher);
@@ -959,6 +950,84 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountExternalDataTest, ExternalData) {
 
   ASSERT_TRUE(fetched_external_data);
   EXPECT_EQ(kExternalData, *fetched_external_data);
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, UserAvatarImage) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  UploadDeviceLocalAccountPolicy();
+  AddPublicSessionToDevicePolicy(kAccountId1);
+
+  // This observes the display name becoming available as this indicates
+  // device-local account policy is fully loaded.
+  content::WindowedNotificationObserver(
+      chrome::NOTIFICATION_USER_LIST_CHANGED,
+      base::Bind(&DisplayNameMatches, user_id_1_, kDisplayName)).Wait();
+
+  base::FilePath test_dir;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
+  std::string image_data;
+  ASSERT_TRUE(base::ReadFileToString(
+      test_dir.Append(chromeos::test::kUserAvatarImage1RelativePath),
+      &image_data));
+
+  std::string policy;
+  base::JSONWriter::Write(test::ConstructExternalDataReference(
+      embedded_test_server()->GetURL(std::string("/") +
+          chromeos::test::kUserAvatarImage1RelativePath).spec(),
+      image_data).get(),
+      &policy);
+  device_local_account_policy_.payload().mutable_useravatarimage()->set_value(
+      policy);
+  UploadAndInstallDeviceLocalAccountPolicy();
+  DeviceLocalAccountPolicyBroker* broker =
+      g_browser_process->browser_policy_connector()->
+          GetDeviceLocalAccountPolicyService()->GetBrokerForUser(user_id_1_);
+  ASSERT_TRUE(broker);
+
+  run_loop_.reset(new base::RunLoop);
+  chromeos::UserManager::Get()->AddObserver(this);
+  broker->core()->store()->Load();
+  run_loop_->Run();
+  chromeos::UserManager::Get()->RemoveObserver(this);
+
+  scoped_ptr<gfx::ImageSkia> policy_image = chromeos::test::ImageLoader(
+      test_dir.Append(chromeos::test::kUserAvatarImage1RelativePath)).Load();
+  ASSERT_TRUE(policy_image);
+
+  const chromeos::User* user =
+      chromeos::UserManager::Get()->FindUser(user_id_1_);
+  ASSERT_TRUE(user);
+
+  base::FilePath user_data_dir;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &user_data_dir));
+  const base::FilePath saved_image_path =
+      user_data_dir.Append(user_id_1_).AddExtension("jpg");
+
+  EXPECT_FALSE(user->HasDefaultImage());
+  EXPECT_EQ(chromeos::User::kExternalImageIndex, user->image_index());
+  EXPECT_TRUE(chromeos::test::AreImagesEqual(*policy_image, user->image()));
+  const base::DictionaryValue* images_pref =
+      g_browser_process->local_state()->GetDictionary("user_image_info");
+  ASSERT_TRUE(images_pref);
+  const base::DictionaryValue* image_properties;
+  ASSERT_TRUE(images_pref->GetDictionaryWithoutPathExpansion(
+      user_id_1_,
+      &image_properties));
+  int image_index;
+  std::string image_path;
+  ASSERT_TRUE(image_properties->GetInteger("index", &image_index));
+  ASSERT_TRUE(image_properties->GetString("path", &image_path));
+  EXPECT_EQ(chromeos::User::kExternalImageIndex, image_index);
+  EXPECT_EQ(saved_image_path.value(), image_path);
+
+  scoped_ptr<gfx::ImageSkia> saved_image =
+      chromeos::test::ImageLoader(saved_image_path).Load();
+  ASSERT_TRUE(saved_image);
+
+  // Check image dimensions. Images can't be compared since JPEG is lossy.
+  EXPECT_EQ(policy_image->width(), saved_image->width());
+  EXPECT_EQ(policy_image->height(), saved_image->height());
 }
 
 class TermsOfServiceTest : public DeviceLocalAccountTest,

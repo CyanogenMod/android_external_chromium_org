@@ -13,7 +13,6 @@
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_index.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
@@ -44,25 +43,6 @@ BookmarkNode* AsMutable(const BookmarkNode* node) {
   return const_cast<BookmarkNode*>(node);
 }
 
-// Helper to recursively determine if a Dictionary has any valid values.
-bool HasValues(const base::DictionaryValue& root) {
-  if (root.empty())
-    return false;
-  for (base::DictionaryValue::Iterator iter(root); !iter.IsAtEnd();
-       iter.Advance()) {
-    const base::Value& value = iter.value();
-    if (value.IsType(base::Value::TYPE_DICTIONARY)) {
-      const base::DictionaryValue* dict_value = NULL;
-      if (value.GetAsDictionary(&dict_value) && HasValues(*dict_value))
-        return true;
-    } else {
-      // A non dictionary type was encountered, assume it's a valid value.
-      return true;
-    }
-  }
-  return false;
-}
-
 // Whitespace characters to strip from bookmark titles.
 const char16 kInvalidChars[] = {
   '\n', '\r', '\t',
@@ -90,11 +70,11 @@ BookmarkNode::BookmarkNode(int64 id, const GURL& url)
 BookmarkNode::~BookmarkNode() {
 }
 
-void BookmarkNode::SetTitle(const string16& title) {
+void BookmarkNode::SetTitle(const base::string16& title) {
   // Replace newlines and other problematic whitespace characters in
   // folder/bookmark names with spaces.
-  string16 trimmed_title;
-  ReplaceChars(title, kInvalidChars, ASCIIToUTF16(" "), &trimmed_title);
+  base::string16 trimmed_title;
+  base::ReplaceChars(title, kInvalidChars, ASCIIToUTF16(" "), &trimmed_title);
   ui::TreeNode<BookmarkNode>::SetTitle(trimmed_title);
 }
 
@@ -151,7 +131,6 @@ void BookmarkNode::SetMetaInfoMap(const MetaInfoMap& meta_info_map) {
 const BookmarkNode::MetaInfoMap* BookmarkNode::GetMetaInfoMap() const {
   return meta_info_map_.get();
 }
-
 
 void BookmarkNode::Initialize(int64 id) {
   id_ = id;
@@ -419,7 +398,7 @@ const gfx::Image& BookmarkModel::GetFavicon(const BookmarkNode* node) {
   return node->favicon();
 }
 
-void BookmarkModel::SetTitle(const BookmarkNode* node, const string16& title) {
+void BookmarkModel::SetTitle(const BookmarkNode* node, const base::string16& title) {
   if (!node) {
     NOTREACHED();
     return;
@@ -503,6 +482,25 @@ void BookmarkModel::SetNodeMetaInfo(const BookmarkNode* node,
                     OnWillChangeBookmarkMetaInfo(this, node));
 
   if (AsMutable(node)->SetMetaInfo(key, value) && store_.get())
+    store_->ScheduleSave();
+
+  FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
+                    BookmarkMetaInfoChanged(this, node));
+}
+
+void BookmarkModel::SetNodeMetaInfoMap(
+    const BookmarkNode* node,
+    const BookmarkNode::MetaInfoMap& meta_info_map) {
+  const BookmarkNode::MetaInfoMap* old_meta_info_map = node->GetMetaInfoMap();
+  if ((!old_meta_info_map && meta_info_map.empty()) ||
+      (old_meta_info_map && meta_info_map == *old_meta_info_map))
+    return;
+
+  FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
+                    OnWillChangeBookmarkMetaInfo(this, node));
+
+  AsMutable(node)->SetMetaInfoMap(meta_info_map);
+  if (store_.get())
     store_->ScheduleSave();
 
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
@@ -623,7 +621,7 @@ const BookmarkNode* BookmarkModel::GetNodeByID(int64 id) const {
 
 const BookmarkNode* BookmarkModel::AddFolder(const BookmarkNode* parent,
                                              int index,
-                                             const string16& title) {
+                                             const base::string16& title) {
   if (!loaded_ || is_root_node(parent) || !IsValidIndex(parent, index, true)) {
     // Can't add to the root.
     NOTREACHED();
@@ -641,7 +639,7 @@ const BookmarkNode* BookmarkModel::AddFolder(const BookmarkNode* parent,
 
 const BookmarkNode* BookmarkModel::AddURL(const BookmarkNode* parent,
                                           int index,
-                                          const string16& title,
+                                          const base::string16& title,
                                           const GURL& url) {
   return AddURLWithCreationTime(parent, index,
                                 CollapseWhitespace(title, false),
@@ -651,7 +649,7 @@ const BookmarkNode* BookmarkModel::AddURL(const BookmarkNode* parent,
 const BookmarkNode* BookmarkModel::AddURLWithCreationTime(
     const BookmarkNode* parent,
     int index,
-    const string16& title,
+    const base::string16& title,
     const GURL& url,
     const Time& creation_time) {
   if (!loaded_ || !url.is_valid() || is_root_node(parent) ||
@@ -738,7 +736,7 @@ void BookmarkModel::ResetDateFolderModified(const BookmarkNode* node) {
 }
 
 void BookmarkModel::GetBookmarksWithTitlesMatching(
-    const string16& text,
+    const base::string16& text,
     size_t max_count,
     std::vector<BookmarkTitleMatch>* matches) {
   if (!loaded_)

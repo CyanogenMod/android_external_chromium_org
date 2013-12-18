@@ -33,11 +33,16 @@ class DriveUserData : public base::SupportsUserData::Data {
   virtual ~DriveUserData() {}
 
   const base::FilePath& file_path() const { return file_path_; }
+  const base::FilePath& cache_file_path() const { return cache_file_path_; }
+  void set_cache_file_path(const base::FilePath& path) {
+    cache_file_path_ = path;
+  }
   bool is_complete() const { return is_complete_; }
   void set_complete() { is_complete_ = true; }
 
  private:
   const base::FilePath file_path_;
+  base::FilePath cache_file_path_;
   bool is_complete_;
 };
 
@@ -56,23 +61,25 @@ DriveUserData* GetDriveUserData(DownloadItem* download) {
 // operations.
 base::FilePath GetDriveTempDownloadPath(
     const base::FilePath& drive_tmp_download_dir) {
-  bool created = file_util::CreateDirectory(drive_tmp_download_dir);
+  bool created = base::CreateDirectory(drive_tmp_download_dir);
   DCHECK(created) << "Can not create temp download directory at "
                   << drive_tmp_download_dir.value();
   base::FilePath drive_tmp_download_path;
-  created = file_util::CreateTemporaryFileInDir(drive_tmp_download_dir,
-                                                &drive_tmp_download_path);
+  created = base::CreateTemporaryFileInDir(drive_tmp_download_dir,
+                                           &drive_tmp_download_path);
   DCHECK(created) << "Temporary download file creation failed";
   return drive_tmp_download_path;
 }
 
 // Moves downloaded file to Drive.
 void MoveDownloadedFile(const base::FilePath& downloaded_file,
+                        base::FilePath* cache_file_path,
                         FileError error,
                         const base::FilePath& dest_path) {
-  if (error != FILE_ERROR_OK)
+  if (error != FILE_ERROR_OK ||
+      !base::Move(downloaded_file, dest_path))
     return;
-  base::Move(downloaded_file, dest_path);
+  *cache_file_path = dest_path;
 }
 
 // Used to implement CheckForFileExistence().
@@ -140,20 +147,13 @@ void DownloadHandler::SubstituteDriveDownloadPath(
   SetDownloadParams(drive_path, download);
 
   if (util::IsUnderDriveMountPoint(drive_path)) {
-    // Can't access drive if the directory does not exist on Drive.
-    // We set off a chain of callbacks as follows:
-    // FileSystem::GetResourceEntryByPath
-    //   OnEntryFound calls FileSystem::CreateDirectory (if necessary)
-    //     OnCreateDirectory calls SubstituteDriveDownloadPathInternal
-    const base::FilePath drive_dir_path =
-        util::ExtractDrivePath(drive_path.DirName());
-    // Check if the directory exists, and create it if the directory does not
-    // exist.
-    file_system_->GetResourceEntry(
-        drive_dir_path,
-        base::Bind(&DownloadHandler::OnEntryFound,
+    // Prepare the destination directory.
+    const bool is_exclusive = false, is_recursive = true;
+    file_system_->CreateDirectory(
+        util::ExtractDrivePath(drive_path.DirName()),
+        is_exclusive, is_recursive,
+        base::Bind(&DownloadHandler::OnCreateDirectory,
                    weak_ptr_factory_.GetWeakPtr(),
-                   drive_dir_path,
                    callback));
   } else {
     callback.Run(drive_path);
@@ -184,6 +184,11 @@ base::FilePath DownloadHandler::GetTargetPath(
   // picker.
   DCHECK(data);
   return data ? data->file_path() : base::FilePath();
+}
+
+base::FilePath DownloadHandler::GetCacheFilePath(const DownloadItem* download) {
+  const DriveUserData* data = GetDriveUserData(download);
+  return data ? data->cache_file_path() : base::FilePath();
 }
 
 bool DownloadHandler::IsDriveDownload(const DownloadItem* download) {
@@ -259,30 +264,6 @@ void DownloadHandler::OnDownloadUpdated(
   }
 }
 
-void DownloadHandler::OnEntryFound(
-    const base::FilePath& drive_dir_path,
-    const SubstituteDriveDownloadPathCallback& callback,
-    FileError error,
-    scoped_ptr<ResourceEntry> entry) {
-  if (error == FILE_ERROR_NOT_FOUND) {
-    // Destination Drive directory doesn't exist, so create it.
-    const bool is_exclusive = false, is_recursive = true;
-    file_system_->CreateDirectory(
-        drive_dir_path, is_exclusive, is_recursive,
-        base::Bind(&DownloadHandler::OnCreateDirectory,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   callback));
-  } else if (error == FILE_ERROR_OK) {
-    // Directory is already ready.
-    OnCreateDirectory(callback, FILE_ERROR_OK);
-  } else {
-    LOG(WARNING) << "Failed to get resource entry for path: "
-                 << drive_dir_path.value() << ", error = "
-                 << FileErrorToString(error);
-    callback.Run(base::FilePath());
-  }
-}
-
 void DownloadHandler::OnCreateDirectory(
     const SubstituteDriveDownloadPathCallback& callback,
     FileError error) {
@@ -302,11 +283,35 @@ void DownloadHandler::OnCreateDirectory(
 
 void DownloadHandler::UploadDownloadItem(DownloadItem* download) {
   DCHECK_EQ(DownloadItem::COMPLETE, download->GetState());
-  WriteOnCacheFile(
+  base::FilePath* cache_file_path = new base::FilePath;
+  WriteOnCacheFileAndReply(
       file_system_,
       util::ExtractDrivePath(GetTargetPath(download)),
       download->GetMimeType(),
-      base::Bind(&MoveDownloadedFile, download->GetTargetFilePath()));
+      base::Bind(&MoveDownloadedFile, download->GetTargetFilePath(),
+                 cache_file_path),
+      base::Bind(&DownloadHandler::SetCacheFilePath,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 download->GetId(),
+                 base::Owned(cache_file_path)));
 }
+
+void DownloadHandler::SetCacheFilePath(int id,
+                                       const base::FilePath* cache_file_path,
+                                       FileError error) {
+  if (error != FILE_ERROR_OK)
+    return;
+  DownloadManager* manager = notifier_->GetManager();
+  if (!manager)
+    return;
+  DownloadItem* download = manager->GetDownload(id);
+  if (!download)
+    return;
+  DriveUserData* data = GetDriveUserData(download);
+  if (!data)
+    return;
+  data->set_cache_file_path(*cache_file_path);
+}
+
 
 }  // namespace drive

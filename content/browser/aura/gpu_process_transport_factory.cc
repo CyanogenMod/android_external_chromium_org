@@ -179,7 +179,7 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
 }
 
 scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
-    ui::Compositor* compositor) {
+    ui::Compositor* compositor, bool software_fallback) {
   PerCompositorData* data = per_compositor_data_[compositor];
   if (!data)
     data = CreatePerCompositorData(compositor);
@@ -187,7 +187,8 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing)) {
+  if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing) &&
+      !software_fallback) {
     context_provider = ContextProviderCommandBuffer::Create(
         GpuProcessTransportFactory::CreateContextCommon(data->surface_id),
         "Compositor");
@@ -293,7 +294,8 @@ gfx::GLSurfaceHandle GpuProcessTransportFactory::CreateSharedSurfaceHandle() {
   gfx::GLSurfaceHandle handle = gfx::GLSurfaceHandle(
       gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
   handle.parent_gpu_process_id = context->GetGPUProcessID();
-  handle.parent_client_id = context->GetChannelID();
+  handle.parent_client_id =
+      BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   return handle;
 }
 
@@ -451,13 +453,11 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
   if (!gpu_channel_host)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
-  bool use_echo_for_swap_ack = true;
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
           surface_id,
           url,
           gpu_channel_host.get(),
-          use_echo_for_swap_ack,
           attrs,
           false,
           WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits()));

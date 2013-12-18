@@ -34,7 +34,7 @@ bool VirtualKeyboardPrivateInsertTextFunction::RunImpl() {
 #if defined(USE_ASH)
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  string16 text;
+  base::string16 text;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &text));
 
   return keyboard::InsertText(text, ash::Shell::GetPrimaryRootWindow());
@@ -75,6 +75,7 @@ bool VirtualKeyboardPrivateSendKeyEventFunction::RunImpl() {
   std::string type;
   int char_value;
   int key_code;
+  std::string key_name;
   int modifiers;
 
   EXTENSION_FUNCTION_VALIDATE(args_->Get(0, &options_value));
@@ -82,12 +83,14 @@ bool VirtualKeyboardPrivateSendKeyEventFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params->GetString("type", &type));
   EXTENSION_FUNCTION_VALIDATE(params->GetInteger("charValue", &char_value));
   EXTENSION_FUNCTION_VALIDATE(params->GetInteger("keyCode", &key_code));
+  EXTENSION_FUNCTION_VALIDATE(params->GetString("keyName", &key_name));
   EXTENSION_FUNCTION_VALIDATE(params->GetInteger("modifiers", &modifiers));
 
   return keyboard::SendKeyEvent(
       type,
       char_value,
       key_code,
+      key_name,
       modifiers,
       ash::Shell::GetPrimaryRootWindow()->GetDispatcher());
 #endif

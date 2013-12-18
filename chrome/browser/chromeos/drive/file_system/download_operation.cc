@@ -16,8 +16,8 @@
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 using content::BrowserThread;
 
@@ -62,12 +62,12 @@ FileError CheckPreConditionForEnsureFileDownloaded(
   if (entry->file_specific_info().is_hosted_document()) {
     base::FilePath gdoc_file_path;
     base::PlatformFileInfo file_info;
-    if (!file_util::CreateTemporaryFileInDir(temporary_file_directory,
-                                             &gdoc_file_path) ||
+    if (!base::CreateTemporaryFileInDir(temporary_file_directory,
+                                        &gdoc_file_path) ||
         !util::CreateGDocFile(gdoc_file_path,
                               GURL(entry->file_specific_info().alternate_url()),
                               entry->resource_id()) ||
-        !file_util::GetFileInfo(gdoc_file_path, &file_info))
+        !base::GetFileInfo(gdoc_file_path, &file_info))
       return FILE_ERROR_FAILED;
 
     *cache_file_path = gdoc_file_path;
@@ -98,7 +98,7 @@ FileError CheckPreConditionForEnsureFileDownloaded(
   // the drive::FS side is also converted to run fully on blocking pool.
   if (cache_entry.is_dirty()) {
     base::PlatformFileInfo file_info;
-    if (file_util::GetFileInfo(*cache_file_path, &file_info))
+    if (base::GetFileInfo(*cache_file_path, &file_info))
       SetPlatformFileInfoToResourceEntry(file_info, entry);
   }
 
@@ -146,7 +146,7 @@ FileError CheckPreConditionForEnsureFileDownloadedByPath(
 // processes (e.g., cros_disks for mounting zip files).
 bool CreateTemporaryReadableFileInDir(const base::FilePath& dir,
                                       base::FilePath* temp_file) {
-  if (!file_util::CreateTemporaryFileInDir(dir, temp_file))
+  if (!base::CreateTemporaryFileInDir(dir, temp_file))
     return false;
   return base::SetPosixFilePermissions(
       *temp_file,

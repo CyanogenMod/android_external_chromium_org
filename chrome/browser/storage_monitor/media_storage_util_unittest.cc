@@ -42,9 +42,10 @@ class MediaStorageUtilTest : public testing::Test {
   }
 
   void ProcessAttach(const std::string& id,
-                     const string16& name,
+                     const base::string16& name,
                      const base::FilePath::StringType& location) {
-    StorageInfo info(id, name, location, string16(), string16(), string16(), 0);
+    StorageInfo info(id, name, location, base::string16(), base::string16(),
+                     base::string16(), 0);
     monitor_->receiver()->ProcessAttach(info);
   }
 
@@ -54,7 +55,7 @@ class MediaStorageUtilTest : public testing::Test {
     base::FilePath path(scoped_temp_dir_.path());
     if (create_dcim_dir)
       path = path.Append(kDCIMDirectoryName);
-    if (!file_util::CreateDirectory(path))
+    if (!base::CreateDirectory(path))
       return base::FilePath();
     return scoped_temp_dir_.path();
   }

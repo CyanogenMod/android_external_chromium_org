@@ -71,7 +71,8 @@ int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
   VideoFrame::Format format = PixelFormatToVideoFormat(codec_context->pix_fmt);
   if (format == VideoFrame::UNKNOWN)
     return AVERROR(EINVAL);
-  DCHECK(format == VideoFrame::YV12 || format == VideoFrame::YV16);
+  DCHECK(format == VideoFrame::YV12 || format == VideoFrame::YV16 ||
+         format == VideoFrame::YV12J);
 
   gfx::Size size(codec_context->width, codec_context->height);
   int ret;
@@ -91,8 +92,8 @@ int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
     return AVERROR(EINVAL);
 
   scoped_refptr<VideoFrame> video_frame =
-      VideoFrame::CreateFrame(format, size, gfx::Rect(size), natural_size,
-                              kNoTimestamp());
+      frame_pool_.CreateFrame(format, size, gfx::Rect(size),
+                              natural_size, kNoTimestamp());
 
   for (int i = 0; i < 3; i++) {
     frame->base[i] = video_frame->data(i);

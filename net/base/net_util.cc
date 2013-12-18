@@ -773,7 +773,7 @@ void SanitizeGeneratedFileName(base::FilePath::StringType* filename,
     if (trimmed)
       filename->insert(filename->end(), trimmed, kReplace[0]);
   }
-  TrimString(*filename, FILE_PATH_LITERAL("."), filename);
+  base::TrimString(*filename, FILE_PATH_LITERAL("."), filename);
   if (filename->empty())
     return;
   // Replace any path information by changing path separators.
@@ -2186,9 +2186,13 @@ NetworkInterface::NetworkInterface() : network_prefix(0) {
 }
 
 NetworkInterface::NetworkInterface(const std::string& name,
+                                   uint32 interface_index,
                                    const IPAddressNumber& address,
                                    size_t network_prefix)
-    : name(name), address(address), network_prefix(network_prefix) {
+    : name(name),
+      interface_index(interface_index),
+      address(address),
+      network_prefix(network_prefix) {
 }
 
 NetworkInterface::~NetworkInterface() {

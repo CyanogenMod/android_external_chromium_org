@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
-#include "chromeos/dbus/fake_nfc_adapter_client.h"
 #include "chromeos/dbus/nfc_manager_client.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -63,6 +62,11 @@ class NfcAdapterClientImpl
   virtual void RemoveObserver(NfcAdapterClient::Observer* observer) OVERRIDE {
     DCHECK(observer);
     observers_.RemoveObserver(observer);
+  }
+
+  // NfcAdapterClient override.
+  virtual std::vector<dbus::ObjectPath> GetAdapters() OVERRIDE {
+    return object_map_->GetObjectPaths();
   }
 
   // NfcAdapterClient override.
@@ -171,6 +175,7 @@ class NfcAdapterClientImpl
                       AdapterAdded(object_path));
   }
 
+  // nfc_client_helpers::DBusObjectMap::Delegate override.
   virtual void ObjectRemoved(const dbus::ObjectPath& object_path) OVERRIDE {
     FOR_EACH_OBSERVER(NfcAdapterClient::Observer, observers_,
                       AdapterRemoved(object_path));
@@ -215,12 +220,8 @@ NfcAdapterClient::NfcAdapterClient() {
 NfcAdapterClient::~NfcAdapterClient() {
 }
 
-NfcAdapterClient* NfcAdapterClient::Create(DBusClientImplementationType type,
-                                           NfcManagerClient* manager_client) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new NfcAdapterClientImpl(manager_client);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeNfcAdapterClient();
+NfcAdapterClient* NfcAdapterClient::Create(NfcManagerClient* manager_client) {
+  return new NfcAdapterClientImpl(manager_client);
 }
 
 }  // namespace chromeos

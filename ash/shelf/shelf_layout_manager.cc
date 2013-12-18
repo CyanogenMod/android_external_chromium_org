@@ -175,9 +175,8 @@ class ShelfLayoutManager::UpdateShelfObserver
   }
 
   virtual void OnImplicitAnimationsCompleted() OVERRIDE {
-    if (shelf_) {
-      shelf_->UpdateShelfBackground(BackgroundAnimator::CHANGE_ANIMATE);
-    }
+    if (shelf_)
+      shelf_->UpdateShelfBackground(BACKGROUND_CHANGE_ANIMATE);
     delete this;
   }
 
@@ -319,8 +318,11 @@ void ShelfLayoutManager::UpdateVisibilityState() {
     // when we are in SHELF_AUTO_HIDE_ALWAYS_HIDDEN.
     WorkspaceWindowState window_state(workspace_controller_->GetWindowState());
     switch (window_state) {
-      case WORKSPACE_WINDOW_STATE_FULL_SCREEN:
-        if (FullscreenWithHiddenShelf()) {
+      case WORKSPACE_WINDOW_STATE_FULL_SCREEN: {
+        const aura::Window* fullscreen_window = GetRootWindowController(
+            root_window_)->GetWindowForFullscreenMode();
+        if (fullscreen_window && wm::GetWindowState(fullscreen_window)->
+                hide_shelf_when_fullscreen()) {
           SetState(SHELF_HIDDEN);
         } else {
           // The shelf is sometimes not hidden when in immersive fullscreen.
@@ -328,9 +330,12 @@ void ShelfLayoutManager::UpdateVisibilityState() {
           SetState(SHELF_AUTO_HIDE);
         }
         break;
+      }
+
       case WORKSPACE_WINDOW_STATE_MAXIMIZED:
         SetState(CalculateShelfVisibility());
         break;
+
       case WORKSPACE_WINDOW_STATE_WINDOW_OVERLAPS_SHELF:
       case WORKSPACE_WINDOW_STATE_DEFAULT:
         SetState(CalculateShelfVisibility());
@@ -366,7 +371,7 @@ void ShelfLayoutManager::UpdateAutoHideState() {
 
 void ShelfLayoutManager::SetWindowOverlapsShelf(bool value) {
   window_overlaps_shelf_ = value;
-  UpdateShelfBackground(BackgroundAnimator::CHANGE_ANIMATE);
+  UpdateShelfBackground(BACKGROUND_CHANGE_ANIMATE);
 }
 
 void ShelfLayoutManager::AddObserver(ShelfLayoutManagerObserver* observer) {
@@ -385,7 +390,7 @@ void ShelfLayoutManager::StartGestureDrag(const ui::GestureEvent& gesture) {
   gesture_drag_amount_ = 0.f;
   gesture_drag_auto_hide_state_ = visibility_state() == SHELF_AUTO_HIDE ?
       auto_hide_state() : SHELF_AUTO_HIDE_SHOWN;
-  UpdateShelfBackground(BackgroundAnimator::CHANGE_ANIMATE);
+  UpdateShelfBackground(BACKGROUND_CHANGE_ANIMATE);
 }
 
 ShelfLayoutManager::DragState ShelfLayoutManager::UpdateGestureDrag(
@@ -538,16 +543,6 @@ bool ShelfLayoutManager::IsHorizontalAlignment() const {
          GetAlignment() == SHELF_ALIGNMENT_TOP;
 }
 
-bool ShelfLayoutManager::FullscreenWithHiddenShelf() const {
-  RootWindowController* controller = GetRootWindowController(root_window_);
-  if (!controller)
-    return false;
-  const aura::Window* window = controller->GetTopmostFullscreenWindow();
-  if (!window)
-    return false;
-  return wm::GetWindowState(window)->hide_shelf_when_fullscreen();
-}
-
 // static
 ShelfLayoutManager* ShelfLayoutManager::ForLauncher(aura::Window* window) {
   ShelfWidget* shelf = RootWindowController::ForLauncher(window)->shelf();
@@ -598,8 +593,7 @@ void ShelfLayoutManager::SetState(ShelfVisibilityState visibility_state) {
   State old_state = state_;
   state_ = state;
 
-  BackgroundAnimator::ChangeType change_type =
-      BackgroundAnimator::CHANGE_ANIMATE;
+  BackgroundAnimatorChangeType change_type = BACKGROUND_CHANGE_ANIMATE;
   bool delay_background_change = false;
 
   // Do not animate the background when:
@@ -610,7 +604,7 @@ void ShelfLayoutManager::SetState(ShelfVisibilityState visibility_state) {
   if (state.visibility_state == SHELF_VISIBLE &&
       state.window_state == WORKSPACE_WINDOW_STATE_MAXIMIZED &&
       old_state.visibility_state != SHELF_VISIBLE) {
-    change_type = BackgroundAnimator::CHANGE_IMMEDIATE;
+    change_type = BACKGROUND_CHANGE_IMMEDIATE;
   } else {
     // Delay the animation when the shelf was hidden, and has just been made
     // visible (e.g. using a gesture-drag).
@@ -930,8 +924,11 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
 }
 
 void ShelfLayoutManager::UpdateShelfBackground(
-    BackgroundAnimator::ChangeType type) {
-  shelf_->SetPaintsBackground(GetShelfBackgroundType(), type);
+    BackgroundAnimatorChangeType type) {
+  const ShelfBackgroundType background_type(GetShelfBackgroundType());
+  shelf_->SetPaintsBackground(background_type, type);
+  FOR_EACH_OBSERVER(ShelfLayoutManagerObserver, observers_,
+                    OnBackgroundUpdated(background_type, type));
 }
 
 ShelfBackgroundType ShelfLayoutManager::GetShelfBackgroundType() const {
@@ -1134,6 +1131,7 @@ void ShelfLayoutManager::OnDockBoundsChanging(
   if (dock_bounds_ != dock_bounds) {
     dock_bounds_ = dock_bounds;
     OnWindowResized();
+    UpdateShelfBackground(BACKGROUND_CHANGE_ANIMATE);
   }
 }
 

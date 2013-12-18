@@ -36,12 +36,12 @@
 #include "remoting/base/constants.h"
 #include "remoting/base/logging.h"
 #include "remoting/base/rsa_key_pair.h"
-#include "remoting/base/util.h"
 #include "remoting/host/branding.h"
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/chromoting_messages.h"
 #include "remoting/host/config_file_watcher.h"
+#include "remoting/host/config_watcher.h"
 #include "remoting/host/desktop_environment.h"
 #include "remoting/host/desktop_session_connector.h"
 #include "remoting/host/dns_blackhole_checker.h"
@@ -66,6 +66,7 @@
 #include "remoting/host/signaling_connector.h"
 #include "remoting/host/token_validator_factory_impl.h"
 #include "remoting/host/usage_stats_consent.h"
+#include "remoting/host/username.h"
 #include "remoting/jingle_glue/network_settings.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
@@ -118,7 +119,7 @@ const char kStdinConfigPath[] = "-";
 namespace remoting {
 
 class HostProcess
-    : public ConfigFileWatcher::Delegate,
+    : public ConfigWatcher::Delegate,
       public HeartbeatSender::Listener,
       public HostChangeNotificationListener::Listener,
       public IPC::Listener,
@@ -127,7 +128,7 @@ class HostProcess
   HostProcess(scoped_ptr<ChromotingHostContext> context,
               int* exit_code_out);
 
-  // ConfigFileWatcher::Delegate interface.
+  // ConfigWatcher::Delegate interface.
   virtual void OnConfigUpdated(const std::string& serialized_config) OVERRIDE;
   virtual void OnConfigWatcherError() OVERRIDE;
 
@@ -254,7 +255,7 @@ class HostProcess
   // Accessed on the network thread.
   HostState state_;
 
-  scoped_ptr<ConfigFileWatcher> config_watcher_;
+  scoped_ptr<ConfigWatcher> config_watcher_;
 
   std::string host_id_;
   protocol::SharedSecretHash host_secret_hash_;
@@ -472,8 +473,8 @@ void HostProcess::StartOnNetworkThread() {
     // Start watching the host configuration file.
     config_watcher_.reset(new ConfigFileWatcher(context_->network_task_runner(),
                                                 context_->file_task_runner(),
-                                                this));
-    config_watcher_->Watch(host_config_path_);
+                                                host_config_path_));
+    config_watcher_->Watch(this);
   }
 #endif  // !defined(REMOTING_MULTI_PROCESS)
 

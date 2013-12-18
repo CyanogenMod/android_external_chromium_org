@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
 
+#include "chrome/browser/tab_contents/language_state.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/translate/translate_ui_delegate.h"
 
 TranslateBubbleModelImpl::TranslateBubbleModelImpl(
@@ -23,6 +25,14 @@ TranslateBubbleModel::ViewState TranslateBubbleModelImpl::GetViewState() const {
 void TranslateBubbleModelImpl::SetViewState(
     TranslateBubbleModel::ViewState view_state) {
   view_state_transition_.SetViewState(view_state);
+}
+
+TranslateErrors::Type TranslateBubbleModelImpl::GetErrorType() const {
+  return ui_delegate_->error_type();
+}
+
+void TranslateBubbleModelImpl::SetErrorType(TranslateErrors::Type error_type) {
+  ui_delegate_->set_error_type(error_type);
 }
 
 void TranslateBubbleModelImpl::GoBackFromAdvanced() {
@@ -79,4 +89,15 @@ void TranslateBubbleModelImpl::RevertTranslation() {
 
 void TranslateBubbleModelImpl::TranslationDeclined() {
   ui_delegate_->TranslationDeclined();
+}
+
+bool TranslateBubbleModelImpl::IsPageTranslatedInCurrentLanguages() const {
+  content::WebContents* web_contents = ui_delegate_->web_contents();
+  TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(web_contents);
+  LanguageState& language_state = translate_tab_helper->language_state();
+  return ui_delegate_->GetOriginalLanguageCode() ==
+      language_state.original_language() &&
+      ui_delegate_->GetTargetLanguageCode() ==
+      language_state.current_language();
 }

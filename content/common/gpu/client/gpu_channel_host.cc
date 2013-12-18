@@ -36,12 +36,11 @@ GpuListenerInfo::~GpuListenerInfo() {}
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
     int gpu_host_id,
-    int client_id,
     const gpu::GPUInfo& gpu_info,
     const IPC::ChannelHandle& channel_handle) {
   DCHECK(factory->IsMainThread());
   scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
-      factory, gpu_host_id, client_id, gpu_info);
+      factory, gpu_host_id, gpu_info);
   host->Connect(channel_handle);
   return host;
 }
@@ -51,6 +50,9 @@ bool GpuChannelHost::IsValidGpuMemoryBuffer(
     gfx::GpuMemoryBufferHandle handle) {
   switch (handle.type) {
     case gfx::SHARED_MEMORY_BUFFER:
+#if defined(OS_MACOSX)
+    case gfx::IO_SURFACE_BUFFER:
+#endif
       return true;
     default:
       return false;
@@ -59,10 +61,8 @@ bool GpuChannelHost::IsValidGpuMemoryBuffer(
 
 GpuChannelHost::GpuChannelHost(GpuChannelHostFactory* factory,
                                int gpu_host_id,
-                               int client_id,
                                const gpu::GPUInfo& gpu_info)
     : factory_(factory),
-      client_id_(client_id),
       gpu_host_id_(gpu_host_id),
       gpu_info_(gpu_info) {
   next_transfer_buffer_id_.GetNext();
@@ -306,6 +306,10 @@ gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(
       handle.handle = ShareToGpuProcess(source_handle.handle);
       return handle;
     }
+#if defined(OS_MACOSX)
+    case gfx::IO_SURFACE_BUFFER:
+      return source_handle;
+#endif
     default:
       NOTREACHED();
       return gfx::GpuMemoryBufferHandle();

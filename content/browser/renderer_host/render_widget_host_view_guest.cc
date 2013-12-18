@@ -169,7 +169,8 @@ void RenderWidgetHostViewGuest::Destroy() {
   platform_view_->Destroy();
 }
 
-void RenderWidgetHostViewGuest::SetTooltipText(const string16& tooltip_text) {
+void RenderWidgetHostViewGuest::SetTooltipText(
+    const base::string16& tooltip_text) {
   platform_view_->SetTooltipText(tooltip_text);
 }
 
@@ -324,7 +325,7 @@ void RenderWidgetHostViewGuest::DidUpdateBackingStore(
   NOTREACHED();
 }
 
-void RenderWidgetHostViewGuest::SelectionChanged(const string16& text,
+void RenderWidgetHostViewGuest::SelectionChanged(const base::string16& text,
                                                  size_t offset,
                                                  const gfx::Range& range) {
   platform_view_->SelectionChanged(text, offset, range);
@@ -346,9 +347,10 @@ BackingStore* RenderWidgetHostViewGuest::AllocBackingStore(
 
 void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
-    const gfx::Size& /* dst_size */,
+    const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback) {
-  callback.Run(false, SkBitmap());
+  CHECK(guest_);
+  guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
 }
 
 void RenderWidgetHostViewGuest::CopyFromCompositingSurfaceToVideoFrame(

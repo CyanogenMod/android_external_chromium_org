@@ -156,7 +156,7 @@ class NativeMessagingTest : public ::testing::Test,
 
   base::FilePath CreateTempFileWithMessage(const std::string& message) {
     base::FilePath filename = temp_dir_.path().AppendASCII("input");
-    file_util::CreateTemporaryFile(&filename);
+    base::CreateTemporaryFile(&filename);
     std::string message_with_header = FormatMessage(message);
     EXPECT_TRUE(file_util::WriteFile(
         filename, message_with_header.data(), message_with_header.size()));
@@ -203,7 +203,7 @@ TEST_F(NativeMessagingTest, SingleSendMessageWrite) {
 
   base::PlatformFile read_file;
 #if defined(OS_WIN)
-  string16 pipe_name = base::StringPrintf(
+  base::string16 pipe_name = base::StringPrintf(
       L"\\\\.\\pipe\\chrome.nativeMessaging.out.%llx", base::RandUint64());
   base::win::ScopedHandle write_handle(
       CreateNamedPipeW(pipe_name.c_str(),

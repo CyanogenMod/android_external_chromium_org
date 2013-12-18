@@ -38,7 +38,7 @@ void DeletePlatformShortcuts(
 
 void UpdatePlatformShortcuts(
     const base::FilePath& web_app_path,
-    const string16& /*old_app_title*/,
+    const base::string16& /*old_app_title*/,
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
@@ -52,10 +52,6 @@ void UpdatePlatformShortcuts(
   // being created. This allows the operating system to identify the app, but
   // not show it in the menu.
   creation_locations.hidden = true;
-
-  // Always create the shortcut in the Chrome Apps subdir (even if it is
-  // currently in a different location).
-  creation_locations.applications_menu_subdir = GetAppShortcutsSubdirName();
 
   CreatePlatformShortcuts(web_app_path, shortcut_info, creation_locations,
                           SHORTCUT_CREATION_BY_USER);

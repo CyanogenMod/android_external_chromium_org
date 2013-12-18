@@ -13,14 +13,14 @@
 #include "base/task_runner_util.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/drive_api_requests.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_requests.h"
-#include "chrome/browser/google_apis/request_sender.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/drive_api_requests.h"
+#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/gdata_wapi_requests.h"
+#include "google_apis/drive/request_sender.h"
 #include "net/url_request/url_request_context_getter.h"
 
 using content::BrowserThread;
@@ -105,7 +105,7 @@ const char kFileResourceFields[] =
     "md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
     "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
     "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
-    "modifiedDate,lastViewedByMeDate";
+    "modifiedDate,lastViewedByMeDate,shared";
 const char kFileResourceOpenWithLinksFields[] =
     "kind,id,openWithLinks/*";
 const char kFileListFields[] =
@@ -113,13 +113,13 @@ const char kFileListFields[] =
     "mimeType,md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
     "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
     "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
-    "modifiedDate,lastViewedByMeDate),nextLink";
+    "modifiedDate,lastViewedByMeDate,shared),nextLink";
 const char kChangeListFields[] =
     "kind,items(file(kind,id,title,createdDate,sharedWithMeDate,downloadUrl,"
     "mimeType,md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
     "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
     "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
-    "modifiedDate,lastViewedByMeDate),deleted,id,fileId),nextLink,"
+    "modifiedDate,lastViewedByMeDate,shared),deleted,id,fileId),nextLink,"
     "largestChangeId";
 
 // Callback invoked when the parsing of resource list is completed,
@@ -666,32 +666,6 @@ CancelCallback DriveAPIService::RenameResource(
       base::Bind(&EntryActionCallbackAdapter, callback));
   request->set_file_id(resource_id);
   request->set_title(new_title);
-  request->set_fields(kFileResourceFields);
-  return sender_->StartRequestWithRetry(request);
-}
-
-CancelCallback DriveAPIService::TouchResource(
-    const std::string& resource_id,
-    const base::Time& modified_date,
-    const base::Time& last_viewed_by_me_date,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!modified_date.is_null());
-  DCHECK(!last_viewed_by_me_date.is_null());
-  DCHECK(!callback.is_null());
-
-  FilesPatchRequest* request = new FilesPatchRequest(
-      sender_.get(), url_generator_,
-      base::Bind(&ConvertFileEntryToResourceEntryAndRun, callback));
-  // Need to set setModifiedDate to true to overwrite modifiedDate.
-  request->set_set_modified_date(true);
-
-  // Need to set updateViewedDate to false, otherwise the lastViewedByMeDate
-  // will be set to the request time (not the specified time via request).
-  request->set_update_viewed_date(false);
-
-  request->set_modified_date(modified_date);
-  request->set_last_viewed_by_me_date(last_viewed_by_me_date);
   request->set_fields(kFileResourceFields);
   return sender_->StartRequestWithRetry(request);
 }

@@ -93,7 +93,10 @@
 #include "net/cert/asn1_util.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/ct_verifier.h"
+#include "net/cert/ct_verify_result.h"
 #include "net/cert/scoped_nss_types.h"
+#include "net/cert/sct_status_flags.h"
 #include "net/cert/single_request_cert_verifier.h"
 #include "net/cert/x509_certificate_net_log_param.h"
 #include "net/cert/x509_util.h"
@@ -414,6 +417,7 @@ struct HandshakeState {
     channel_id_sent = false;
     server_cert_chain.Reset(NULL);
     server_cert = NULL;
+    sct_list_from_tls_extension.clear();
     resumed_handshake = false;
     ssl_connection_status = 0;
   }
@@ -443,6 +447,8 @@ struct HandshakeState {
   // always be non-NULL.
   PeerCertificateChain server_cert_chain;
   scoped_refptr<X509Certificate> server_cert;
+  // SignedCertificateTimestampList received via TLS extension (RFC 6962).
+  std::string sct_list_from_tls_extension;
 
   // True if the current handshake was the result of TLS session resumption.
   bool resumed_handshake;
@@ -754,6 +760,10 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
 
   // Updates the NSS and platform specific certificates.
   void UpdateServerCert();
+  // Update the nss_handshake_state_ with SignedCertificateTimestampLists
+  // received in the handshake, via a TLS extension or (to be implemented)
+  // OCSP stapling.
+  void UpdateSignedCertTimestamps();
   // Updates the nss_handshake_state_ with the negotiated security parameters.
   void UpdateConnectionStatus();
   // Record histograms for channel id support during full handshakes - resumed
@@ -1652,6 +1662,7 @@ void SSLClientSocketNSS::Core::HandshakeSucceeded() {
 
   RecordChannelIDSupportOnNSSTaskRunner();
   UpdateServerCert();
+  UpdateSignedCertTimestamps();
   UpdateConnectionStatus();
   UpdateNextProto();
 
@@ -2413,6 +2424,18 @@ void SSLClientSocketNSS::Core::UpdateServerCert() {
   }
 }
 
+void SSLClientSocketNSS::Core::UpdateSignedCertTimestamps() {
+  const SECItem* signed_cert_timestamps =
+      SSL_PeerSignedCertTimestamps(nss_fd_);
+
+  if (!signed_cert_timestamps || !signed_cert_timestamps->len)
+    return;
+
+  nss_handshake_state_.sct_list_from_tls_extension = std::string(
+      reinterpret_cast<char*>(signed_cert_timestamps->data),
+      signed_cert_timestamps->len);
+}
+
 void SSLClientSocketNSS::Core::UpdateConnectionStatus() {
   SSLChannelInfo channel_info;
   SECStatus ok = SSL_GetChannelInfo(nss_fd_,
@@ -2762,6 +2785,7 @@ SSLClientSocketNSS::SSLClientSocketNSS(
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
       cert_verifier_(context.cert_verifier),
+      cert_transparency_verifier_(context.cert_transparency_verifier),
       server_bound_cert_service_(context.server_bound_cert_service),
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
       completed_handshake_(false),
@@ -2801,6 +2825,9 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
 
   ssl_info->cert_status = server_cert_verify_result_.cert_status;
   ssl_info->cert = server_cert_verify_result_.verified_cert;
+
+  AddSCTInfoToSSLInfo(ssl_info);
+
   ssl_info->connection_status =
       core_->state().ssl_connection_status;
   ssl_info->public_key_hashes = server_cert_verify_result_.public_key_hashes;
@@ -3091,9 +3118,10 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
 
   /* Create SSL state machine */
   /* Push SSL onto our fake I/O socket */
-  nss_fd_ = SSL_ImportFD(NULL, nss_fd_);
-  if (nss_fd_ == NULL) {
+  if (SSL_ImportFD(GetNSSModelSocket(), nss_fd_) == NULL) {
     LogFailedNSSFunction(net_log_, "SSL_ImportFD", "");
+    PR_Close(nss_fd_);
+    nss_fd_ = NULL;
     return ERR_OUT_OF_MEMORY;  // TODO(port): map NSPR/NSS error code.
   }
   // TODO(port): set more ssl options!  Check errors!
@@ -3126,6 +3154,14 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
   if (rv != SECSuccess) {
     LogFailedNSSFunction(net_log_, "SSL_VersionRangeSet", "");
     return ERR_NO_SSL_VERSIONS_ENABLED;
+  }
+
+  if (ssl_config_.version_fallback) {
+    rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALLBACK_SCSV, PR_TRUE);
+    if (rv != SECSuccess) {
+      LogFailedNSSFunction(
+          net_log_, "SSL_OptionSet", "SSL_ENABLE_FALLBACK_SCSV");
+    }
   }
 
   for (std::vector<uint16>::const_iterator it =
@@ -3174,6 +3210,13 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
     }
   }
 #endif
+
+  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_SIGNED_CERT_TIMESTAMPS,
+                     ssl_config_.signed_cert_timestamps_enabled);
+  if (rv != SECSuccess) {
+    LogFailedNSSFunction(net_log_, "SSL_OptionSet",
+                         "SSL_ENABLE_SIGNED_CERT_TIMESTAMPS");
+  }
 
 // Chromium patch to libssl
 #ifdef SSL_ENABLE_CACHED_INFO
@@ -3320,11 +3363,12 @@ int SSLClientSocketNSS::DoHandshakeComplete(int result) {
     // Done!
   }
   set_channel_id_sent(core_->state().channel_id_sent);
+  set_signed_cert_timestamps_received(
+      !core_->state().sct_list_from_tls_extension.empty());
 
   LeaveFunction(result);
   return result;
 }
-
 
 int SSLClientSocketNSS::DoVerifyCert(int result) {
   DCHECK(!core_->state().server_cert_chain.empty());
@@ -3409,8 +3453,6 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
   if (result == OK)
     LogConnectionTypeMetrics();
 
-  completed_handshake_ = true;
-
 #if defined(OFFICIAL_BUILD) && !defined(OS_ANDROID) && !defined(OS_IOS)
   // Take care of any mandates for public key pinning.
   //
@@ -3458,9 +3500,38 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
   }
 #endif
 
+  if (result == OK) {
+    // Only check Certificate Transparency if there were no other errors with
+    // the connection.
+    VerifyCT();
+  }
+
+  completed_handshake_ = true;
+
   // Exit DoHandshakeLoop and return the result to the caller to Connect.
   DCHECK_EQ(STATE_NONE, next_handshake_state_);
   return result;
+}
+
+void SSLClientSocketNSS::VerifyCT() {
+  if (!cert_transparency_verifier_)
+    return;
+
+  // Note that this is a completely synchronous operation: The CT Log Verifier
+  // gets all the data it needs for SCT verification and does not do any
+  // external communication.
+  int result = cert_transparency_verifier_->Verify(
+      server_cert_verify_result_.verified_cert,
+      std::string(), // SCT list from OCSP response
+      core_->state().sct_list_from_tls_extension,
+      &ct_verify_result_,
+      net_log_);
+
+  VLOG(1) << "CT Verification complete: result " << result
+          << " Invalid scts: " << ct_verify_result_.invalid_scts.size()
+          << " Verified scts: " << ct_verify_result_.verified_scts.size()
+          << " scts from unknown logs: "
+          << ct_verify_result_.unknown_logs_scts.size();
 }
 
 void SSLClientSocketNSS::LogConnectionTypeMetrics() const {
@@ -3497,6 +3568,28 @@ bool SSLClientSocketNSS::CalledOnValidThread() const {
   EnsureThreadIdAssigned();
   base::AutoLock auto_lock(lock_);
   return valid_thread_id_ == base::PlatformThread::CurrentId();
+}
+
+void SSLClientSocketNSS::AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const {
+  for (ct::SCTList::const_iterator iter =
+       ct_verify_result_.verified_scts.begin();
+       iter != ct_verify_result_.verified_scts.end(); ++iter) {
+    ssl_info->signed_certificate_timestamps.push_back(
+        SignedCertificateTimestampAndStatus(*iter, ct::SCT_STATUS_OK));
+  }
+  for (ct::SCTList::const_iterator iter =
+       ct_verify_result_.invalid_scts.begin();
+       iter != ct_verify_result_.invalid_scts.end(); ++iter) {
+    ssl_info->signed_certificate_timestamps.push_back(
+        SignedCertificateTimestampAndStatus(*iter, ct::SCT_STATUS_INVALID));
+  }
+  for (ct::SCTList::const_iterator iter =
+       ct_verify_result_.unknown_logs_scts.begin();
+       iter != ct_verify_result_.unknown_logs_scts.end(); ++iter) {
+    ssl_info->signed_certificate_timestamps.push_back(
+        SignedCertificateTimestampAndStatus(*iter,
+                                            ct::SCT_STATUS_LOG_UNKNOWN));
+  }
 }
 
 ServerBoundCertService* SSLClientSocketNSS::GetServerBoundCertService() const {

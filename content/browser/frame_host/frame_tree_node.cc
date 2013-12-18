@@ -16,21 +16,22 @@ const int64 FrameTreeNode::kInvalidFrameId = -1;
 int64 FrameTreeNode::next_frame_tree_node_id_ = 1;
 
 FrameTreeNode::FrameTreeNode(Navigator* navigator,
+                             RenderFrameHostDelegate* render_frame_delegate,
                              RenderViewHostDelegate* render_view_delegate,
                              RenderWidgetHostDelegate* render_widget_delegate,
                              RenderFrameHostManager::Delegate* manager_delegate,
                              int64 frame_id,
-                             const std::string& name,
-                             scoped_ptr<RenderFrameHostImpl> render_frame_host)
+                             const std::string& name)
   : navigator_(navigator),
-    render_manager_(render_view_delegate,
+    render_manager_(render_frame_delegate,
+                    render_view_delegate,
                     render_widget_delegate,
                     manager_delegate),
     frame_tree_node_id_(next_frame_tree_node_id_++),
     frame_id_(frame_id),
     frame_name_(name),
     owns_render_frame_host_(true),
-    render_frame_host_(render_frame_host.release()) {
+    render_frame_host_(NULL) {
 }
 
 FrameTreeNode::~FrameTreeNode() {

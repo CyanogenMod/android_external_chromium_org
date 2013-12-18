@@ -81,6 +81,7 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/skia_benchmarking_extension.h"
 #include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
@@ -345,6 +346,7 @@ void RenderThreadImpl::Init() {
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
       thread_safe_sender()));
+  embedded_worker_dispatcher_.reset(new EmbeddedWorkerDispatcher());
 
   media_stream_center_ = NULL;
 
@@ -403,6 +405,10 @@ void RenderThreadImpl::Init() {
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
   renderer_process_id_ = base::kNullProcessId;
+
+  // AllocateGpuMemoryBuffer must be used exclusively on one thread but
+  // it doesn't have to be the same thread RenderThreadImpl is created on.
+  allocate_gpu_memory_buffer_thread_checker_.DetachFromThread();
 
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
@@ -732,7 +738,11 @@ void RenderThreadImpl::RegisterSchemes() {
   WebSecurityPolicy::registerURLSchemeAsEmptyDocument(swappedout_scheme);
 }
 
-void RenderThreadImpl::RecordUserMetrics(const std::string& action) {
+void RenderThreadImpl::RecordAction(const UserMetricsAction& action) {
+  Send(new ViewHostMsg_UserMetricsRecordAction(action.str_));
+}
+
+void RenderThreadImpl::RecordComputedAction(const std::string& action) {
   Send(new ViewHostMsg_UserMetricsRecordAction(action));
 }
 
@@ -998,7 +1008,7 @@ media::AudioHardwareConfig* RenderThreadImpl::GetAudioHardwareConfig() {
 
 #if defined(OS_WIN)
 void RenderThreadImpl::PreCacheFontCharacters(const LOGFONT& log_font,
-                                              const string16& str) {
+                                              const base::string16& str) {
   Send(new ViewHostMsg_PreCacheFontCharacters(log_font, str));
 }
 
@@ -1068,18 +1078,18 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
     size_t width,
     size_t height,
     unsigned internalformat) {
-  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
-    return scoped_ptr<gfx::GpuMemoryBuffer>();
+  DCHECK(allocate_gpu_memory_buffer_thread_checker_.CalledOnValidThread());
 
-  size_t size = width * height *
-      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
-  if (size > static_cast<size_t>(std::numeric_limits<int>::max()))
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
     return scoped_ptr<gfx::GpuMemoryBuffer>();
 
   gfx::GpuMemoryBufferHandle handle;
   bool success;
   IPC::Message* message =
-      new ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer(size, &handle);
+      new ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer(width,
+                                                          height,
+                                                          internalformat,
+                                                          &handle);
 
   // Allow calling this from the compositor thread.
   if (base::MessageLoop::current() == message_loop())
@@ -1090,19 +1100,10 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
   if (!success)
     return scoped_ptr<gfx::GpuMemoryBuffer>();
 
-  // Currently, shared memory is the only supported buffer type.
-  if (handle.type != gfx::SHARED_MEMORY_BUFFER)
-    return scoped_ptr<gfx::GpuMemoryBuffer>();
-
-  if (!base::SharedMemory::IsHandleValid(handle.handle))
-    return scoped_ptr<gfx::GpuMemoryBuffer>();
-
-  return make_scoped_ptr<gfx::GpuMemoryBuffer>(
-      new GpuMemoryBufferImpl(
-          make_scoped_ptr(new base::SharedMemory(handle.handle, false)),
-          width,
-          height,
-          internalformat));
+  return GpuMemoryBufferImpl::Create(
+      handle,
+      gfx::Size(width, height),
+      internalformat).PassAs<gfx::GpuMemoryBuffer>();
 }
 
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {
@@ -1130,7 +1131,8 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
 
   // Some messages are handled by delegates.
   if (appcache_dispatcher_->OnMessageReceived(msg) ||
-      dom_storage_dispatcher_->OnMessageReceived(msg)) {
+      dom_storage_dispatcher_->OnMessageReceived(msg) ||
+      embedded_worker_dispatcher_->OnMessageReceived(msg)) {
     return true;
   }
 
@@ -1216,7 +1218,7 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
   shutdown_event_ = ChildProcess::current()->GetShutDownEvent();
 
   gpu_channel_ = GpuChannelHost::Create(
-      this, 0, client_id, gpu_info, channel_handle);
+      this, 0, gpu_info, channel_handle);
   return gpu_channel_.get();
 }
 

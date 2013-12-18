@@ -33,6 +33,8 @@ void EnsureV8Initialized(bool gin_managed) {
   }
   v8_is_initialized = true;
   v8_is_gin_managed = gin_managed;
+  if (!gin_managed)
+    return;
 
   v8::V8::SetArrayBufferAllocator(ArrayBufferAllocator::SharedInstance());
   static const char v8_flags[] = "--use_strict --harmony";
@@ -48,7 +50,8 @@ IsolateHolder::IsolateHolder()
   EnsureV8Initialized(true);
   isolate_ = v8::Isolate::New();
   v8::ResourceConstraints constraints;
-  constraints.ConfigureDefaults(base::SysInfo::AmountOfPhysicalMemory());
+  constraints.ConfigureDefaults(base::SysInfo::AmountOfPhysicalMemory(),
+                                base::SysInfo::NumberOfProcessors());
   v8::SetResourceConstraints(isolate_, &constraints);
   v8::Isolate::Scope isolate_scope(isolate_);
   v8::HandleScope handle_scope(isolate_);

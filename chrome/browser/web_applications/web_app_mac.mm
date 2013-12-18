@@ -137,7 +137,7 @@ base::FilePath GetWritableApplicationsDirectory() {
   base::FilePath path;
   if (base::mac::GetUserDirectory(NSApplicationDirectory, &path)) {
     if (!base::DirectoryExists(path)) {
-      if (!file_util::CreateDirectory(path))
+      if (!base::CreateDirectory(path))
         return base::FilePath();
 
       // Create a zero-byte ".localized" file to inherit localizations from OSX
@@ -258,11 +258,11 @@ base::FilePath GetLocalizableAppShortcutsSubdirName() {
 void UpdateAppShortcutsSubdirLocalizedName(
     const base::FilePath& apps_directory) {
   base::FilePath localized = apps_directory.Append(".localized");
-  if (!file_util::CreateDirectory(localized))
+  if (!base::CreateDirectory(localized))
     return;
 
   base::FilePath directory_name = apps_directory.BaseName().RemoveExtension();
-  string16 localized_name = web_app::GetAppShortcutsSubdirName();
+  base::string16 localized_name = ShellIntegration::GetAppShortcutsSubdirName();
   NSDictionary* strings_dict = @{
       base::mac::FilePathToNSString(directory_name) :
           base::SysUTF16ToNSString(localized_name)
@@ -281,7 +281,7 @@ void DeletePathAndParentIfEmpty(const base::FilePath& app_path) {
   DCHECK(!app_path.empty());
   base::DeleteFile(app_path, true);
   base::FilePath apps_folder = app_path.DirName();
-  if (file_util::IsDirectoryEmpty(apps_folder))
+  if (base::IsDirectoryEmpty(apps_folder))
     base::DeleteFile(apps_folder, false);
 }
 
@@ -437,7 +437,7 @@ size_t WebAppShortcutCreator::CreateShortcutsIn(
   for (std::vector<base::FilePath>::const_iterator it = folders.begin();
        it != folders.end(); ++it) {
     const base::FilePath& dst_path = *it;
-    if (!file_util::CreateDirectory(dst_path)) {
+    if (!base::CreateDirectory(dst_path)) {
       LOG(ERROR) << "Creating directory " << dst_path.value() << " failed.";
       return succeeded;
     }
@@ -623,7 +623,7 @@ bool WebAppShortcutCreator::UpdateDisplayName(
   // OSX searches for the best language in the order of preferred languages.
   // Since we only have one localization directory, it will choose this one.
   base::FilePath localized_dir = GetResourcesPath(app_path).Append("en.lproj");
-  if (!file_util::CreateDirectory(localized_dir))
+  if (!base::CreateDirectory(localized_dir))
     return false;
 
   NSString* bundle_name = base::SysUTF16ToNSString(info_.title);
@@ -670,7 +670,7 @@ bool WebAppShortcutCreator::UpdateIcon(const base::FilePath& app_path) const {
     return false;
 
   base::FilePath resources_path = GetResourcesPath(app_path);
-  if (!file_util::CreateDirectory(resources_path))
+  if (!base::CreateDirectory(resources_path))
     return false;
 
   return icon_family.WriteDataToFile(resources_path.Append("app.icns"));
@@ -704,8 +704,8 @@ base::FilePath WebAppShortcutCreator::GetAppBundleById(
 std::string WebAppShortcutCreator::GetBundleIdentifier() const {
   // Replace spaces in the profile path with hyphen.
   std::string normalized_profile_path;
-  ReplaceChars(info_.profile_path.BaseName().value(),
-               " ", "-", &normalized_profile_path);
+  base::ReplaceChars(info_.profile_path.BaseName().value(),
+                     " ", "-", &normalized_profile_path);
 
   // This matches APP_MODE_APP_BUNDLE_ID in chrome/chrome.gyp.
   std::string bundle_id =
@@ -766,7 +766,7 @@ void DeletePlatformShortcuts(
 
 void UpdatePlatformShortcuts(
     const base::FilePath& app_data_path,
-    const string16& old_app_title,
+    const base::string16& old_app_title,
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   WebAppShortcutCreator shortcut_creator(app_data_path, shortcut_info);

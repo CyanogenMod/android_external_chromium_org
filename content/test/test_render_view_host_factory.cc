@@ -4,9 +4,9 @@
 
 #include "content/test/test_render_view_host_factory.h"
 
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/public/browser/render_process_host_factory.h"
+#include "content/test/test_render_view_host.h"
 
 namespace content {
 
@@ -29,13 +29,14 @@ void TestRenderViewHostFactory::set_render_process_host_factory(
 RenderViewHost* TestRenderViewHostFactory::CreateRenderViewHost(
     SiteInstance* instance,
     RenderViewHostDelegate* delegate,
+    RenderFrameHostDelegate* frame_delegate,
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
     int main_frame_routing_id,
     bool swapped_out) {
   return new TestRenderViewHost(
-      instance, delegate, widget_delegate, routing_id, main_frame_routing_id,
-      swapped_out);
+      instance, delegate, frame_delegate, widget_delegate, routing_id,
+      main_frame_routing_id, swapped_out);
 }
 
 }  // namespace content

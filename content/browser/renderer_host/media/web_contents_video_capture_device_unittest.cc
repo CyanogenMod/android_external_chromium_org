@@ -16,7 +16,6 @@
 #include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -24,6 +23,7 @@
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "media/base/video_util.h"
 #include "media/base/yuv_convert.h"
@@ -228,13 +228,14 @@ class CaptureTestRenderViewHost : public TestRenderViewHost {
  public:
   CaptureTestRenderViewHost(SiteInstance* instance,
                             RenderViewHostDelegate* delegate,
+                            RenderFrameHostDelegate* frame_delegate,
                             RenderWidgetHostDelegate* widget_delegate,
                             int routing_id,
                             int main_frame_routing_id,
                             bool swapped_out,
                             CaptureTestSourceController* controller)
-      : TestRenderViewHost(instance, delegate, widget_delegate, routing_id,
-                           main_frame_routing_id, swapped_out),
+      : TestRenderViewHost(instance, delegate, frame_delegate, widget_delegate,
+                           routing_id, main_frame_routing_id, swapped_out),
         controller_(controller) {
     // Override the default view installed by TestRenderViewHost; we need
     // our special subclass which has mocked-out tab capture support.
@@ -289,13 +290,15 @@ class CaptureTestRenderViewHostFactory : public RenderViewHostFactory {
   virtual RenderViewHost* CreateRenderViewHost(
       SiteInstance* instance,
       RenderViewHostDelegate* delegate,
+      RenderFrameHostDelegate* frame_delegate,
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
       bool swapped_out) OVERRIDE {
-    return new CaptureTestRenderViewHost(instance, delegate, widget_delegate,
-                                         routing_id, main_frame_routing_id,
-                                         swapped_out, controller_);
+    return new CaptureTestRenderViewHost(instance, delegate, frame_delegate,
+                                         widget_delegate, routing_id,
+                                         main_frame_routing_id, swapped_out,
+                                         controller_);
   }
  private:
   CaptureTestSourceController* controller_;

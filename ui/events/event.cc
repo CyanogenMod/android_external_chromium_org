@@ -22,6 +22,8 @@
 
 #if defined(USE_X11)
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#elif defined(USE_OZONE)
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #endif
 
 namespace {
@@ -513,6 +515,7 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
             EventTypeFromNative(native_event),
             EventFlagsFromNative(native_event)),
       key_code_(KeyboardCodeFromNative(native_event)),
+      code_(CodeFromNative(native_event)),
       is_char_(is_char),
       character_(0) {
 #if defined(USE_X11)
@@ -526,6 +529,18 @@ KeyEvent::KeyEvent(EventType type,
                    bool is_char)
     : Event(type, EventTimeForNow(), flags),
       key_code_(key_code),
+      is_char_(is_char),
+      character_(GetCharacterFromKeyCode(key_code, flags)) {
+}
+
+KeyEvent::KeyEvent(EventType type,
+                   KeyboardCode key_code,
+                   const std::string& code,
+                   int flags,
+                   bool is_char)
+    : Event(type, EventTimeForNow(), flags),
+      key_code_(key_code),
+      code_(code),
       is_char_(is_char),
       character_(GetCharacterFromKeyCode(key_code, flags)) {
 }
@@ -549,23 +564,13 @@ uint16 KeyEvent::GetCharacter() const {
     ch = GetCharacterFromXEvent(native_event());
   return ch ? ch : GetCharacterFromKeyCode(key_code_, flags());
 #else
-  NOTIMPLEMENTED();
-  return 0;
-#endif
-}
+  if (native_event()) {
+    DCHECK(EventTypeFromNative(native_event()) == ET_KEY_PRESSED ||
+           EventTypeFromNative(native_event()) == ET_KEY_RELEASED);
+  }
 
-KeyEvent* KeyEvent::Copy() const {
-#if defined(USE_OZONE)
-  KeyEvent* copy = new KeyEvent(*this);
-#else
-  KeyEvent* copy = HasNativeEvent() ?
-      new KeyEvent(::CopyNativeEvent(native_event()), is_char()) :
-      new KeyEvent(*this);
+  return GetCharacterFromKeyCode(key_code_, flags());
 #endif
-#if defined(USE_X11)
-  copy->set_delete_native_event(true);
-#endif
-  return copy;
 }
 
 bool KeyEvent::IsUnicodeKeyCode() const {

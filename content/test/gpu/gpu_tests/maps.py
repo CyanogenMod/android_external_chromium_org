@@ -14,7 +14,7 @@ import re
 import maps_expectations
 
 from telemetry import test
-from telemetry.core.backends import png_bitmap
+from telemetry.core import bitmap
 from telemetry.core import util
 from telemetry.page import page_test
 from telemetry.page import page_set
@@ -97,7 +97,7 @@ class MapsValidator(page_test.PageTest):
           (x, y, screenshot.width, screenshot.height))
 
       pixel_color = screenshot.GetPixelColor(x, y)
-      expect_color = png_bitmap.PngColor(
+      expect_color = bitmap.RgbaColor(
           expectation["color"][0],
           expectation["color"][1],
           expectation["color"][2])
@@ -132,7 +132,7 @@ class MapsValidator(page_test.PageTest):
     if not os.path.exists(output_dir):
       os.makedirs(output_dir)
 
-    screenshot.WriteFile(image_path)
+    screenshot.WritePngFile(image_path)
 
 class Maps(test.Test):
   """Google Maps pixel tests."""

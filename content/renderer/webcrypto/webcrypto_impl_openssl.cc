@@ -13,6 +13,7 @@
 #include <openssl/rand.h>
 
 #include "base/logging.h"
+#include "content/renderer/webcrypto/webcrypto_util.h"
 #include "crypto/openssl_util.h"
 #include "crypto/secure_util.h"
 #include "third_party/WebKit/public/platform/WebArrayBuffer.h"
@@ -151,7 +152,25 @@ bool AesCbcEncryptDecrypt(CipherOperation cipher_operation,
       static_cast<unsigned>(final_output_chunk_len);
   DCHECK_LE(final_output_len, output_max_len);
 
-  WebCryptoImpl::ShrinkBuffer(buffer, final_output_len);
+  webcrypto::ShrinkBuffer(buffer, final_output_len);
+
+  return true;
+}
+
+bool ExportKeyInternalRaw(
+    const blink::WebCryptoKey& key,
+    blink::WebArrayBuffer* buffer) {
+
+  DCHECK(key.handle());
+  DCHECK(buffer);
+
+  if (key.type() != blink::WebCryptoKeyTypeSecret || !key.extractable())
+    return false;
+
+  const SymKeyHandle* sym_key = reinterpret_cast<SymKeyHandle*>(key.handle());
+
+  *buffer = webcrypto::CreateArrayBuffer(
+      webcrypto::Uint8VectorStart(sym_key->key()), sym_key->key().size());
 
   return true;
 }
@@ -330,7 +349,8 @@ bool WebCryptoImpl::ImportKeyInternal(
     return false;
   }
 
-  // TODO(padolph): Need to split handling for symmetric
+  // TODO(padolph): Need to split handling for symmetric (raw format) and
+  // asymmetric (spki or pkcs8 format) keys.
   // Currently only supporting symmetric.
 
   // Symmetric keys are always type secret
@@ -368,10 +388,18 @@ bool WebCryptoImpl::ExportKeyInternal(
     blink::WebCryptoKeyFormat format,
     const blink::WebCryptoKey& key,
     blink::WebArrayBuffer* buffer) {
-  // TODO(padolph): Implement raw export
-  // TODO(padolph): Implement spki export
-  // TODO(padolph): Implement pkcs8 export
-  // TODO(padolph): Implement jwk export
+  switch (format) {
+    case blink::WebCryptoKeyFormatRaw:
+      return ExportKeyInternalRaw(key, buffer);
+    case blink::WebCryptoKeyFormatSpki:
+      // TODO(padolph): Implement spki export
+      return false;
+    case blink::WebCryptoKeyFormatPkcs8:
+      // TODO(padolph): Implement pkcs8 export
+      return false;
+    default:
+      return false;
+  }
   return false;
 }
 
@@ -492,6 +520,20 @@ bool WebCryptoImpl::VerifySignatureInternal(
       return false;
   }
   return true;
+}
+
+bool WebCryptoImpl::ImportRsaPublicKeyInternal(
+    const unsigned char* modulus_data,
+    unsigned modulus_size,
+    const unsigned char* exponent_data,
+    unsigned exponent_size,
+    const blink::WebCryptoAlgorithm& algorithm,
+    bool extractable,
+    blink::WebCryptoKeyUsageMask usage_mask,
+    blink::WebCryptoKey* key) {
+  // TODO(padolph): Placeholder for OpenSSL implementation.
+  // Issue http://crbug.com/267888.
+  return false;
 }
 
 }  // namespace content

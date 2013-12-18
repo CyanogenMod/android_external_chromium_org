@@ -86,6 +86,7 @@
     {
       'FILES': [
         'deprecated_bool.h',
+        'ppb_alarms_dev.h',
         'ppb_audio_input_dev.h',
         'ppb_buffer_dev.h',
         'ppb_char_set_dev.h',
@@ -117,6 +118,7 @@
         'ppb_widget_dev.h',
         'ppb_zoom_dev.h',
         'pp_cursor_type_dev.h',
+        'pp_optional_structs_dev.h',
         'ppp_class_deprecated.h',
         'ppp_find_dev.h',
         'ppp_network_state_dev.h',
@@ -136,8 +138,6 @@
     },
     {
       'FILES': [
-        'ppb_ext_alarms_dev.h',
-        'ppb_ext_events_dev.h',
         'ppb_ext_socket_dev.h',
       ],
       'DEST': 'include/ppapi/c/extensions/dev',

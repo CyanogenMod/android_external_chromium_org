@@ -19,10 +19,6 @@ _IGNORE_ENV = [
     'GYP_DEFINES',  # Because it gets a special merge handler
 ]
 
-# This is the name of the file we check for to see if this client is an
-# android capable one.
-# TODO(iancottrell): change this when we add handling to read the .gclient file
-_ANDROID_MARKER = '{CR_SRC}/third_party/android_tools/android_tools.gyp'
 # The message to print when we detect use of an android output directory in a
 # client that cannot build android.
 _NOT_ANDROID_MESSAGE = """
@@ -66,9 +62,16 @@ class AndroidPlatform(cr.Platform):
     return super(AndroidPlatform, self).priority + 1
 
   def Prepare(self, context):
+    """Override Prepare from cr.Platform."""
     super(AndroidPlatform, self).Prepare(context)
     # Check we are an android capable client
-    if not os.path.isfile(context.Substitute(_ANDROID_MARKER)):
+    is_android = 'android' in context.gclient.get('target_os', '')
+    if not is_android:
+      url = context.gclient.get('solutions', [{}])[0].get('url')
+      is_android = (url.startswith(
+                        'https://chrome-internal.googlesource.com/') and
+                    url.endswith('/internal/apps.git'))
+    if not is_android:
       print _NOT_ANDROID_MESSAGE
       exit(1)
     try:
@@ -77,7 +80,7 @@ class AndroidPlatform(cr.Platform):
         # See what the env would be without env setup
         before = context.exported
         # Run env setup and capture/parse it's output
-        envsetup = 'source {CR_ENVSETUP} --target-arch={CR_ARCH}'
+        envsetup = 'source {CR_ENVSETUP} --target-arch={CR_ENVSETUP_ARCH}'
         output = cr.Host.CaptureShell(context, envsetup + ' > /dev/null && env')
         env_setup = cr.Config('envsetup', literal=True, export=True)
         for line in output.split('\n'):

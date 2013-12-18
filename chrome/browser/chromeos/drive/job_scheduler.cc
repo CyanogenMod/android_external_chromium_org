@@ -11,9 +11,9 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/logging.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
 
 using content::BrowserThread;
 
@@ -532,29 +532,6 @@ void JobScheduler::RenameResource(
                  new_job->job_info.job_id,
                  callback));
   new_job->abort_callback = callback;
-  StartJob(new_job);
-}
-
-void JobScheduler::TouchResource(
-    const std::string& resource_id,
-    const base::Time& modified_date,
-    const base::Time& last_viewed_by_me_date,
-    const google_apis::GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  JobEntry* new_job = CreateNewJob(TYPE_TOUCH_RESOURCE);
-  new_job->task = base::Bind(
-      &DriveServiceInterface::TouchResource,
-      base::Unretained(drive_service_),
-      resource_id,
-      modified_date,
-      last_viewed_by_me_date,
-      base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 new_job->job_info.job_id,
-                 callback));
-  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -1165,7 +1142,6 @@ JobScheduler::QueueType JobScheduler::GetJobQueueType(JobType type) {
     case TYPE_COPY_HOSTED_DOCUMENT:
     case TYPE_UPDATE_RESOURCE:
     case TYPE_RENAME_RESOURCE:
-    case TYPE_TOUCH_RESOURCE:
     case TYPE_ADD_RESOURCE_TO_DIRECTORY:
     case TYPE_REMOVE_RESOURCE_FROM_DIRECTORY:
     case TYPE_ADD_NEW_DIRECTORY:

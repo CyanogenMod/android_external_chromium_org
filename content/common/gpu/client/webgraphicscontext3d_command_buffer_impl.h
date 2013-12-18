@@ -77,7 +77,6 @@ class WebGraphicsContext3DCommandBufferImpl
       int surface_id,
       const GURL& active_url,
       GpuChannelHost* host,
-      bool use_echo_for_swap_ack,
       const Attributes& attributes,
       bool bind_generates_resources,
       const SharedMemoryLimits& limits);
@@ -87,12 +86,6 @@ class WebGraphicsContext3DCommandBufferImpl
   // The following 3 IDs let one uniquely identify this context.
   // Gets the GPU process ID for this context.
   int GetGPUProcessID();
-
-  // Gets the channel ID for this context.
-  int GetChannelID();
-
-  // Gets the context ID (relative to the channel).
-  int GetContextID();
 
   CommandBufferProxyImpl* GetCommandBufferProxy() {
     return command_buffer_.get();
@@ -533,10 +526,6 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void setErrorMessageCallback(
       WebGraphicsContext3D::WebGraphicsErrorMessageCallback* callback);
 
-  virtual void setSwapBuffersCompleteCallbackCHROMIUM(
-      WebGraphicsContext3D::
-          WebGraphicsSwapBuffersCompleteCallbackCHROMIUM* callback);
-
   virtual void texImageIOSurface2DCHROMIUM(
       WGC3Denum target, WGC3Dint width, WGC3Dint height,
       WGC3Duint ioSurfaceId, WGC3Duint plane);
@@ -694,15 +683,12 @@ class WebGraphicsContext3DCommandBufferImpl
   // unnecessary complexity at the moment.
   bool CreateContext(bool onscreen);
 
-  // SwapBuffers callback.
-  void OnSwapBuffersComplete();
   virtual void OnGpuChannelLost();
   virtual void OnErrorMessage(const std::string& message, int id);
 
   bool initialize_failed_;
 
   bool visible_;
-  bool free_command_buffer_when_invisible_;
 
   // State needed by MaybeInitializeGL.
   scoped_refptr<GpuChannelHost> host_;
@@ -716,9 +702,6 @@ class WebGraphicsContext3DCommandBufferImpl
       error_message_callback_;
   scoped_ptr<WebGraphicsContext3DErrorMessageCallback>
       client_error_message_callback_;
-
-  WebGraphicsContext3D::WebGraphicsSwapBuffersCompleteCallbackCHROMIUM*
-      swapbuffers_complete_callback_;
 
   blink::WebGraphicsContext3D::Attributes attributes_;
   gfx::GpuPreference gpu_preference_;
@@ -736,9 +719,7 @@ class WebGraphicsContext3DCommandBufferImpl
   scoped_ptr<gpu::gles2::GLES2Implementation> real_gl_;
   scoped_ptr<gpu::gles2::GLES2Interface> trace_gl_;
   Error last_error_;
-  int frame_number_;
   bool bind_generates_resources_;
-  bool use_echo_for_swap_ack_;
   SharedMemoryLimits mem_limits_;
 
   uint32_t flush_id_;

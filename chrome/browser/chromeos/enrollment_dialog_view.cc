@@ -9,6 +9,7 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
@@ -49,11 +50,12 @@ class EnrollmentDialogView : public views::DialogDelegateView {
   virtual int GetDialogButtons() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual void OnClosed() OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
 
   // views::WidgetDelegate overrides
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
 
   // views::View overrides
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -126,7 +128,7 @@ void EnrollmentDialogView::OnClosed() {
   chrome::Navigate(&params);
 }
 
-string16 EnrollmentDialogView::GetDialogButtonLabel(
+base::string16 EnrollmentDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_NETWORK_ENROLLMENT_HANDLER_BUTTON);
@@ -137,7 +139,7 @@ ui::ModalType EnrollmentDialogView::GetModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 EnrollmentDialogView::GetWindowTitle() const {
+base::string16 EnrollmentDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_NETWORK_ENROLLMENT_HANDLER_TITLE);
 }
 
@@ -283,9 +285,11 @@ bool CreateDialog(const std::string& service_path,
 
   NET_LOG_USER("Enrolling", service_path);
 
+  Browser* browser = chrome::FindBrowserWithWindow(owning_window);
+  Profile* profile = browser ? browser->profile() :
+      ProfileManager::GetPrimaryUserProfileOrOffTheRecord();
   DialogEnrollmentDelegate* enrollment =
-      new DialogEnrollmentDelegate(owning_window, network->name(),
-                                   ProfileManager::GetDefaultProfile());
+      new DialogEnrollmentDelegate(owning_window, network->name(), profile);
   return enrollment->Enroll(certificate_pattern.enrollment_uri_list(),
                             base::Bind(&EnrollmentComplete, service_path));
 }

@@ -56,13 +56,13 @@ TEST_F(FileUtilTest, ExtensionURLToRelativeFilePath) {
 TEST_F(FileUtilTest, ExtensionResourceURLToFilePath) {
   // Setup filesystem for testing.
   base::FilePath root_path;
-  ASSERT_TRUE(file_util::CreateNewTempDirectory(
+  ASSERT_TRUE(base::CreateNewTempDirectory(
       base::FilePath::StringType(), &root_path));
   root_path = base::MakeAbsoluteFilePath(root_path);
   ASSERT_FALSE(root_path.empty());
 
   base::FilePath api_path = root_path.Append(FILE_PATH_LITERAL("apiname"));
-  ASSERT_TRUE(file_util::CreateDirectory(api_path));
+  ASSERT_TRUE(base::CreateDirectory(api_path));
 
   const char data[] = "Test Data";
   base::FilePath resource_path = api_path.Append(FILE_PATH_LITERAL("test.js"));

@@ -42,6 +42,7 @@ LOCAL_SRC_FILES := \
 	content/public/renderer/history_item_serialization.cc \
 	content/public/renderer/key_system_info.cc \
 	content/public/renderer/navigation_state.cc \
+	content/public/renderer/render_frame_observer.cc \
 	content/public/renderer/render_process_observer.cc \
 	content/public/renderer/render_thread.cc \
 	content/public/renderer/render_view_observer.cc \
@@ -63,7 +64,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/clipboard_utils.cc \
 	content/renderer/context_menu_params_builder.cc \
 	content/renderer/cursor_utils.cc \
-	content/renderer/date_time_formatter.cc \
+	content/renderer/date_time_suggestion_builder.cc \
 	content/renderer/device_orientation/device_motion_event_pump.cc \
 	content/renderer/device_orientation/device_orientation_event_pump.cc \
 	content/renderer/device_orientation/device_sensor_event_pump.cc \
@@ -123,7 +124,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/cache_util.cc \
 	content/renderer/media/crypto/content_decryption_module_factory.cc \
 	content/renderer/media/crypto/key_systems.cc \
-	content/renderer/media/crypto/key_systems_info.cc \
+	content/renderer/media/crypto/key_systems_support_uma.cc \
 	content/renderer/media/crypto/proxy_decryptor.cc \
 	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
@@ -172,6 +173,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
+	content/renderer/service_worker/embedded_worker_dispatcher.cc \
+	content/renderer/service_worker/service_worker_context_client.cc \
 	content/renderer/shared_memory_seqlock_reader.cc \
 	content/renderer/shared_worker_repository.cc \
 	content/renderer/skia_benchmarking_extension.cc \
@@ -186,8 +189,10 @@ LOCAL_SRC_FILES := \
 	content/renderer/webclipboard_impl.cc \
 	content/renderer/webcrypto/webcrypto_impl.cc \
 	content/renderer/webcrypto/webcrypto_impl_openssl.cc \
+	content/renderer/webcrypto/webcrypto_util.cc \
 	content/renderer/webpublicsuffixlist_impl.cc \
-	content/renderer/websharedworker_proxy.cc
+	content/renderer/websharedworker_proxy.cc \
+	content/renderer/media/webrtc_logging_noop.cc
 
 
 # Flags passed to both C and C++ files.
@@ -225,6 +230,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -234,9 +240,11 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -250,6 +258,9 @@ MY_DEFS_Debug := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
@@ -277,12 +288,13 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -298,6 +310,13 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
@@ -369,6 +388,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -378,9 +398,11 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -394,6 +416,9 @@ MY_DEFS_Release := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
@@ -422,12 +447,13 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -443,6 +469,13 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \

@@ -343,7 +343,9 @@ bool GpuVideoDecoder::NeedsBitstreamConversion() const {
 
 bool GpuVideoDecoder::CanReadWithoutStalling() const {
   DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
-  return available_pictures_ > 0 || !ready_video_frames_.empty();
+  return
+      next_picture_buffer_id_ == 0 ||  // Decode() will ProvidePictureBuffers().
+      available_pictures_ > 0 || !ready_video_frames_.empty();
 }
 
 void GpuVideoDecoder::NotifyInitializeDone() {
@@ -441,12 +443,12 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
   DCHECK(decoder_texture_target_);
 
   scoped_refptr<VideoFrame> frame(VideoFrame::WrapNativeTexture(
-      new VideoFrame::MailboxHolder(
+      make_scoped_ptr(new VideoFrame::MailboxHolder(
           pb.texture_mailbox(),
           0,  // sync_point
           BindToCurrentLoop(base::Bind(&GpuVideoDecoder::ReusePictureBuffer,
                                        weak_this_,
-                                       picture.picture_buffer_id()))),
+                                       picture.picture_buffer_id())))),
       decoder_texture_target_,
       pb.size(),
       visible_rect,

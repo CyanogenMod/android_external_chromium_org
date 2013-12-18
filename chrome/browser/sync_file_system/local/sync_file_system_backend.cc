@@ -72,8 +72,6 @@ SyncFileSystemBackend::SyncFileSystemBackend(Profile* profile)
 }
 
 SyncFileSystemBackend::~SyncFileSystemBackend() {
-  RevokeSyncableFileSystem();
-
   if (change_tracker_) {
     GetDelegate()->file_task_runner()->DeleteSoon(
         FROM_HERE, change_tracker_.release());
@@ -283,8 +281,9 @@ void SyncFileSystemBackend::DidInitializeSyncFileSystemService(
     return;
   }
 
-  GetDelegate()->OpenFileSystem(origin_url, type, mode, callback,
-                                GetSyncableFileSystemRootURI(origin_url));
+  callback.Run(GetSyncableFileSystemRootURI(origin_url),
+               GetFileSystemName(origin_url, type),
+               base::PLATFORM_FILE_OK);
 }
 
 }  // namespace sync_file_system

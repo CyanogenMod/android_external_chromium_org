@@ -9,12 +9,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
 #include "content/public/test/test_browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -77,7 +77,7 @@ GDataErrorCode FakeDriveServiceHelper::AddOrphanedFolder(
       CreateResultReceiver(&error));
   base::RunLoop().RunUntilIdle();
 
-  if (error != google_apis::HTTP_SUCCESS)
+  if (error != google_apis::HTTP_NO_CONTENT)
     return error;
   return google_apis::HTTP_CREATED;
 }
@@ -226,7 +226,7 @@ GDataErrorCode FakeDriveServiceHelper::ReadFile(
 
   error = google_apis::GDATA_OTHER_ERROR;
   base::FilePath temp_file;
-  EXPECT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_, &temp_file));
+  EXPECT_TRUE(base::CreateTemporaryFileInDir(temp_dir_, &temp_file));
   fake_drive_service_->DownloadFile(
       temp_file, file->resource_id(),
       base::Bind(&DownloadResultCallback, &error),
@@ -279,13 +279,13 @@ GDataErrorCode FakeDriveServiceHelper::CompleteListing(
 void FakeDriveServiceHelper::Initialize() {
   ASSERT_TRUE(base_dir_.CreateUniqueTempDir());
   temp_dir_ = base_dir_.path().Append(FPL("tmp"));
-  ASSERT_TRUE(file_util::CreateDirectory(temp_dir_));
+  ASSERT_TRUE(base::CreateDirectory(temp_dir_));
 }
 
 base::FilePath FakeDriveServiceHelper::WriteToTempFile(
     const std::string& content) {
   base::FilePath temp_file;
-  EXPECT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_, &temp_file));
+  EXPECT_TRUE(base::CreateTemporaryFileInDir(temp_dir_, &temp_file));
   EXPECT_EQ(static_cast<int>(content.size()),
             file_util::WriteFile(temp_file, content.data(), content.size()));
   return temp_file;

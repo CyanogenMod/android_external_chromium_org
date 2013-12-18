@@ -26,6 +26,10 @@
 #include "base/third_party/icu/icu_utf.h"
 #include "build/build_config.h"
 
+// Remove when this entire file is in the base namespace.
+using base::char16;
+using base::string16;
+
 namespace {
 
 // Force the singleton used by Empty[W]String[16] to be a unique type. This
@@ -99,9 +103,6 @@ bool IsWprintfFormatPortable(const wchar_t* format) {
 
   return true;
 }
-
-}  // namespace base
-
 
 const std::string& EmptyString() {
   return EmptyStrings::GetInstance()->s;
@@ -227,8 +228,8 @@ void TruncateUTF8ToByteSize(const std::string& input,
     int32 prev = char_index;
     uint32 code_point = 0;
     CBU8_NEXT(data, char_index, truncation_length, code_point);
-    if (!base::IsValidCharacter(code_point) ||
-        !base::IsValidCodepoint(code_point)) {
+    if (!IsValidCharacter(code_point) ||
+        !IsValidCodepoint(code_point)) {
       char_index = prev - 1;
     } else {
       break;
@@ -241,16 +242,18 @@ void TruncateUTF8ToByteSize(const std::string& input,
     output->clear();
 }
 
-TrimPositions TrimWhitespace(const string16& input,
+}  // namespace base
+
+TrimPositions TrimWhitespace(const base::string16& input,
                              TrimPositions positions,
-                             string16* output) {
-  return TrimStringT(input, kWhitespaceUTF16, positions, output);
+                             base::string16* output) {
+  return base::TrimStringT(input, base::kWhitespaceUTF16, positions, output);
 }
 
 TrimPositions TrimWhitespaceASCII(const std::string& input,
                                   TrimPositions positions,
                                   std::string* output) {
-  return TrimStringT(input, kWhitespaceASCII, positions, output);
+  return base::TrimStringT(input, base::kWhitespaceASCII, positions, output);
 }
 
 // This function is only for backward-compatibility.
@@ -321,8 +324,8 @@ bool ContainsOnlyWhitespaceASCII(const std::string& str) {
   return true;
 }
 
-bool ContainsOnlyWhitespace(const string16& str) {
-  return str.find_first_not_of(kWhitespaceUTF16) == string16::npos;
+bool ContainsOnlyWhitespace(const base::string16& str) {
+  return str.find_first_not_of(base::kWhitespaceUTF16) == string16::npos;
 }
 
 template<typename STR>

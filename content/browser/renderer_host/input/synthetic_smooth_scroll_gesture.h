@@ -8,10 +8,12 @@
 #include "base/time/time.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
-#include "content/browser/renderer_host/input/synthetic_web_input_event_builders.h"
 #include "content/common/content_export.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
+#include "content/common/input/synthetic_web_input_event_builders.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/gfx/vector2d.h"
+#include "ui/gfx/vector2d_f.h"
 
 namespace content {
 
@@ -32,12 +34,6 @@ class CONTENT_EXPORT SyntheticSmoothScrollGesture : public SyntheticGesture {
     STOPPING,
     DONE
   };
-  SyntheticSmoothScrollGestureParams params_;
-  float current_y_;
-  SyntheticWebTouchEvent touch_event_;
-  SyntheticGestureParams::GestureSourceType gesture_source_type_;
-  GestureState state_;
-  base::TimeDelta total_stopping_wait_time_;
 
   void ForwardTouchInputEvents(
       const base::TimeDelta& interval, SyntheticGestureTarget* target);
@@ -46,11 +42,25 @@ class CONTENT_EXPORT SyntheticSmoothScrollGesture : public SyntheticGesture {
 
   void ForwardTouchEvent(SyntheticGestureTarget* target) const;
   void ForwardMouseWheelEvent(SyntheticGestureTarget* target,
-                              float delta) const;
+                              const gfx::Vector2dF& delta) const;
 
-  float GetPositionDelta(const base::TimeDelta& interval) const;
-  float ComputeAbsoluteRemainingDistance() const;
+  void PressTouchPoint(SyntheticGestureTarget* target);
+  void MoveTouchPoint(SyntheticGestureTarget* target);
+  void ReleaseTouchPoint(SyntheticGestureTarget* target);
+
+  void AddTouchSlopToDistance(SyntheticGestureTarget* target);
+  gfx::Vector2dF GetPositionDelta(const base::TimeDelta& interval) const;
+  gfx::Vector2dF ProjectLengthOntoScrollDirection(float delta_length) const;
+  gfx::Vector2dF ComputeRemainingDelta() const;
   bool HasScrolledEntireDistance() const;
+
+  SyntheticSmoothScrollGestureParams params_;
+  gfx::Vector2dF total_delta_;
+  gfx::Vector2d total_delta_discrete_;
+  SyntheticWebTouchEvent touch_event_;
+  SyntheticGestureParams::GestureSourceType gesture_source_type_;
+  GestureState state_;
+  base::TimeDelta total_stopping_wait_time_;
 
   DISALLOW_COPY_AND_ASSIGN(SyntheticSmoothScrollGesture);
 };

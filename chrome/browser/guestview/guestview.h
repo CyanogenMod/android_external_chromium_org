@@ -13,6 +13,7 @@
 
 class AdViewGuest;
 class WebViewGuest;
+struct RendererContentSettingRules;
 
 // A GuestView is the base class browser-side API implementation for a <*view>
 // tag. GuestView maintains an association between a guest WebContents and an
@@ -28,15 +29,15 @@ class GuestView : public content::BrowserPluginGuestDelegate {
 
   class Event {
    public:
-     Event(const std::string& event_name, scoped_ptr<DictionaryValue> args);
+     Event(const std::string& name, scoped_ptr<DictionaryValue> args);
      ~Event();
 
-    const std::string& event_name() const { return event_name_; }
+    const std::string& name() const { return name_; }
 
     scoped_ptr<DictionaryValue> GetArguments();
 
    private:
-    const std::string event_name_;
+    const std::string name_;
     scoped_ptr<DictionaryValue> args_;
   };
 
@@ -61,6 +62,10 @@ class GuestView : public content::BrowserPluginGuestDelegate {
                                              std::string* partition_domain,
                                              std::string* partition_name,
                                              bool* in_memory);
+
+  // By default, JavaScript and images are enabled in guest content.
+  static void GetDefaultContentSettingRules(
+      RendererContentSettingRules* rules, bool incognito);
 
   virtual void Attach(content::WebContents* embedder_web_contents,
                       const base::DictionaryValue& args);

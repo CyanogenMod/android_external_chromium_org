@@ -190,6 +190,7 @@ void VolumeManager::Initialize() {
   bool success = mount_points->RegisterFileSystem(
       downloads_folder.BaseName().AsUTF8Unsafe(),
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(),
       downloads_folder);
   DCHECK(success);
 
@@ -475,7 +476,6 @@ void VolumeManager::OnExternalStorageDisabledChanged() {
     while (!disk_mount_manager_->mount_points().empty()) {
       std::string mount_path =
           disk_mount_manager_->mount_points().begin()->second.mount_path;
-      LOG(INFO) << "Unmounting " << mount_path << " because of preference.";
       disk_mount_manager_->UnmountPath(
           mount_path,
           chromeos::UNMOUNT_OPTIONS_NONE,

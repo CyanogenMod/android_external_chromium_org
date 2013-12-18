@@ -42,6 +42,7 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -677,7 +678,7 @@ class DownloadTest : public InProcessBrowserTest {
       return false;
 
     int64 origin_file_size = 0;
-    EXPECT_TRUE(file_util::GetFileSize(origin_file, &origin_file_size));
+    EXPECT_TRUE(base::GetFileSize(origin_file, &origin_file_size));
     std::string original_file_contents;
     EXPECT_TRUE(base::ReadFileToString(origin_file, &original_file_contents));
     EXPECT_TRUE(
@@ -745,9 +746,9 @@ class DownloadTest : public InProcessBrowserTest {
     // |expected_title_finished| need to be checked.
     base::FilePath filename;
     net::FileURLToFilePath(url, &filename);
-    string16 expected_title_in_progress(
+    base::string16 expected_title_in_progress(
         ASCIIToUTF16(partial_indication) + filename.LossyDisplayName());
-    string16 expected_title_finished(
+    base::string16 expected_title_finished(
         ASCIIToUTF16(total_indication) + filename.LossyDisplayName());
 
     // Download a partial web page in a background tab and wait.
@@ -1470,7 +1471,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
       "downloads/a_zip_file.zip"))));
   ASSERT_TRUE(base::PathExists(origin));
   int64 origin_file_size = 0;
-  EXPECT_TRUE(file_util::GetFileSize(origin, &origin_file_size));
+  EXPECT_TRUE(base::GetFileSize(origin, &origin_file_size));
   std::string original_contents;
   EXPECT_TRUE(base::ReadFileToString(origin, &original_contents));
 
@@ -2382,7 +2383,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaPost) {
   content::RenderViewHost* render_view_host = web_contents->GetRenderViewHost();
   ASSERT_TRUE(render_view_host != NULL);
   render_view_host->ExecuteJavascriptInWebFrame(
-        string16(), ASCIIToUTF16("SubmitForm()"));
+        base::string16(), ASCIIToUTF16("SubmitForm()"));
   observer.Wait();
   EXPECT_EQ(jpeg_url, web_contents->GetURL());
 
@@ -2815,8 +2816,9 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, TestMultipleDownloadsInfobar) {
   ASSERT_EQ(1u, infobar_service->infobar_count());
 
   // Get the infobar at index 0.
-  InfoBarDelegate* infobar = infobar_service->infobar_at(0);
-  ConfirmInfoBarDelegate* confirm_infobar = infobar->AsConfirmInfoBarDelegate();
+  InfoBar* infobar = infobar_service->infobar_at(0);
+  ConfirmInfoBarDelegate* confirm_infobar =
+      infobar->delegate()->AsConfirmInfoBarDelegate();
   ASSERT_TRUE(confirm_infobar != NULL);
 
   // Verify multi download warning infobar message.
@@ -2894,10 +2896,10 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_CrazyFilenames) {
   static const int kFlags = (base::PLATFORM_FILE_CREATE |
                base::PLATFORM_FILE_WRITE);
   base::FilePath origin(FILE_PATH_LITERAL("origin"));
-  ASSERT_TRUE(file_util::CreateDirectory(DestinationFile(browser(), origin)));
+  ASSERT_TRUE(base::CreateDirectory(DestinationFile(browser(), origin)));
 
   for (size_t index = 0; index < arraysize(kCrazyFilenames); ++index) {
-    string16 crazy16;
+    base::string16 crazy16;
     std::string crazy8;
     const wchar_t* crazy_w = kCrazyFilenames[index];
     ASSERT_TRUE(WideToUTF8(crazy_w, wcslen(crazy_w), &crazy8));
@@ -3046,7 +3048,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
   // Check that the file downloaded correctly.
   ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   int64 downloaded_size = 0;
-  ASSERT_TRUE(file_util::GetFileSize(
+  ASSERT_TRUE(base::GetFileSize(
       download_items[0]->GetTargetFilePath(), &downloaded_size));
 #if defined(OS_WIN)
   ASSERT_EQ(1, downloaded_size);

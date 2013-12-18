@@ -83,6 +83,7 @@ class OverscrollController;
 class RenderWidgetHostDelegate;
 class RenderWidgetHostViewPort;
 class SyntheticGestureController;
+class TimeoutMonitor;
 struct EditCommand;
 
 // This implements the RenderWidgetHost interface that is exposed to
@@ -164,8 +165,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                            int tag,
                            const gfx::Size& page_size,
                            const gfx::Size& desired_size) OVERRIDE;
-  virtual void Replace(const string16& word) OVERRIDE;
-  virtual void ReplaceMisspelling(const string16& word) OVERRIDE;
+  virtual void Replace(const base::string16& word) OVERRIDE;
+  virtual void ReplaceMisspelling(const base::string16& word) OVERRIDE;
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
   virtual void RestartHangMonitorTimeout() OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
@@ -312,6 +313,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // display input method windows under the cursor.)
   void SetInputMethodActive(bool activate);
 
+  // Notifies the renderer changes of IME candidate window state.
+  void CandidateWindowShown();
+  void CandidateWindowUpdated();
+  void CandidateWindowHidden();
+
   // Update the composition node of the renderer (or WebKit).
   // WebKit has a special node (a composition node) for input method to change
   // its text without affecting any other DOM nodes. When the input method
@@ -328,7 +334,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // * when it receives a "preedit_changed" signal of GtkIMContext (on Linux);
   // * when markedText of NSTextInput is called (on Mac).
   void ImeSetComposition(
-      const string16& text,
+      const base::string16& text,
       const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
@@ -339,7 +345,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   //   (on Windows);
   // * when it receives a "commit" signal of GtkIMContext (on Linux);
   // * when insertText of NSTextInput is called (on Mac).
-  void ImeConfirmComposition(const string16& text,
+  void ImeConfirmComposition(const base::string16& text,
                              const gfx::Range& replacement_range,
                              bool keep_selection);
 
@@ -631,9 +637,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Tell this object to destroy itself.
   void Destroy();
 
-  // Checks whether the renderer is hung and calls NotifyRendererUnresponsive
-  // if it is.
-  void CheckRendererIsUnresponsive();
+  // Called by |hang_timeout_monitor_| on delayed response from the renderer.
+  void RendererIsUnresponsive();
 
   // Called if we know the renderer is responsive. When we currently think the
   // renderer is unresponsive, this will clear that state and call
@@ -646,7 +651,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnClose();
   void OnUpdateScreenRectsAck();
   void OnRequestMove(const gfx::Rect& pos);
-  void OnSetTooltipText(const string16& tooltip_text,
+  void OnSetTooltipText(const base::string16& tooltip_text,
                         blink::WebTextDirection text_direction_hint);
   void OnPaintAtSizeAck(int tag, const gfx::Size& size);
 #if defined(OS_MACOSX)
@@ -904,6 +909,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   scoped_ptr<InputRouter> input_router_;
 
   scoped_ptr<OverscrollController> overscroll_controller_;
+
+  scoped_ptr<TimeoutMonitor> hang_monitor_timeout_;
 
 #if defined(OS_WIN)
   std::list<HWND> dummy_windows_for_activation_;

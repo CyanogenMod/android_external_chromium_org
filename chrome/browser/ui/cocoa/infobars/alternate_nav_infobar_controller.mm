@@ -27,9 +27,9 @@
   AlternateNavInfoBarDelegate* delegate =
       static_cast<AlternateNavInfoBarDelegate*>([self delegate]);
   DCHECK(delegate);
-  size_t offset = string16::npos;
-  string16 message = delegate->GetMessageTextWithOffset(&offset);
-  string16 link = delegate->GetLinkText();
+  size_t offset = base::string16::npos;
+  base::string16 message = delegate->GetMessageTextWithOffset(&offset);
+  base::string16 link = delegate->GetLinkText();
   NSFont* font = [NSFont labelFontOfSize:
                   [NSFont systemFontSizeForControlSize:NSRegularControlSize]];
   HyperlinkTextView* view = (HyperlinkTextView*)label_.get();
@@ -57,10 +57,13 @@
 
 @end
 
-InfoBar* AlternateNavInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  scoped_ptr<InfoBarCocoa> infobar(new InfoBarCocoa(owner, this));
+// static
+scoped_ptr<InfoBar> AlternateNavInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<AlternateNavInfoBarDelegate> delegate) {
+  scoped_ptr<InfoBarCocoa> infobar(
+      new InfoBarCocoa(delegate.PassAs<InfoBarDelegate>()));
   base::scoped_nsobject<AlternateNavInfoBarController> controller(
       [[AlternateNavInfoBarController alloc] initWithInfoBar:infobar.get()]);
   infobar->set_controller(controller);
-  return infobar.release();
+  return infobar.PassAs<InfoBar>();
 }

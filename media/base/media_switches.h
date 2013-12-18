@@ -40,7 +40,7 @@ MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 
 #if defined(OS_MACOSX)
 MEDIA_EXPORT extern const char kDisableMainThreadAudio[];
-MEDIA_EXPORT extern const char kEnableAVFoundation[];
+MEDIA_EXPORT extern const char kDisableAVFoundation[];
 #endif
 
 #if defined(OS_WIN)
@@ -56,6 +56,8 @@ MEDIA_EXPORT extern const char kUseCras[];
 #endif
 
 MEDIA_EXPORT extern const char kDisableSystemSoundsManager[];
+
+MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
 
 }  // namespace switches
 

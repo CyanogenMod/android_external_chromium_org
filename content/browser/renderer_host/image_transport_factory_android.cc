@@ -48,7 +48,7 @@ class CmdBufferImageTransportFactory : public ImageTransportFactoryAndroid {
   }
   virtual GLHelper* GetGLHelper() OVERRIDE;
   virtual uint32 GetChannelID() OVERRIDE {
-    return context_->GetChannelID();
+    return BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   }
 
  private:
@@ -81,12 +81,10 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
       3 * full_screen_texture_size_in_bytes, kDefaultMaxTransferBufferSize);
   limits.mapped_memory_reclaim_limit =
       WebGraphicsContext3DCommandBufferImpl::kNoLimit;
-  bool use_echo_for_swap_ack = true;
   context_.reset(
       new WebGraphicsContext3DCommandBufferImpl(0,  // offscreen
                                                 url,
                                                 gpu_channel_host.get(),
-                                                use_echo_for_swap_ack,
                                                 attrs,
                                                 false,
                                                 limits));

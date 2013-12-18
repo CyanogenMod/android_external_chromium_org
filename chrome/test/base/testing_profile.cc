@@ -60,6 +60,7 @@
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/policy/core/common/policy_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -75,13 +76,13 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_service_impl.h"
 #include "chrome/browser/policy/schema_registry_service.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
+#include "components/policy/core/common/configuration_policy_provider.h"
+#include "components/policy/core/common/policy_service_impl.h"
 #include "components/policy/core/common/schema.h"
 #else
-#include "chrome/browser/policy/policy_service_stub.h"
+#include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -175,6 +176,7 @@ TestingProfile::TestingProfile()
       incognito_(false),
       force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
@@ -193,6 +195,7 @@ TestingProfile::TestingProfile(const base::FilePath& path)
       incognito_(false),
       force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       profile_path_(path),
       browser_context_dependency_manager_(
@@ -210,6 +213,7 @@ TestingProfile::TestingProfile(const base::FilePath& path,
       incognito_(false),
       force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       profile_path_(path),
       browser_context_dependency_manager_(
@@ -232,7 +236,9 @@ TestingProfile::TestingProfile(
     scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy,
     scoped_ptr<PrefServiceSyncable> prefs,
     bool incognito,
+    bool guest_session,
     const std::string& managed_user_id,
+    scoped_ptr<policy::PolicyService> policy_service,
     const TestingFactories& factories)
     : start_time_(Time::Now()),
       prefs_(prefs.release()),
@@ -240,6 +246,7 @@ TestingProfile::TestingProfile(
       incognito_(incognito),
       force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(guest_session),
       managed_user_id_(managed_user_id),
       last_session_exited_cleanly_(true),
       extension_special_storage_policy_(extension_policy),
@@ -247,7 +254,8 @@ TestingProfile::TestingProfile(
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
       resource_context_(NULL),
-      delegate_(delegate) {
+      delegate_(delegate),
+      policy_service_(policy_service.release()) {
 
   // If no profile path was supplied, create one.
   if (profile_path_.empty()) {
@@ -291,7 +299,7 @@ void TestingProfile::CreateTempProfileDir() {
     base::FilePath fallback_dir(
         system_tmp_dir.AppendASCII("TestingProfilePath"));
     base::DeleteFile(fallback_dir, true);
-    file_util::CreateDirectory(fallback_dir);
+    base::CreateDirectory(fallback_dir);
     if (!temp_dir_.Set(fallback_dir)) {
       // That shouldn't happen, but if it does, try to recover.
       LOG(ERROR) << "Failed to use a fallback temporary directory.";
@@ -319,7 +327,7 @@ void TestingProfile::Init() {
     CreateTestingPrefService();
 
   if (!base::PathExists(profile_path_))
-    file_util::CreateDirectory(profile_path_);
+    base::CreateDirectory(profile_path_);
 
   // TODO(joaodasilva): remove this once this PKS isn't created in ProfileImpl
   // anymore, after converting the PrefService to a PKS. Until then it must
@@ -330,11 +338,19 @@ void TestingProfile::Init() {
   extensions::ExtensionSystemFactory::GetInstance()->SetTestingFactory(
       this, extensions::TestExtensionSystem::Build);
 
-  // If there is no separate original profile specified for this profile, then
-  // force preferences to be registered - this allows tests to create a
+  // If no original profile was specified for this profile: register preferences
+  // even if this is an incognito profile - this allows tests to create a
   // standalone incognito profile while still having prefs registered.
+  if (!IsOffTheRecord() || !original_profile_) {
+    user_prefs::PrefRegistrySyncable* pref_registry =
+        static_cast<user_prefs::PrefRegistrySyncable*>(
+            prefs_->DeprecatedGetPrefRegistry());
+    browser_context_dependency_manager_->
+        RegisterProfilePrefsForServices(this, pref_registry);
+  }
+
   browser_context_dependency_manager_->CreateBrowserContextServicesForTest(
-      this, !original_profile_);
+      this);
 
 #if defined(ENABLE_NOTIFICATIONS)
   // Install profile keyed service factory hooks for dummy/test services
@@ -628,22 +644,25 @@ void TestingProfile::CreateTestingPrefService() {
 }
 
 void TestingProfile::CreateProfilePolicyConnector() {
-  scoped_ptr<policy::PolicyService> service;
 #if defined(ENABLE_CONFIGURATION_POLICY)
   schema_registry_service_ =
       policy::SchemaRegistryServiceFactory::CreateForContext(
           this, policy::Schema(), NULL);
   CHECK_EQ(schema_registry_service_.get(),
            policy::SchemaRegistryServiceFactory::GetForContext(this));
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
-  std::vector<policy::ConfigurationPolicyProvider*> providers;
-  service.reset(new policy::PolicyServiceImpl(
-      providers, policy::PolicyServiceImpl::PreprocessCallback()));
+if (!policy_service_) {
+#if defined(ENABLE_CONFIGURATION_POLICY)
+    std::vector<policy::ConfigurationPolicyProvider*> providers;
+    policy_service_.reset(new policy::PolicyServiceImpl(
+        providers, policy::PolicyServiceImpl::PreprocessCallback()));
 #else
-  service.reset(new policy::PolicyServiceStub());
+    policy_service_.reset(new policy::PolicyServiceStub());
 #endif
+  }
   profile_policy_connector_.reset(new policy::ProfilePolicyConnector());
-  profile_policy_connector_->InitForTesting(service.Pass());
+  profile_policy_connector_->InitForTesting(policy_service_.Pass());
   policy::ProfilePolicyConnectorFactory::GetInstance()->SetServiceForTesting(
       this, profile_policy_connector_.get());
   CHECK_EQ(profile_policy_connector_.get(),
@@ -843,7 +862,7 @@ bool TestingProfile::WasCreatedByVersionOrLater(const std::string& version) {
 }
 
 bool TestingProfile::IsGuestSession() const {
-  return false;
+  return guest_session_;
 }
 
 Profile::ExitType TestingProfile::GetLastSessionExitType() {
@@ -853,7 +872,8 @@ Profile::ExitType TestingProfile::GetLastSessionExitType() {
 TestingProfile::Builder::Builder()
     : build_called_(false),
       delegate_(NULL),
-      incognito_(false) {
+      incognito_(false),
+      guest_session_(false) {
 }
 
 TestingProfile::Builder::~Builder() {
@@ -881,14 +901,23 @@ void TestingProfile::Builder::SetIncognito() {
   incognito_ = true;
 }
 
+void TestingProfile::Builder::SetGuestSession() {
+  guest_session_ = true;
+}
+
 void TestingProfile::Builder::SetManagedUserId(
     const std::string& managed_user_id) {
   managed_user_id_ = managed_user_id;
 }
 
+void TestingProfile::Builder::SetPolicyService(
+    scoped_ptr<policy::PolicyService> policy_service) {
+  policy_service_ = policy_service.Pass();
+}
+
 void TestingProfile::Builder::AddTestingFactory(
     BrowserContextKeyedServiceFactory* service_factory,
-    BrowserContextKeyedServiceFactory::FactoryFunction callback) {
+    BrowserContextKeyedServiceFactory::TestingFactoryFunction callback) {
   testing_factories_.push_back(std::make_pair(service_factory, callback));
 }
 
@@ -902,6 +931,8 @@ scoped_ptr<TestingProfile> TestingProfile::Builder::Build() {
       extension_policy_,
       pref_service_.Pass(),
       incognito_,
+      guest_session_,
       managed_user_id_,
+      policy_service_.Pass(),
       testing_factories_));
 }

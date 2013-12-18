@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/callback_forward.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
+#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 
 class GURL;
 class Profile;
@@ -182,10 +182,6 @@ class APIUtilInterface {
   virtual void DeleteFile(const std::string& resource_id,
                           const std::string& remote_file_md5,
                           const GDataErrorCallback& callback) = 0;
-
-  // Converts |resource_id| to corresponing resource link.
-  virtual GURL ResourceIdToResourceLink(
-      const std::string& resource_id) const = 0;
 
   // Ensures the sync root directory is not in 'My Drive'. Even if the directory
   // is in directories other than 'My Drive', it will not be removed from there.

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/posix/eintr_wrapper.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 
 #include <sys/ioctl.h>
@@ -10,6 +9,10 @@
 
 #if defined(OS_LINUX)
 #include <linux/serial.h>
+#endif
+
+#if defined(OS_MACOSX)
+#include <IOKit/serial/ioss.h>
 #endif
 
 namespace extensions {
@@ -102,6 +105,9 @@ bool SetCustomBitrate(base::PlatformFile file,
   cfsetispeed(config, B38400);
   cfsetospeed(config, B38400);
   return ioctl(file, TIOCSSERIAL, &serial) >= 0;
+#elif defined(OS_MACOSX)
+  speed_t speed = static_cast<speed_t>(bitrate);
+  return ioctl(file, IOSSIOSPEED, &speed) != -1;
 #else
   return false;
 #endif

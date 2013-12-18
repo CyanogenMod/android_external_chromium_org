@@ -202,6 +202,30 @@ _BANNED_CPP_FUNCTIONS = (
       True,
       (),
     ),
+    (
+      r'/HANDLE_EINTR\(.*close',
+      (
+       'HANDLE_EINTR(close) is invalid. If close fails with EINTR, the file',
+       'descriptor will be closed, and it is incorrect to retry the close.',
+       'Either call close directly and ignore its return value, or wrap close',
+       'in IGNORE_EINTR to use its return value. See http://crbug.com/269623'
+      ),
+      True,
+      (),
+    ),
+    (
+      r'/IGNORE_EINTR\((?!.*close)',
+      (
+       'IGNORE_EINTR is only valid when wrapping close. To wrap other system',
+       'calls, use HANDLE_EINTR. See http://crbug.com/269623',
+      ),
+      True,
+      (
+        # Files that #define IGNORE_EINTR.
+        r'^base[\\\/]posix[\\\/]eintr_wrapper\.h$',
+        r'^ppapi[\\\/]tests[\\\/]test_broker\.cc$',
+      ),
+    ),
 )
 
 
@@ -375,7 +399,14 @@ def _CheckNoBannedFunctions(input_api, output_api):
           return False
         if IsBlacklisted(f, excluded_paths):
           continue
-        if func_name in line:
+        matched = False
+        if func_name[0:1] == '/':
+          regex = func_name[1:]
+          if input_api.re.search(regex, line):
+            matched = True
+        elif func_name in line:
+            matched = True
+        if matched:
           problems = warnings;
           if error:
             problems = errors;
@@ -835,6 +866,11 @@ def _CheckSpamLogging(input_api, output_api):
                 _TEST_CODE_EXCLUDED_PATHS +
                 input_api.DEFAULT_BLACK_LIST +
                 (r"^base[\\\/]logging\.h$",
+                 r"^chrome[\\\/]app[\\\/]chrome_main_delegate\.cc$",
+                 r"^chrome[\\\/]browser[\\\/]chrome_browser_main\.cc$",
+                 r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
+                 r"^chrome[\\\/]renderer[\\\/]extensions[\\\/]"
+                     r"logging_native_handler\.cc$",
                  r"^remoting[\\\/]base[\\\/]logging\.h$",
                  r"^sandbox[\\\/]linux[\\\/].*",))
   source_file_filter = lambda x: input_api.FilterSourceFile(
@@ -847,9 +883,12 @@ def _CheckSpamLogging(input_api, output_api):
     contents = input_api.ReadFile(f, 'rb')
     if re.search(r"\bD?LOG\s*\(\s*INFO\s*\)", contents):
       log_info.append(f.LocalPath())
-    if re.search(r"\bD?LOG_IF\s*\(\s*INFO\s*,", contents):
+    elif re.search(r"\bD?LOG_IF\s*\(\s*INFO\s*,", contents):
       log_info.append(f.LocalPath())
-    if re.search(r"\bf?printf\((stdout|stderr)", contents):
+
+    if re.search(r"\bprintf\(", contents):
+      printf.append(f.LocalPath())
+    elif re.search(r"\bfprintf\((stdout|stderr)", contents):
       printf.append(f.LocalPath())
 
   if log_info:
@@ -863,6 +902,94 @@ def _CheckSpamLogging(input_api, output_api):
   return []
 
 
+def _CheckForAnonymousVariables(input_api, output_api):
+  """These types are all expected to hold locks while in scope and
+     so should never be anonymous (which causes them to be immediately
+     destroyed)."""
+  they_who_must_be_named = [
+    'base::AutoLock',
+    'base::AutoReset',
+    'base::AutoUnlock',
+    'SkAutoAlphaRestore',
+    'SkAutoBitmapShaderInstall',
+    'SkAutoBlitterChoose',
+    'SkAutoBounderCommit',
+    'SkAutoCallProc',
+    'SkAutoCanvasRestore',
+    'SkAutoCommentBlock',
+    'SkAutoDescriptor',
+    'SkAutoDisableDirectionCheck',
+    'SkAutoDisableOvalCheck',
+    'SkAutoFree',
+    'SkAutoGlyphCache',
+    'SkAutoHDC',
+    'SkAutoLockColors',
+    'SkAutoLockPixels',
+    'SkAutoMalloc',
+    'SkAutoMaskFreeImage',
+    'SkAutoMutexAcquire',
+    'SkAutoPathBoundsUpdate',
+    'SkAutoPDFRelease',
+    'SkAutoRasterClipValidate',
+    'SkAutoRef',
+    'SkAutoTime',
+    'SkAutoTrace',
+    'SkAutoUnref',
+  ]
+  anonymous = r'(%s)\s*[({]' % '|'.join(they_who_must_be_named)
+  # bad: base::AutoLock(lock.get());
+  # not bad: base::AutoLock lock(lock.get());
+  bad_pattern = input_api.re.compile(anonymous)
+  # good: new base::AutoLock(lock.get())
+  good_pattern = input_api.re.compile(r'\bnew\s*' + anonymous)
+  errors = []
+
+  for f in input_api.AffectedFiles():
+    if not f.LocalPath().endswith(('.cc', '.h', '.inl', '.m', '.mm')):
+      continue
+    for linenum, line in f.ChangedContents():
+      if bad_pattern.search(line) and not good_pattern.search(line):
+        errors.append('%s:%d' % (f.LocalPath(), linenum))
+
+  if errors:
+    return [output_api.PresubmitError(
+      'These lines create anonymous variables that need to be named:',
+      items=errors)]
+  return []
+
+
+def _CheckCygwinShell(input_api, output_api):
+  source_file_filter = lambda x: input_api.FilterSourceFile(
+      x, white_list=(r'.+\.(gyp|gypi)$',))
+  cygwin_shell = []
+
+  for f in input_api.AffectedSourceFiles(source_file_filter):
+    for linenum, line in f.ChangedContents():
+      if 'msvs_cygwin_shell' in line:
+        cygwin_shell.append(f.LocalPath())
+        break
+
+  if cygwin_shell:
+    return [output_api.PresubmitError(
+      'These files should not use msvs_cygwin_shell (the default is 0):',
+      items=cygwin_shell)]
+  return []
+
+
+def _CheckJavaStyle(input_api, output_api):
+  """Runs checkstyle on changed java files and returns errors if any exist."""
+  original_sys_path = sys.path
+  try:
+    sys.path = sys.path + [input_api.os_path.join(
+        input_api.PresubmitLocalPath(), 'tools', 'android', 'checkstyle')]
+    import checkstyle
+  finally:
+    # Restore sys.path to what it was before.
+    sys.path = original_sys_path
+
+  return checkstyle.RunCheckstyle(
+      input_api, output_api, 'tools/android/checkstyle/chromium-style-5.0.xml')
+
 
 def _CommonChecks(input_api, output_api):
   """Checks common to both upload and commit."""
@@ -871,7 +998,7 @@ def _CommonChecks(input_api, output_api):
       input_api, output_api, excluded_paths=_EXCLUDED_PATHS))
   results.extend(_CheckAuthorizedAuthor(input_api, output_api))
   results.extend(
-    _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
+      _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
   results.extend(_CheckNoIOStreamInHeaders(input_api, output_api))
   results.extend(_CheckNoUNIT_TESTInSourceFiles(input_api, output_api))
   results.extend(_CheckNoNewWStrings(input_api, output_api))
@@ -895,6 +1022,9 @@ def _CommonChecks(input_api, output_api):
           output_api,
           source_file_filter=lambda x: x.LocalPath().endswith('.grd')))
   results.extend(_CheckSpamLogging(input_api, output_api))
+  results.extend(_CheckForAnonymousVariables(input_api, output_api))
+  results.extend(_CheckCygwinShell(input_api, output_api))
+  results.extend(_CheckJavaStyle(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(

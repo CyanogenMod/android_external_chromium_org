@@ -9,7 +9,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "chromeos/dbus/fake_shill_service_client.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
 #include "chromeos/network/network_event_log.h"
 #include "dbus/bus.h"
@@ -252,6 +251,16 @@ class ShillServiceClientImpl : public ShillServiceClient {
     // remove them when they become inactive (no observers and no active method
     // calls).
     dbus::ObjectPath object_path = helper->object_proxy()->object_path();
+    // Make sure we don't release the proxy used by ShillManagerClient ("/").
+    // This shouldn't ever happen, but might if a bug in the code requests
+    // a service with path "/", or a bug in Shill passes "/" as a service path.
+    // Either way this would cause an invalid memory access in
+    // ShillManagerClient, see crbug.com/324849.
+    if (object_path == dbus::ObjectPath(shill::kFlimflamServicePath)) {
+      NET_LOG_ERROR("ShillServiceClient service has invalid path",
+                    shill::kFlimflamServicePath);
+      return;
+    }
     NET_LOG_DEBUG("RemoveShillClientHelper", object_path.value());
     bus_->RemoveObjectProxy(shill::kFlimflamServiceName,
                             object_path, base::Bind(&base::DoNothing));
@@ -273,12 +282,8 @@ ShillServiceClient::ShillServiceClient() {}
 ShillServiceClient::~ShillServiceClient() {}
 
 // static
-ShillServiceClient* ShillServiceClient::Create(
-    DBusClientImplementationType type) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new ShillServiceClientImpl();
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeShillServiceClient();
+ShillServiceClient* ShillServiceClient::Create() {
+  return new ShillServiceClientImpl();
 }
 
 }  // namespace chromeos

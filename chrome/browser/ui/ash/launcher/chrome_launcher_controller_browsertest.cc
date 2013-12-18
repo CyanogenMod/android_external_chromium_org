@@ -153,9 +153,8 @@ class LauncherPlatformAppBrowserTest
   // Returns the number of menu items, ignoring separators.
   int GetNumApplicationMenuItems(const ash::LauncherItem& item) {
     const int event_flags = 0;
-    scoped_ptr<ash::LauncherMenuModel> menu(
-        new LauncherApplicationMenuItemModel(
-            controller_->GetApplicationList(item, event_flags)));
+    scoped_ptr<ash::ShelfMenuModel> menu(new LauncherApplicationMenuItemModel(
+        controller_->GetApplicationList(item, event_flags)));
     int num_items = 0;
     for (int i = 0; i < menu->GetItemCount(); ++i) {
       if (menu->GetTypeAt(i) != ui::MenuModel::TYPE_SEPARATOR)
@@ -296,6 +295,7 @@ class LauncherAppBrowserTest : public ExtensionBrowserTest {
     }
     if (command != RIP_OFF_ITEM_AND_DONT_RELEASE_MOUSE) {
       generator->ReleaseLeftButton();
+      base::MessageLoop::current()->RunUntilIdle();
       test->RunMessageLoopUntilAnimationsDone();
     }
   }
@@ -850,7 +850,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchPinned) {
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchUnpinned) {
   TabStripModel* tab_strip = browser()->tab_strip_model();
   int tab_count = tab_strip->count();
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_FOREGROUND_TAB);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB,
+                         NEW_FOREGROUND_TAB);
   EXPECT_EQ(++tab_count, tab_strip->count());
   ash::LauncherID shortcut_id = CreateShortcut("app1");
   EXPECT_EQ(ash::STATUS_ACTIVE, (*model_->ItemByID(shortcut_id)).status);
@@ -867,7 +868,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchUnpinned) {
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchInBackground) {
   TabStripModel* tab_strip = browser()->tab_strip_model();
   int tab_count = tab_strip->count();
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_BACKGROUND_TAB);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB,
+                         NEW_BACKGROUND_TAB);
   EXPECT_EQ(++tab_count, tab_strip->count());
   ChromeLauncherController::instance()->LaunchApp(last_loaded_extension_id(),
                                                   ash::LAUNCH_FROM_UNKNOWN,
@@ -1238,13 +1240,14 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTestNoDefaultBrowser,
   EXPECT_EQ(0u, items);
   EXPECT_EQ(0u, running_browser);
 
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_WINDOW, NEW_WINDOW);
+  LoadAndLaunchExtension(
+      "app1", extensions::LAUNCH_CONTAINER_WINDOW, NEW_WINDOW);
 
   // No new browser should get detected, even though one more is running.
   EXPECT_EQ(0u, NumberOfDetectedLauncherBrowsers(false));
   EXPECT_EQ(++running_browser, chrome::GetTotalBrowserCount());
 
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_WINDOW);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB, NEW_WINDOW);
 
   // A new browser should get detected and one more should be running.
   EXPECT_EQ(NumberOfDetectedLauncherBrowsers(false), 1u);
@@ -1255,18 +1258,19 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTestNoDefaultBrowser,
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTestNoDefaultBrowser,
     EnumerateALlBrowsersAndTabs) {
   // Create at least one browser.
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_WINDOW);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB, NEW_WINDOW);
   size_t browsers = NumberOfDetectedLauncherBrowsers(false);
   size_t tabs = NumberOfDetectedLauncherBrowsers(true);
 
   // Create a second browser.
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_WINDOW);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB, NEW_WINDOW);
 
   EXPECT_EQ(++browsers, NumberOfDetectedLauncherBrowsers(false));
   EXPECT_EQ(++tabs, NumberOfDetectedLauncherBrowsers(true));
 
   // Create only a tab.
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_FOREGROUND_TAB);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB,
+                         NEW_FOREGROUND_TAB);
 
   EXPECT_EQ(browsers, NumberOfDetectedLauncherBrowsers(false));
   EXPECT_EQ(++tabs, NumberOfDetectedLauncherBrowsers(true));
@@ -1458,7 +1462,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTestNoDefaultBrowser,
   EXPECT_EQ(window1, ash::wm::GetActiveWindow());
 
   // Create anther app and make sure that none of our browsers is active.
-  LoadAndLaunchExtension("app1", extensions::LAUNCH_TAB, NEW_WINDOW);
+  LoadAndLaunchExtension("app1", extensions::LAUNCH_CONTAINER_TAB, NEW_WINDOW);
   EXPECT_NE(window1, ash::wm::GetActiveWindow());
   EXPECT_NE(window2, ash::wm::GetActiveWindow());
 
@@ -1759,9 +1763,10 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragOffShelf) {
       ash::Shell::GetPrimaryRootWindow(), gfx::Point());
   ash::test::ShelfViewTestAPI test(
       ash::test::LauncherTestAPI(launcher_).shelf_view());
-
+  test.SetAnimationDuration(1);  // Speed up animations for test.
   // Create a known application and check that we have 3 items in the launcher.
   CreateShortcut("app1");
+  test.RunMessageLoopUntilAnimationsDone();
   EXPECT_EQ(3, model_->item_count());
 
   // Test #1: Ripping out the browser item should not change anything.
@@ -1803,6 +1808,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragOffShelf) {
   // Test #5: Uninstalling an application while it is being ripped off should
   // not crash.
   ash::LauncherID app_id = CreateShortcut("app2");
+  test.RunMessageLoopUntilAnimationsDone();
   int app2_index = GetIndexOfShelfItemType(ash::TYPE_APP_SHORTCUT);
   EXPECT_EQ(3, model_->item_count());  // And it remains that way.
   RipOffItemIndex(app2_index,
@@ -1810,6 +1816,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragOffShelf) {
                   &test,
                   RIP_OFF_ITEM_AND_DONT_RELEASE_MOUSE);
   RemoveShortcut(app_id);
+  test.RunMessageLoopUntilAnimationsDone();
   EXPECT_EQ(2, model_->item_count());  // The item should now be gone.
   generator.ReleaseLeftButton();
   base::MessageLoop::current()->RunUntilIdle();
@@ -1833,6 +1840,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragOffShelf) {
   // Make one more item after creating a overflow button.
   std::string fake_app_id = base::StringPrintf("fake_app_%d", items_added);
   PinFakeApp(fake_app_id);
+  test.RunMessageLoopUntilAnimationsDone();
 
   int total_count = model_->item_count();
   app_index = GetIndexOfShelfItemType(ash::TYPE_APP_SHORTCUT);
@@ -1997,7 +2005,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, V1AppNavigation) {
       controller_->GetExtensionForAppID(extension_misc::kWebStoreAppId),
       0,
       chrome::HOST_DESKTOP_TYPE_ASH);
-  params.container = extensions::LAUNCH_WINDOW;
+  params.container = extensions::LAUNCH_CONTAINER_WINDOW;
   OpenApplication(params);
   EXPECT_EQ(ash::STATUS_ACTIVE, model_->ItemByID(id)->status);
 

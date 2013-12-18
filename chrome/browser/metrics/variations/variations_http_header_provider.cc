@@ -34,7 +34,7 @@ void VariationsHttpHeaderProvider::AppendHeaders(
   // 2. Only transmit for non-Incognito profiles.
   // 3. For the X-Chrome-UMA-Enabled bit, only set it if UMA is in fact enabled
   //    for this install of Chrome.
-  // 4. For the X-Chrome-Variations, only include non-empty variation IDs.
+  // 4. For the X-Client-Data header, only include non-empty variation IDs.
   if (incognito || !ShouldAppendHeaders(url))
     return;
 
@@ -52,7 +52,8 @@ void VariationsHttpHeaderProvider::AppendHeaders(
   }
 
   if (!variation_ids_header_copy.empty()) {
-    headers->SetHeaderIfMissing("X-Chrome-Variations",
+    // Note that prior to M33 this header was named X-Chrome-Variations.
+    headers->SetHeaderIfMissing("X-Client-Data",
                                 variation_ids_header_copy);
   }
 }
@@ -162,16 +163,12 @@ void VariationsHttpHeaderProvider::UpdateVariationIDsHeaderValue() {
   proto.SerializeToString(&serialized);
 
   std::string hashed;
-  if (base::Base64Encode(serialized, &hashed)) {
-    // If successful, swap the header value with the new one.
-    // Note that the list of IDs and the header could be temporarily out of sync
-    // if IDs are added as the header is recreated. The receiving servers are OK
-    // with such discrepancies.
-    variation_ids_header_ = hashed;
-  } else {
-    NOTREACHED() << "Failed to base64 encode Variation IDs value: "
-                 << serialized;
-  }
+  base::Base64Encode(serialized, &hashed);
+  // If successful, swap the header value with the new one.
+  // Note that the list of IDs and the header could be temporarily out of sync
+  // if IDs are added as the header is recreated. The receiving servers are OK
+  // with such discrepancies.
+  variation_ids_header_ = hashed;
 }
 
 // static

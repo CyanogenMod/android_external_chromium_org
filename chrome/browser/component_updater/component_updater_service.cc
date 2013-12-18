@@ -28,6 +28,7 @@
 #include "chrome/browser/component_updater/component_unpacker.h"
 #include "chrome/browser/component_updater/component_updater_ping_manager.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
+#include "chrome/browser/component_updater/crx_downloader.h"
 #include "chrome/browser/component_updater/crx_update_item.h"
 #include "chrome/browser/component_updater/update_response.h"
 #include "chrome/common/chrome_version_info.h"
@@ -41,7 +42,6 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -100,52 +100,6 @@ template <typename Del, typename Ctx>
 net::URLFetcherDelegate* MakeContextDelegate(Del* delegate, Ctx* context) {
   return new DelegateWithContext<Del, Ctx>(delegate, context);
 }
-
-// Helper to start a url request using |fetcher| with the common flags.
-void StartFetch(net::URLFetcher* fetcher,
-                net::URLRequestContextGetter* context_getter,
-                bool save_to_file,
-                scoped_refptr<base::SequencedTaskRunner> task_runner) {
-  fetcher->SetRequestContext(context_getter);
-  fetcher->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
-                        net::LOAD_DO_NOT_SAVE_COOKIES |
-                        net::LOAD_DISABLE_CACHE);
-  // TODO(cpu): Define our retry and backoff policy.
-  fetcher->SetAutomaticallyRetryOn5xx(false);
-  if (save_to_file) {
-    fetcher->SaveResponseToTemporaryFile(task_runner);
-  }
-  fetcher->Start();
-}
-
-// Returns true if the url request of |fetcher| was succesful.
-bool FetchSuccess(const net::URLFetcher& fetcher) {
-  return (fetcher.GetStatus().status() == net::URLRequestStatus::SUCCESS) &&
-         (fetcher.GetResponseCode() == 200);
-}
-
-// Returns the error code which occured during the fetch.The function returns 0
-// if the fetch was successful. If errors happen, the function could return a
-// network error, an http response code, or the status of the fetch, if the
-// fetch is pending or canceled.
-int GetFetchError(const net::URLFetcher& fetcher) {
-  if (FetchSuccess(fetcher))
-    return 0;
-
-  const net::URLRequestStatus::Status status(fetcher.GetStatus().status());
-  if (status == net::URLRequestStatus::FAILED)
-    return fetcher.GetStatus().error();
-
-  if (status == net::URLRequestStatus::IO_PENDING ||
-      status == net::URLRequestStatus::CANCELED)
-    return status;
-
-  const int response_code(fetcher.GetResponseCode());
-  if (status == net::URLRequestStatus::SUCCESS && response_code != 200)
-    return response_code;
-
-  return -1;
-  }
 
 // Returns true if a differential update is available for the update item.
 bool IsDiffUpdateAvailable(const CrxUpdateItem* update_item) {
@@ -214,6 +168,7 @@ class CUResourceThrottle
   // Overriden from ResourceThrottle.
   virtual void WillStartRequest(bool* defer) OVERRIDE;
   virtual void WillRedirectRequest(const GURL& new_url, bool* defer) OVERRIDE;
+  virtual const char* GetNameForLogging() const OVERRIDE;
 
   // Component updater calls this function via PostTask to unblock the request.
   void Unblock();
@@ -290,9 +245,6 @@ class CrxUpdateService : public ComponentUpdateService {
   void OnURLFetchComplete(const net::URLFetcher* source,
                           UpdateContext* context);
 
-  void OnURLFetchComplete(const net::URLFetcher* source,
-                          CRXContext* context);
-
  private:
   enum ErrorCategory {
     kErrorNone = 0,
@@ -310,6 +262,10 @@ class CrxUpdateService : public ComponentUpdateService {
   void OnParseUpdateResponseSucceeded(
       const component_updater::UpdateResponse::Results& results);
   void OnParseUpdateResponseFailed(const std::string& error_message);
+
+  void DownloadComplete(
+      scoped_ptr<CRXContext> crx_context,
+      const component_updater::CrxDownloader::Result& download_result);
 
   Status OnDemandUpdateInternal(CrxUpdateItem* item);
 
@@ -330,7 +286,7 @@ class CrxUpdateService : public ComponentUpdateService {
 
   void ParseResponse(const std::string& xml);
 
-  void Install(const CRXContext* context, const base::FilePath& crx_path);
+  void Install(scoped_ptr<CRXContext> context, const base::FilePath& crx_path);
 
   void DoneInstalling(const std::string& component_id,
                       ComponentUnpacker::Error error,
@@ -358,6 +314,8 @@ class CrxUpdateService : public ComponentUpdateService {
   scoped_ptr<net::URLFetcher> url_fetcher_;
 
   scoped_ptr<component_updater::PingManager> ping_manager_;
+
+  scoped_ptr<component_updater::CrxDownloader> crx_downloader_;
 
   // A collection of every work item.
   typedef std::vector<CrxUpdateItem*> UpdateItems;
@@ -702,11 +660,11 @@ CrxUpdateItem* CrxUpdateService::FindReadyComponent() {
 }
 
 void CrxUpdateService::UpdateComponent(CrxUpdateItem* workitem) {
-  CRXContext* context = new CRXContext;
-  context->pk_hash = workitem->component.pk_hash;
-  context->id = workitem->id;
-  context->installer = workitem->component.installer;
-  context->fingerprint = workitem->next_fp;
+  scoped_ptr<CRXContext> crx_context(new CRXContext);
+  crx_context->pk_hash = workitem->component.pk_hash;
+  crx_context->id = workitem->id;
+  crx_context->installer = workitem->component.installer;
+  crx_context->fingerprint = workitem->next_fp;
   GURL package_url;
   if (CanTryDiffUpdate(workitem, *config_)) {
     package_url = workitem->diff_crx_url;
@@ -715,13 +673,19 @@ void CrxUpdateService::UpdateComponent(CrxUpdateItem* workitem) {
     package_url = workitem->crx_url;
     ChangeItemState(workitem, CrxUpdateItem::kDownloading);
   }
-  url_fetcher_.reset(net::URLFetcher::Create(
-      0, package_url, net::URLFetcher::GET,
-      MakeContextDelegate(this, context)));
-  StartFetch(url_fetcher_.get(),
-             config_->RequestContext(),
-             true,
-             blocking_task_runner_);
+
+  // On demand component updates are always downloaded in foreground.
+  const bool is_background_download = !workitem->on_demand &&
+                                       config_->UseBackgroundDownloader();
+
+  crx_downloader_.reset(component_updater::CrxDownloader::Create(
+      is_background_download,
+      config_->RequestContext(),
+      blocking_task_runner_,
+      base::Bind(&CrxUpdateService::DownloadComplete,
+                 base::Unretained(this),
+                 base::Passed(&crx_context))));
+  crx_downloader_->StartDownloadFromUrl(package_url);
 }
 
 // Sets the state of the component to be checked for updates. After the
@@ -843,7 +807,7 @@ void CrxUpdateService::DoUpdateCheck(const std::string& update_check_items) {
 void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
                                           UpdateContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (FetchSuccess(*source)) {
+  if (component_updater::FetchSuccess(*source)) {
     std::string xml;
     source->GetResponseAsString(&xml);
     url_fetcher_.reset();
@@ -949,35 +913,34 @@ void CrxUpdateService::OnParseUpdateResponseFailed(
 // Called when the CRX package has been downloaded to a temporary location.
 // Here we fire the notifications and schedule the component-specific installer
 // to be called in the file thread.
-void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
-                                          CRXContext* context) {
+void CrxUpdateService::DownloadComplete(
+    scoped_ptr<CRXContext> crx_context,
+    const component_updater::CrxDownloader::Result& download_result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  scoped_ptr<CRXContext> crx_context(context);
 
   CrxUpdateItem* crx = FindUpdateItemById(crx_context->id);
   DCHECK(crx->status == CrxUpdateItem::kDownloadingDiff ||
          crx->status == CrxUpdateItem::kDownloading);
 
-  if (!FetchSuccess(*source)) {
+  if (download_result.error) {
     if (crx->status == CrxUpdateItem::kDownloadingDiff) {
       crx->diff_error_category = kNetworkError;
-      crx->diff_error_code = GetFetchError(*source);
+      crx->diff_error_code = download_result.error;
       crx->diff_update_failed = true;
       size_t count = ChangeItemStatus(CrxUpdateItem::kDownloadingDiff,
                                       CrxUpdateItem::kCanUpdate);
       DCHECK_EQ(count, 1ul);
-      url_fetcher_.reset();
+      crx_downloader_.reset();
 
       ScheduleNextRun(kStepDelayShort);
       return;
     }
     crx->error_category = kNetworkError;
-    crx->error_code = GetFetchError(*source);
+    crx->error_code = download_result.error;
     size_t count = ChangeItemStatus(CrxUpdateItem::kDownloading,
                                     CrxUpdateItem::kNoUpdate);
     DCHECK_EQ(count, 1ul);
-    url_fetcher_.reset();
+    crx_downloader_.reset();
 
     // At this point, since both the differential and the full downloads failed,
     // the update for this component has finished with an error.
@@ -986,9 +949,6 @@ void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
     // Move on to the next update, if there is one available.
     ScheduleNextRun(kStepDelayMedium);
   } else {
-    base::FilePath temp_crx_path;
-    CHECK(source->GetResponseAsFilePath(true, &temp_crx_path));
-
     size_t count = 0;
     if (crx->status == CrxUpdateItem::kDownloadingDiff) {
       count = ChangeItemStatus(CrxUpdateItem::kDownloadingDiff,
@@ -999,15 +959,15 @@ void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
     }
     DCHECK_EQ(count, 1ul);
 
-    url_fetcher_.reset();
+    crx_downloader_.reset();
 
     // Why unretained? See comment at top of file.
     blocking_task_runner_->PostDelayedTask(
         FROM_HERE,
         base::Bind(&CrxUpdateService::Install,
                    base::Unretained(this),
-                   crx_context.release(),
-                   temp_crx_path),
+                   base::Passed(&crx_context),
+                   download_result.response),
         base::TimeDelta::FromMilliseconds(config_->StepDelay()));
   }
 }
@@ -1016,7 +976,7 @@ void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
 // calling the component specific installer. All that is handled by the
 // |unpacker|. If there is an error this function is in charge of deleting
 // the files created.
-void CrxUpdateService::Install(const CRXContext* context,
+void CrxUpdateService::Install(scoped_ptr<CRXContext> context,
                                const base::FilePath& crx_path) {
   // This function owns the file at |crx_path| and the |context| object.
   ComponentUnpacker unpacker(context->pk_hash,
@@ -1033,7 +993,6 @@ void CrxUpdateService::Install(const CRXContext* context,
       base::Bind(&CrxUpdateService::DoneInstalling, base::Unretained(this),
                  context->id, unpacker.error(), unpacker.extended_error()),
       base::TimeDelta::FromMilliseconds(config_->StepDelay()));
-  delete context;
 }
 
 // Installation has been completed. Adjust the component status and
@@ -1149,6 +1108,10 @@ void CUResourceThrottle::WillStartRequest(bool* defer) {
 
 void CUResourceThrottle::WillRedirectRequest(const GURL& new_url, bool* defer) {
   WillStartRequest(defer);
+}
+
+const char* CUResourceThrottle::GetNameForLogging() const {
+  return "ComponentUpdateResourceThrottle";
 }
 
 void CUResourceThrottle::Unblock() {

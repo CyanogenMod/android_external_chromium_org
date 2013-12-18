@@ -64,6 +64,8 @@ class LayerTreeHostImplClient {
   virtual void BeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void NotifyReadyToActivate() = 0;
+  // Please call these 2 functions through
+  // LayerTreeHostImpl's SetNeedsRedraw() and SetNeedsRedrawRect().
   virtual void SetNeedsRedrawOnImplThread() = 0;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) = 0;
   virtual void DidInitializeVisibleTileOnImplThread() = 0;
@@ -102,7 +104,8 @@ class CC_EXPORT LayerTreeHostImpl
       LayerTreeHostImplClient* client,
       Proxy* proxy,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
-      SharedBitmapManager* manager);
+      SharedBitmapManager* manager,
+      int id);
   virtual ~LayerTreeHostImpl();
 
   // InputHandler implementation
@@ -131,8 +134,8 @@ class CC_EXPORT LayerTreeHostImpl
                                        base::TimeDelta duration) OVERRIDE;
   virtual void ScheduleAnimation() OVERRIDE;
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_port) OVERRIDE;
-  virtual void SetLatencyInfoForInputEvent(const ui::LatencyInfo& latency_info)
-      OVERRIDE;
+  virtual scoped_ptr<SwapPromiseMonitor> CreateLatencyInfoSwapPromiseMonitor(
+      ui::LatencyInfo* latency) OVERRIDE;
 
   // TopControlsManagerClient implementation.
   virtual void DidChangeTopControlsPosition() OVERRIDE;
@@ -165,6 +168,7 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void UpdateAnimationState(bool start_ready_animations);
   void MainThreadHasStoppedFlinging();
   void UpdateBackgroundAnimateTicking(bool should_background_tick);
+  void DidAnimateScrollOffset();
   void SetViewportDamage(gfx::Rect damage_rect);
 
   virtual void ManageTiles();
@@ -205,13 +209,7 @@ class CC_EXPORT LayerTreeHostImpl
   // invariant relative to page scale).
   gfx::SizeF UnscaledScrollableViewportSize() const;
 
-  // RendererClient implementation
-
-  // Viewport rectangle and clip in nonflipped window space.  These rects
-  // should only be used by Renderer subclasses to populate glViewport/glClip
-  // and their software-mode equivalents.
-  virtual gfx::Rect DeviceViewport() const OVERRIDE;
-  virtual gfx::Rect DeviceClip() const OVERRIDE;
+  // RendererClient implementation.
   virtual void SetFullRootLayerDamage() OVERRIDE;
 
   // TileManagerClient implementation.
@@ -290,7 +288,7 @@ class CC_EXPORT LayerTreeHostImpl
   bool visible() const { return visible_; }
 
   void SetNeedsCommit() { client_->SetNeedsCommitOnImplThread(); }
-  void SetNeedsRedraw() { client_->SetNeedsRedrawOnImplThread(); }
+  void SetNeedsRedraw();
 
   ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
@@ -414,6 +412,18 @@ class CC_EXPORT LayerTreeHostImpl
   void ScheduleMicroBenchmark(scoped_ptr<MicroBenchmarkImpl> benchmark);
 
   CompositorFrameMetadata MakeCompositorFrameMetadata() const;
+  // Viewport rectangle and clip in nonflipped window space.  These rects
+  // should only be used by Renderer subclasses to populate glViewport/glClip
+  // and their software-mode equivalents.
+  gfx::Rect DeviceViewport() const;
+  gfx::Rect DeviceClip() const;
+
+  // When a SwapPromiseMonitor is created on the impl thread, it calls
+  // InsertSwapPromiseMonitor() to register itself with LayerTreeHostImpl.
+  // When the monitor is destroyed, it calls RemoveSwapPromiseMonitor()
+  // to unregister itself.
+  void InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor);
+  void RemoveSwapPromiseMonitor(SwapPromiseMonitor* monitor);
 
  protected:
   LayerTreeHostImpl(
@@ -421,7 +431,8 @@ class CC_EXPORT LayerTreeHostImpl
       LayerTreeHostImplClient* client,
       Proxy* proxy,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
-      SharedBitmapManager* manager);
+      SharedBitmapManager* manager,
+      int id);
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time,
@@ -500,6 +511,8 @@ class CC_EXPORT LayerTreeHostImpl
   void DidInitializeVisibleTile();
 
   void MarkUIResourceNotEvicted(UIResourceId uid);
+
+  void NotifySwapPromiseMonitorsOfSetNeedsRedraw();
 
   typedef base::hash_map<UIResourceId, UIResourceData>
       UIResourceMap;
@@ -635,6 +648,9 @@ class CC_EXPORT LayerTreeHostImpl
   base::Closure tree_activation_callback_;
 
   SharedBitmapManager* shared_bitmap_manager_;
+  int id_;
+
+  std::set<SwapPromiseMonitor*> swap_promise_monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

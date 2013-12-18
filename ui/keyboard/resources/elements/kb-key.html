@@ -5,7 +5,7 @@
   -->
 
 <polymer-element name="kb-key" extends="kb-key-base"
-    attributes="image imageSize keyCode shiftModifier weight">
+    attributes="image imageSize keyCode keyName shiftModifier weight">
   <template>
     <style>
       :host {
@@ -13,7 +13,7 @@
          * handling of {{}} in CSS rules. Switch back to
          * "-webkit-box-flex: {{weight}}" once the regression is fixed
          * (https://github.com/Polymer/polymer/issues/270). */
-        -webkit-box-flex: 1;
+        -webkit-box-flex: 100;
         background-color: #3b3b3e;
         /* TODO(rsadam): remove when {{}} regression is fixed */
         background-image: none;
@@ -88,6 +88,15 @@
        * @type {number|undefined}
        */
       keyCode: undefined,
+
+      /**
+       * Name of the key as defined in the DOM3 specification for key events.
+       * Like the keyCode, the keyName is independent of the state of the
+       * modifier keys.
+       * @type {string|undefined}
+       */
+      keyName: undefined,
+
       /**
        * Whether the shift key is pressed when producing the key value.
        * @type {boolean}
@@ -98,7 +107,7 @@
        * Keys with a high weighting are wider than normal keys.
        * @type {number}
        */
-      weight: 1,
+      weight: 100,
 
       /**
        * Called when the image attribute changes. This is used to set the
@@ -130,6 +139,7 @@
       populateDetails: function(caller) {
         var details = this.super([caller]);
         details.keyCode = this.keyCode;
+        details.keyName = this.keyName;
         details.shiftModifier = this.shiftModifier;
         return details;
       },
@@ -150,7 +160,7 @@
 
 <!-- Special keys -->
 <polymer-element name="kb-abc-key" class="symbol dark" char="Invalid"
-    extends="kb-key">
+    extends="kb-key" weight="125">
   <script>
     Polymer('kb-abc-key', {
       populateDetails: function(caller) {

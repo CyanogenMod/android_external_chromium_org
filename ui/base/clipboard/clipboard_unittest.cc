@@ -89,11 +89,13 @@ TEST_F(ClipboardTest, TextTest) {
 
 TEST_F(ClipboardTest, HTMLTest) {
   string16 markup(ASCIIToUTF16("<string>Hi!</string>")), markup_result;
+  string16 plain(ASCIIToUTF16("Hi!")), plain_result;
   std::string url("http://www.example.com/"), url_result;
 
   {
     ScopedClipboardWriter clipboard_writer(&clipboard(),
                                            CLIPBOARD_TYPE_COPY_PASTE);
+    clipboard_writer.WriteText(plain);
     clipboard_writer.WriteHTML(markup, url);
   }
 
@@ -175,10 +177,12 @@ TEST_F(ClipboardTest, TrickyHTMLTest) {
   string16 markup(ASCIIToUTF16("<em>Bye!<!--EndFragment --></em>")),
       markup_result;
   std::string url, url_result;
+  string16 plain(ASCIIToUTF16("Bye!")), plain_result;
 
   {
     ScopedClipboardWriter clipboard_writer(&clipboard(),
                                            CLIPBOARD_TYPE_COPY_PASTE);
+    clipboard_writer.WriteText(plain);
     clipboard_writer.WriteHTML(markup, url);
   }
 
@@ -421,6 +425,111 @@ TEST_F(ClipboardTest, SharedBitmapTest) {
     TestBitmapWrite(
         &clipboard(), fake_bitmap_2, sizeof(fake_bitmap_2), gfx::Size(2, 7));
   }
+}
+
+namespace {
+// A size class that just happens to have the same layout as gfx::Size!
+struct UnsafeSize {
+  int width;
+  int height;
+};
+COMPILE_ASSERT(sizeof(UnsafeSize) == sizeof(gfx::Size),
+               UnsafeSize_must_be_same_size_as_gfx_Size);
+}  // namespace
+
+TEST_F(ClipboardTest, SharedBitmapWithTwoNegativeSizes) {
+  Clipboard::ObjectMapParam placeholder_param;
+  void* crash_me = reinterpret_cast<void*>(57);
+  placeholder_param.resize(sizeof(crash_me));
+  memcpy(&placeholder_param.front(), &crash_me, sizeof(crash_me));
+
+  Clipboard::ObjectMapParam size_param;
+  UnsafeSize size = {-100, -100};
+  size_param.resize(sizeof(size));
+  memcpy(&size_param.front(), &size, sizeof(size));
+
+  Clipboard::ObjectMapParams params;
+  params.push_back(placeholder_param);
+  params.push_back(size_param);
+
+  Clipboard::ObjectMap objects;
+  objects[Clipboard::CBF_SMBITMAP] = params;
+
+  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
+                                             CLIPBOARD_TYPE_COPY_PASTE));
+}
+
+TEST_F(ClipboardTest, SharedBitmapWithOneNegativeSize) {
+  Clipboard::ObjectMapParam placeholder_param;
+  void* crash_me = reinterpret_cast<void*>(57);
+  placeholder_param.resize(sizeof(crash_me));
+  memcpy(&placeholder_param.front(), &crash_me, sizeof(crash_me));
+
+  Clipboard::ObjectMapParam size_param;
+  UnsafeSize size = {-100, 100};
+  size_param.resize(sizeof(size));
+  memcpy(&size_param.front(), &size, sizeof(size));
+
+  Clipboard::ObjectMapParams params;
+  params.push_back(placeholder_param);
+  params.push_back(size_param);
+
+  Clipboard::ObjectMap objects;
+  objects[Clipboard::CBF_SMBITMAP] = params;
+
+  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
+                                             CLIPBOARD_TYPE_COPY_PASTE));
+}
+
+TEST_F(ClipboardTest, BitmapWithSuperSize) {
+  Clipboard::ObjectMapParam placeholder_param;
+  void* crash_me = reinterpret_cast<void*>(57);
+  placeholder_param.resize(sizeof(crash_me));
+  memcpy(&placeholder_param.front(), &crash_me, sizeof(crash_me));
+
+  Clipboard::ObjectMapParam size_param;
+  // Width just big enough that bytes per row won't fit in a 32-bit
+  // representation.
+  gfx::Size size(0x20000000, 1);
+  size_param.resize(sizeof(size));
+  memcpy(&size_param.front(), &size, sizeof(size));
+
+  Clipboard::ObjectMapParams params;
+  params.push_back(placeholder_param);
+  params.push_back(size_param);
+
+  Clipboard::ObjectMap objects;
+  objects[Clipboard::CBF_SMBITMAP] = params;
+
+  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
+                                             CLIPBOARD_TYPE_COPY_PASTE));
+}
+
+TEST_F(ClipboardTest, BitmapWithSuperSize2) {
+  Clipboard::ObjectMapParam placeholder_param;
+  void* crash_me = reinterpret_cast<void*>(57);
+  placeholder_param.resize(sizeof(crash_me));
+  memcpy(&placeholder_param.front(), &crash_me, sizeof(crash_me));
+
+  Clipboard::ObjectMapParam size_param;
+  // Width and height large enough that SkBitmap::getSize() will be truncated.
+  gfx::Size size(0x0fffffff, 0x0fffffff);
+  size_param.resize(sizeof(size));
+  memcpy(&size_param.front(), &size, sizeof(size));
+
+  Clipboard::ObjectMapParams params;
+  params.push_back(placeholder_param);
+  params.push_back(size_param);
+
+  Clipboard::ObjectMap objects;
+  objects[Clipboard::CBF_SMBITMAP] = params;
+
+  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
+                                             CLIPBOARD_TYPE_COPY_PASTE));
 }
 
 TEST_F(ClipboardTest, DataTest) {

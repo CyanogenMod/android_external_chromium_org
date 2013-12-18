@@ -343,6 +343,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.WindowSelector.CycleTime" units="milliseconds">
+  <summary>
+    The amount of time the Alt key is held after pressing Alt+Tab to begin
+    cycling through windows.
+  </summary>
+</histogram>
+
 <histogram name="Ash.WindowSelector.Items">
   <summary>
     The number of items (single windows or groups of windows such as panels) in
@@ -3271,16 +3278,33 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Drive.CacheDBOpenStatus" enum="DriveCacheDBOpenStatus">
+  <obsolete>
+    Deperecated 8/2013.
+  </obsolete>
   <summary>Status of drive cache metadata database open.</summary>
 </histogram>
 
+<histogram name="Drive.DirectoryFeedLoadTime" units="milliseconds">
+  <summary>
+    Time spent to load the list of files in a single directory from Google Drive
+    server.
+  </summary>
+</histogram>
+
 <histogram name="Drive.EntireFeedLoadTime" units="microseconds">
+  <obsolete>
+    Deprecated 12/2013 due to the UMA stat bucket layout change. We'll use
+    Drive.FullFeedLoadTime instead.
+  </obsolete>
   <summary>
     Time spent to load the entire file system information from the server
   </summary>
 </histogram>
 
 <histogram name="Drive.EntryKind" enum="DriveEntryKind">
+  <obsolete>
+    Deprecated 10/2012.
+  </obsolete>
   <summary>
     Provides breakdown of specific formats for hosted documents. Recorded when
     feed is loaded from the server.
@@ -3288,13 +3312,27 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Drive.FileFormat" enum="DriveFileFormat">
+  <obsolete>
+    Deprecated 10/2012.
+  </obsolete>
   <summary>
     Provides breakdown of specific file formats for regular files. Recorded when
     feed is loaded from the server.
   </summary>
 </histogram>
 
+<histogram name="Drive.FullFeedLoadTime" units="milliseconds">
+  <summary>
+    Time spent to load the entire file system information from the server
+  </summary>
+</histogram>
+
 <histogram name="Drive.InitialFeedLoadTime" units="microseconds">
+  <obsolete>
+    Deperecated 12/2013 since it did not record meaningful information.
+    Drive.DirectoryFeedLoadTime should be checked for measuring the time until
+    the user sees the first response of file lists.
+  </obsolete>
   <summary>
     Time spent to load the initial part of the file system information from the
     server
@@ -4247,7 +4285,7 @@ other types of suffix sets.
 
 <histogram name="Extensions.AppTabLaunchType" enum="ExtensionLaunchType">
   <summary>
-    The number of apps launched grouped by ExtensionPrefs::LaunchType.
+    The number of apps launched grouped by extensions::LaunchType.
   </summary>
 </histogram>
 
@@ -5324,6 +5362,28 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="GPU.CollectContextGraphicsInfo" units="microseconds">
+  <summary>
+    The time that the GPU process spends collecting driver information during
+    startup.
+  </summary>
+</histogram>
+
+<histogram name="GPU.CreateBrowserCompositor" units="microseconds">
+  <summary>
+    The time that the browser process takes to create the compositor from its
+    point of view. One of these is created for each top-level window (browser
+    frame, menus, etc.).
+  </summary>
+</histogram>
+
+<histogram name="GPU.InitializeOneOffTime" units="microseconds">
+  <summary>
+    The time that the GPU process spends in initializing the GL surface, and
+    collecting graphics information.
+  </summary>
+</histogram>
+
 <histogram name="History.DeleteFTSIndexDatabases">
   <summary>
     Count of &quot;History Index *&quot; databases deleted.  These databases
@@ -5361,6 +5421,31 @@ other types of suffix sets.
 <histogram name="History.FaviconsRecovery" enum="HistoryFaviconsRecoveryEnum">
   <summary>
     Track results of SQLite database recovery code in thumbnail_database.cc.
+  </summary>
+</histogram>
+
+<histogram name="History.TopSitesRecoveredPercentage" units="%">
+  <summary>
+    Size of the recovered TopSites database relative to the original corrupt
+    database.  Recovery is VACUUM-like, so the resulting database should always
+    be smaller.  Substantial 100% results would indicate empty databases being
+    recovered, substantial low% results would indicate very little data being
+    recovered.
+  </summary>
+</histogram>
+
+<histogram name="History.TopSitesRecoveredRowsThumbnails">
+  <summary>
+    Rows recovered from [thumbnails] table in TopSites recovery.
+  </summary>
+</histogram>
+
+<histogram name="History.TopSitesRecovery" enum="HistoryTopSitesRecoveryEnum">
+  <summary>
+    The TopSites recovery code is written conservatively, with successful
+    recovery committed and any failure leading to rollback. This tracks the
+    outcomes to determine which cases are high-frequency enough to warrant
+    adding additional code to handle them (versus simply deleting the data).
   </summary>
 </histogram>
 
@@ -5481,6 +5566,38 @@ other types of suffix sets.
   <summary>
     The amount of time from install time to time that user opens import dialog
     from NTP floating BookmarkBarView.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.AccelerometerAndroidAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the Sensor.TYPE_LINEAR_ACCELERATION was available at the start of
+    Device Motion.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.AccelerometerIncGravityAndroidAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the Sensor.TYPE_ACCELEROMETER was available at the start of Device
+    Motion.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.GyroscopeAndroidAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the Sensor.TYPE_GYROSCOPE was available at the start of Device
+    Motion.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.RotationVectorAndroidAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the Sensor.TYPE_ROTATION_VECTOR was available at the start of Device
+    Orientation.
   </summary>
 </histogram>
 
@@ -7169,6 +7286,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="MultiProfile.DiscardedTabsPerUser">
+  <summary>
+    The relation of discarded tabs vs. the amount of simultaneous users. The
+    counts are the number of discards and the buckets are the number of users.
+    Since the count values are absolute numbers, they need to be normalized
+    before use - so divide the counts by the percentage of users found under
+    'MultiProfile.UsersPerSession'.
+  </summary>
+</histogram>
+
 <histogram name="MultiProfile.SessionMode" enum="MultiProfileSessionMode">
   <summary>
     The session counter for different multi profile modes which gets stored once
@@ -7202,7 +7329,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Multiprofile.UserCount">
+<histogram name="MultiProfile.TeleportWindowType"
+    enum="MultiProfileTeleportWindowType">
+  <summary>
+    Counts the number of teleported windows by types in separated desktop mode.
+  </summary>
+</histogram>
+
+<histogram name="MultiProfile.UsersPerSession">
   <summary>
     The number of users simultaneously signed into a multiprofile session on
     ChromeOS. This is recorded whenever a new user logs in.
@@ -7621,6 +7755,46 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.DailyContentLength_DataReductionProxyEnabled_Https"
+    units="KB">
+  <summary>
+    The total content size in KB of all HTTPS response bodies in the previous
+    calendar day while the data reduction proxy setting was enabled. The metric
+    is reported when the first response in the current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentLength_DataReductionProxyEnabled_LongBypass"
+    units="KB">
+  <summary>
+    The total content size in KB of all long-bypassed HTTP response bodies in
+    the  previous calendar day while the data reduction proxy setting was
+    enabled. The metric is reported when the first response in the current day
+    is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentLength_DataReductionProxyEnabled_ShortBypass"
+    units="KB">
+  <summary>
+    The total content size in KB of all short-bypassed HTTP response bodies in
+    the previous calendar day while the data reduction proxy setting was
+    enabled. The metric is reported when the first response in the current day
+    is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentLength_DataReductionProxyEnabled_Unknown"
+    units="KB">
+  <summary>
+    The total content size in KB of all HTTP response bodies for requests that
+    were not served by the enabled data reduction proxy for unknown reasons in
+    the previous calendar day while the data reduction proxy setting was
+    enabled. The metric is reported when the first response in the current day
+    is received.
+  </summary>
+</histogram>
+
 <histogram name="Net.DailyContentLength_ViaDataReductionProxy" units="KB">
   <summary>
     The total content size in KB of all HTTP/HTTPS response bodies in the
@@ -7636,6 +7810,47 @@ other types of suffix sets.
     reduction proxy is enabled to total HTTP/HTTPS response body size in the
     previous calendar day. The metric is reported when the first response in the
     current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentPercent_DataReductionProxyEnabled_Https"
+    units="Percent">
+  <summary>
+    The percentage of total HTTPS response body size while the data reduction
+    proxy is enabled to total HTTP/HTTPS response body size in the previous
+    calendar day. The metric is reported when the first response in the current
+    day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentPercent_DataReductionProxyEnabled_LongBypass"
+    units="Percent">
+  <summary>
+    The percentage of total long-bypassed response body size while the data
+    reduction proxy is enabled to total HTTP/HTTPS response body size in the
+    previous calendar day. The metric is reported when the first response in the
+    current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentPercent_DataReductionProxyEnabled_ShortBypass"
+    units="Percent">
+  <summary>
+    The percentage of total short-bypassed response body size while the data
+    reduction proxy is enabled to total HTTP/HTTPS response body size in the
+    previous calendar day. The metric is reported when the first response in the
+    current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentPercent_DataReductionProxyEnabled_Unknown"
+    units="Percent">
+  <summary>
+    The percentage of total body size of responses that were not served by the
+    data reduction proxy for unknown reason while the data reduction proxy is
+    enabled to total HTTP/HTTPS response body size in the previous calendar day.
+    The metric is reported when the first response in the current day is
+    received.
   </summary>
 </histogram>
 
@@ -10239,6 +10454,21 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="NetConnectivity5">
+  <summary>
+    In this experiment, a few packets were sent from Google to clients via UDP
+    on port 443 or 80 to perform net connectivity test.
+  </summary>
+</histogram>
+
+<histogram name="NetConnectivity5.TestFailed.WritePending"
+    enum="BooleanSuccess">
+  <summary>
+    Next NetConnectivity5 experiment weren't started because there is an
+    outstading pending write.
+  </summary>
+</histogram>
+
 <histogram name="Network.3G.Gobi.Activation" units="milliseconds">
   <summary>The time the Gobi modem takes to complete activation.</summary>
 </histogram>
@@ -10334,6 +10564,17 @@ other types of suffix sets.
   <summary>
     Chrome OS network performance metric sampling the time to determine that an
     Ethernet network is in a captive portal after configuring Layer 3 state.
+  </summary>
+</histogram>
+
+<histogram name="Network.MigrationNssToPem"
+    enum="MigrationNssToPemNetworkTypes">
+  <summary>
+    Chrome OS metric counting the number of network configurations that
+    contained a NSS nickname identifying a CA certificate, which triggered the
+    migration to PEM encoding. This metric doesn't consider whether the
+    migration was successful but once a migration was successful the nickname is
+    removed.
   </summary>
 </histogram>
 
@@ -11267,6 +11508,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="NewTabPage.NumberOfExternalTiles">
+  <summary>
+    The number of external tiles that are displayed on the NTP. External tiles
+    are those for which the visuals are handled by the page itself, not by the
+    iframe. Recorded before changing focus away from the NTP, be it by
+    navigating to a URL, switching tabs, changing the active window or closing
+    the tab/shutting down Chrome.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.NumberOfMouseOvers">
   <summary>
     The total number of times the user hovered the mouse over Most Visited tile
@@ -11342,7 +11593,9 @@ other types of suffix sets.
 <histogram name="NewTabPage.SuggestionsType" enum="NtpSuggestionsType">
   <summary>
     Indicate, for each impression of the New Tab Page, whether the suggestions
-    were obtained from the client or server.
+    were obtained from the client or server. Recorded before changing focus away
+    from the NTP, be it by navigating to a URL, switching tabs, changing the
+    active window or closing the tab/shutting down Chrome.
   </summary>
 </histogram>
 
@@ -11436,6 +11689,18 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="OAuth2Login.ListAccountsFailure" enum="GoogleServiceAuthError">
+  <summary>
+    Failure reason of final ListAccounts call failure during ChromeOS login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.ListAccountsRetry" enum="GoogleServiceAuthError">
+  <summary>
+    Retry reason of failed ListAccounts call during ChromeOS login.
+  </summary>
+</histogram>
+
 <histogram name="OAuth2Login.MergeSessionFailure" enum="GoogleServiceAuthError">
   <summary>
     Failure reason of final MergeSession call during ChromeOS login.
@@ -11477,6 +11742,15 @@ other types of suffix sets.
   <summary>
     Retry reason of failed OAuthLogin (with uber token) call during ChromeOS
     login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.PostMergeVerification"
+    enum="PostMergeVerificationOutcome">
+  <summary>
+    Outcome of ChromeOS GAIA cookie post merge session verification process. It
+    measures how often /MergeSession request collided with browser session
+    restore process resulting in partially authenticated primary GAIA session.
   </summary>
 </histogram>
 
@@ -13462,6 +13736,22 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="PLT.UserTiming_Mark" units="milliseconds">
+  <summary>
+    This time is based on the User Timing spec and measures the time from
+    Navigation Timing navigationStart until the point where the page called
+    performance.mark().
+  </summary>
+</histogram>
+
+<histogram name="PLT.UserTiming_MeasureDuration" units="milliseconds">
+  <summary>
+    This time is based on the User Timing spec and reports the time between two
+    arbitrary points defined by the page being loaded and directly matches the
+    measurement exposed by performance.measure().
+  </summary>
+</histogram>
+
 <histogram name="Plugin.PpapiBrokerLoadResult" enum="PluginLoadResult">
   <summary>The result from an attempt to load a PPAPI broker.</summary>
 </histogram>
@@ -13824,6 +14114,28 @@ other types of suffix sets.
     The number of times that the user adjusted the brightness during a session
     when on battery. Values for this metric are clamped to 10k count, so the
     last bucket should be considered to be including all metrics above 10k.
+  </summary>
+</histogram>
+
+<histogram name="Precache.DownloadedNonPrecache" units="bytes">
+  <summary>
+    The number of bytes that were downloaded over the network for HTTP/HTTPS
+    fetches that were not motivated by precaching. Logged per-request.
+  </summary>
+</histogram>
+
+<histogram name="Precache.DownloadedPrecacheMotivated" units="bytes">
+  <summary>
+    The number of bytes that were downloaded because of precaching. Logged
+    per-request.
+  </summary>
+</histogram>
+
+<histogram name="Precache.Saved" units="bytes">
+  <summary>
+    The number of bytes during user browsing that were served from the cache,
+    but would have been downloaded over a network if precaching was disabled.
+    Logged per-request.
   </summary>
 </histogram>
 
@@ -14482,6 +14794,14 @@ other types of suffix sets.
     'Create' until the creation either failed with a local error (see
     Profile.CreateResult), was canceled (also recorded in
     Profile.CreateTimeCanceledNoTimeout), or completed successfully.
+  </summary>
+</histogram>
+
+<histogram name="Profile.ProfileError" enum="ProfileErrorType">
+  <summary>
+    The error with the current user profile that caused an error dialog to be
+    shown. This dialog is shown usually when there is some sort of corruption in
+    the user's profile data.
   </summary>
 </histogram>
 
@@ -19849,6 +20169,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="UMA.InitSequence" enum="UmaInitSequence">
+  <summary>
+    Logged during MetricsService initialization whether the init task or the
+    initial log timer completed first. The expectation is the vast majority of
+    the time, the init task should complete first. If metrics show otherwise,
+    then it may indicate there's a bug in the MetricsService init sequence and
+    that it should be investigated.
+  </summary>
+</histogram>
+
 <histogram name="UMA.Large Accumulated Log Not Persisted" units="bytes">
   <summary>
     Number of bytes in an excessively large log that was discarded at shutdown
@@ -20126,7 +20456,7 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Variations.HeaderConstructionTime" units="microseconds">
-  <summary>How long it took to create the X-Chrome-Variations header.</summary>
+  <summary>How long it took to create the X-Client-Data header.</summary>
 </histogram>
 
 <histogram name="Variations.NetworkAvailability" enum="BooleanSuccess">
@@ -21095,10 +21425,10 @@ other types of suffix sets.
 </enum>
 
 <enum name="AppLaunchContainer" type="int">
-  <int value="0" label="LAUNCH_WINDOW"/>
-  <int value="1" label="LAUNCH_PANEL"/>
-  <int value="2" label="LAUNCH_TAB"/>
-  <int value="3" label="LAUNCH_NONE (v2 packaged apps)"/>
+  <int value="0" label="LAUNCH_CONTAINER_WINDOW"/>
+  <int value="1" label="LAUNCH_CONTAINER_PANEL"/>
+  <int value="2" label="LAUNCH_CONTAINER_TAB"/>
+  <int value="3" label="LAUNCH_CONTAINER_NONE (v2 packaged apps)"/>
 </enum>
 
 <enum name="AppLauncherPromo" type="int">
@@ -21508,6 +21838,11 @@ other types of suffix sets.
 <enum name="BooleanAttempted" type="int">
   <int value="0" label="Not Attempted"/>
   <int value="1" label="Attempted"/>
+</enum>
+
+<enum name="BooleanAvailable" type="int">
+  <int value="0" label="Not Available"/>
+  <int value="1" label="Available"/>
 </enum>
 
 <enum name="BooleanCloseTimeout" type="int">
@@ -22898,6 +23233,8 @@ other types of suffix sets.
              limit should only start running after initial user activity in a
              session"/>
   <int value="248" label="Report device users"/>
+  <int value="249" label="User avatar image"/>
+  <int value="250" label="Enable network configuration prompt when offline"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations" type="int">
@@ -23163,7 +23500,7 @@ other types of suffix sets.
   <int value="34" label="AUTOTESTPRIVATE_RESTART"/>
   <int value="35" label="USB_CLAIMINTERFACE"/>
   <int value="36" label="MEDIAPLAYERPRIVATE_SETWINDOWHEIGHT"/>
-  <int value="37" label="PROCESSES_GETPROCESSINFO"/>
+  <int value="37" label="DELETED_EXPERIMENTAL_PROCESSES_GETPROCESSINFO"/>
   <int value="38" label="HISTORY_GETVISITS"/>
   <int value="39" label="SOCKET_BIND"/>
   <int value="40" label="TABS_MOVE"/>
@@ -23179,7 +23516,7 @@ other types of suffix sets.
   <int value="50" label="APP_CURRENTWINDOWINTERNAL_SETBOUNDS"/>
   <int value="51" label="CLOUDPRINTPRIVATE_SETUPCONNECTOR"/>
   <int value="52" label="SERIAL_SETCONTROLSIGNALS"/>
-  <int value="53" label="FILEBROWSERPRIVATE_SETLASTMODIFIED"/>
+  <int value="53" label="DELETED_FILEBROWSERPRIVATE_SETLASTMODIFIED"/>
   <int value="54" label="IDLE_SETDETECTIONINTERVAL"/>
   <int value="55" label="FILEBROWSERPRIVATE_GETFILETASKS"/>
   <int value="56" label="WEBSTOREPRIVATE_GETSTORELOGIN"/>
@@ -23189,7 +23526,7 @@ other types of suffix sets.
   <int value="60" label="APP_CURRENTWINDOWINTERNAL_SHOW"/>
   <int value="61" label="WEBSTOREPRIVATE_GETBROWSERLOGIN"/>
   <int value="62" label="EXPERIMENTAL_IDENTITY_GETAUTHTOKEN"/>
-  <int value="63" label="SYSTEMINFO_DISPLAY_GETDISPLAYINFO"/>
+  <int value="63" label="DELETED_SYSTEMINFO_DISPLAY_GETDISPLAYINFO"/>
   <int value="64" label="BROWSINGDATA_REMOVEPLUGINDATA"/>
   <int value="65" label="SOCKET_LISTEN"/>
   <int value="66" label="MEDIAGALLERIES_GETMEDIAFILESYSTEMS"/>
@@ -23199,7 +23536,7 @@ other types of suffix sets.
   <int value="70" label="INPUTMETHODPRIVATE_GET"/>
   <int value="71" label="USB_CLOSEDEVICE"/>
   <int value="72" label="TTS_STOP"/>
-  <int value="73" label="SERIAL_GETPORTS"/>
+  <int value="73" label="DELETED_SERIAL_GETPORTS"/>
   <int value="74" label="DELETED_FILEBROWSERPRIVATE_CLEARDRIVECACHE"/>
   <int value="75" label="SERIAL_GETCONTROLSIGNALS"/>
   <int value="76" label="DEVELOPERPRIVATE_ENABLE"/>
@@ -23220,7 +23557,7 @@ other types of suffix sets.
   <int value="91" label="APP_CURRENTWINDOWINTERNAL_MINIMIZE"/>
   <int value="92" label="DEVELOPERPRIVATE_AUTOUPDATE"/>
   <int value="93" label="DNS_RESOLVE"/>
-  <int value="94" label="EXPERIMENTAL_SYSTEMINFO_MEMORY_GET"/>
+  <int value="94" label="DELETED_EXPERIMENTAL_SYSTEMINFO_MEMORY_GET"/>
   <int value="95" label="HISTORY_ADDURL"/>
   <int value="96" label="TABS_GET"/>
   <int value="97" label="BROWSERACTION_SETBADGETEXT"/>
@@ -23228,11 +23565,11 @@ other types of suffix sets.
   <int value="99" label="WINDOWS_CREATE"/>
   <int value="100" label="DEVELOPERPRIVATE_LOADUNPACKED"/>
   <int value="101" label="DELETED_DOWNLOADS_SETDESTINATION"/>
-  <int value="102" label="PROCESSES_GETPROCESSIDFORTAB"/>
+  <int value="102" label="DELETED_EXPERIMENTAL_PROCESSES_GETPROCESSIDFORTAB"/>
   <int value="103" label="BOOKMARKS_GETCHILDREN"/>
   <int value="104" label="BROWSERACTION_GETTITLE"/>
   <int value="105" label="TERMINALPRIVATE_OPENTERMINALPROCESS"/>
-  <int value="106" label="SERIAL_CLOSE"/>
+  <int value="106" label="DELETED_SERIAL_CLOSE"/>
   <int value="107" label="CONTEXTMENUS_REMOVE"/>
   <int value="108" label="FILEBROWSERPRIVATE_REQUESTFILESYSTEM"/>
   <int value="109" label="ECHOPRIVATE_GETREGISTRATIONCODE"/>
@@ -23244,7 +23581,7 @@ other types of suffix sets.
   <int value="115" label="STORAGE_SET"/>
   <int value="116" label="FONTSETTINGS_GETDEFAULTFONTSIZE"/>
   <int value="117" label="EXTENSION_SETUPDATEURLDATA"/>
-  <int value="118" label="SERIAL_WRITE"/>
+  <int value="118" label="DELETED_SERIAL_WRITE"/>
   <int value="119" label="IDLE_QUERYSTATE"/>
   <int value="120" label="DELETED_EXPERIMENTAL_RLZ_GETACCESSPOINTRLZ"/>
   <int value="121" label="WEBSTOREPRIVATE_SETSTORELOGIN"/>
@@ -23315,9 +23652,9 @@ other types of suffix sets.
   <int value="185" label="DOWNLOADS_GETFILEICON"/>
   <int value="186" label="PAGEACTION_GETTITLE"/>
   <int value="187" label="BROWSINGDATA_REMOVE"/>
-  <int value="188" label="SERIAL_OPEN"/>
+  <int value="188" label="DELETED_SERIAL_OPEN"/>
   <int value="189" label="FILESYSTEM_GETDISPLAYPATH"/>
-  <int value="190" label="FILEBROWSERPRIVATE_FORMATDEVICE"/>
+  <int value="190" label="FILEBROWSERPRIVATE_FORMATVOLUME"/>
   <int value="191" label="BOOKMARKS_GET"/>
   <int value="192" label="DELETED_MANAGEDMODEPRIVATE_GET"/>
   <int value="193" label="ALARMS_CLEAR"/>
@@ -23331,7 +23668,7 @@ other types of suffix sets.
   <int value="201" label="CONTENTSETTINGS_GETRESOURCEIDENTIFIERS"/>
   <int value="202" label="SOCKET_CREATE"/>
   <int value="203" label="DEVELOPERPRIVATE_RELOAD"/>
-  <int value="204" label="FILEBROWSERPRIVATE_GETMOUNTPOINTS"/>
+  <int value="204" label="FILEBROWSERPRIVATE_GETVOLUMEMETADATALIST"/>
   <int value="205" label="APP_RUNTIME_POSTINTENTRESPONSE"/>
   <int value="206" label="DELETED_MANAGEDMODEPRIVATE_SETPOLICY"/>
   <int value="207" label="WEBSTOREPRIVATE_BEGININSTALLWITHMANIFEST3"/>
@@ -23339,7 +23676,7 @@ other types of suffix sets.
   <int value="209" label="USB_CONTROLTRANSFER"/>
   <int value="210" label="DELETED_EXPERIMENTAL_SPEECHINPUT_STOP"/>
   <int value="211" label="USB_BULKTRANSFER"/>
-  <int value="212" label="FILEBROWSERPRIVATE_GETVOLUMEMETADATA"/>
+  <int value="212" label="DELETED_FILEBROWSERPRIVATE_GETVOLUMEMETADATA"/>
   <int value="213" label="PAGECAPTURE_SAVEASMHTML"/>
   <int value="214" label="EXTENSION_ISALLOWEDINCOGNITOACCESS"/>
   <int value="215" label="BROWSINGDATA_REMOVEAPPCACHE"/>
@@ -23422,7 +23759,7 @@ other types of suffix sets.
   <int value="292" label="EXPERIMENTAL_APP_NOTIFY"/>
   <int value="293" label="METRICSPRIVATE_RECORDLONGTIME"/>
   <int value="294" label="SOCKET_READ"/>
-  <int value="295" label="PROCESSES_TERMINATE"/>
+  <int value="295" label="DELETED_EXPERIMENTAL_PROCESSES_TERMINATE"/>
   <int value="296" label="METRICSPRIVATE_RECORDTIME"/>
   <int value="297" label="BOOKMARKMANAGERPRIVATE_GETSTRINGS"/>
   <int value="298" label="USB_ISOCHRONOUSTRANSFER"/>
@@ -23464,7 +23801,7 @@ other types of suffix sets.
   <int value="334" label="TABS_DETECTLANGUAGE"/>
   <int value="335" label="METRICSPRIVATE_RECORDVALUE"/>
   <int value="336" label="BOOKMARKMANAGERPRIVATE_SORTCHILDREN"/>
-  <int value="337" label="SERIAL_READ"/>
+  <int value="337" label="DELETED_SERIAL_READ"/>
   <int value="338" label="APP_CURRENTWINDOWINTERNAL_MAXIMIZE"/>
   <int value="339" label="EXPERIMENTAL_DISCOVERY_CLEARALLSUGGESTIONS"/>
   <int value="340" label="DELETED_MANAGEDMODEPRIVATE_ENTER"/>
@@ -23482,7 +23819,7 @@ other types of suffix sets.
   <int value="352" label="TTS_ISSPEAKING"/>
   <int value="353" label="BOOKMARKS_REMOVETREE"/>
   <int value="354" label="FILEBROWSERPRIVATE_SEARCHDRIVE"/>
-  <int value="355" label="EXPERIMENTAL_SYSTEMINFO_CPU_GET"/>
+  <int value="355" label="DELETED_EXPERIMENTAL_SYSTEMINFO_CPU_GET"/>
   <int value="356" label="FILEBROWSERPRIVATE_SETPREFERENCES"/>
   <int value="357" label="FONTSETTINGS_SETFONT"/>
   <int value="358" label="SOCKET_GETNETWORKLIST"/>
@@ -23514,11 +23851,11 @@ other types of suffix sets.
   <int value="384" label="WINDOWS_GETALL"/>
   <int value="385" label="DELETED_FILEBROWSERPRIVATE_TOGGLEFULLSCREEN"/>
   <int value="386" label="APP_CURRENTWINDOWINTERNAL_RESTORE"/>
-  <int value="387" label="WEBSOCKETPROXYPRIVATE_GETPASSPORTFORTCP"/>
+  <int value="387" label="DELETED_WEBSOCKETPROXYPRIVATE_GETPASSPORTFORTCP"/>
   <int value="388" label="PAGEACTION_HIDE"/>
-  <int value="389" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_GET"/>
+  <int value="389" label="DELETED_EXPERIMENTAL_SYSTEMINFO_STORAGE_GET"/>
   <int value="390" label="DOWNLOADS_ACCEPTDANGER"/>
-  <int value="391" label="WEBSOCKETPROXYPRIVATE_GETURLFORTCP"/>
+  <int value="391" label="DELETED_WEBSOCKETPROXYPRIVATE_GETURLFORTCP"/>
   <int value="392" label="FILEBROWSERPRIVATE_GETSIZESTATS"/>
   <int value="393" label="DOWNLOADS_RESUME"/>
   <int value="394" label="COOKIES_GETALLCOOKIESTORES"/>
@@ -23527,8 +23864,8 @@ other types of suffix sets.
   <int value="397" label="WEBVIEW_EXECUTESCRIPT"/>
   <int value="398" label="NOTIFICATIONS_UPDATE"/>
   <int value="399" label="NOTIFICATIONS_CLEAR"/>
-  <int value="400" label="SESSIONRESTORE_GETRECENTLYCLOSED"/>
-  <int value="401" label="SESSIONRESTORE_RESTORE"/>
+  <int value="400" label="DELETED_SESSIONRESTORE_GETRECENTLYCLOSED"/>
+  <int value="401" label="DELETED_SESSIONRESTORE_RESTORE"/>
   <int value="402" label="MANAGEMENT_UNINSTALLSELF"/>
   <int value="403" label="ECHOPRIVATE_GETOOBETIMESTAMP"/>
   <int value="404" label="FILEBROWSERPRIVATE_VALIDATEPATHNAMELENGTH"/>
@@ -23541,8 +23878,8 @@ other types of suffix sets.
   <int value="411" label="MEDIAGALLERIESPRIVATE_GETALLGALLERYWATCH"/>
   <int value="412" label="MEDIAGALLERIESPRIVATE_REMOVEALLGALLERYWATCH"/>
   <int value="413" label="FILEBROWSERPRIVATE_SEARCHDRIVEMETADATA"/>
-  <int value="414" label="ECHOPRIVATE_CHECKALLOWREDEEMOFFERS"/>
-  <int value="415" label="MEDIAGALLERIESPRIVATE_EJECTDEVICE"/>
+  <int value="414" label="DELETED_ECHOPRIVATE_CHECKALLOWREDEEMOFFERS"/>
+  <int value="415" label="DELETED_MEDIAGALLERIESPRIVATE_EJECTDEVICE"/>
   <int value="416" label="FILEBROWSERPRIVATE_LOGOUTUSERFORREAUTHENTICATION"/>
   <int value="417" label="DEVELOPERPRIVATE_CHOOSEPATH"/>
   <int value="418" label="DEVELOPERPRIVATE_PACKDIRECTORY"/>
@@ -23609,15 +23946,16 @@ other types of suffix sets.
   <int value="478" label="MUSICMANAGERPRIVATE_GETDEVICEID"/>
   <int value="479" label="TTS_PAUSE"/>
   <int value="480" label="TTS_RESUME"/>
-  <int value="481" label="SYSTEMINFO_CPU_GET"/>
-  <int value="482" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_ADDWATCH"/>
-  <int value="483" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_REMOVEWATCH"/>
-  <int value="484" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_GETALLWATCH"/>
-  <int value="485" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_REMOVEALLWATCH"/>
-  <int value="486" label="SYSTEMINFO_MEMORY_GET"/>
+  <int value="481" label="DELETED_SYSTEMINFO_CPU_GET"/>
+  <int value="482" label="DELETED_EXPERIMENTAL_SYSTEMINFO_STORAGE_ADDWATCH"/>
+  <int value="483" label="DELETED_EXPERIMENTAL_SYSTEMINFO_STORAGE_REMOVEWATCH"/>
+  <int value="484" label="DELETED_EXPERIMENTAL_SYSTEMINFO_STORAGE_GETALLWATCH"/>
+  <int value="485"
+      label="DELETED_EXPERIMENTAL_SYSTEMINFO_STORAGE_REMOVEALLWATCH"/>
+  <int value="486" label="DELETED_SYSTEMINFO_MEMORY_GET"/>
   <int value="487" label="ACTIVITYLOGPRIVATE_GETEXTENSIONACTIVITIES"/>
   <int value="488" label="RUNTIME_GETPACKAGEDIRECTORYENTRY"/>
-  <int value="489" label="SYSTEMINFO_DISPLAY_SETDISPLAYPROPERTIES"/>
+  <int value="489" label="DELETED_SYSTEMINFO_DISPLAY_SETDISPLAYPROPERTIES"/>
   <int value="490" label="FEEDBACKPRIVATE_GETUSEREMAIL"/>
   <int value="491" label="FEEDBACKPRIVATE_GETSYSTEMINFORMATION"/>
   <int value="492" label="FEEDBACKPRIVATE_SENDFEEDBACK"/>
@@ -23634,24 +23972,152 @@ other types of suffix sets.
   <int value="503" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_GET"/>
   <int value="504" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_SET"/>
   <int value="505" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_CLEAR"/>
-  <int value="506" label="SYSTEM_CPU_GETINFO"/>
-  <int value="507" label="SYSTEM_DISPLAY_GETINFO"/>
-  <int value="508" label="SYSTEM_DISPLAY_SETDISPLAYPROPERTIES"/>
-  <int value="509" label="SYSTEM_MEMORY_GETINFO"/>
-  <int value="510" label="SYSTEM_STORAGE_GETINFO"/>
-  <int value="511" label="SYSTEM_STORAGE_EJECTDEVICE"/>
-  <int value="512" label="SYSTEM_STORAGE_ADDAVAILABLECAPACITYWATCH"/>
-  <int value="513" label="SYSTEM_STORAGE_REMOVEAVAILABLECAPACITYWATCH"/>
-  <int value="514" label="SYSTEM_STORAGE_GETALLAVAILABLECAPACITYWATCHES"/>
-  <int value="515" label="SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
-  <int value="516" label="INFOBARS_SHOW"/>
-  <int value="517" label="VIRTUALKEYBOARDPRIVATE_MOVECURSOR"/>
-  <int value="518" label="AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG"/>
-  <int value="519" label="WALLPAPER_SETWALLPAPER"/>
-  <int value="520" label="VIRTUALKEYBOARDPRIVATE_HIDEKEYBOARD"/>
-  <int value="521" label="SYSTEM_STORAGE_GETAVAILABLECAPACITY"/>
-  <int value="522" label="VIRTUALKEYBOARDPRIVATE_KEYBOARDLOADED"/>
-  <int value="523" label="MEDIAGALLERIES_GETALLMEDIAFILESYSTEMMETADATA"/>
+  <int value="506" label="DELETED_EXPERIMENTAL_SYSTEMINFO_STORAGE_EJECTDEVICE"/>
+  <int value="507" label="SYSTEM_CPU_GETINFO"/>
+  <int value="508" label="BOOKMARKMANAGERPRIVATE_REMOVETREES"/>
+  <int value="509" label="SYSTEM_DISPLAY_GETINFO"/>
+  <int value="510" label="SYSTEM_DISPLAY_SETDISPLAYPROPERTIES"/>
+  <int value="511" label="SYSTEM_MEMORY_GETINFO"/>
+  <int value="512" label="FILEBROWSERPRIVATE_GETSHAREURL"/>
+  <int value="513" label="SYSTEM_STORAGE_GETINFO"/>
+  <int value="514" label="SYSTEM_STORAGE_EJECTDEVICE"/>
+  <int value="515" label="DELETED_SYSTEM_STORAGE_ADDAVAILABLECAPACITYWATCH"/>
+  <int value="516" label="DELETED_SYSTEM_STORAGE_REMOVEAVAILABLECAPACITYWATCH"/>
+  <int value="517"
+      label="DELETED_SYSTEM_STORAGE_GETALLAVAILABLECAPACITYWATCHES"/>
+  <int value="518"
+      label="DELETED_SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
+  <int value="519" label="DOWNLOADS_REMOVEFILE"/>
+  <int value="520" label="DOWNLOADS_SHOWDEFAULTFOLDER"/>
+  <int value="521" label="INFOBARS_SHOW"/>
+  <int value="522" label="DOWNLOADS_SETSHELFENABLED"/>
+  <int value="523" label="IMAGEWRITER_WRITEFROMURL"/>
+  <int value="524" label="IMAGEWRITER_WRITEFROMFILE"/>
+  <int value="525" label="IMAGEWRITER_CANCELWRITE"/>
+  <int value="526" label="IMAGEWRITER_DESTROYPARTITIONS"/>
+  <int value="527" label="FEEDBACKPRIVATE_GETSTRINGS"/>
+  <int value="528" label="LOGPRIVATE_GETHISTORICAL"/>
+  <int value="529" label="VIRTUALKEYBOARDPRIVATE_MOVECURSOR"/>
+  <int value="530" label="METRICSPRIVATE_GETVARIATIONPARAMS"/>
+  <int value="531" label="WEBVIEW_SETPERMISSION"/>
+  <int value="532" label="DESKTOPCAPTURE_CHOOSEDESKTOPMEDIA"/>
+  <int value="533" label="APP_CURRENTWINDOWINTERNAL_SETSHAPE"/>
+  <int value="534" label="PROCESSES_GETPROCESSINFO"/>
+  <int value="535" label="PROCESSES_GETPROCESSIDFORTAB"/>
+  <int value="536" label="PROCESSES_TERMINATE"/>
+  <int value="537" label="SOCKETS_UDP_CREATE"/>
+  <int value="538" label="SOCKETS_UDP_UPDATE"/>
+  <int value="539" label="SOCKETS_UDP_BIND"/>
+  <int value="540" label="SOCKETS_UDP_SEND"/>
+  <int value="541" label="SOCKETS_UDP_CLOSE"/>
+  <int value="542" label="SOCKETS_UDP_GETINFO"/>
+  <int value="543" label="SOCKETS_UDP_GETSOCKETS"/>
+  <int value="544" label="SOCKETS_UDP_JOINGROUP"/>
+  <int value="545" label="SOCKETS_UDP_LEAVEGROUP"/>
+  <int value="546" label="SOCKETS_UDP_SETMULTICASTTIMETOLIVE"/>
+  <int value="547" label="SOCKETS_UDP_SETMULTICASTLOOPBACKMODE"/>
+  <int value="548" label="SOCKETS_UDP_GETJOINEDGROUPS"/>
+  <int value="549" label="SIGNED_IN_DEVICES_GET"/>
+  <int value="550" label="AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG"/>
+  <int value="551" label="WEBVIEW_CLEARDATA"/>
+  <int value="552" label="SESSIONS_GETRECENTLYCLOSED"/>
+  <int value="553" label="SESSIONS_GETDEVICES"/>
+  <int value="554" label="SESSIONS_RESTORE"/>
+  <int value="555" label="SYNCFILESYSTEM_GETSERVICESTATUS"/>
+  <int value="556" label="ECHOPRIVATE_SETOFFERINFO"/>
+  <int value="557" label="ECHOPRIVATE_GETOFFERINFO"/>
+  <int value="558" label="DEVELOPERPRIVATE_ISPROFILEMANAGED"/>
+  <int value="559" label="FILEBROWSERPRIVATE_INSTALLWEBSTOREITEM"/>
+  <int value="560" label="FILEBROWSERPRIVATE_STARTCOPY"/>
+  <int value="561" label="FILEBROWSERPRIVATE_CANCELCOPY"/>
+  <int value="562" label="NETWORKINGPRIVATE_CREATENETWORK"/>
+  <int value="563" label="BRAILLEDISPLAYPRIVATE_GETDISPLAYSTATE"/>
+  <int value="564" label="BRAILLEDISPLAYPRIVATE_WRITEDOTS"/>
+  <int value="565" label="USB_GETDEVICES"/>
+  <int value="566" label="USB_REQUESTACCESS"/>
+  <int value="567" label="USB_OPENDEVICE"/>
+  <int value="568" label="ACTIVITYLOGPRIVATE_DELETEDATABASE"/>
+  <int value="569" label="ACTIVITYLOGPRIVATE_DELETEURLS"/>
+  <int value="570" label="FILEBROWSERPRIVATE_REQUESTWEBSTOREACCESSTOKEN"/>
+  <int value="571" label="IMAGEWRITER_LISTREMOVABLESTORAGEDEVICES"/>
+  <int value="572" label="WALLPAPER_SETWALLPAPER"/>
+  <int value="573" label="VIRTUALKEYBOARDPRIVATE_HIDEKEYBOARD"/>
+  <int value="574" label="AUTOTESTPRIVATE_LOCKSCREEN"/>
+  <int value="575" label="WEBRTCLOGGINGPRIVATE_SETMETADATA"/>
+  <int value="576" label="WEBRTCLOGGINGPRIVATE_START"/>
+  <int value="577" label="WEBRTCLOGGINGPRIVATE_SETUPLOADONRENDERCLOSE"/>
+  <int value="578" label="WEBRTCLOGGINGPRIVATE_STOP"/>
+  <int value="579" label="WEBRTCLOGGINGPRIVATE_UPLOAD"/>
+  <int value="580" label="WEBRTCLOGGINGPRIVATE_DISCARD"/>
+  <int value="581" label="WEBVIEW_OVERRIDEUSERAGENT"/>
+  <int value="582" label="PRINCIPALSPRIVATE_SHOWAVATARBUBBLE"/>
+  <int value="583" label="PRINCIPALSPRIVATE_SIGNOUT"/>
+  <int value="584" label="CAST_CHANNEL_OPEN"/>
+  <int value="585" label="CAST_CHANNEL_SEND"/>
+  <int value="586" label="CAST_CHANNEL_CLOSE"/>
+  <int value="587" label="RUNTIME_RESTART"/>
+  <int value="588" label="DESKTOPCAPTURE_CANCELCHOOSEDESKTOPMEDIA"/>
+  <int value="589" label="APP_CURRENTWINDOWINTERNAL_SETALWAYSONTOP"/>
+  <int value="590" label="SOCKETS_TCP_CREATE"/>
+  <int value="591" label="SOCKETS_TCP_UPDATE"/>
+  <int value="592" label="SOCKETS_TCP_SETPAUSED"/>
+  <int value="593" label="SOCKETS_TCP_SETKEEPALIVE"/>
+  <int value="594" label="SOCKETS_TCP_SETNODELAY"/>
+  <int value="595" label="SOCKETS_TCP_CONNECT"/>
+  <int value="596" label="SOCKETS_TCP_DISCONNECT"/>
+  <int value="597" label="SOCKETS_TCP_SEND"/>
+  <int value="598" label="SOCKETS_TCP_CLOSE"/>
+  <int value="599" label="SOCKETS_TCP_GETINFO"/>
+  <int value="600" label="SOCKETS_TCP_GETSOCKETS"/>
+  <int value="601" label="NETWORKINGPRIVATE_GETENABLEDNETWORKTYPES"/>
+  <int value="602" label="NETWORKINGPRIVATE_ENABLENETWORKTYPE"/>
+  <int value="603" label="NETWORKINGPRIVATE_DISABLENETWORKTYPE"/>
+  <int value="604" label="SOCKETS_TCP_SERVER_CREATE"/>
+  <int value="605" label="SOCKETS_TCP_SERVER_UPDATE"/>
+  <int value="606" label="SOCKETS_TCP_SERVER_SETPAUSED"/>
+  <int value="607" label="SOCKETS_TCP_SERVER_LISTEN"/>
+  <int value="608" label="SOCKETS_TCP_SERVER_DISCONNECT"/>
+  <int value="609" label="SOCKETS_TCP_SERVER_CLOSE"/>
+  <int value="610" label="SOCKETS_TCP_SERVER_GETINFO"/>
+  <int value="611" label="SOCKETS_TCP_SERVER_GETSOCKETS"/>
+  <int value="612" label="SYSTEM_STORAGE_GETAVAILABLECAPACITY"/>
+  <int value="613" label="BROWSERACTION_OPEN_POPUP"/>
+  <int value="614" label="WEBRTC_AUDIO_PRIVATE_GET_SINKS"/>
+  <int value="615" label="WEBRTC_AUDIO_PRIVATE_GET_ACTIVE_SINK"/>
+  <int value="616" label="WEBRTC_AUDIO_PRIVATE_SET_ACTIVE_SINK"/>
+  <int value="617" label="WEBRTC_AUDIO_PRIVATE_GET_ASSOCIATED_SINK"/>
+  <int value="618" label="VIRTUALKEYBOARDPRIVATE_KEYBOARDLOADED"/>
+  <int value="619" label="APP_CURRENTWINDOWINTERNAL_SETMINWIDTH"/>
+  <int value="620" label="APP_CURRENTWINDOWINTERNAL_SETMINHEIGHT"/>
+  <int value="621" label="APP_CURRENTWINDOWINTERNAL_SETMAXWIDTH"/>
+  <int value="622" label="APP_CURRENTWINDOWINTERNAL_SETMAXHEIGHT"/>
+  <int value="623" label="SYSTEMPRIVATE_GETAPIKEY"/>
+  <int value="624" label="CHROMEOSINFOPRIVATE_SET"/>
+  <int value="625" label="BOOKMARKMANAGERPRIVATE_GETMETAINFO"/>
+  <int value="626" label="BOOKMARKMANAGERPRIVATE_SETMETAINFO"/>
+  <int value="627" label="FILESYSTEMPROVIDER_MOUNT"/>
+  <int value="628" label="AUTOTESTPRIVATE_GETEXTENSIONSINFO"/>
+  <int value="629" label="SCREENLOCKPRIVATE_GETLOCKED"/>
+  <int value="630" label="SCREENLOCKPRIVATE_SETLOCKED"/>
+  <int value="631" label="SCREENLOCKPRIVATE_SHOWMESSAGE"/>
+  <int value="632" label="FEEDBACKPRIVATE_GETHISTOGRAMS"/>
+  <int value="633" label="SYSTEM_NETWORK_GETNETWORKINTERFACES"/>
+  <int value="634" label="SERIAL_GETDEVICES"/>
+  <int value="635" label="SERIAL_UPDATE"/>
+  <int value="636" label="SERIAL_SETPAUSED"/>
+  <int value="637" label="SERIAL_GETINFO"/>
+  <int value="638" label="SERIAL_GETCONNECTIONS"/>
+  <int value="639" label="SERIAL_SEND"/>
+  <int value="640" label="GCM_REGISTER"/>
+  <int value="641" label="GCM_SEND"/>
+  <int value="642" label="SERIAL_CONNECT"/>
+  <int value="643" label="SERIAL_DISCONNECT"/>
+  <int value="644" label="MEDIAGALLERIES_GETALLMEDIAFILESYSTEMMETADATA"/>
+  <int value="645" label="FIRSTRUNPRIVATE_GETLOCALIZEDSTRINGS"/>
+  <int value="646" label="FIRSTRUNPRIVATE_LAUNCHTUTORIAL"/>
+  <int value="647" label="SOCKETS_UDP_SETPAUSED"/>
+  <int value="648" label="WEBVIEW_CAPTUREVISIBLEREGION"/>
+  <int value="649" label="MEDIAGALLERIES_GETMETADATA"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -24679,6 +25145,46 @@ other types of suffix sets.
   </int>
   <int value="27" label="RECOVERY_EVENT_FAILED_COMMIT">
     Failed sql::Recovery::Recovered().
+  </int>
+</enum>
+
+<enum name="HistoryTopSitesRecoveryEnum" type="int">
+  <summary>Error states noted in top_sites_database.cc recovery code.</summary>
+  <int value="0" label="RECOVERY_EVENT_RECOVERED">Successful recovery.</int>
+  <int value="1" label="RECOVERY_EVENT_DEPRECATED">
+    Recovery found deprecated version and razed.
+  </int>
+  <int value="2" label="RECOVERY_EVENT_FAILED_SCOPER">
+    sql::Recovery failed init.
+  </int>
+  <int value="3" label="RECOVERY_EVENT_FAILED_META_VERSION">
+    Failed sql::Recovery::SetupMeta() or GetMetaVersionNumber().
+  </int>
+  <int value="4" label="RECOVERY_EVENT_FAILED_META_WRONG_VERSION">
+    Recovery meta table has an unexpected version.
+  </int>
+  <int value="5" label="RECOVERY_EVENT_FAILED_META_INIT">
+    Failed sql::MetaTable::Init().
+  </int>
+  <int value="6" label="RECOVERY_EVENT_FAILED_SCHEMA_INIT">
+    Failed to init target schema.
+  </int>
+  <int value="7" label="RECOVERY_EVENT_FAILED_AUTORECOVER_THUMBNAILS">
+    Failed recovery on thumbnails table.
+  </int>
+  <int value="8" label="RECOVERY_EVENT_FAILED_COMMIT">
+    Failure from sql::Recovery::Recovered().
+  </int>
+  <int value="9" label="RECOVERY_EVENT_INVARIANT_RANK">
+    Rows were deleted because |url_rank| and |last_forced| didn't agree.  Does
+    not prevent recovery.
+  </int>
+  <int value="10" label="RECOVERY_EVENT_INVARIANT_REDIRECT">
+    Rows were deleted because |redirects| did not contain |url|.  Does not
+    prevent recovery.
+  </int>
+  <int value="11" label="RECOVERY_EVENT_INVARIANT_CONTIGUOUS">
+    |url_rank| was renumbered due to missing rows.  Does not prevent recovery.
   </int>
 </enum>
 
@@ -26263,6 +26769,12 @@ other types of suffix sets.
   <int value="3" label="kInvalidPlayerState"/>
 </enum>
 
+<enum name="MigrationNssToPemNetworkTypes" type="int">
+  <int value="0" label="EAP"/>
+  <int value="1" label="OpenVPN"/>
+  <int value="2" label="IPsec"/>
+</enum>
+
 <enum name="MistSwitchResult" type="int">
   <int value="0" label="Success"/>
   <int value="1" label="Failure"/>
@@ -26330,6 +26842,16 @@ other types of suffix sets.
   <int value="1" label="Caption context menu"/>
   <int value="2" label="Return by minimize"/>
   <int value="3" label="Return by launcher"/>
+</enum>
+
+<enum name="MultiProfileTeleportWindowType" type="int">
+  <int value="0" label="Tabbed browser"/>
+  <int value="1" label="Tabbed incognito browser"/>
+  <int value="2" label="V1 app"/>
+  <int value="3" label="V2 app"/>
+  <int value="4" label="Panel"/>
+  <int value="5" label="Popup"/>
+  <int value="6" label="Unknown"/>
 </enum>
 
 <enum name="NavigationScheme" type="int">
@@ -27635,6 +28157,17 @@ other types of suffix sets.
   <int value="5" label="5"/>
 </enum>
 
+<enum name="PostMergeVerificationOutcome" type="int">
+  <int value="0" label="Undefined"/>
+  <int value="1" label="Succeeded"/>
+  <int value="2" label="No accounts found"/>
+  <int value="3" label="Missing primary account"/>
+  <int value="4" label="Primary account is not the first"/>
+  <int value="5" label="Verification failed"/>
+  <int value="6" label="Connection failed"/>
+  <int value="7" label="Overflow"/>
+</enum>
+
 <enum name="PowerBrightnessAdjust" type="int">
   <int value="0" label="Brightness Down"/>
   <int value="1" label="Brightness Up"/>
@@ -27853,6 +28386,11 @@ other types of suffix sets.
   <int value="83" label="Continue prerender check next URL not skipped"/>
   <int value="84" label="Prerender Service returned hinting candidates"/>
   <int value="85" label="Namespace mismatch: merge result namespace not alias"/>
+  <int value="86" label="Tab Helper URL seen entry"/>
+  <int value="87" label="Tab Helper URL seen match browser navigation"/>
+  <int value="88" label="Tab Helper URL seen namespace match entry"/>
+  <int value="89"
+      label="Tab Helper URL seen namespace match browser navigation"/>
 </enum>
 
 <enum name="PrerenderLocalVisitCoreTransition" type="int">
@@ -27948,6 +28486,14 @@ other types of suffix sets.
   <int value="2" label="Created but not initialized (should never happen)"/>
   <int value="3" label="Succeeded"/>
   <int value="4" label="Canceled"/>
+</enum>
+
+<enum name="ProfileErrorType" type="int">
+  <int value="0" label="History error"/>
+  <int value="1" label="Preferences error"/>
+  <int value="2" label="Webdata autofill DB error"/>
+  <int value="3" label="Webdata token DB error"/>
+  <int value="4" label="Webdata DB error"/>
 </enum>
 
 <enum name="ProfileImageDownloadResult" type="int">
@@ -29687,6 +30233,7 @@ other types of suffix sets.
   <int value="10" label="prefs::kDefaultSearchProviderName"/>
   <int value="11" label="prefs::kPinnedTabs"/>
   <int value="12" label="prefs::kExtensionKnownDisabled"/>
+  <int value="13" label="prefs::kProfileResetPromptMemento"/>
 </enum>
 
 <enum name="TranslateError" type="int">
@@ -29750,22 +30297,31 @@ other types of suffix sets.
   <int value="11" label="Gesture finger down"/>
   <int value="12" label="Gesture finger up"/>
   <int value="13" label="Gesture double tap"/>
-  <int value="14" label="Gesture two-finger tap"/>
-  <int value="15" label="Gesture pinch begin"/>
-  <int value="16" label="Gesture pinch end"/>
-  <int value="17" label="Gesture pinch update (2 fingers)"/>
-  <int value="18" label="Long press"/>
-  <int value="19" label="Multi-finger swipe (2 fingers)"/>
-  <int value="20" label="Scroll"/>
-  <int value="21" label="Scroll fling start"/>
-  <int value="22" label="Scroll fling cancel"/>
-  <int value="23" label="Multi-finger swipe (3 fingers)"/>
-  <int value="24" label="Multi-finger swipe (4+ fingers)"/>
-  <int value="25" label="Gesture scroll update (2 fingers)"/>
-  <int value="26" label="Gesture scroll update (3 fingers)"/>
-  <int value="27" label="Gesture scroll update (4+ fingers)"/>
-  <int value="28" label="Gesture pinch update (3 fingers)"/>
-  <int value="29" label="Gesture pinch update (4+ fingers)"/>
+  <int value="14" label="Gesture triple tap"/>
+  <int value="15" label="Gesture two-finger tap"/>
+  <int value="16" label="Gesture pinch begin"/>
+  <int value="17" label="Gesture pinch end"/>
+  <int value="18" label="Gesture pinch update (2 fingers)"/>
+  <int value="19" label="Long press"/>
+  <int value="20" label="Multi-finger swipe (2 fingers)"/>
+  <int value="21" label="Scroll"/>
+  <int value="22" label="Scroll fling start"/>
+  <int value="23" label="Scroll fling cancel"/>
+  <int value="24" label="Multi-finger swipe (3 fingers)"/>
+  <int value="25" label="Multi-finger swipe (4+ fingers)"/>
+  <int value="26" label="Gesture scroll update (2 fingers)"/>
+  <int value="27" label="Gesture scroll update (3 fingers)"/>
+  <int value="28" label="Gesture scroll update (4+ fingers)"/>
+  <int value="29" label="Gesture pinch update (3 fingers)"/>
+  <int value="30" label="Gesture pinch update (4+ fingers)"/>
+  <int value="31" label="Long tap"/>
+  <int value="32" label="Show Press"/>
+  <int value="33" label="Tap Cancel"/>
+</enum>
+
+<enum name="UmaInitSequence" type="int">
+  <int value="0" label="Timer fired first"/>
+  <int value="1" label="Init task completed first"/>
 </enum>
 
 <enum name="UmaUploadResponseStatus" type="int">
@@ -31437,6 +31993,7 @@ other types of suffix sets.
              client successfully sent a UMA upload. Each packet was numbered
              when it was sent by Google."/>
   <affected-histogram name="NetConnectivity4"/>
+  <affected-histogram name="NetConnectivity5"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4NATBindPacketReceives" separator=".">
@@ -31465,6 +32022,7 @@ other types of suffix sets.
              between sendings of the first two packets. Results are only
              shown if the first two packets are both received."/>
   <affected-histogram name="NetConnectivity4.NATBind.Sent2"/>
+  <affected-histogram name="NetConnectivity5.NATBind.Sent2"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketFirst6" separator=".">
@@ -31480,6 +32038,9 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity4.NonPacedPacket"/>
   <affected-histogram name="NetConnectivity4.PacedPacket"/>
   <affected-histogram name="NetConnectivity4.StartPacket"/>
+  <affected-histogram name="NetConnectivity5.NonPacedPacket"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket"/>
+  <affected-histogram name="NetConnectivity5.StartPacket"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketReceives" separator=".">
@@ -31507,6 +32068,9 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity4.NonPacedPacket.Sent21"/>
   <affected-histogram name="NetConnectivity4.PacedPacket.Sent21"/>
   <affected-histogram name="NetConnectivity4.StartPacket.Sent21"/>
+  <affected-histogram name="NetConnectivity5.NonPacedPacket.Sent21"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.Sent21"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.Sent21"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketRTT" separator=".">
@@ -31535,6 +32099,9 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity4.NonPacedPacket"/>
   <affected-histogram name="NetConnectivity4.PacedPacket"/>
   <affected-histogram name="NetConnectivity4.StartPacket"/>
+  <affected-histogram name="NetConnectivity5.NonPacedPacket"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket"/>
+  <affected-histogram name="NetConnectivity5.StartPacket"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketRTTSeries" separator=".">
@@ -31547,6 +32114,10 @@ other types of suffix sets.
       name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT"/>
   <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.Success.RTT"/>
   <affected-histogram name="NetConnectivity4.StartPacket.Sent21.Success.RTT"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.Success.RTT"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.Sent21.Success.RTT"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.Sent21.Success.RTT"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketsAll" separator=".">
@@ -31741,6 +32312,191 @@ other types of suffix sets.
       name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet10"/>
   <affected-histogram
       name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet20"/>
+  <affected-histogram name="NetConnectivity5.NATBind.Sent2.Bind.Failure"/>
+  <affected-histogram name="NetConnectivity5.NATBind.Sent2.Bind.Success"/>
+  <affected-histogram
+      name="NetConnectivity5.NATBind.Sent2.Connectivity.Failure"/>
+  <affected-histogram
+      name="NetConnectivity5.NATBind.Sent2.Connectivity.Success"/>
+  <affected-histogram
+      name="NetConnectivity5.NATBind.Sent2.SendToLastRecvDelay"/>
+  <affected-histogram name="NetConnectivity5.NonPacedPacket.Sent21.GotAPacket"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst01Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst02Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst03Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst04Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst05Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst06Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst07Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst08Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst09Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst10Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst11Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst12Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst13Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst14Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst15Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst16Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst17Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst18Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst19Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst20Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.NumRecvFromFirst21Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.PacketDelay"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.PacketsRecv"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.SendToLastRecvDelay"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.Success.RTT.Packet01"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.Success.RTT.Packet02"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.Success.RTT.Packet03"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.Success.RTT.Packet10"/>
+  <affected-histogram
+      name="NetConnectivity5.NonPacedPacket.Sent21.Success.RTT.Packet20"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.Sent21.GotAPacket"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst01Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst02Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst03Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst04Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst05Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst06Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst07Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst08Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst09Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst10Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst11Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst12Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst13Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst14Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst15Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst16Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst17Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst18Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst19Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst20Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.NumRecvFromFirst21Packets"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.Sent21.PacketDelay"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.Sent21.PacketsRecv"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.SendToLastRecvDelay"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.Success.RTT.Packet01"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.Success.RTT.Packet02"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.Success.RTT.Packet03"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.Success.RTT.Packet10"/>
+  <affected-histogram
+      name="NetConnectivity5.PacedPacket.Sent21.Success.RTT.Packet20"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.Sent21.GotAPacket"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst01Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst02Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst03Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst04Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst05Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst06Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst07Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst08Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst09Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst10Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst11Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst12Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst13Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst14Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst15Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst16Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst17Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst18Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst19Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst20Packets"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.NumRecvFromFirst21Packets"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.Sent21.PacketDelay"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.Sent21.PacketsRecv"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.SendToLastRecvDelay"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.Success.RTT.Packet01"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.Success.RTT.Packet02"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.Success.RTT.Packet03"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.Success.RTT.Packet10"/>
+  <affected-histogram
+      name="NetConnectivity5.StartPacket.Sent21.Success.RTT.Packet20"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketSizeTest" separator=".">
@@ -31751,6 +32507,7 @@ other types of suffix sets.
       label="This histogram records the size of the packet size that was
              received from the server."/>
   <affected-histogram name="NetConnectivity4"/>
+  <affected-histogram name="NetConnectivity5"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketSizeTestPort" separator=".">
@@ -31760,6 +32517,10 @@ other types of suffix sets.
       name="NetConnectivity4.PacketSizeTest.Connectivity.Failure"/>
   <affected-histogram
       name="NetConnectivity4.PacketSizeTest.Connectivity.Success"/>
+  <affected-histogram
+      name="NetConnectivity5.PacketSizeTest.Connectivity.Failure"/>
+  <affected-histogram
+      name="NetConnectivity5.PacketSizeTest.Connectivity.Success"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4SeriesRecv" separator=".">
@@ -31784,6 +32545,9 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity4.NonPacedPacket.First6.SeriesRecv"/>
   <affected-histogram name="NetConnectivity4.PacedPacket.First6.SeriesRecv"/>
   <affected-histogram name="NetConnectivity4.StartPacket.First6.SeriesRecv"/>
+  <affected-histogram name="NetConnectivity5.NonPacedPacket.First6.SeriesRecv"/>
+  <affected-histogram name="NetConnectivity5.PacedPacket.First6.SeriesRecv"/>
+  <affected-histogram name="NetConnectivity5.StartPacket.First6.SeriesRecv"/>
 </fieldtrial>
 
 <fieldtrial name="NetProxyResolverExecutionTime">
@@ -31900,6 +32664,13 @@ other types of suffix sets.
   <affected-histogram name="Plugin.PpapiPluginLoadResult"/>
 </fieldtrial>
 
+<fieldtrial name="PrecacheCellular" separator=".">
+  <group name="Cellular"
+      label="covers fetches when connected to cellular networks"/>
+  <affected-histogram name="Precache.DownloadedNonPrecache"/>
+  <affected-histogram name="Precache.Saved"/>
+</fieldtrial>
+
 <fieldtrial name="Prefetch">
   <group name="ContentPrefetchPrefetchOff"
       label="Prefetch is completely disabled."/>
@@ -32006,6 +32777,7 @@ other types of suffix sets.
   <group name="web" label="Link triggered prerender."/>
   <group name="webcross" label="Link triggered prerender, cross domain."/>
   <group name="websame" label="Link triggered prerender, same domain."/>
+  <affected-histogram name="Prerender.Event"/>
   <affected-histogram name="Prerender.FinalStatus"/>
   <affected-histogram name="Prerender.FinalStatus_Prerender5minTTL"/>
   <affected-histogram name="Prerender.FinalStatus_PrerenderControl"/>

@@ -19,9 +19,9 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -55,11 +55,11 @@ class FileCacheTestOnUIThread : public testing::Test {
     const base::FilePath cache_dir =
         temp_dir_.path().AppendASCII(kCacheFileDirectory);
 
-    ASSERT_TRUE(file_util::CreateDirectory(metadata_dir));
-    ASSERT_TRUE(file_util::CreateDirectory(cache_dir));
+    ASSERT_TRUE(base::CreateDirectory(metadata_dir));
+    ASSERT_TRUE(base::CreateDirectory(cache_dir));
 
-    ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                    &dummy_file_path_));
+    ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(),
+                                               &dummy_file_path_));
     fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
 
     scoped_refptr<base::SequencedWorkerPool> pool =
@@ -159,8 +159,12 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_cache_state_ = expected_cache_state;
 
     FileError error = FILE_ERROR_OK;
-    cache_->PinOnUIThread(
-        id,
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&internal::FileCache::Pin,
+                   base::Unretained(cache_.get()),
+                   id),
         google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
     VerifyCacheFileState(error, id);
@@ -173,8 +177,12 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_cache_state_ = expected_cache_state;
 
     FileError error = FILE_ERROR_OK;
-    cache_->UnpinOnUIThread(
-        id,
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&internal::FileCache::Unpin,
+                   base::Unretained(cache_.get()),
+                   id),
         google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
     VerifyCacheFileState(error, id);
@@ -224,7 +232,7 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_cache_state_ = expected_cache_state;
 
     FileError error = FILE_ERROR_OK;
-    PostTaskAndReplyWithResult(
+    base::PostTaskAndReplyWithResult(
         blocking_task_runner_.get(),
         FROM_HERE,
         base::Bind(&FileCache::ClearDirty,
@@ -254,10 +262,15 @@ class FileCacheTestOnUIThread : public testing::Test {
 
     FileError error = FILE_ERROR_OK;
     base::FilePath cache_file_path;
-    cache_->MarkAsMountedOnUIThread(
-        id,
-        google_apis::test_util::CreateCopyResultCallback(
-            &error, &cache_file_path));
+
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_.get(),
+        FROM_HERE,
+        base::Bind(&FileCache::MarkAsMounted,
+                   base::Unretained(cache_.get()),
+                   id,
+                   &cache_file_path),
+        google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
 
     EXPECT_TRUE(base::PathExists(cache_file_path));
@@ -272,8 +285,12 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_cache_state_ = expected_cache_state;
 
     FileError error = FILE_ERROR_OK;
-    cache_->MarkAsUnmountedOnUIThread(
-        file_path,
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_.get(),
+        FROM_HERE,
+        base::Bind(&FileCache::MarkAsUnmounted,
+                   base::Unretained(cache_.get()),
+                   file_path),
         google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
 
@@ -720,8 +737,8 @@ class FileCacheTest : public testing::Test {
     const base::FilePath metadata_dir = temp_dir_.path().AppendASCII("meta");
     cache_files_dir_ = temp_dir_.path().AppendASCII(kCacheFileDirectory);
 
-    ASSERT_TRUE(file_util::CreateDirectory(metadata_dir));
-    ASSERT_TRUE(file_util::CreateDirectory(cache_files_dir_));
+    ASSERT_TRUE(base::CreateDirectory(metadata_dir));
+    ASSERT_TRUE(base::CreateDirectory(cache_files_dir_));
 
     fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
 
@@ -803,7 +820,7 @@ TEST_F(FileCacheTest, RecoverFilesFromCacheDirectory) {
 
 TEST_F(FileCacheTest, Iterator) {
   base::FilePath src_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
 
   // Prepare entries.
   std::map<std::string, std::string> md5s;
@@ -828,7 +845,7 @@ TEST_F(FileCacheTest, Iterator) {
 
 TEST_F(FileCacheTest, FreeDiskSpaceIfNeededFor) {
   base::FilePath src_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
 
   // Store a file as a 'temporary' file and remember the path.
   const std::string id_tmp = "id_tmp", md5_tmp = "md5_tmp";
@@ -959,7 +976,7 @@ TEST_F(FileCacheTest, ClearAll) {
 
   // Store an existing file.
   base::FilePath src_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
   ASSERT_EQ(FILE_ERROR_OK,
             cache_->Store(id, md5, src_file, FileCache::FILE_OPERATION_COPY));
 
@@ -972,7 +989,7 @@ TEST_F(FileCacheTest, ClearAll) {
 
   // Verify that the cache is removed.
   EXPECT_FALSE(cache_->GetCacheEntry(id, &cache_entry));
-  EXPECT_TRUE(file_util::IsDirectoryEmpty(cache_files_dir_));
+  EXPECT_TRUE(base::IsDirectoryEmpty(cache_files_dir_));
 }
 
 }  // namespace internal

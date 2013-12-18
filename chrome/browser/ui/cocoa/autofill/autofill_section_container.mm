@@ -67,15 +67,7 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
   return section == autofill::SECTION_CC_BILLING;
 }
 
-bool CompareInputRows(const autofill::DetailInput* input1,
-                      const autofill::DetailInput* input2) {
-  // Row ID -1 is sorted to the end of rows.
-  if (input2->row_id == -1)
-    return false;
-  return input2->row_id < input1->row_id;
-}
-
-}
+}  // namespace
 
 @interface AutofillSectionContainer ()
 
@@ -116,6 +108,9 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
 // Refresh all field icons based on |delegate_| status.
 - (void)updateFieldIcons;
+
+// Refresh the enabled/disabled state of all input fields.
+- (void)updateEditability;
 
 @end
 
@@ -166,12 +161,25 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   // Keep a list of weak pointers to DetailInputs.
   const autofill::DetailInputs& inputs =
       delegate_->RequestedFieldsForSection(section_);
-  for (size_t i = 0; i < inputs.size(); ++i) {
+
+  // Reverse the order of all the inputs.
+  for (int i = inputs.size() - 1; i >= 0; --i) {
     detailInputs_.push_back(&(inputs[i]));
   }
 
+  // Then right the reversal in each row.
+  std::vector<const autofill::DetailInput*>::iterator it;
+  for (it = detailInputs_.begin(); it < detailInputs_.end(); ++it) {
+    std::vector<const autofill::DetailInput*>::iterator start = it;
+    while (it != detailInputs_.end() &&
+           (*it)->length != autofill::DetailInput::LONG) {
+      ++it;
+    }
+    std::reverse(start, it);
+  }
+
   inputs_.reset([[self makeInputControls] retain]);
-  string16 labelText = delegate_->LabelForSection(section_);
+  base::string16 labelText = delegate_->LabelForSection(section_);
   label_.reset(
       [[self makeDetailSectionLabel:base::SysUTF16ToNSString(labelText)]
           retain]);
@@ -256,7 +264,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   content::NativeWebKeyboardEvent webEvent(event);
 
   // Only handle keyDown, to handle key repeats without duplicates.
-  if (webEvent.type != content::NativeWebKeyboardEvent::KeyDown)
+  if (webEvent.type != content::NativeWebKeyboardEvent::RawKeyDown)
     return kKeyEventNotHandled;
 
   // Allow the delegate to intercept key messages.
@@ -282,6 +290,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   delegate_->FocusMoved();
   [validationDelegate_ hideErrorBubble];
   [self validateFor:autofill::VALIDATE_EDIT];
+  [self updateEditability];
 }
 
 - (void)updateSuggestionState {
@@ -378,7 +387,10 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
 - (void)addInputsToArray:(NSMutableArray*)array {
   [array addObjectsFromArray:[inputs_ subviews]];
-  [array addObject:[suggestContainer_ inputField]];
+
+  // Only credit card sections can have a suggestion input.
+  if ([self isCreditCardSection])
+    [array addObject:[suggestContainer_ inputField]];
 }
 
 #pragma mark Internal API for AutofillSectionContainer.
@@ -393,7 +405,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
     return;
 
   autofill::ServerFieldType type = [self fieldTypeForControl:field];
-  string16 fieldValue = base::SysNSStringToUTF16([textfield fieldValue]);
+  base::string16 fieldValue = base::SysNSStringToUTF16([textfield fieldValue]);
 
   // Get the frame rectangle for the designated field, in screen coordinates.
   NSRect textFrameInScreen = [field convertRect:[field bounds] toView:nil];
@@ -419,7 +431,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   // correcting a minor mistake (i.e. a wrong CC digit) should immediately
   // result in validation - positive user feedback.
   if ([textfield invalid] && edited) {
-    string16 message = delegate_->InputValidityMessage(section_,
+    base::string16 message = delegate_->InputValidityMessage(section_,
                                                        type,
                                                        fieldValue);
     [textfield setValidityMessage:base::SysUTF16ToNSString(message)];
@@ -434,6 +446,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   // Update the icon if necessary.
   if (delegate_->FieldControlsIcons(type))
     [self updateFieldIcons];
+  [self updateEditability];
 }
 
 - (autofill::ServerFieldType)fieldTypeForControl:(NSControl*)control {
@@ -486,16 +499,13 @@ bool CompareInputRows(const autofill::DetailInput* input1,
     NSControl<AutofillInputField>* field = [inputs_ viewWithTag:iter->type];
     DCHECK(field);
 
-    // TODO(groby): We need to account for the fact editability state can change
-    // after any input in the same section is edited by the user.
-    [field setEnabled:delegate_->InputIsEditable(*iter, section_)];
-
     if (shouldClobber || [field isDefault]) {
       [field setFieldValue:base::SysUTF16ToNSString(iter->initial_value)];
     }
     if (shouldClobber)
       [field setValidityMessage:@""];
   }
+  [self updateEditability];
   [self updateFieldIcons];
   [self modelChanged];
 }
@@ -543,14 +553,16 @@ bool CompareInputRows(const autofill::DetailInput* input1,
       scoped_ptr<SimpleGridLayout>(new SimpleGridLayout(view))];
   SimpleGridLayout* layout = [view layoutManager];
 
-  // Reverse order of rows, but keep order of fields stable. stable_sort
-  // guarantees that field order within a row is not affected.
-  // Necessary since OSX builds forms from the bottom left.
-  std::stable_sort(
-      detailInputs_.begin(), detailInputs_.end(), CompareInputRows);
+  int column_set_id = 0;
   for (size_t i = 0; i < detailInputs_.size(); ++i) {
     const autofill::DetailInput& input = *detailInputs_[i];
-    int kColumnSetId = input.row_id;
+
+    if (input.length == autofill::DetailInput::LONG)
+      ++column_set_id;
+
+    int kColumnSetId =
+        input.length == autofill::DetailInput::NONE ? -1 : column_set_id;
+
     ColumnSet* columnSet = layout->GetColumnSet(kColumnSetId);
     if (!columnSet) {
       // Create a new column set and row.
@@ -599,6 +611,9 @@ bool CompareInputRows(const autofill::DetailInput* input1,
       [control setHidden:YES];
     }
     layout->AddView(control);
+
+    if (input.length == autofill::DetailInput::LONG)
+      ++column_set_id;
   }
 
   [self updateFieldIcons];
@@ -621,6 +636,17 @@ bool CompareInputRows(const autofill::DetailInput* input1,
     AutofillTextField* textfield = base::mac::ObjCCastStrict<AutofillTextField>(
         [inputs_ viewWithTag:iter->first]);
     [[textfield cell] setIcon:iter->second.ToNSImage()];
+  }
+}
+
+- (void)updateEditability {
+
+  base::scoped_nsobject<NSMutableArray> controls([[NSMutableArray alloc] init]);
+  [self addInputsToArray:controls];
+  for (NSControl<AutofillInputField>* control in controls.get()) {
+    autofill::ServerFieldType type = [self fieldTypeForControl:control];
+    const autofill::DetailInput* input = [self detailInputForType:type];
+    [control setEnabled:delegate_->InputIsEditable(*input, section_)];
   }
 }
 

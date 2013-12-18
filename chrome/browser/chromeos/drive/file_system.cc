@@ -34,9 +34,9 @@
 #include "chrome/browser/chromeos/drive/search_metadata.h"
 #include "chrome/browser/chromeos/drive/sync_client.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
 
 using content::BrowserThread;
 
@@ -77,7 +77,7 @@ FileError GetLocallyStoredResourceEntry(
     return error;
 
   base::PlatformFileInfo file_info;
-  if (!file_util::GetFileInfo(local_cache_path, &file_info))
+  if (!base::GetFileInfo(local_cache_path, &file_info))
     return FILE_ERROR_NOT_FOUND;
 
   SetPlatformFileInfoToResourceEntry(file_info, entry);
@@ -267,13 +267,13 @@ void FileSystem::ReloadAfterReset(const FileOperationCallback& callback,
 void FileSystem::ResetComponents() {
   file_system::OperationObserver* observer = this;
   copy_operation_.reset(
-      new file_system::CopyOperation(blocking_task_runner_.get(),
-                                     observer,
-                                     scheduler_,
-                                     resource_metadata_,
-                                     cache_,
-                                     drive_service_,
-                                     temporary_file_directory_));
+      new file_system::CopyOperation(
+          blocking_task_runner_.get(),
+          observer,
+          scheduler_,
+          resource_metadata_,
+          cache_,
+          drive_service_->GetResourceIdCanonicalizer()));
   create_directory_operation_.reset(new file_system::CreateDirectoryOperation(
       blocking_task_runner_.get(), observer, scheduler_, resource_metadata_));
   create_file_operation_.reset(
@@ -285,7 +285,6 @@ void FileSystem::ResetComponents() {
   move_operation_.reset(
       new file_system::MoveOperation(blocking_task_runner_.get(),
                                      observer,
-                                     scheduler_,
                                      resource_metadata_));
   open_file_operation_.reset(
       new file_system::OpenFileOperation(blocking_task_runner_.get(),
@@ -300,7 +299,7 @@ void FileSystem::ResetComponents() {
                                        resource_metadata_,
                                        cache_));
   touch_operation_.reset(new file_system::TouchOperation(
-      blocking_task_runner_.get(), observer, scheduler_, resource_metadata_));
+      blocking_task_runner_.get(), observer, resource_metadata_));
   truncate_operation_.reset(
       new file_system::TruncateOperation(blocking_task_runner_.get(),
                                          observer,
@@ -435,13 +434,15 @@ void FileSystem::CreateDirectoryAfterLoad(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (load_error != FILE_ERROR_OK) {
-    callback.Run(load_error);
-    return;
+  switch (load_error) {
+    case FILE_ERROR_OK:
+    case FILE_ERROR_NOT_FOUND:
+      create_directory_operation_->CreateDirectory(
+          directory_path, is_exclusive, is_recursive, callback);
+      break;
+    default:
+      callback.Run(load_error);
   }
-
-  create_directory_operation_->CreateDirectory(
-      directory_path, is_exclusive, is_recursive, callback);
 }
 
 void FileSystem::CreateFile(const base::FilePath& file_path,
@@ -697,6 +698,12 @@ void FileSystem::LoadDirectoryIfNeededAfterGetEntry(
     return;
   }
 
+  // drive/other does not exist on the server.
+  if (entry->local_id() == util::kDriveOtherDirLocalId) {
+    callback.Run(FILE_ERROR_OK);
+    return;
+  }
+
   // Pass the directory fetch info so we can fetch the contents of the
   // directory before loading change lists.
   internal::DirectoryFetchInfo directory_fetch_info(
@@ -712,8 +719,8 @@ void FileSystem::ReadDirectoryAfterLoad(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  DLOG_IF(INFO, error != FILE_ERROR_OK) << "LoadIfNeeded failed. "
-                                        << FileErrorToString(error);
+  DVLOG_IF(1, error != FILE_ERROR_OK) << "LoadIfNeeded failed. "
+                                      << FileErrorToString(error);
 
   resource_metadata_->ReadDirectoryByPathOnUIThread(
       directory_path,
@@ -885,8 +892,8 @@ void FileSystem::OnCacheFileUploadNeededByOperation(
   sync_client_->AddUploadTask(ClientContext(USER_INITIATED), local_id);
 }
 
-void FileSystem::OnEntryRemovedByOperation(const std::string& local_id) {
-  sync_client_->AddRemoveTask(local_id);
+void FileSystem::OnEntryUpdatedByOperation(const std::string& local_id) {
+  sync_client_->AddUpdateTask(local_id);
 }
 
 void FileSystem::OnDirectoryChanged(const base::FilePath& directory_path) {
@@ -962,7 +969,14 @@ void FileSystem::MarkCacheFileAsUnmounted(
     callback.Run(FILE_ERROR_FAILED);
     return;
   }
-  cache_->MarkAsUnmountedOnUIThread(cache_file_path, callback);
+
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::FileCache::MarkAsUnmounted,
+                 base::Unretained(cache_),
+                 cache_file_path),
+      callback);
 }
 
 void FileSystem::GetCacheEntry(

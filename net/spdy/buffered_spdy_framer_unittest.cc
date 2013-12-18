@@ -67,6 +67,12 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
     headers_ = headers;
   }
 
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                 size_t length,
+                                 bool fin) OVERRIDE {
+    ADD_FAILURE() << "Unexpected OnDataFrameHeader call.";
+  }
+
   virtual void OnStreamFrameData(SpdyStreamId stream_id,
                                  const char* data,
                                  size_t len,
@@ -220,7 +226,6 @@ TEST_P(BufferedSpdyFramerTest, ReadSynStreamHeaderBlock) {
                              1,                        // priority
                              0,                        // credential_slot
                              CONTROL_FLAG_NONE,
-                             true,                     // compress
                              &headers));
   EXPECT_TRUE(control_frame.get() != NULL);
 
@@ -243,7 +248,6 @@ TEST_P(BufferedSpdyFramerTest, ReadSynReplyHeaderBlock) {
   scoped_ptr<SpdyFrame> control_frame(
       framer.CreateSynReply(1,                        // stream_id
                             CONTROL_FLAG_NONE,
-                            true,                     // compress
                             &headers));
   EXPECT_TRUE(control_frame.get() != NULL);
 
@@ -266,7 +270,6 @@ TEST_P(BufferedSpdyFramerTest, ReadHeadersHeaderBlock) {
   scoped_ptr<SpdyFrame> control_frame(
       framer.CreateHeaders(1,                        // stream_id
                            CONTROL_FLAG_NONE,
-                           true,                    // compress
                            &headers));
   EXPECT_TRUE(control_frame.get() != NULL);
 

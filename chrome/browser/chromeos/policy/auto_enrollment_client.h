@@ -12,7 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "net/base/network_change_notifier.h"
 #include "third_party/protobuf/src/google/protobuf/repeated_field.h"
 
@@ -21,6 +21,10 @@ class PrefService;
 
 namespace enterprise_management {
 class DeviceManagementResponse;
+}
+
+namespace net {
+class URLRequestContextGetter;
 }
 
 namespace policy {
@@ -39,12 +43,14 @@ class AutoEnrollmentClient
   // The result of the protocol will be cached in |local_state|.
   // |power_initial| and |power_limit| are exponents of power-of-2 values which
   // will be the initial modulus and the maximum modulus used by this client.
-  AutoEnrollmentClient(const base::Closure& completion_callback,
-                       DeviceManagementService* device_management_service,
-                       PrefService* local_state,
-                       const std::string& serial_number,
-                       int power_initial,
-                       int power_limit);
+  AutoEnrollmentClient(
+      const base::Closure& completion_callback,
+      DeviceManagementService* device_management_service,
+      PrefService* local_state,
+      scoped_refptr<net::URLRequestContextGetter> system_request_context,
+      const std::string& serial_number,
+      int power_initial,
+      int power_limit);
   virtual ~AutoEnrollmentClient();
 
   // Registers preferences in local state.
@@ -144,6 +150,9 @@ class AutoEnrollmentClient
 
   // PrefService where the protocol's results are cached.
   PrefService* local_state_;
+
+  // The request context to use to perform the auto enrollment request.
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
 
   // Times used to determine the duration of the protocol, and the extra time
   // needed to complete after the signin was complete.

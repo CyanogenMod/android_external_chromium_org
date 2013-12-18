@@ -53,6 +53,7 @@
 #include "chrome/renderer/extensions/object_backed_native_handler.h"
 #include "chrome/renderer/extensions/page_actions_custom_bindings.h"
 #include "chrome/renderer/extensions/page_capture_custom_bindings.h"
+#include "chrome/renderer/extensions/pepper_request_natives.h"
 #include "chrome/renderer/extensions/render_view_observer_natives.h"
 #include "chrome/renderer/extensions/request_sender.h"
 #include "chrome/renderer/extensions/runtime_custom_bindings.h"
@@ -99,7 +100,7 @@
 #include "v8/include/v8.h"
 
 #if defined(ENABLE_WEBRTC)
-#include "chrome/renderer/extensions/webrtc_native_handler.h"
+#include "chrome/renderer/extensions/cast_streaming_native_handler.h"
 #endif
 
 using blink::WebDataSource;
@@ -112,6 +113,7 @@ using blink::WebVector;
 using blink::WebView;
 using content::RenderThread;
 using content::RenderView;
+using content::UserMetricsAction;
 
 namespace extensions {
 
@@ -129,7 +131,8 @@ static const char kOnSuspendCanceledEvent[] = "runtime.onSuspendCanceled";
 // Note that this isn't necessarily an object, since webpages can write, for
 // example, "window.chrome = true".
 v8::Handle<v8::Value> GetOrCreateChrome(ChromeV8Context* context) {
-  v8::Handle<v8::String> chrome_string(v8::String::New("chrome"));
+  v8::Handle<v8::String> chrome_string(
+      v8::String::NewFromUtf8(context->isolate(), "chrome"));
   v8::Handle<v8::Object> global(context->v8_context()->Global());
   v8::Handle<v8::Value> chrome(global->Get(chrome_string));
   if (chrome->IsUndefined()) {
@@ -184,6 +187,7 @@ class UserGesturesNativeHandler : public ObjectBackedNativeHandler {
   void IsProcessingUserGesture(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     args.GetReturnValue().Set(v8::Boolean::New(
+        args.GetIsolate(),
         blink::WebUserGestureIndicator::isProcessingUserGesture()));
   }
 
@@ -225,15 +229,16 @@ class V8ContextNativeHandler : public ObjectBackedNativeHandler {
  private:
   void GetAvailability(const v8::FunctionCallbackInfo<v8::Value>& args) {
     CHECK_EQ(args.Length(), 1);
-    std::string api_name = *v8::String::AsciiValue(args[0]->ToString());
+    v8::Isolate* isolate = args.GetIsolate();
+    std::string api_name = *v8::String::Utf8Value(args[0]->ToString());
     Feature::Availability availability = context_->GetAvailability(api_name);
 
     v8::Handle<v8::Object> ret = v8::Object::New();
-    ret->Set(v8::String::New("is_available"),
-             v8::Boolean::New(availability.is_available()));
-    ret->Set(v8::String::New("message"),
-             v8::String::New(availability.message().c_str()));
-    ret->Set(v8::String::New("result"),
+    ret->Set(v8::String::NewFromUtf8(isolate, "is_available"),
+             v8::Boolean::New(isolate, availability.is_available()));
+    ret->Set(v8::String::NewFromUtf8(isolate, "message"),
+             v8::String::NewFromUtf8(isolate, availability.message().c_str()));
+    ret->Set(v8::String::NewFromUtf8(isolate, "result"),
              v8::Integer::New(availability.result()));
     args.GetReturnValue().Set(ret);
   }
@@ -370,11 +375,13 @@ class ProcessInfoNativeHandler : public ChromeV8Extension {
 
  private:
   void GetExtensionId(const v8::FunctionCallbackInfo<v8::Value>& args) {
-    args.GetReturnValue().Set(v8::String::New(extension_id_.c_str()));
+    args.GetReturnValue()
+        .Set(v8::String::NewFromUtf8(args.GetIsolate(), extension_id_.c_str()));
   }
 
   void GetContextType(const v8::FunctionCallbackInfo<v8::Value>& args) {
-    args.GetReturnValue().Set(v8::String::New(context_type_.c_str()));
+    args.GetReturnValue()
+        .Set(v8::String::NewFromUtf8(args.GetIsolate(), context_type_.c_str()));
   }
 
   void InIncognitoContext(const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -387,7 +394,7 @@ class ProcessInfoNativeHandler : public ChromeV8Extension {
 
   void IsSendRequestDisabled(const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (send_request_disabled_) {
-      args.GetReturnValue().Set(v8::String::New(
+      args.GetReturnValue().Set(v8::String::NewFromUtf8(args.GetIsolate(),
           "sendRequest and onRequest are obsolete."
           " Please use sendMessage and onMessage instead."));
     }
@@ -396,8 +403,8 @@ class ProcessInfoNativeHandler : public ChromeV8Extension {
   void HasSwitch(const v8::FunctionCallbackInfo<v8::Value>& args) {
     CHECK(args.Length() == 1 && args[0]->IsString());
     bool has_switch = CommandLine::ForCurrentProcess()->HasSwitch(
-        *v8::String::AsciiValue(args[0]));
-    args.GetReturnValue().Set(v8::Boolean::New(has_switch));
+        *v8::String::Utf8Value(args[0]));
+    args.GetReturnValue().Set(v8::Boolean::New(args.GetIsolate(), has_switch));
   }
 
   std::string extension_id_;
@@ -673,8 +680,9 @@ bool Dispatcher::IsExtensionActive(
 
 v8::Handle<v8::Object> Dispatcher::GetOrCreateObject(
     v8::Handle<v8::Object> object,
-    const std::string& field) {
-  v8::Handle<v8::String> key = v8::String::New(field.c_str());
+    const std::string& field,
+    v8::Isolate* isolate) {
+  v8::Handle<v8::String> key = v8::String::NewFromUtf8(isolate, field.c_str());
   // If the object has a callback property, it is assumed it is an unavailable
   // API, so it is safe to delete. This is checked before GetOrCreateObject is
   // called.
@@ -800,7 +808,7 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
       if (bind_object.IsEmpty())
         return v8::Handle<v8::Object>();
     }
-    bind_object = GetOrCreateObject(bind_object, split[i]);
+    bind_object = GetOrCreateObject(bind_object, split[i], context->isolate());
   }
 
   if (only_ancestor_available)
@@ -824,7 +832,8 @@ void Dispatcher::RegisterBinding(const std::string& api_name,
   if (bind_object.IsEmpty())
     return;
 
-  v8::Local<v8::String> v8_api_name = v8::String::New(api_name.c_str());
+  v8::Local<v8::String> v8_api_name =
+      v8::String::NewFromUtf8(context->isolate(), api_name.c_str());
   if (bind_object->HasRealNamedProperty(v8_api_name)) {
     // The bind object may already have the property if the API has been
     // registered before (or if the extension has put something there already,
@@ -930,6 +939,9 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
   module_system->RegisterNativeHandler("page_capture",
       scoped_ptr<NativeHandler>(
           new PageCaptureCustomBindings(this, context)));
+  module_system->RegisterNativeHandler(
+      "pepper_request_natives",
+      scoped_ptr<NativeHandler>(new PepperRequestNatives(context)));
   module_system->RegisterNativeHandler("runtime",
       scoped_ptr<NativeHandler>(new RuntimeCustomBindings(this, context)));
   module_system->RegisterNativeHandler("tabs",
@@ -937,8 +949,8 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
   module_system->RegisterNativeHandler("webstore",
       scoped_ptr<NativeHandler>(new WebstoreBindings(this, context)));
 #if defined(ENABLE_WEBRTC)
-  module_system->RegisterNativeHandler("webrtc_natives",
-      scoped_ptr<NativeHandler>(new WebRtcNativeHandler(context)));
+  module_system->RegisterNativeHandler("cast_streaming_natives",
+      scoped_ptr<NativeHandler>(new CastStreamingNativeHandler(context)));
 #endif
 }
 
@@ -951,6 +963,7 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("lastError", IDR_LAST_ERROR_JS);
   source_map_.RegisterSource("messaging", IDR_MESSAGING_JS);
   source_map_.RegisterSource("messaging_utils", IDR_MESSAGING_UTILS_JS);
+  source_map_.RegisterSource("pepper_request", IDR_PEPPER_REQUEST_JS);
   source_map_.RegisterSource(kSchemaUtils, IDR_SCHEMA_UTILS_JS);
   source_map_.RegisterSource("sendRequest", IDR_SEND_REQUEST_JS);
   source_map_.RegisterSource("setIcon", IDR_SET_ICON_JS);
@@ -992,6 +1005,8 @@ void Dispatcher::PopulateSourceMap() {
                              IDR_GCM_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("i18n", IDR_I18N_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("identity", IDR_IDENTITY_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("imageWriterPrivate",
+                             IDR_IMAGE_WRITER_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("input.ime", IDR_INPUT_IME_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("mediaGalleries",
                              IDR_MEDIA_GALLERIES_CUSTOM_BINDINGS_JS);
@@ -1017,10 +1032,13 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("webRequestInternal",
                              IDR_WEB_REQUEST_INTERNAL_CUSTOM_BINDINGS_JS);
 #if defined(ENABLE_WEBRTC)
-  source_map_.RegisterSource("webrtc.castSendTransport",
-                             IDR_WEBRTC_CAST_SEND_TRANSPORT_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("webrtc.castUdpTransport",
-                             IDR_WEBRTC_CAST_UDP_TRANSPORT_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("cast.streaming.rtpStream",
+                             IDR_CAST_STREAMING_RTP_STREAM_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("cast.streaming.session",
+                             IDR_CAST_STREAMING_SESSION_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource(
+      "cast.streaming.udpTransport",
+      IDR_CAST_STREAMING_UDP_TRANSPORT_CUSTOM_BINDINGS_JS);
 #endif
   source_map_.RegisterSource("webstore", IDR_WEBSTORE_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("windowControls", IDR_WINDOW_CONTROLS_JS);
@@ -1062,7 +1080,8 @@ void Dispatcher::InstallBindings(ModuleSystem* module_system,
   if (lazy_binding != lazy_bindings_map_.end()) {
     v8::Handle<v8::Object> global(v8_context->Global());
     v8::Handle<v8::Object> chrome =
-        global->Get(v8::String::New("chrome"))->ToObject();
+        global->Get(v8::String::NewFromUtf8(v8_context->GetIsolate(), "chrome"))
+            ->ToObject();
     (*lazy_binding->second)(module_system, chrome);
   } else {
     module_system->Require(api);
@@ -1086,7 +1105,8 @@ void Dispatcher::DidCreateScriptContext(
     // "invalid". This isn't interesting.
     if (extension_id != "invalid") {
       LOG(ERROR) << "Extension \"" << extension_id << "\" not found";
-      RenderThread::Get()->RecordUserMetrics("ExtensionNotFound_ED");
+      RenderThread::Get()->RecordAction(
+          UserMetricsAction("ExtensionNotFound_ED"));
     }
 
     extension_id = "";
@@ -1560,8 +1580,8 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
   }
 
   if (!context->extension()) {
-    v8::ThrowException(
-        v8::Exception::Error(v8::String::New("Not in an extension.")));
+    context->isolate()->ThrowException(v8::Exception::Error(
+        v8::String::NewFromUtf8(context->isolate(), "Not in an extension.")));
     return false;
   }
 
@@ -1572,15 +1592,16 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
     static const char kMessage[] =
         "%s cannot be used within a sandboxed frame.";
     std::string error_msg = base::StringPrintf(kMessage, function_name.c_str());
-    v8::ThrowException(
-        v8::Exception::Error(v8::String::New(error_msg.c_str())));
+    context->isolate()->ThrowException(v8::Exception::Error(
+        v8::String::NewFromUtf8(context->isolate(), error_msg.c_str())));
     return false;
   }
 
   Feature::Availability availability = context->GetAvailability(function_name);
   if (!availability.is_available()) {
-    v8::ThrowException(v8::Exception::Error(
-        v8::String::New(availability.message().c_str())));
+    context->isolate()->ThrowException(
+        v8::Exception::Error(v8::String::NewFromUtf8(
+            context->isolate(), availability.message().c_str())));
   }
 
   return availability.is_available();

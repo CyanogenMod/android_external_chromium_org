@@ -120,12 +120,20 @@ bool ShelfViewTestAPI::SameDragType(LauncherItemType typea,
   return shelf_view_->SameDragType(typea, typeb);
 }
 
-void ShelfViewTestAPI::SetLauncherDelegate(LauncherDelegate* delegate) {
+void ShelfViewTestAPI::SetShelfDelegate(ShelfDelegate* delegate) {
   shelf_view_->delegate_ = delegate;
 }
 
 gfx::Rect ShelfViewTestAPI::GetBoundsForDragInsertInScreen() {
   return shelf_view_->GetBoundsForDragInsertInScreen();
+}
+
+bool ShelfViewTestAPI::IsDraggingShelfItem() {
+  return shelf_view_->dragging();
+}
+
+bool ShelfViewTestAPI::DraggedItemFromOverflowToShelf() {
+    return shelf_view_->dragged_off_from_overflow_to_shelf_;
 }
 
 }  // namespace test

@@ -90,7 +90,7 @@ void BalloonNotificationUIManager::Add(const Notification& notification,
 bool BalloonNotificationUIManager::Update(const Notification& notification,
                                           Profile* profile) {
   const GURL& origin = notification.origin_url();
-  const string16& replace_id = notification.replace_id();
+  const base::string16& replace_id = notification.replace_id();
 
   if (replace_id.empty())
     return false;
@@ -217,7 +217,8 @@ void BalloonNotificationUIManager::OnBalloonSpaceChanged() {
   CheckAndShowNotifications();
 }
 
-void BalloonNotificationUIManager::OnBlockingStateChanged() {
+void BalloonNotificationUIManager::OnBlockingStateChanged(
+    message_center::NotificationBlocker* blocker) {
   CheckAndShowNotifications();
 }
 
@@ -225,7 +226,7 @@ bool BalloonNotificationUIManager::UpdateNotification(
     const Notification& notification,
     Profile* profile) {
   const GURL& origin = notification.origin_url();
-  const string16& replace_id = notification.replace_id();
+  const base::string16& replace_id = notification.replace_id();
 
   DCHECK(!replace_id.empty());
 
@@ -246,15 +247,12 @@ bool BalloonNotificationUIManager::UpdateNotification(
 
 BalloonCollection::PositionPreference
 BalloonNotificationUIManager::GetPositionPreference() const {
-  LOG(INFO) << "Current position preference: " << position_pref_.GetValue();
-
   return static_cast<BalloonCollection::PositionPreference>(
       position_pref_.GetValue());
 }
 
 void BalloonNotificationUIManager::SetPositionPreference(
     BalloonCollection::PositionPreference preference) {
-  LOG(INFO) << "Setting position preference: " << preference;
   position_pref_.SetValue(static_cast<int>(preference));
   balloon_collection_->SetPositionPreference(preference);
 }

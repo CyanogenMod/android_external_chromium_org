@@ -24,7 +24,10 @@
 
 class ExtensionPrefValueMap;
 class PrefService;
-class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -59,22 +62,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
 
   // Vector containing identifiers for preferences.
   typedef std::set<std::string> PrefKeySet;
-
-  // This enum is used for the launch type the user wants to use for an
-  // application.
-  // Do not remove items or re-order this enum as it is used in preferences
-  // and histograms.
-  enum LaunchType {
-    LAUNCH_TYPE_PINNED,
-    LAUNCH_TYPE_REGULAR,
-    LAUNCH_TYPE_FULLSCREEN,
-    LAUNCH_TYPE_WINDOW,
-
-    // Launch an app in the in the way a click on the NTP would,
-    // if no user pref were set.  Update this constant to change
-    // the default for the NTP and chrome.management.launchApp().
-    LAUNCH_TYPE_DEFAULT = LAUNCH_TYPE_REGULAR
-  };
 
   // This enum is used to store the reason an extension's install has been
   // delayed.  Do not remove items or re-order this enum as it is used in
@@ -158,8 +145,8 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
 
   virtual ~ExtensionPrefs();
 
-  // Convenience function to get the ExtensionPrefs for a Profile.
-  static ExtensionPrefs* Get(Profile* profile);
+  // Convenience function to get the ExtensionPrefs for a BrowserContext.
+  static ExtensionPrefs* Get(content::BrowserContext* context);
 
   // Returns all installed extensions from extension preferences provided by
   // |pref_service|. This is exposed for ProtectedPrefsWatcher because it needs
@@ -179,8 +166,11 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
   ExtensionIdList GetToolbarOrder();
   void SetToolbarOrder(const ExtensionIdList& extension_ids);
 
-  // Get/Set the list of known disabled extension IDs.
-  ExtensionIdSet GetKnownDisabled();
+  // Gets the set of known disabled extension IDs into |id_set_out|. Returns
+  // false iff the set of known disabled extension IDs hasn't been set yet.
+  bool GetKnownDisabled(ExtensionIdSet* id_set_out);
+
+  // Sets the set of known disabled extension IDs.
   void SetKnownDisabled(const ExtensionIdSet& extension_ids);
 
   // Called when an extension is installed, so that prefs get created.
@@ -393,24 +383,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
   void SetAllowFileAccess(const std::string& extension_id, bool allow);
   bool HasAllowFileAccessSetting(const std::string& extension_id) const;
 
-  // Get the launch type preference. If no preference is set, return
-  // LAUNCH_DEFAULT.
-  // Returns LAUNCH_WINDOW if there's no preference and
-  // 'streamlined hosted apps' are enabled.
-  LaunchType GetLaunchType(const Extension* extension);
-
-  void SetLaunchType(const std::string& extension_id, LaunchType launch_type);
-
-  // Find the right launch container based on the launch type.
-  // If |extension|'s prefs do not have a launch type set, then the default
-  // value from GetLaunchType() is used to decide the launch container.
-  LaunchContainer GetLaunchContainer(const Extension* extension);
-
-  // Returns true if a launch container preference has been specified for
-  // |extension|. GetLaunchContainer() will still return a default value even if
-  // this returns false.
-  bool HasPreferredLaunchContainer(const Extension* extension);
-
   // Saves ExtensionInfo for each installed extension with the path to the
   // version directory and the location. Blacklisted extensions won't be saved
   // and neither will external extensions the user has explicitly uninstalled.
@@ -605,10 +577,13 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
   bool DoesExtensionHaveState(const std::string& id,
                               Extension::State check_state) const;
 
-  // Reads the list of strings for |pref| from prefs into an
-  // ExtensionIdContainer.
+  // Reads the list of strings for |pref| from user prefs into
+  // |id_container_out|. Returns false if the pref wasn't found in the user
+  // pref store.
   template <class ExtensionIdContainer>
-  ExtensionIdContainer GetExtensionPrefAsContainer(const char* pref);
+  bool GetUserExtensionPrefIntoContainer(
+      const char* pref,
+      ExtensionIdContainer* id_container_out);
 
   // Writes the list of strings contained in |strings| to |pref| in prefs.
   template <class ExtensionIdContainer>

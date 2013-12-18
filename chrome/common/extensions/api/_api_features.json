@@ -128,6 +128,18 @@
     "dependencies": ["permission:cast"],
     "contexts": ["blessed_extension"]
   },
+  "cast.streaming.rtpStream": {
+    "dependencies": ["permission:cast.streaming"],
+    "contexts": ["blessed_extension"]
+  },
+  "cast.streaming.session": {
+    "dependencies": ["permission:cast.streaming"],
+    "contexts": ["blessed_extension"]
+  },
+  "cast.streaming.udpTransport": {
+    "dependencies": ["permission:cast.streaming"],
+    "contexts": ["blessed_extension"]
+  },
   "chromeosInfoPrivate": {
     "platforms": ["chromeos"],
     "dependencies": ["permission:chromeosInfoPrivate"],
@@ -248,14 +260,6 @@
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
   },
-  "experimental.history": {
-    "dependencies": ["permission:history", "permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
-  "experimental.identity": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
   "extension": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
@@ -311,6 +315,11 @@
   },
   "fileSystemProvider": {
     "dependencies": ["permission:fileSystemProvider"],
+    "contexts": ["blessed_extension"]
+  },
+  "firstRunPrivate": {
+    "platforms": ["chromeos"],
+    "dependencies": ["permission:firstRunPrivate"],
     "contexts": ["blessed_extension"]
   },
   "fontSettings": {
@@ -405,6 +414,11 @@
     "dependencies": ["permission:mediaGalleries"],
     "contexts": ["blessed_extension"]
   },
+  "mediaGalleries.getMetadata": {
+    "channel": "dev",
+    "dependencies": ["permission:mediaGalleries"],
+    "contexts": ["blessed_extension"]
+  },
   "mediaGalleriesPrivate": {
     "dependencies": ["permission:mediaGalleriesPrivate"],
     "contexts": ["blessed_extension"]
@@ -454,8 +468,7 @@
   "permissions": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
-    "contexts": "all",
-    "matches": ["<all_urls>"]
+    "contexts": ["blessed_extension"]
   },
   "power": {
     "dependencies": ["permission:power"],
@@ -706,14 +719,6 @@
   },
   "webstorePrivate": {
     "dependencies": ["permission:webstorePrivate"],
-    "contexts": ["blessed_extension"]
-  },
-  "webrtc.castSendTransport": {
-    "dependencies": ["permission:webrtc"],
-    "contexts": ["blessed_extension"]
-  },
-  "webrtc.castUdpTransport": {
-    "dependencies": ["permission:webrtc"],
     "contexts": ["blessed_extension"]
   },
   "webview": {

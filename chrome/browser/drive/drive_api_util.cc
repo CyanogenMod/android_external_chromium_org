@@ -17,9 +17,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_switches.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 #include "net/base/escape.h"
 #include "third_party/re2/re2/re2.h"
 #include "url/gurl.h"
@@ -162,12 +162,12 @@ std::string TranslateQuery(const std::string& original_query) {
   // In order to handle non-ascii white spaces correctly, convert to UTF16.
   base::string16 query = UTF8ToUTF16(original_query);
   const base::string16 kDelimiter(
-      kWhitespaceUTF16 + base::string16(1, static_cast<char16>('"')));
+      base::kWhitespaceUTF16 + base::string16(1, static_cast<char16>('"')));
 
   std::string result;
-  for (size_t index = query.find_first_not_of(kWhitespaceUTF16);
+  for (size_t index = query.find_first_not_of(base::kWhitespaceUTF16);
        index != base::string16::npos;
-       index = query.find_first_not_of(kWhitespaceUTF16, index)) {
+       index = query.find_first_not_of(base::kWhitespaceUTF16, index)) {
     bool is_exclusion = (query[index] == '-');
     if (is_exclusion)
       ++index;
@@ -312,11 +312,14 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
   file->set_created_date(entry.published_time());
 
   if (std::find(entry.labels().begin(), entry.labels().end(),
-                "shared-with-me") == entry.labels().end()) {
+                "shared-with-me") != entry.labels().end()) {
     // Set current time to mark the file is shared_with_me, since ResourceEntry
     // doesn't have |shared_with_me_date| equivalent.
     file->set_shared_with_me_date(base::Time::Now());
   }
+
+  file->set_shared(std::find(entry.labels().begin(), entry.labels().end(),
+                             "shared") != entry.labels().end());
 
   file->set_download_url(entry.download_url());
   if (entry.is_folder())
@@ -411,12 +414,13 @@ ConvertFileResourceToResourceEntry(
   entry->set_kind(GetKind(file_resource));
   entry->set_title(file_resource.title());
   entry->set_published_time(file_resource.created_date());
-  // TODO(kochi): entry->labels_
-  if (!file_resource.shared_with_me_date().is_null()) {
-    std::vector<std::string> labels;
+
+  std::vector<std::string> labels;
+  if (!file_resource.shared_with_me_date().is_null())
     labels.push_back("shared-with-me");
-    entry->set_labels(labels);
-  }
+  if (file_resource.shared())
+    labels.push_back("shared");
+  entry->set_labels(labels);
 
   // This should be the url to download the file_resource.
   {

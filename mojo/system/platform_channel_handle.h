@@ -7,14 +7,34 @@
 
 #include "build/build_config.h"
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 namespace mojo {
 namespace system {
 
 #if defined(OS_POSIX)
 struct PlatformChannelHandle {
+  PlatformChannelHandle() : fd(-1) {}
   explicit PlatformChannelHandle(int fd) : fd(fd) {}
 
+  void CloseIfNecessary();
+
+  bool is_valid() const { return fd != -1; }
+
   int fd;
+};
+#elif defined(OS_WIN)
+struct PlatformChannelHandle {
+  PlatformChannelHandle() : handle(INVALID_HANDLE_VALUE) {}
+  explicit PlatformChannelHandle(HANDLE handle) : handle(handle) {}
+
+  void CloseIfNecessary();
+
+  bool is_valid() const { return handle != INVALID_HANDLE_VALUE; }
+
+  HANDLE handle;
 };
 #else
 #error "Platform not yet supported."

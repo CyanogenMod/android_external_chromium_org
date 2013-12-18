@@ -15,6 +15,8 @@ const int kScreenHeight = 600;
 const int kWindowWidth = 100;
 const int kWindowHeight = 200;
 
+// Size of the menu bar along the top of the screen.
+const int kMenuBarSize = 22;
 // Size of the normal (non-hidden) shelf.
 const int kShelfSize = 30;
 
@@ -46,7 +48,10 @@ class AppListPositionerUnitTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     display_.set_bounds(gfx::Rect(0, 0, kScreenWidth, kScreenHeight));
-    display_.set_work_area(gfx::Rect(0, 0, kScreenWidth, kScreenHeight));
+    // Assume there is a menu bar at the top of the screen, as on Mac and Unity.
+    // This is for cases where the work area does not fill the entire screen.
+    display_.set_work_area(
+        gfx::Rect(0, kMenuBarSize, kScreenWidth, kScreenHeight - kMenuBarSize));
     ResetPositioner();
     cursor_ = gfx::Point();
   }
@@ -88,6 +93,11 @@ class AppListPositionerUnitTest : public testing::Test {
     return positioner_->GetAnchorPointForShelfCorner(shelf_edge);
   }
 
+  gfx::Point DoGetAnchorPointForShelfCenter(
+      AppListPositioner::ScreenEdge shelf_edge) const {
+    return positioner_->GetAnchorPointForShelfCenter(shelf_edge);
+  }
+
   gfx::Point DoGetAnchorPointForShelfCursor(
       AppListPositioner::ScreenEdge shelf_edge) const {
     return positioner_->GetAnchorPointForShelfCursor(shelf_edge, cursor_);
@@ -113,13 +123,13 @@ TEST_F(AppListPositionerUnitTest, ScreenCorner) {
   // Position the app list in a corner of the screen.
   // Top-left corner.
   EXPECT_EQ(gfx::Point(kWindowWidth / 2 + kMinDistanceFromEdge,
-                       kWindowHeight / 2 + kMinDistanceFromEdge),
+                       kMenuBarSize + kWindowHeight / 2 + kMinDistanceFromEdge),
             DoGetAnchorPointForScreenCorner(
                 AppListPositioner::SCREEN_CORNER_TOP_LEFT));
 
   // Top-right corner.
   EXPECT_EQ(gfx::Point(kScreenWidth - kWindowWidth / 2 - kMinDistanceFromEdge,
-                       kWindowHeight / 2 + kMinDistanceFromEdge),
+                       kMenuBarSize + kWindowHeight / 2 + kMinDistanceFromEdge),
             DoGetAnchorPointForScreenCorner(
                 AppListPositioner::SCREEN_CORNER_TOP_RIGHT));
 
@@ -144,7 +154,7 @@ TEST_F(AppListPositionerUnitTest, ShelfCorner) {
   PlaceShelf(AppListPositioner::SCREEN_EDGE_LEFT);
   EXPECT_EQ(
       gfx::Point(kShelfSize + kWindowWidth / 2 + kMinDistanceFromEdge,
-                 kWindowHeight / 2 + kMinDistanceFromEdge),
+                 kMenuBarSize + kWindowHeight / 2 + kMinDistanceFromEdge),
       DoGetAnchorPointForShelfCorner(AppListPositioner::SCREEN_EDGE_LEFT));
 
   // Shelf on right. Expect app list in top-right corner.
@@ -152,13 +162,14 @@ TEST_F(AppListPositionerUnitTest, ShelfCorner) {
   EXPECT_EQ(
       gfx::Point(
           kScreenWidth - kShelfSize - kWindowWidth / 2 - kMinDistanceFromEdge,
-          kWindowHeight / 2 + kMinDistanceFromEdge),
+          kMenuBarSize + kWindowHeight / 2 + kMinDistanceFromEdge),
       DoGetAnchorPointForShelfCorner(AppListPositioner::SCREEN_EDGE_RIGHT));
 
   // Shelf on top. Expect app list in top-left corner.
   PlaceShelf(AppListPositioner::SCREEN_EDGE_TOP);
   EXPECT_EQ(gfx::Point(kWindowWidth / 2 + kMinDistanceFromEdge,
-                       kShelfSize + kWindowHeight / 2 + kMinDistanceFromEdge),
+                       kMenuBarSize + kShelfSize + kWindowHeight / 2 +
+                           kMinDistanceFromEdge),
             DoGetAnchorPointForShelfCorner(AppListPositioner::SCREEN_EDGE_TOP));
 
   // Shelf on bottom. Expect app list in bottom-left corner.
@@ -168,6 +179,39 @@ TEST_F(AppListPositionerUnitTest, ShelfCorner) {
                  kScreenHeight - kShelfSize - kWindowHeight / 2 -
                      kMinDistanceFromEdge),
       DoGetAnchorPointForShelfCorner(AppListPositioner::SCREEN_EDGE_BOTTOM));
+}
+
+TEST_F(AppListPositionerUnitTest, ShelfCenter) {
+  // Position the app list on the shelf, aligned with the shelf center.
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_LEFT);
+  // Shelf on left. Expect app list to be center-left.
+  EXPECT_EQ(
+      gfx::Point(kShelfSize + kWindowWidth / 2 + kMinDistanceFromEdge,
+                 (kMenuBarSize + kScreenHeight) / 2),
+      DoGetAnchorPointForShelfCenter(AppListPositioner::SCREEN_EDGE_LEFT));
+
+  // Shelf on right. Expect app list to be center-right.
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_RIGHT);
+  EXPECT_EQ(
+      gfx::Point(
+          kScreenWidth - kShelfSize - kWindowWidth / 2 - kMinDistanceFromEdge,
+          (kMenuBarSize + kScreenHeight) / 2),
+      DoGetAnchorPointForShelfCenter(AppListPositioner::SCREEN_EDGE_RIGHT));
+
+  // Shelf on top. Expect app list to be top-center.
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_TOP);
+  EXPECT_EQ(gfx::Point(kScreenWidth / 2,
+                       kMenuBarSize + kShelfSize + kWindowHeight / 2 +
+                           kMinDistanceFromEdge),
+            DoGetAnchorPointForShelfCenter(AppListPositioner::SCREEN_EDGE_TOP));
+
+  // Shelf on bottom. Expect app list to be bottom-center.
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_BOTTOM);
+  EXPECT_EQ(
+      gfx::Point(kScreenWidth / 2,
+                 kScreenHeight - kShelfSize - kWindowHeight / 2 -
+                     kMinDistanceFromEdge),
+      DoGetAnchorPointForShelfCenter(AppListPositioner::SCREEN_EDGE_BOTTOM));
 }
 
 TEST_F(AppListPositionerUnitTest, ShelfCursor) {
@@ -194,7 +238,8 @@ TEST_F(AppListPositionerUnitTest, ShelfCursor) {
   PlaceShelf(AppListPositioner::SCREEN_EDGE_TOP);
   PlaceCursor(kWindowAwayFromEdge, kCursorIgnore);
   EXPECT_EQ(gfx::Point(kWindowAwayFromEdge,
-                       kShelfSize + kWindowHeight / 2 + kMinDistanceFromEdge),
+                       kMenuBarSize + kShelfSize + kWindowHeight / 2 +
+                           kMinDistanceFromEdge),
             DoGetAnchorPointForShelfCursor(AppListPositioner::SCREEN_EDGE_TOP));
 
   // Shelf on bottom. Expect app list in bottom-left corner.
@@ -228,12 +273,15 @@ TEST_F(AppListPositionerUnitTest, ShelfCursor) {
 TEST_F(AppListPositionerUnitTest, GetShelfEdge) {
   gfx::Rect shelf_rect;
   // Shelf on left.
-  shelf_rect = gfx::Rect(0, 0, kShelfSize, kScreenHeight);
+  shelf_rect =
+      gfx::Rect(0, kMenuBarSize, kShelfSize, kScreenHeight - kMenuBarSize);
   EXPECT_EQ(AppListPositioner::SCREEN_EDGE_LEFT, DoGetShelfEdge(shelf_rect));
 
   // Shelf on right.
-  shelf_rect =
-      gfx::Rect(kScreenWidth - kShelfSize, 0, kShelfSize, kScreenHeight);
+  shelf_rect = gfx::Rect(kScreenWidth - kShelfSize,
+                         kMenuBarSize,
+                         kShelfSize,
+                         kScreenHeight - kMenuBarSize);
   EXPECT_EQ(AppListPositioner::SCREEN_EDGE_RIGHT, DoGetShelfEdge(shelf_rect));
 
   // Shelf on top.
@@ -271,7 +319,7 @@ TEST_F(AppListPositionerUnitTest, GetCursorDistanceFromShelf) {
 
   // Shelf on top.
   PlaceShelf(AppListPositioner::SCREEN_EDGE_TOP);
-  PlaceCursor(kCursorIgnore, kWindowAwayFromEdge);
+  PlaceCursor(kCursorIgnore, kMenuBarSize + kWindowAwayFromEdge);
   EXPECT_EQ(kWindowAwayFromEdge - kShelfSize,
             DoGetCursorDistanceFromShelf(AppListPositioner::SCREEN_EDGE_TOP));
 

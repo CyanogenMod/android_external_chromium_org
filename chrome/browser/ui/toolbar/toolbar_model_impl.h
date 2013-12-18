@@ -36,21 +36,23 @@ class ToolbarModelImpl : public ToolbarModel {
   static SecurityLevel GetSecurityLevelForWebContents(
       content::WebContents* web_contents);
 
-  // Overriden from ToolbarModel.
-  virtual string16 GetText(bool allow_search_term_replacement) const OVERRIDE;
-  virtual string16 GetCorpusNameForMobile() const OVERRIDE;
+  // Returns "<organization_name> [<country>]".
+  static base::string16 GetEVCertName(const net::X509Certificate& cert);
+
+ private:
+  // ToolbarModel:
+  virtual base::string16 GetText() const OVERRIDE;
+  virtual base::string16 GetCorpusNameForMobile() const OVERRIDE;
   virtual GURL GetURL() const OVERRIDE;
+  virtual bool WouldOmitURLDueToOriginChip() const OVERRIDE;
   virtual bool WouldPerformSearchTermReplacement(
       bool ignore_editing) const OVERRIDE;
   virtual SecurityLevel GetSecurityLevel(bool ignore_editing) const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
-  virtual string16 GetEVCertName() const OVERRIDE;
+  virtual int GetIconForSecurityLevel(SecurityLevel level) const OVERRIDE;
+  virtual base::string16 GetEVCertName() const OVERRIDE;
   virtual bool ShouldDisplayURL() const OVERRIDE;
 
-  // Returns "<organization_name> [<country>]".
-  static string16 GetEVCertName(const net::X509Certificate& cert);
-
- private:
   // Returns the navigation controller used to retrieve the navigation entry
   // from which the states are retrieved.
   // If this returns NULL, default values are used.
@@ -63,7 +65,7 @@ class ToolbarModelImpl : public ToolbarModel {
   // appear in the omnibox (i.e. the page is sufficiently secure, search term
   // replacement is enabled, editing is not in progress, etc.).  If
   // |ignore_editing| is true, the "editing not in progress" check is skipped.
-  string16 GetSearchTerms(bool ignore_editing) const;
+  base::string16 GetSearchTerms(bool ignore_editing) const;
 
   ToolbarModelDelegate* delegate_;
 

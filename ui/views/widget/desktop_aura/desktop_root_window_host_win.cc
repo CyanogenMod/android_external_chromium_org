@@ -226,6 +226,10 @@ void DesktopRootWindowHostWin::SetSize(const gfx::Size& size) {
   message_handler_->SetSize(expanded);
 }
 
+void DesktopRootWindowHostWin::StackAtTop() {
+  message_handler_->StackAtTop();
+}
+
 void DesktopRootWindowHostWin::CenterWindow(const gfx::Size& size) {
   gfx::Size size_in_pixels = gfx::win::DIPToScreenSize(size);
   message_handler_->CenterWindow(size_in_pixels);
@@ -321,8 +325,8 @@ bool DesktopRootWindowHostWin::IsAlwaysOnTop() const {
   return message_handler_->IsAlwaysOnTop();
 }
 
-void DesktopRootWindowHostWin::SetWindowTitle(const string16& title) {
-  message_handler_->SetTitle(title);
+bool DesktopRootWindowHostWin::SetWindowTitle(const string16& title) {
+  return message_handler_->SetTitle(title);
 }
 
 void DesktopRootWindowHostWin::ClearNativeFocus() {
@@ -365,6 +369,11 @@ NonClientFrameView* DesktopRootWindowHostWin::CreateNonClientFrameView() {
 
 void DesktopRootWindowHostWin::SetFullscreen(bool fullscreen) {
   message_handler_->fullscreen_handler()->SetFullscreen(fullscreen);
+  // TODO(sky): workaround for ScopedFullscreenVisibility showing window
+  // directly. Instead of this should listen for visibility changes and then
+  // update window.
+  if (message_handler_->IsVisible() && !content_window_->TargetVisibility())
+    content_window_->Show();
   SetWindowTransparency();
 }
 
@@ -433,6 +442,8 @@ void DesktopRootWindowHostWin::ToggleFullScreen() {
 
 gfx::Rect DesktopRootWindowHostWin::GetBounds() const {
   // Match the logic in HWNDMessageHandler::ClientAreaSizeChanged().
+  if (IsMinimized())
+    return gfx::Rect();
   gfx::Rect bounds(WidgetSizeIsClientSize() ?
       message_handler_->GetClientAreaBoundsInScreen() :
       message_handler_->GetWindowBoundsInScreen());
@@ -820,8 +831,8 @@ bool DesktopRootWindowHostWin::HandleKeyEvent(const ui::KeyEvent& event) {
 
 bool DesktopRootWindowHostWin::HandleUntranslatedKeyEvent(
     const ui::KeyEvent& event) {
-  scoped_ptr<ui::KeyEvent> duplicate_event(event.Copy());
-  return delegate_->OnHostKeyEvent(duplicate_event.get());
+  ui::KeyEvent duplicate_event(event);
+  return delegate_->OnHostKeyEvent(&duplicate_event);
 }
 
 void DesktopRootWindowHostWin::HandleTouchEvent(

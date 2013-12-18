@@ -24,7 +24,6 @@ class TestObserver : public AppListModelObserver,
  public:
   TestObserver()
       : status_changed_count_(0),
-        signin_changed_count_(0),
         items_added_(0),
         items_removed_(0),
         items_moved_(0) {
@@ -35,10 +34,6 @@ class TestObserver : public AppListModelObserver,
   // AppListModelObserver
   virtual void OnAppListModelStatusChanged() OVERRIDE {
     ++status_changed_count_;
-  }
-
-  virtual void OnAppListModelSigninStatusChanged() OVERRIDE {
-    ++signin_changed_count_;
   }
 
   // AppListItemListObserver
@@ -123,19 +118,6 @@ TEST_F(AppListModelTest, SetStatus) {
   EXPECT_EQ(2, observer_.status_changed_count());
 }
 
-TEST_F(AppListModelTest, SetSignedIn) {
-  EXPECT_TRUE(model_.signed_in());
-  model_.SetSignedIn(false);
-  EXPECT_EQ(1, observer_.signin_changed_count());
-  EXPECT_FALSE(model_.signed_in());
-  model_.SetSignedIn(true);
-  EXPECT_EQ(2, observer_.signin_changed_count());
-  EXPECT_TRUE(model_.signed_in());
-  // Set the same signin state, no change is expected.
-  model_.SetSignedIn(true);
-  EXPECT_EQ(2, observer_.signin_changed_count());
-}
-
 TEST_F(AppListModelTest, AppsObserver) {
   const size_t num_apps = 2;
   model_.PopulateApps(num_apps);
@@ -174,12 +156,11 @@ TEST_F(AppListModelTest, ModelAddItem) {
   ASSERT_EQ(num_apps + 1, model_.item_list()->item_count());
   EXPECT_EQ("Added Item 1", model_.item_list()->item_at(num_apps)->id());
   // Add an item between items 0 and 1.
-  app_list::AppListItemModel* item0 = model_.item_list()->item_at(0);
+  AppListItemModel* item0 = model_.item_list()->item_at(0);
   ASSERT_TRUE(item0);
-  app_list::AppListItemModel* item1 = model_.item_list()->item_at(1);
+  AppListItemModel* item1 = model_.item_list()->item_at(1);
   ASSERT_TRUE(item1);
-  app_list::AppListItemModel* item2 =
-      model_.CreateItem("Added Item 2", "Added Item 2");
+  AppListItemModel* item2 = model_.CreateItem("Added Item 2", "Added Item 2");
   item2->set_position(item0->position().CreateBetween(item1->position()));
   model_.item_list()->AddItem(item2);
   EXPECT_EQ(num_apps + 2, model_.item_list()->item_count());

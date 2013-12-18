@@ -51,6 +51,13 @@ class ScopedXI2Event {
                        int y_offset_ordinal,
                        int finger_count);
 
+  void InitFlingScrollEvent(int deviceid,
+                            int x_velocity,
+                            int y_velocity,
+                            int x_velocity_ordinal,
+                            int y_velocity_ordinal,
+                            bool is_cancel);
+
   void InitTouchEvent(int deviceid,
                       int evtype,
                       int tracking_id,
@@ -59,6 +66,8 @@ class ScopedXI2Event {
 
  private:
   void Cleanup();
+
+  void SetUpValuators(const std::vector<Valuator>& valuators);
 
   scoped_ptr<XEvent> event_;
 
@@ -69,7 +78,7 @@ class ScopedXI2Event {
 void SetUpScrollDeviceForTest(unsigned int deviceid);
 
 // Initializes a list of touchscreen devices for touch events.
-void SetupTouchDevicesForTest(const std::vector<unsigned int>& devices);
+void SetUpTouchDevicesForTest(const std::vector<unsigned int>& devices);
 
 }  // namespace ui
 

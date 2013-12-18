@@ -6,7 +6,7 @@
 
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -72,9 +72,9 @@ TEST_F(RemoveOperationTest, RemoveFile) {
   EXPECT_TRUE(observer()->get_changed_paths().count(file_in_root.DirName()));
   EXPECT_TRUE(observer()->get_changed_paths().count(file_in_subdir.DirName()));
 
-  EXPECT_EQ(2U, observer()->removed_local_ids().size());
-  EXPECT_TRUE(observer()->removed_local_ids().count(id_file_in_root));
-  EXPECT_TRUE(observer()->removed_local_ids().count(id_file_in_subdir));
+  EXPECT_EQ(2U, observer()->updated_local_ids().size());
+  EXPECT_TRUE(observer()->updated_local_ids().count(id_file_in_root));
+  EXPECT_TRUE(observer()->updated_local_ids().count(id_file_in_subdir));
 }
 
 TEST_F(RemoveOperationTest, RemoveDirectory) {

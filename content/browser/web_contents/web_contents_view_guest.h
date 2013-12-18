@@ -56,6 +56,9 @@ class CONTENT_EXPORT WebContentsViewGuest
 #if defined(OS_MACOSX)
   virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
   virtual bool GetAllowOverlappingViews() const OVERRIDE;
+  virtual void SetOverlayView(WebContentsView* overlay,
+                              const gfx::Point& offset) OVERRIDE;
+  virtual void RemoveOverlayView() OVERRIDE;
 #endif
 
   // WebContentsViewPort implementation ----------------------------------------
@@ -65,7 +68,7 @@ class CONTENT_EXPORT WebContentsViewGuest
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForPopupWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
-  virtual void SetPageTitle(const string16& title) OVERRIDE;
+  virtual void SetPageTitle(const base::string16& title) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
   virtual void RenderViewSwappedIn(RenderViewHost* host) OVERRIDE;
   virtual void SetOverscrollControllerEnabled(bool enabled) OVERRIDE;

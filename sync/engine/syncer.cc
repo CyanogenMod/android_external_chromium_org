@@ -11,7 +11,6 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "sync/engine/apply_control_data_updates.h"
-#include "sync/engine/apply_updates_and_resolve_conflicts_command.h"
 #include "sync/engine/commit.h"
 #include "sync/engine/conflict_resolver.h"
 #include "sync/engine/download.h"
@@ -115,8 +114,11 @@ void Syncer::ApplyUpdates(SyncSession* session) {
 
   ApplyControlDataUpdates(session->context()->directory());
 
-  ApplyUpdatesAndResolveConflictsCommand apply_updates;
-  apply_updates.Execute(session);
+  UpdateHandlerMap* handler_map = session->context()->update_handler_map();
+  for (UpdateHandlerMap::iterator it = handler_map->begin();
+       it != handler_map->end(); ++it) {
+    it->second->ApplyUpdates(session->mutable_status_controller());
+  }
 
   session->context()->set_hierarchy_conflict_detected(
       session->status_controller().num_hierarchy_conflicts() > 0);
@@ -128,20 +130,23 @@ bool Syncer::DownloadAndApplyUpdates(
     ModelTypeSet request_types,
     SyncSession* session,
     base::Callback<void(sync_pb::ClientToServerMessage*)> build_fn) {
-  while (!session->status_controller().ServerSaysNothingMoreToDownload()) {
+  SyncerError download_result = UNSET;
+  do {
     TRACE_EVENT0("sync", "DownloadUpdates");
     sync_pb::ClientToServerMessage msg;
     build_fn.Run(&msg);
-    SyncerError download_result =
+    download_result =
         download::ExecuteDownloadUpdates(request_types, session, &msg);
     session->mutable_status_controller()->set_last_download_updates_result(
         download_result);
-    if (download_result != SYNCER_OK) {
-      return false;
-    }
-  }
+  } while (download_result == SERVER_MORE_TO_DOWNLOAD);
+
+  // Exit without applying if we're shutting down or an error was detected.
+  if (download_result != SYNCER_OK)
+    return false;
   if (ExitRequested())
     return false;
+
   ApplyUpdates(session);
   if (ExitRequested())
     return false;

@@ -233,7 +233,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   extension_data->SetBoolean("homepageProvided",
       ManifestURL::GetHomepageURL(extension).is_valid());
 
-  string16 location_text;
+  base::string16 location_text;
   if (Manifest::IsPolicyLocation(extension->location())) {
     location_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_INSTALL_LOCATION_ENTERPRISE);
@@ -416,6 +416,11 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringFUTF16(
           IDS_EXTENSIONS_ADDED_WITHOUT_KNOWLEDGE,
           l10n_util::GetStringUTF16(IDS_EXTENSION_WEB_STORE_TITLE)));
+  source->AddString("extensionSettingsSuspiciousInstallLearnMore",
+      l10n_util::GetStringUTF16(IDS_LEARN_MORE));
+  source->AddString("extensionSettingsSuspiciousInstallHelpUrl",
+      ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
+          GURL(chrome::kRemoveNonCWSExtensionURL)).spec()));
   source->AddString("extensionSettingsUseAppsDevTools",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_USE_APPS_DEV_TOOLS));
   source->AddString("extensionSettingsOpenAppsDevTools",
@@ -478,46 +483,46 @@ void ExtensionSettingsHandler::RegisterMessages() {
 
   web_ui()->RegisterMessageCallback("extensionSettingsRequestExtensionsData",
       base::Bind(&ExtensionSettingsHandler::HandleRequestExtensionsData,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsToggleDeveloperMode",
       base::Bind(&ExtensionSettingsHandler::HandleToggleDeveloperMode,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsInspect",
       base::Bind(&ExtensionSettingsHandler::HandleInspectMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsLaunch",
       base::Bind(&ExtensionSettingsHandler::HandleLaunchMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsReload",
       base::Bind(&ExtensionSettingsHandler::HandleReloadMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsEnable",
       base::Bind(&ExtensionSettingsHandler::HandleEnableMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsEnableIncognito",
       base::Bind(&ExtensionSettingsHandler::HandleEnableIncognitoMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsAllowFileAccess",
       base::Bind(&ExtensionSettingsHandler::HandleAllowFileAccessMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsUninstall",
       base::Bind(&ExtensionSettingsHandler::HandleUninstallMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsOptions",
       base::Bind(&ExtensionSettingsHandler::HandleOptionsMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsPermissions",
       base::Bind(&ExtensionSettingsHandler::HandlePermissionsMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsShowButton",
       base::Bind(&ExtensionSettingsHandler::HandleShowButtonMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsAutoupdate",
       base::Bind(&ExtensionSettingsHandler::HandleAutoUpdateMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsLoadUnpackedExtension",
       base::Bind(&ExtensionSettingsHandler::HandleLoadUnpackedExtensionMessage,
-                 base::Unretained(this)));
+                 AsWeakPtr()));
 }
 
 void ExtensionSettingsHandler::FileSelected(const base::FilePath& path,
@@ -588,7 +593,7 @@ void ExtensionSettingsHandler::Observe(
        base::MessageLoop::current()->PostTask(
            FROM_HERE,
            base::Bind(&ExtensionSettingsHandler::MaybeUpdateAfterNotification,
-                      base::Unretained(this)));
+                      AsWeakPtr()));
        break;
     default:
       NOTREACHED();
@@ -802,7 +807,8 @@ void ExtensionSettingsHandler::HandleLaunchMessage(
   const Extension* extension =
       extension_service_->GetExtensionById(extension_id, false);
   OpenApplication(AppLaunchParams(extension_service_->profile(), extension,
-                                  extensions::LAUNCH_WINDOW, NEW_WINDOW));
+                                  extensions::LAUNCH_CONTAINER_WINDOW,
+                                  NEW_WINDOW));
 }
 
 void ExtensionSettingsHandler::HandleReloadMessage(
@@ -945,6 +951,8 @@ void ExtensionSettingsHandler::HandlePermissionsMessage(
   const Extension* extension =
       extension_service_->GetExtensionById(extension_id, true);
   if (!extension)
+    extension = extension_service_->GetTerminatedExtension(extension_id);
+  if (!extension)
     return;
 
   if (!extension_id_prompting_.empty())
@@ -989,7 +997,7 @@ void ExtensionSettingsHandler::HandleLoadUnpackedExtensionMessage(
     const base::ListValue* args) {
   DCHECK(args->empty());
 
-  string16 select_title =
+  base::string16 select_title =
       l10n_util::GetStringUTF16(IDS_EXTENSION_LOAD_FROM_DIRECTORY);
 
   const int kFileTypeIndex = 0;  // No file type information to index.
@@ -1076,7 +1084,7 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
 
   base::Closure callback = base::Bind(
       &ExtensionSettingsHandler::MaybeUpdateAfterNotification,
-      base::Unretained(this));
+      AsWeakPtr());
 
   pref_registrar_.Init(profile->GetPrefs());
   pref_registrar_.Add(prefs::kExtensionInstallDenyList, callback);

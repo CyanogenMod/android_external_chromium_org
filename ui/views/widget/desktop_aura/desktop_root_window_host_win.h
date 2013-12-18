@@ -59,6 +59,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
       const gfx::Rect& restored_bounds) OVERRIDE;
   virtual bool IsVisible() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
+  virtual void StackAtTop() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
@@ -79,7 +80,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual bool HasCapture() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
-  virtual void SetWindowTitle(const string16& title) OVERRIDE;
+  virtual bool SetWindowTitle(const string16& title) OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,

@@ -128,20 +128,18 @@ views::View* DecoratedTextfield::GetEventHandlerForRect(const gfx::Rect& rect) {
 }
 
 void DecoratedTextfield::OnFocus() {
-  border_->set_has_focus(true);
   views::Textfield::OnFocus();
   SchedulePaint();
 }
 
 void DecoratedTextfield::OnBlur() {
-  border_->set_has_focus(false);
   views::Textfield::OnBlur();
   SchedulePaint();
 }
 
 gfx::Size DecoratedTextfield::GetPreferredSize() {
   int w = views::Textfield::GetPreferredSize().width();
-  views::LabelButton button(NULL, string16());
+  views::LabelButton button(NULL, base::string16());
   button.SetStyle(views::Button::STYLE_BUTTON);
   int h = button.GetPreferredSize().height();
   return gfx::Size(w, h - kMagicInsetNumber);
