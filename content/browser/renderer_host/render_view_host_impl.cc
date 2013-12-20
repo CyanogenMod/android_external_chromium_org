@@ -1001,6 +1001,8 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnDomOperationResponse)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Notifications,
                         OnAccessibilityNotifications)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SmartClipDataExtracted,
+                        OnSmartClipDataExtracted)
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(
         handled = RenderWidgetHostImpl::OnMessageReceived(msg))
@@ -2054,6 +2056,12 @@ bool RenderViewHostImpl::CanAccessFilesOfPageState(
       return false;
   }
   return true;
+}
+
+void RenderViewHostImpl::OnSmartClipDataExtracted(const string16& result) {
+  RenderViewHostDelegateView* view = delegate_->GetDelegateView();
+  if (view)
+    view->OnSmartClipDataExtracted(result);
 }
 
 }  // namespace content

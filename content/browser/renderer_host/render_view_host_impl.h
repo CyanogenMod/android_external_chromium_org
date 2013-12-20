@@ -577,6 +577,7 @@ class CONTENT_EXPORT RenderViewHostImpl
                               int automation_id);
   void OnGetWindowSnapshot(const int snapshot_id);
 
+  void OnSmartClipDataExtracted(const string16& result);
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
 #endif

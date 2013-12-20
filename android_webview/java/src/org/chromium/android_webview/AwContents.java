@@ -149,6 +149,10 @@ public class AwContents {
         boolean requestDrawGL(Canvas canvas);
     }
 
+    public interface AwSmartClipData extends ContentViewCore.SmartClipData {
+        public void onSmartClipDataExtracted(String result);
+    }
+
     private int mNativeAwContents;
     private final AwBrowserContext mBrowserContext;
     private final ViewGroup mContainerView;
@@ -203,6 +207,8 @@ public class AwContents {
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
     private ComponentCallbacks2 mComponentCallbacks;
+
+    private AwSmartClipData mAwSmartClipData;
 
     // This flag is to ShouldOverrideUrlNavigation through the resourcethrottle.
     private boolean mDeferredShouldOverrideUrlLoadingIsPendingForPopup;
@@ -2009,6 +2015,26 @@ public class AwContents {
 
         Log.e(TAG, "Unable to auto generate archive name for path: " + baseName);
         return null;
+    }
+
+    public void extractSmartClipData(int x, int y , int width , int height) {
+        mContentViewCore.extractSmartClipData(x, y, width, height);
+        mContentViewCore.setSmartClipDataListener(awSmartClipData);
+    }
+
+    ContentViewCore.SmartClipData awSmartClipData = new ContentViewCore.SmartClipData() {
+        @Override
+        public void onSmartClipDataExtracted(String result) {
+            Log.i(TAG, "onSmartClipDataExtracted is called");
+            if (mAwSmartClipData != null) {
+                mAwSmartClipData.onSmartClipDataExtracted(result);
+            }
+            mContentViewCore.setSmartClipDataListener(null);
+        }
+    };
+
+    public void setAwSmartClipDataListener(AwSmartClipData listener) {
+        mAwSmartClipData = listener;
     }
 
     //--------------------------------------------------------------------------------------------

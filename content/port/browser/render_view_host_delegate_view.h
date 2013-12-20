@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
@@ -67,6 +68,8 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
   // the browser's chrome. If reverse is true, it means the focus was
   // retrieved by doing a Shift-Tab.
   virtual void TakeFocus(bool reverse) {}
+
+  virtual void OnSmartClipDataExtracted(const string16& result) {}
 
  protected:
   virtual ~RenderViewHostDelegateView() {}
