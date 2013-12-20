@@ -1449,8 +1449,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnReleaseDisambiguationPopupDIB)
     IPC_MESSAGE_HANDLER(ViewMsg_WindowSnapshotCompleted,
                         OnWindowSnapshotCompleted)
-    IPC_MESSAGE_HANDLER(ViewMsg_ExtractSmartClipData,
-                        OnExtractSmartClipData)
 
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(handled = RenderWidget::OnMessageReceived(message))
@@ -6580,12 +6578,5 @@ void RenderViewImpl::DidStopLoadingIcons() {
   SendUpdateFaviconURL(urls);
 }
 
-void RenderViewImpl::OnExtractSmartClipData(int x, int y, int width, int height) {
-  string16 result;
-  WebString cropResult = webview()->extractSmartClipData(WebRect(x, y, width, height));
-  result = (string16)cropResult;
-
-  Send(new ViewHostMsg_SmartClipDataExtracted(routing_id_, result));
-}
 
 }  // namespace content

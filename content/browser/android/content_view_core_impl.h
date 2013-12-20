@@ -220,14 +220,10 @@ class ContentViewCoreImpl : public ContentViewCore,
   void DetachExternalVideoSurface(JNIEnv* env, jobject obj, jint player_id);
   void SetAccessibilityEnabled(JNIEnv* env, jobject obj, bool enabled);
 
-  void ExtractSmartClipData(JNIEnv* env, jobject obj,
-                                jint x, jint y,
-                                jint width, jint height);
   // --------------------------------------------------------------------------
   // Public methods that call to Java via JNI
   // --------------------------------------------------------------------------
 
-  void OnSmartClipDataExtracted(const string16& result);
   // Creates a popup menu with |items|.
   // |multiple| defines if it should support multi-select.
   // If not |multiple|, |selected_item| sets the initially selected item.

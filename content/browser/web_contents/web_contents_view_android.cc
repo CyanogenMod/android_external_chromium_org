@@ -224,9 +224,4 @@ void WebContentsViewAndroid::TakeFocus(bool reverse) {
   web_contents_->GetRenderWidgetHostView()->Focus();
 }
 
-void WebContentsViewAndroid::OnSmartClipDataExtracted(const string16& result) {
-  if (content_view_core_)
-      content_view_core_->OnSmartClipDataExtracted(result);
-}
-
 } // namespace content

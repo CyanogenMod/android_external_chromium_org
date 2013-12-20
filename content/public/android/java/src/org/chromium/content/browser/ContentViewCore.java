@@ -249,10 +249,6 @@ import java.util.Map;
         void onFrameInfoUpdated(float pageScaleFactor);
     }
 
-    public interface SmartClipData {
-       public void onSmartClipDataExtracted(String result);
-    }
-
     private VSyncManager.Provider mVSyncProvider;
     private VSyncManager.Listener mVSyncListener;
     private int mVSyncSubscriberCount;
@@ -447,7 +443,6 @@ import java.util.Map;
 
     private ViewAndroid mViewAndroid;
 
-    private SmartClipData mSmartClipData = null;
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -2997,23 +2992,6 @@ import java.util.Map;
         getContentViewClient().onGeometryChanged(playerId, new RectF(x, y, x + width, y + height));
     }
 
-    public void extractSmartClipData(int x, int y, int width, int height) {
-        if (mNativeContentViewCore != 0) {
-            nativeExtractSmartClipData(mNativeContentViewCore, x, y, width, height);
-        }
-    }
-
-    @CalledByNative
-    private void onSmartClipDataExtracted(String result) {
-        if (mSmartClipData != null ) {
-            mSmartClipData.onSmartClipDataExtracted(result);
-        }
-    }
-
-	public void setSmartClipDataListener(SmartClipData listener) {
-        mSmartClipData=listener;
-	}
-
     /**
      * Offer a subset of gesture events to the embedding View,
      * primarily for WebView compatibility.
@@ -3213,7 +3191,4 @@ import java.util.Map;
 
     private native void nativeSetAccessibilityEnabled(
             int nativeContentViewCoreImpl, boolean enabled);
-
-    private native void nativeExtractSmartClipData(int nativeContentViewCoreImpl,
-            int x, int y, int w, int h);
 }

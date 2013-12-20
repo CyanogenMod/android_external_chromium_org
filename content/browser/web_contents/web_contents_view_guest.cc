@@ -208,9 +208,6 @@ void WebContentsViewGuest::GotFocus() {
 void WebContentsViewGuest::TakeFocus(bool reverse) {
 }
 
-void WebContentsViewGuest::OnSmartClipDataExtracted(const string16& result) {
-}
-
 void WebContentsViewGuest::ShowContextMenu(const ContextMenuParams& params) {
 #if defined(USE_AURA) || defined(OS_WIN)
   // Context menu uses ScreenPositionClient::ConvertPointToScreen() in aura and

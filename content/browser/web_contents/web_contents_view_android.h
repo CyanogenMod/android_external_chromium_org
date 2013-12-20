@@ -79,7 +79,6 @@ class WebContentsViewAndroid : public WebContentsViewPort,
   virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
-  virtual void OnSmartClipDataExtracted(const string16& result) OVERRIDE;
 
  private:
   // The WebContents whose contents we display.

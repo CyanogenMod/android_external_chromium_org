@@ -2374,12 +2374,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
                     std::vector<gfx::Rect> /* character bounds */)
 #endif
 
-IPC_MESSAGE_ROUTED4(ViewMsg_ExtractSmartClipData,
-                    int, int,
-                    int, int)
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SmartClipDataExtracted,
-                   string16)
-
 // Adding a new message? Stick to the sort order above: first platform
 // independent ViewMsg, then ifdefs for platform specific ViewMsg, then platform
 // independent ViewHostMsg, then ifdefs for platform specific ViewHostMsg.

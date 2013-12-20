@@ -93,7 +93,7 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
                            const gfx::Rect& selection_rect,
                            int active_match_ordinal,
                            bool final_update);
-  virtual void OnSmartClipDataExtracted(const string16& result) OVERRIDE;
+
  private:
   InterstitialPageImpl* interstitial_page_;
 
@@ -815,10 +815,6 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::TakeFocus(
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::OnFindReply(
     int request_id, int number_of_matches, const gfx::Rect& selection_rect,
     int active_match_ordinal, bool final_update) {
-}
-
-void InterstitialPageImpl::InterstitialPageRVHDelegateView::OnSmartClipDataExtracted(
-    const string16& result) {
 }
 
 }  // namespace content

@@ -1197,7 +1197,6 @@ class CONTENT_EXPORT RenderViewImpl
   // the browser.
   void DidStopLoadingIcons();
 
-  void OnExtractSmartClipData(int x, int y, int width, int height);
   // Coordinate conversion -----------------------------------------------------
 
   gfx::RectF ClientRectToPhysicalWindowRect(const gfx::RectF& rect) const;

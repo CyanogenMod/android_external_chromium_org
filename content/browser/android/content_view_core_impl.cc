@@ -1621,31 +1621,6 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
   }
 }
 
-void ContentViewCoreImpl::ExtractSmartClipData(JNIEnv* env, jobject obj,
-                                                       jint x, jint y,
-                                                       jint width, jint height) {
-    RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-    if (!view)
-        return ;
-
-    x = (int)(x / GetDpiScale());
-    y = (int)(y / GetDpiScale());
-    width = (width > 0 && width < GetDpiScale()) ? 1 : (int)(width / GetDpiScale());
-    height = (height > 0 && height < GetDpiScale()) ? 1 : (int)(height / GetDpiScale());
-
-    view->ExtractSmartClipData(x, y, width, height);
-}
-
-void ContentViewCoreImpl::OnSmartClipDataExtracted(const string16& result) {
-    JNIEnv* env = AttachCurrentThread();
-    ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-    if (obj.is_null())
-    return;
-
-    ScopedJavaLocalRef<jstring> jresult = ConvertUTF16ToJavaString(env, result);
-    Java_ContentViewCore_onSmartClipDataExtracted(env, obj.obj(), jresult.obj());
-}
-
 // This is called for each ContentView.
 jint Init(JNIEnv* env, jobject obj,
           jboolean hardware_accelerated,

@@ -91,7 +91,6 @@ class CONTENT_EXPORT WebContentsViewGuest
   virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
-  virtual void OnSmartClipDataExtracted(const string16& result) OVERRIDE;
 
  private:
   // The WebContentsImpl whose contents we display.

@@ -1287,10 +1287,6 @@ void RenderWidgetHostViewPort::GetDefaultScreenInfo(
   results->isMonochrome = (results->depthPerComponent == 0);
 }
 
-void RenderWidgetHostViewAndroid::ExtractSmartClipData(int x, int y, int width, int height) {
-  if (host_)
-    host_->Send(new ViewMsg_ExtractSmartClipData(host_->GetRoutingID(), x, y, width, height));
-}
 ////////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostView, public:
 

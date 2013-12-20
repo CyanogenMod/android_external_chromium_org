@@ -233,8 +233,6 @@ class RenderWidgetHostViewAndroid
   void SynchronousFrameMetadata(
       const cc::CompositorFrameMetadata& frame_metadata);
 
-  void ExtractSmartClipData(int x, int y, int width, int height);
-
  private:
   void BuffersSwapped(const gpu::Mailbox& mailbox,
                       uint32_t output_surface_id,
@@ -269,7 +267,6 @@ class RenderWidgetHostViewAndroid
       const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
-
 
   // The model object.
   RenderWidgetHostImpl* host_;
