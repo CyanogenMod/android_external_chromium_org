@@ -43,25 +43,25 @@ ui::ModalType CryptoModulePasswordDialogView::GetModalType() const {
   return ui::MODAL_TYPE_WINDOW;
 }
 
-string16 CryptoModulePasswordDialogView::GetWindowTitle() const {
+base::string16 CryptoModulePasswordDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_CRYPTO_MODULE_AUTH_DIALOG_TITLE);
 }
 
-string16 CryptoModulePasswordDialogView::GetDialogButtonLabel(
+base::string16 CryptoModulePasswordDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   return l10n_util::GetStringUTF16(button == ui::DIALOG_BUTTON_OK ?
       IDS_CRYPTO_MODULE_AUTH_DIALOG_OK_BUTTON_LABEL : IDS_CANCEL);
 }
 
 bool CryptoModulePasswordDialogView::Cancel() {
-  callback_.Run(static_cast<const char*>(NULL));
+  callback_.Run(std::string());
   const base::string16 empty;
   password_entry_->SetText(empty);
   return true;
 }
 
 bool CryptoModulePasswordDialogView::Accept() {
-  callback_.Run(UTF16ToUTF8(password_entry_->text()).c_str());
+  callback_.Run(UTF16ToUTF8(password_entry_->text()));
   const base::string16 empty;
   password_entry_->SetText(empty);
   return true;

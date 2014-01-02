@@ -5,7 +5,7 @@
 #include "mojo/system/message_pipe_dispatcher.h"
 
 #include "base/logging.h"
-#include "mojo/system/limits.h"
+#include "mojo/system/constants.h"
 #include "mojo/system/memory.h"
 #include "mojo/system/message_pipe.h"
 
@@ -101,7 +101,7 @@ scoped_refptr<Dispatcher>
 MessagePipeDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
   lock().AssertAcquired();
 
-  scoped_refptr<MessagePipeDispatcher> rv = new MessagePipeDispatcher;
+  scoped_refptr<MessagePipeDispatcher> rv = new MessagePipeDispatcher();
   rv->Init(message_pipe_, port_);
   message_pipe_ = NULL;
   port_ = kInvalidPort;

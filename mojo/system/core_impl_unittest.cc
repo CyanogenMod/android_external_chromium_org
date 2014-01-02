@@ -17,6 +17,17 @@ namespace {
 
 typedef test::CoreTestBase CoreImplTest;
 
+TEST_F(CoreImplTest, GetTimeTicksNow) {
+  const MojoTimeTicks start = core()->GetTimeTicksNow();
+  EXPECT_NE(static_cast<MojoTimeTicks>(0), start)
+      << "GetTimeTicksNow should return nonzero value";
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(15));
+  const MojoTimeTicks finish = core()->GetTimeTicksNow();
+  // Allow for some fuzz in sleep.
+  EXPECT_GE((finish - start), static_cast<MojoTimeTicks>(8000))
+      << "Sleeping should result in increasing time ticks";
+}
+
 TEST_F(CoreImplTest, Basic) {
   MockHandleInfo info;
 
@@ -50,6 +61,36 @@ TEST_F(CoreImplTest, Basic) {
             core()->ReadMessage(h, NULL, NULL, NULL, NULL,
                                 MOJO_READ_MESSAGE_FLAG_NONE));
   EXPECT_EQ(3u, info.GetReadMessageCallCount());
+
+  EXPECT_EQ(0u, info.GetWriteDataCallCount());
+  EXPECT_EQ(MOJO_RESULT_UNIMPLEMENTED,
+            core()->WriteData(h, NULL, NULL, MOJO_WRITE_DATA_FLAG_NONE));
+  EXPECT_EQ(1u, info.GetWriteDataCallCount());
+
+  EXPECT_EQ(0u, info.GetBeginWriteDataCallCount());
+  EXPECT_EQ(MOJO_RESULT_UNIMPLEMENTED,
+            core()->BeginWriteData(h, NULL, NULL, MOJO_WRITE_DATA_FLAG_NONE));
+  EXPECT_EQ(1u, info.GetBeginWriteDataCallCount());
+
+  EXPECT_EQ(0u, info.GetEndWriteDataCallCount());
+  EXPECT_EQ(MOJO_RESULT_UNIMPLEMENTED,
+            core()->EndWriteData(h, 0));
+  EXPECT_EQ(1u, info.GetEndWriteDataCallCount());
+
+  EXPECT_EQ(0u, info.GetReadDataCallCount());
+  EXPECT_EQ(MOJO_RESULT_UNIMPLEMENTED,
+            core()->ReadData(h, NULL, NULL, MOJO_READ_DATA_FLAG_NONE));
+  EXPECT_EQ(1u, info.GetReadDataCallCount());
+
+  EXPECT_EQ(0u, info.GetBeginReadDataCallCount());
+  EXPECT_EQ(MOJO_RESULT_UNIMPLEMENTED,
+            core()->BeginReadData(h, NULL, NULL, MOJO_READ_DATA_FLAG_NONE));
+  EXPECT_EQ(1u, info.GetBeginReadDataCallCount());
+
+  EXPECT_EQ(0u, info.GetEndReadDataCallCount());
+  EXPECT_EQ(MOJO_RESULT_UNIMPLEMENTED,
+            core()->EndReadData(h, 0));
+  EXPECT_EQ(1u, info.GetEndReadDataCallCount());
 
   EXPECT_EQ(0u, info.GetAddWaiterCallCount());
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
@@ -494,17 +535,6 @@ TEST_F(CoreImplTest, MessagePipeBasicLocalHandlePassing) {
   EXPECT_EQ(MOJO_RESULT_OK, core()->Close(h_passing[1]));
   EXPECT_EQ(MOJO_RESULT_OK, core()->Close(h_passed[0]));
   EXPECT_EQ(MOJO_RESULT_OK, core()->Close(h_received));
-}
-
-TEST_F(CoreImplTest, GetTimeTicksNow) {
-  const MojoTimeTicks start = core()->GetTimeTicksNow();
-  EXPECT_NE(static_cast<MojoTimeTicks>(0), start)
-      << "TimeTicks should return non-zero value";
-  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(15));
-  const MojoTimeTicks finish = core()->GetTimeTicksNow();
-  // Allow for some fuzz in sleep().
-  EXPECT_GE((finish - start), static_cast<MojoTimeTicks>(8000))
-      << "Sleeping should result in incrementing time ticks";
 }
 
 }  // namespace

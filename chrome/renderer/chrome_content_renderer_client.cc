@@ -62,7 +62,6 @@
 #include "chrome/renderer/searchbox/searchbox.h"
 #include "chrome/renderer/searchbox/searchbox_extension.h"
 #include "chrome/renderer/tts_dispatcher.h"
-#include "chrome/renderer/validation_message_agent.h"
 #include "chrome/renderer/worker_permission_client_proxy.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
@@ -290,10 +289,9 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   if (command_line->HasSwitch(switches::kNewProfileManagement))
     thread->RegisterExtension(extensions_v8::PrincipalsExtension::Get());
 
-  // chrome:, chrome-search:, chrome-devtools:, and chrome-internal: pages
-  // should not be accessible by normal content, and should also be unable to
-  // script anything but themselves (to help limit the damage that a corrupt
-  // page could cause).
+  // chrome:, chrome-search:, and chrome-devtools: pages should not be
+  // accessible by normal content, and should also be unable to script anything
+  // but themselves (to help limit the damage that a corrupt page could cause).
   WebString chrome_ui_scheme(ASCIIToUTF16(chrome::kChromeUIScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(chrome_ui_scheme);
 
@@ -305,9 +303,6 @@ void ChromeContentRendererClient::RenderThreadStarted() {
 
   WebString dev_tools_scheme(ASCIIToUTF16(chrome::kChromeDevToolsScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(dev_tools_scheme);
-
-  WebString internal_scheme(ASCIIToUTF16(chrome::kChromeInternalScheme));
-  WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(internal_scheme);
 
 #if defined(OS_CHROMEOS)
   WebString drive_scheme(ASCIIToUTF16(chrome::kDriveScheme));
@@ -362,7 +357,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
 void ChromeContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   ContentSettingsObserver* content_settings =
-      new ContentSettingsObserver(render_view);
+      new ContentSettingsObserver(render_view, extension_dispatcher_.get());
   if (chrome_observer_.get()) {
     content_settings->SetContentSettingRules(
         chrome_observer_->content_setting_rules());
@@ -383,7 +378,6 @@ void ChromeContentRendererClient::RenderViewCreated(
   PasswordAutofillAgent* password_autofill_agent =
       new PasswordAutofillAgent(render_view);
   new AutofillAgent(render_view, password_autofill_agent);
-  new ValidationMessageAgent(render_view);
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (autofill::password_generation::IsPasswordGenerationEnabled())
@@ -391,9 +385,7 @@ void ChromeContentRendererClient::RenderViewCreated(
   if (command_line->HasSwitch(switches::kInstantProcess))
     new SearchBox(render_view);
 
-  new ChromeRenderViewObserver(
-      render_view, content_settings, chrome_observer_.get(),
-      extension_dispatcher_.get());
+  new ChromeRenderViewObserver(render_view, chrome_observer_.get());
 
   new NetErrorHelper(render_view);
 }
@@ -824,23 +816,36 @@ bool ChromeContentRendererClient::IsNaClAllowed(
   // Temporarily allow these whitelisted apps and WebUIs to use NaCl.
   std::string app_url_host = app_url.host();
   std::string manifest_url_path = manifest_url.path();
+
   bool is_whitelisted_web_ui =
       app_url.spec() == chrome::kChromeUIAppListStartPageURL;
-  bool is_whitelisted_app =
+
+  bool is_photo_app =
       // Whitelisted apps must be served over https.
       app_url.SchemeIs("https") &&
       manifest_url.SchemeIs("https") &&
-      // Photos app.
-      (((EndsWith(app_url_host, "plus.google.com", false) ||
-         EndsWith(app_url_host, "plus.sandbox.google.com", false)) &&
-       manifest_url.DomainIs("ssl.gstatic.com") &&
+      (EndsWith(app_url_host, "plus.google.com", false) ||
+       EndsWith(app_url_host, "plus.sandbox.google.com", false)) &&
+      manifest_url.DomainIs("ssl.gstatic.com") &&
       (manifest_url_path.find("s2/oz/nacl/") == 1 ||
-       manifest_url_path.find("photos/nacl/") == 1)) ||
-      // Chat app.
-      ((EndsWith(app_url_host, "talk.google.com", false) ||
-        EndsWith(app_url_host, "talkgadget.google.com", false)) &&
-       manifest_url.DomainIs("ssl.gstatic.com") &&
-       manifest_url_path.find("chat/apps/fx") == 1));
+       manifest_url_path.find("photos/nacl/") == 1);
+
+  std::string manifest_fs_host;
+  if (manifest_url.SchemeIsFileSystem() && manifest_url.inner_url()) {
+    manifest_fs_host = manifest_url.inner_url()->host();
+  }
+  bool is_hangouts_app =
+      // Whitelisted apps must be served over secure scheme.
+      app_url.SchemeIs("https") &&
+      manifest_url.SchemeIsSecure() &&
+      manifest_url.SchemeIsFileSystem() &&
+      (EndsWith(app_url_host, "talkgadget.google.com", false) ||
+       EndsWith(app_url_host, "plus.google.com", false) ||
+       EndsWith(app_url_host, "plus.sandbox.google.com", false)) &&
+      // The manifest must be loaded from the host's FileSystem.
+      (manifest_fs_host == app_url_host);
+
+  bool is_whitelisted_app = is_photo_app || is_hangouts_app;
 
   bool is_extension_from_webstore = extension &&
       extension->from_webstore();
@@ -1124,13 +1129,6 @@ bool ChromeContentRendererClient::WillSendRequest(
   return false;
 }
 
-bool ChromeContentRendererClient::ShouldPumpEventsDuringCookieMessage() {
-  // We no longer pump messages, even under Chrome Frame. We rely on cookie
-  // read requests handled by CF not putting up UI or causing other actions
-  // that would require us to pump messages. This fixes http://crbug.com/110090.
-  return false;
-}
-
 void ChromeContentRendererClient::DidCreateScriptContext(
     WebFrame* frame, v8::Handle<v8::Context> context, int extension_group,
     int world_id) {
@@ -1165,33 +1163,6 @@ bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
 
   *override_state = blink::WebPageVisibilityStatePrerender;
   return true;
-}
-
-bool ChromeContentRendererClient::HandleGetCookieRequest(
-    content::RenderView* sender,
-    const GURL& url,
-    const GURL& first_party_for_cookies,
-    std::string* cookies) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChromeFrame)) {
-    IPC::SyncMessage* msg = new ChromeViewHostMsg_GetCookies(
-        MSG_ROUTING_NONE, url, first_party_for_cookies, cookies);
-    sender->Send(msg);
-    return true;
-  }
-  return false;
-}
-
-bool ChromeContentRendererClient::HandleSetCookieRequest(
-    content::RenderView* sender,
-    const GURL& url,
-    const GURL& first_party_for_cookies,
-    const std::string& value) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChromeFrame)) {
-    sender->Send(new ChromeViewHostMsg_SetCookie(
-        MSG_ROUTING_NONE, url, first_party_for_cookies, value));
-    return true;
-  }
-  return false;
 }
 
 void ChromeContentRendererClient::SetExtensionDispatcher(
@@ -1343,13 +1314,15 @@ bool ChromeContentRendererClient::AllowBrowserPlugin(
 bool ChromeContentRendererClient::AllowPepperMediaStreamAPI(
     const GURL& url) {
 #if !defined(OS_ANDROID)
-  // Allow only the Chat app to use the MediaStream APIs. It's OK to check
+  // Allow only the Hangouts app to use the MediaStream APIs. It's OK to check
   // the whitelist in the renderer, since we're only preventing access until
   // these APIs are public and stable.
   std::string url_host = url.host();
   if (url.SchemeIs("https") &&
-      (EndsWith(url_host, "talk.google.com", false) ||
-       EndsWith(url_host, "talkgadget.google.com", false))) {
+      (EndsWith(url_host, "talkgadget.google.com", false) ||
+       EndsWith(url_host, "plus.google.com", false) ||
+       EndsWith(url_host, "plus.sandbox.google.com", false)) &&
+      StartsWithASCII(url.path(), "/hangouts/", false)) {
     return true;
   }
   // Allow access for tests.

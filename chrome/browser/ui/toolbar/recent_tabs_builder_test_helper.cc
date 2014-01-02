@@ -163,9 +163,9 @@ base::Time RecentTabsBuilderTestHelper::GetTabTimestamp(int session_index,
       .tabs[tab_index].timestamp;
 }
 
-string16 RecentTabsBuilderTestHelper::GetTabTitle(int session_index,
-                                                  int window_index,
-                                                  int tab_index) {
+base::string16 RecentTabsBuilderTestHelper::GetTabTitle(int session_index,
+                                                        int window_index,
+                                                        int tab_index) {
   base::string16 title =
       sessions_[session_index].windows[window_index].tabs[tab_index].title;
   if (title.empty()) {
@@ -208,7 +208,7 @@ void RecentTabsBuilderTestHelper::RegisterRecentTabs(
   }
 }
 
-std::vector<string16>
+std::vector<base::string16>
 RecentTabsBuilderTestHelper::GetTabTitlesSortedByRecency() {
   std::vector<TitleTimestampPair> tabs;
   for (int s = 0; s < GetSessionCount(); ++s) {
@@ -223,7 +223,7 @@ RecentTabsBuilderTestHelper::GetTabTitlesSortedByRecency() {
   }
   sort(tabs.begin(), tabs.end(), SortTabTimesByRecency);
 
-  std::vector<string16> titles;
+  std::vector<base::string16> titles;
   for (size_t i = 0; i < tabs.size(); ++i)
     titles.push_back(tabs[i].title);
   return titles;

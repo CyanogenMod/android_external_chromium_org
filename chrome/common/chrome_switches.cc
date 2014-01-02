@@ -382,6 +382,9 @@ const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
 const char kDisableOmniboxAutoCompletionForIme[] =
     "disable-omnibox-auto-completion-for-ime";
 
+// Disable the origin chip.
+const char kDisableOriginChip[]             = "disable-origin-chip";
+
 // Disable using a public suffix based domain matching for autofill of
 // passwords.
 const char kDisablePasswordAutofillPublicSuffixDomainMatching[] =
@@ -392,8 +395,14 @@ const char kDisablePasswordAutofillPublicSuffixDomainMatching[] =
 const char kDisablePasswordManagerReauthentication[] =
     "disable-password-manager-reauthentication";
 
+// Enables searching for people from the apps list search box.
+const char kDisablePeopleSearch[]           = "disable-people-search";
+
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
+
+// Disables the usage of Portable Native Client.
+const char kDisablePnacl[]                  = "disable-pnacl";
 
 // Disable speculative TCP/IP preconnection.
 const char kDisablePreconnect[]             = "disable-preconnect";
@@ -429,6 +438,16 @@ const char kDisableRestoreSessionState[]    = "disable-restore-session-state";
 // Disables throttling prints initiated by scripts.
 const char kDisableScriptedPrintThrottling[] =
     "disable-scripted-print-throttling";
+
+// Disables the "search button in omnibox" experiment.
+const char kDisableSearchButtonInOmnibox[]  =
+    "disable-search-button-in-omnibox";
+
+// Disable SPDY/3.1. This is a temporary testing flag.
+const char kDisableSpdy31[]                 = "disable-spdy31";
+
+// Disables support of sticky keys.
+const char kDisableStickyKeys[]             = "disable-sticky-keys";
 
 // Disables syncing browser data to a Google Account.
 const char kDisableSync[]                   = "disable-sync";
@@ -676,14 +695,11 @@ const char kEnableNpnHttpOnly[]             = "enable-npn-http";
 const char kEnableOmniboxAutoCompletionForIme[] =
     "enable-omnibox-auto-completion-for-ime";
 
+// Enables the origin chip.
+const char kEnableOriginChip[]              = "enable-origin-chip";
+
 // Enables panels (always on-top docked pop-up windows).
 const char kEnablePanels[]                  = "enable-panels";
-
-// Enables searching for people from the apps list search box.
-const char kDisablePeopleSearch[]           = "disable-people-search";
-
-// Disables the usage of Portable Native Client.
-const char kDisablePnacl[]                  = "disable-pnacl";
 
 // Enables the proactive populating of the disk cache with Web resources that
 // are likely to be needed in future page fetches.
@@ -722,18 +738,21 @@ const char kEnableSavePasswordBubble[]      = "enable-save-password-bubble";
 // supported server-side for searches on google.com.
 const char kEnableSdch[]                    = "enable-sdch";
 
+// Controls which branch of the "search button in omnibox" experiment is
+// enabled.
+const char kEnableSearchButtonInOmniboxAlways[] =
+        "enable-search-button-in-omnibox-always";
+const char kEnableSearchButtonInOmniboxForStr[] =
+        "enable-search-button-in-omnibox-for-str";
+const char kEnableSearchButtonInOmniboxForStrOrIip[] =
+        "enable-search-button-in-omnibox-for-str-or-iip";
+
 // Enables support of sticky keys.
 const char kEnableStickyKeys[]              = "enable-sticky-keys";
-
-// Disables support of sticky keys.
-const char kDisableStickyKeys[]              = "disable-sticky-keys";
 
 // Enable SPDY/2. This is a temporary testing flag. See
 // http://crbug.com/303957 .
 const char kEnableSpdy2[]                   = "enable-spdy2";
-
-// Disable SPDY/3.1. This is a temporary testing flag.
-const char kDisableSpdy31[]                 = "disable-spdy31";
 
 // Enable SPDY/4 alpha 2. This is a temporary testing flag.
 const char kEnableSpdy4a2[]                 = "enable-spdy4a2";
@@ -762,8 +781,11 @@ const char kEnableSyncSyncedNotifications[] =
 // Enables sync/API based session sync implementation (in favor of legacy).
 const char kEnableSyncSessionsV2[] = "enable-sync-sessions-v2";
 
+// Enables syncing of the app list.
+const char kEnableSyncAppList[]             = "enable-sync-app-list";
+
 // Enables synced articles.
-const char kEnableSyncArticles[] = "enable-sync-articles";
+const char kEnableSyncArticles[]            = "enable-sync-articles";
 
 // Enables context menu for selecting groups of tabs.
 const char kEnableTabGroupsContextMenu[]    = "enable-tab-groups-context-menu";
@@ -1146,14 +1168,12 @@ const char kPrerenderFromOmniboxSwitchValueEnabled[] = "enabled";
 const char kPrerenderMode[]                 = "prerender";
 // These are the values the kPrerenderMode switch may have, as in
 // "--prerender=auto".
-//   auto: Allow field trial selection in both prerender and prefetch.
+//   auto: Allow field trial selection for prerender.
 const char kPrerenderModeSwitchValueAuto[]  = "auto";
-//   disabled: No prerendering or prefetching.
+//   disabled: No prerendering.
 const char kPrerenderModeSwitchValueDisabled[] = "disabled";
-//   enabled: Both prerendering and prefetching.
+//   enabled: Prerendering.
 const char kPrerenderModeSwitchValueEnabled[] = "enabled";
-//   prefetch_only: No prerendering, but enables prefetching.
-const char kPrerenderModeSwitchValuePrefetchOnly[] = "prefetch_only";
 
 #if defined(OS_WIN)
 // Enable conversion from vector to raster for any page.

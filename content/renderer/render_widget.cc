@@ -34,10 +34,10 @@
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/compositor_software_output_device.h"
 #include "content/renderer/gpu/delegated_compositor_output_surface.h"
-#include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/gpu/mailbox_output_surface.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/ime_event_guard.h"
+#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
@@ -1141,11 +1141,6 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     }
   }
 
-  IPC::Message* response =
-      new InputHostMsg_HandleInputEvent_ACK(routing_id_,
-                                            input_event->type,
-                                            ack_result,
-                                            latency_info);
   bool event_type_can_be_rate_limited =
       input_event->type == WebInputEvent::MouseMove ||
       input_event->type == WebInputEvent::MouseWheel ||
@@ -1168,24 +1163,31 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
           kInputHandlingTimeThrottlingThresholdMicroseconds;
   }
 
-  if (rate_limiting_wanted && event_type_can_be_rate_limited &&
-      frame_pending && !is_hidden_) {
-    // We want to rate limit the input events in this case, so we'll wait for
-    // painting to finish before ACKing this message.
-    TRACE_EVENT_INSTANT0("renderer",
-      "RenderWidget::OnHandleInputEvent ack throttled",
-      TRACE_EVENT_SCOPE_THREAD);
-    if (pending_input_event_ack_) {
-      // As two different kinds of events could cause us to postpone an ack
-      // we send it now, if we have one pending. The Browser should never
-      // send us the same kind of event we are delaying the ack for.
-      Send(pending_input_event_ack_.release());
+  if (!WebInputEventTraits::IgnoresAckDisposition(input_event->type)) {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_HandleInputEvent_ACK(routing_id_,
+                                              input_event->type,
+                                              ack_result,
+                                              latency_info));
+    if (rate_limiting_wanted && event_type_can_be_rate_limited &&
+        frame_pending && !is_hidden_) {
+      // We want to rate limit the input events in this case, so we'll wait for
+      // painting to finish before ACKing this message.
+      TRACE_EVENT_INSTANT0("renderer",
+        "RenderWidget::OnHandleInputEvent ack throttled",
+        TRACE_EVENT_SCOPE_THREAD);
+      if (pending_input_event_ack_) {
+        // As two different kinds of events could cause us to postpone an ack
+        // we send it now, if we have one pending. The Browser should never
+        // send us the same kind of event we are delaying the ack for.
+        Send(pending_input_event_ack_.release());
+      }
+      pending_input_event_ack_ = response.Pass();
+      if (compositor_)
+        compositor_->NotifyInputThrottledUntilCommit();
+    } else {
+      Send(response.release());
     }
-    pending_input_event_ack_.reset(response);
-    if (compositor_)
-      compositor_->NotifyInputThrottledUntilCommit();
-  } else {
-    Send(response);
   }
 
 #if defined(OS_ANDROID)

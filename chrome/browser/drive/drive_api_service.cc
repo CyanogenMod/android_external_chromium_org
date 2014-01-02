@@ -67,6 +67,7 @@ using google_apis::drive::FilesInsertRequest;
 using google_apis::drive::FilesPatchRequest;
 using google_apis::drive::FilesListRequest;
 using google_apis::drive::FilesListNextPageRequest;
+using google_apis::drive::FilesDeleteRequest;
 using google_apis::drive::FilesTrashRequest;
 using google_apis::drive::GetUploadStatusRequest;
 using google_apis::drive::InitiateUploadExistingFileRequest;
@@ -561,6 +562,19 @@ CancelCallback DriveAPIService::DeleteResource(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
+  FilesDeleteRequest* request = new FilesDeleteRequest(
+      sender_.get(), url_generator_, callback);
+  request->set_file_id(resource_id);
+  request->set_etag(etag);
+  return sender_->StartRequestWithRetry(request);
+}
+
+CancelCallback DriveAPIService::TrashResource(
+    const std::string& resource_id,
+    const EntryActionCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
   FilesTrashRequest* request = new FilesTrashRequest(
       sender_.get(), url_generator_,
       base::Bind(&EntryActionCallbackAdapter, callback));
@@ -602,22 +616,6 @@ CancelCallback DriveAPIService::CopyResource(
   request->add_parent(parent_resource_id);
   request->set_title(new_title);
   request->set_modified_date(last_modified);
-  request->set_fields(kFileResourceFields);
-  return sender_->StartRequestWithRetry(request);
-}
-
-CancelCallback DriveAPIService::CopyHostedDocument(
-    const std::string& resource_id,
-    const std::string& new_title,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  FilesCopyRequest* request = new FilesCopyRequest(
-      sender_.get(), url_generator_,
-      base::Bind(&ConvertFileEntryToResourceEntryAndRun, callback));
-  request->set_file_id(resource_id);
-  request->set_title(new_title);
   request->set_fields(kFileResourceFields);
   return sender_->StartRequestWithRetry(request);
 }

@@ -319,8 +319,7 @@ void AutofillDialogControllerAndroid::Show() {
 }
 
 void AutofillDialogControllerAndroid::Hide() {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED();
+  delete this;
 }
 
 void AutofillDialogControllerAndroid::TabActivated() {}

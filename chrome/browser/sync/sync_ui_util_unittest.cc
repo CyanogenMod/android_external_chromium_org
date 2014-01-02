@@ -323,7 +323,7 @@ void GetDistinctCase(ProfileSyncServiceMock& service,
 // will return a unique combination of status and link messages from
 // GetStatusLabels().
 TEST_F(SyncUIUtilTest, DistinctCasesReportUniqueMessageSets) {
-  std::set<string16> messages;
+  std::set<base::string16> messages;
   for (int idx = 0; idx != NUMBER_OF_STATUS_CASES; idx++) {
     scoped_ptr<Profile> profile(new TestingProfile());
     ProfileSyncServiceMock service(profile.get());
@@ -387,7 +387,7 @@ TEST_F(SyncUIUtilTest, HtmlNotIncludedInStatusIfNotRequested) {
     // found in an English language message) fails when links are excluded from
     // the status label.
     EXPECT_FALSE(status_label.empty());
-    EXPECT_EQ(status_label.find(string16(ASCIIToUTF16("href"))),
+    EXPECT_EQ(status_label.find(base::string16(ASCIIToUTF16("href"))),
               base::string16::npos);
     testing::Mock::VerifyAndClearExpectations(&service);
     testing::Mock::VerifyAndClearExpectations(&signin);

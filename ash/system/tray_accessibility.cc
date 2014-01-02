@@ -5,6 +5,7 @@
 #include "ash/system/tray_accessibility.h"
 
 #include "ash/accessibility_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
 #include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray.h"
@@ -231,14 +232,34 @@ void AccessibilityDetailedView::OnViewClicked(views::View* sender) {
   if (sender == footer()->content()) {
     TransitionToDefaultView();
   } else if (sender == spoken_feedback_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsSpokenFeedbackEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_SPOKEN_FEEDBACK :
+            ash::UMA_STATUS_AREA_ENABLE_SPOKEN_FEEDBACK);
     delegate->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
   } else if (sender == high_contrast_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsHighContrastEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_HIGH_CONTRAST :
+            ash::UMA_STATUS_AREA_ENABLE_HIGH_CONTRAST);
     delegate->ToggleHighContrast();
   } else if (sender == screen_magnifier_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsMagnifierEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_MAGNIFIER :
+            ash::UMA_STATUS_AREA_ENABLE_MAGNIFIER);
     delegate->SetMagnifierEnabled(!delegate->IsMagnifierEnabled());
   } else if (large_cursor_view_ && sender == large_cursor_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsLargeCursorEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_LARGE_CURSOR :
+            ash::UMA_STATUS_AREA_ENABLE_LARGE_CURSOR);
     delegate->SetLargeCursorEnabled(!delegate->IsLargeCursorEnabled());
   } else if (autoclick_view_ && sender == autoclick_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsAutoclickEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_AUTO_CLICK :
+            ash::UMA_STATUS_AREA_ENABLE_AUTO_CLICK);
     delegate->SetAutoclickEnabled(!delegate->IsAutoclickEnabled());
   }
 }
@@ -305,10 +326,9 @@ views::View* TrayAccessibility::CreateDefaultView(user::LoginStatus status) {
   AccessibilityDelegate* delegate =
       Shell::GetInstance()->accessibility_delegate();
   if (login_ != user::LOGGED_IN_NONE &&
-      !delegate->ShouldAlwaysShowAccessibilityMenu() &&
-      // On login screen, keeps the initial visivility of the menu.
-      (status != user::LOGGED_IN_LOCKED || !show_a11y_menu_on_lock_screen_) &&
-      GetAccessibilityState() == A11Y_NONE)
+      !delegate->ShouldShowAccessibilityMenu() &&
+      // On login screen, keeps the initial visibility of the menu.
+      (status != user::LOGGED_IN_LOCKED || !show_a11y_menu_on_lock_screen_))
     return NULL;
 
   CHECK(default_ == NULL);
@@ -326,6 +346,8 @@ views::View* TrayAccessibility::CreateDetailedView(user::LoginStatus status) {
     request_popup_view_ = false;
     return detailed_popup_;
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_DETAILED_ACCESSABILITY);
     detailed_menu_ = CreateDetailedMenu();
     return detailed_menu_;
   }

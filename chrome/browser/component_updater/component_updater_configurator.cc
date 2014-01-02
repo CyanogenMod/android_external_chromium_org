@@ -53,8 +53,8 @@ const char kPingUrl[] = "http:" COMPONENT_UPDATER_SERVICE_ENDPOINT;
 #if defined(OS_WIN)
 // Disables differential updates.
 const char kSwitchDisableDeltaUpdates[] = "disable-delta-updates";
-// Enables background downloads.
-const char kSwitchEnableBackgroundDownloads[] = "enable-background-downloads";
+// Disables background downloads.
+const char kSwitchDisableBackgroundDownloads[] = "disable-background-downloads";
 #endif  // defined(OS_WIN)
 
 // Returns true if and only if |test| is contained in |vec|.
@@ -138,9 +138,10 @@ ChromeConfigurator::ChromeConfigurator(const CommandLine* cmdline,
 #if defined(OS_WIN)
   deltas_enabled_ = !HasSwitchValue(switch_values, kSwitchDisableDeltaUpdates);
   background_downloads_enabled_ =
-      HasSwitchValue(switch_values, kSwitchEnableBackgroundDownloads);
+      !HasSwitchValue(switch_values, kSwitchDisableBackgroundDownloads);
 #else
   deltas_enabled_ = false;
+  background_downloads_enabled_ = false;
 #endif
 
   url_source_ = GetSwitchArgument(switch_values, kSwitchUrlSource);

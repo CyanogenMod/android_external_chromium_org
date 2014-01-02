@@ -29,6 +29,7 @@
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_network_session.h"
+#include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_status.h"
@@ -106,7 +107,7 @@ bool IsProxyOriginSetOnCommandLine() {
 }  // namespace
 
 DataReductionProxySettings::DataReductionProxySettings()
-    : disabled_by_carrier_(false),
+    : restricted_by_carrier_(false),
       enabled_by_user_(false) {
 }
 
@@ -145,10 +146,13 @@ void DataReductionProxySettings::InitDataReductionProxySettings() {
     MaybeActivateDataReductionProxy(true);
   } else {
     // This is logged so we can use this information in user feedback.
-    LogProxyState(false /* enabled */, true /* at startup */);
+    LogProxyState(false /* enabled */,
+                  false /* restricted */,
+                  true /* at startup */);
   }
 }
 
+// static
 void DataReductionProxySettings::InitDataReductionProxySession(
     net::HttpNetworkSession* session) {
 // This is a no-op unless the authentication parameters are compiled in.
@@ -164,6 +168,7 @@ void DataReductionProxySettings::InitDataReductionProxySession(
 #endif  // defined(SPDY_PROXY_AUTH_ORIGIN) && defined(SPDY_PROXY_AUTH_VALUE)
 }
 
+// static
 void DataReductionProxySettings::InitDataReductionAuthentication(
     net::HttpAuthCache* auth_cache) {
   DCHECK(auth_cache);
@@ -217,11 +222,13 @@ void DataReductionProxySettings::AddURLPatternToBypass(
   AddHostPatternToBypass(host_pattern);
 }
 
+// static
 bool DataReductionProxySettings::IsDataReductionProxyAllowed() {
   return IsProxyOriginSetOnCommandLine() ||
       (FieldTrialList::FindFullName("DataCompressionProxyRollout") == kEnabled);
 }
 
+// static
 bool DataReductionProxySettings::IsDataReductionProxyPromoAllowed() {
   return IsProxyOriginSetOnCommandLine() ||
       (IsDataReductionProxyAllowed() &&
@@ -229,6 +236,7 @@ bool DataReductionProxySettings::IsDataReductionProxyPromoAllowed() {
             kEnabled);
 }
 
+// static
 bool DataReductionProxySettings::IsPreconnectHintingAllowed() {
   if (!IsDataReductionProxyAllowed())
     return false;
@@ -236,6 +244,18 @@ bool DataReductionProxySettings::IsPreconnectHintingAllowed() {
       kEnabled;
 }
 
+// static
+bool DataReductionProxySettings::WasFetchedViaProxy(
+    const net::HttpResponseHeaders* headers) {
+  const char kChromeProxyViaValue[] = "1.1 Chrome Compression Proxy";
+  void* iter = NULL;
+  std::string value;
+  while (headers->EnumerateHeader(&iter, "via", &value))
+    if (value == kChromeProxyViaValue) return true;
+  return false;
+}
+
+// static
 std::string DataReductionProxySettings::GetDataReductionProxyOrigin() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kSpdyProxyAuthOrigin))
@@ -247,6 +267,7 @@ std::string DataReductionProxySettings::GetDataReductionProxyOrigin() {
 #endif
 }
 
+// static
 std::string DataReductionProxySettings::GetDataReductionProxyFallback() {
   // Regardless of what else is defined, only return a value if the main proxy
   // origin is defined.
@@ -307,6 +328,7 @@ bool DataReductionProxySettings::IsDataReductionProxyManaged() {
   return spdy_proxy_auth_enabled_.IsManaged();
 }
 
+// static
 DataReductionProxySettings::DataReductionProxyList
 DataReductionProxySettings::GetDataReductionProxies() {
   DataReductionProxyList proxies;
@@ -365,34 +387,40 @@ void DataReductionProxySettings::OnURLFetchComplete(
   source->GetResponseAsString(&response);
 
   if ("OK" == response.substr(0, 2)) {
-    DVLOG(1) << "The data reduction proxy is not blocked.";
+    DVLOG(1) << "The data reduction proxy is unrestricted.";
 
     if (enabled_by_user_) {
-      if (disabled_by_carrier_) {
+      if (restricted_by_carrier_) {
         // The user enabled the proxy, but sometime previously in the session,
-        // the network operator had blocked the proxy. Now that the network
-        // operator is unblocking it, configure it to the user's desires.
-        SetProxyConfigs(true, false);
+        // the network operator had blocked the canary and restricted the user.
+        // The current network doesn't block the canary, so don't restrict the
+        // proxy configurations.
+        SetProxyConfigs(true /* enabled */,
+                        false /* restricted */,
+                        false /* at_startup */);
         RecordProbeURLFetchResult(SUCCEEDED_PROXY_ENABLED);
       } else {
         RecordProbeURLFetchResult(SUCCEEDED_PROXY_ALREADY_ENABLED);
       }
     }
-    disabled_by_carrier_ = false;
+    restricted_by_carrier_ = false;
     return;
   }
-  DVLOG(1) << "The data reduction proxy is blocked.";
+  DVLOG(1) << "The data reduction proxy is restricted to the configured "
+           << "fallback proxy.";
 
   if (enabled_by_user_) {
-    if (!disabled_by_carrier_) {
-      // Disable the proxy.
-      SetProxyConfigs(false, false);
+    if (!restricted_by_carrier_) {
+      // Restrict the proxy.
+      SetProxyConfigs(true /* enabled */,
+                      true /* restricted */,
+                      false /* at_startup */);
       RecordProbeURLFetchResult(FAILED_PROXY_DISABLED);
     } else {
       RecordProbeURLFetchResult(FAILED_PROXY_ALREADY_DISABLED);
     }
   }
-  disabled_by_carrier_ = true;
+  restricted_by_carrier_ = true;
 }
 
 void DataReductionProxySettings::OnIPAddressChanged() {
@@ -422,15 +450,21 @@ void DataReductionProxySettings::AddDefaultProxyBypassRules() {
   AddHostPatternToBypass("*-v4.metric.gstatic.com");
 }
 
-void DataReductionProxySettings::LogProxyState(bool enabled, bool at_startup) {
+void DataReductionProxySettings::LogProxyState(
+    bool enabled, bool restricted, bool at_startup) {
   // This must stay a LOG(WARNING); the output is used in processing customer
   // feedback.
   const char kAtStartup[] = "at startup";
   const char kByUser[] = "by user action";
   const char kOn[] = "ON";
   const char kOff[] = "OFF";
+  const char kRestricted[] = "(Restricted)";
+  const char kUnrestricted[] = "(Unrestricted)";
 
-  LOG(WARNING) << "SPDY proxy " << (enabled ? kOn : kOff)
+  std::string annotated_on =
+      kOn + std::string(" ") + (restricted ? kRestricted : kUnrestricted);
+
+  LOG(WARNING) << "SPDY proxy " << (enabled ? annotated_on : kOff)
                << " " << (at_startup ? kAtStartup : kByUser);
 }
 
@@ -473,26 +507,37 @@ void DataReductionProxySettings::MaybeActivateDataReductionProxy(
   // Configure use of the data reduction proxy if it is enabled and the proxy
   // origin is non-empty.
   enabled_by_user_= spdy_proxy_auth_enabled_.GetValue() && !proxy.empty();
-  SetProxyConfigs(enabled_by_user_ && !disabled_by_carrier_, at_startup);
+  SetProxyConfigs(enabled_by_user_, restricted_by_carrier_, at_startup);
 
-  // Check if the proxy has been disabled explicitly by the carrier.
+  // Check if the proxy has been restricted explicitly by the carrier.
   if (enabled_by_user_)
     ProbeWhetherDataReductionProxyIsAvailable();
 }
 
-void DataReductionProxySettings::SetProxyConfigs(bool enabled,
-                                                 bool at_startup) {
-  LogProxyState(enabled, at_startup);
+void DataReductionProxySettings::SetProxyConfigs(
+    bool enabled, bool restricted, bool at_startup) {
+  // If |restricted| is true and there is no defined fallback proxy.
+  // treat this as a disable.
+  std::string fallback = GetDataReductionProxyFallback();
+  if (fallback.empty() && enabled && restricted)
+      enabled = false;
+
+  LogProxyState(enabled, restricted, at_startup);
   PrefService* prefs = GetOriginalProfilePrefs();
   DCHECK(prefs);
   DictionaryPrefUpdate update(prefs, prefs::kProxy);
   base::DictionaryValue* dict = update.Get();
   if (enabled) {
-    std::string fallback = GetDataReductionProxyFallback();
-    std::string proxy_server_config =
-        "http=" + GetDataReductionProxyOrigin() +
-        (fallback.empty() ? "" : "," + fallback) +
-        ",direct://;";
+    std::string proxy_list;
+    if (restricted) {
+      DCHECK(!fallback.empty());
+      proxy_list = fallback;
+    } else {
+      proxy_list = GetDataReductionProxyOrigin() +
+          (fallback.empty() ? "" : "," + fallback);
+    }
+
+    std::string proxy_server_config = "http=" + proxy_list + ",direct://;";
     dict->SetString("server", proxy_server_config);
     dict->SetString("mode",
                     ProxyModeToString(ProxyPrefs::MODE_FIXED_SERVERS));
@@ -582,6 +627,7 @@ std::string DataReductionProxySettings::GetProxyCheckURL() {
 #endif
 }
 
+// static
 base::string16 DataReductionProxySettings::AuthHashForSalt(int64 salt) {
   if (!IsDataReductionProxyAllowed())
     return base::string16();

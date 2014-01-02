@@ -228,6 +228,12 @@ class WebGraphicsContext3DCommandBufferImpl
                                     WGC3Denum textarget,
                                     WebGLId texture,
                                     WGC3Dint level);
+  virtual void framebufferTexture2DMultisampleEXT(WGC3Denum target,
+                                    WGC3Denum attachment,
+                                    WGC3Denum textarget,
+                                    WebGLId texture,
+                                    WGC3Dint level,
+                                    WGC3Dsizei samples);
   virtual void frontFace(WGC3Denum mode);
   virtual void generateMipmap(WGC3Denum target);
 
@@ -497,9 +503,6 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void discardFramebufferEXT(WGC3Denum target,
                                      WGC3Dsizei numAttachments,
                                      const WGC3Denum* attachments);
-  virtual void discardBackbufferCHROMIUM();
-  virtual void ensureBackbufferCHROMIUM();
-
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
 

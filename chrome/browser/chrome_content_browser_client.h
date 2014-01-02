@@ -262,15 +262,12 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                 bool* success) OVERRIDE;
 #endif
-#if defined(USE_NSS)
-  virtual
-      crypto::CryptoModuleBlockingPasswordDelegate* GetCryptoPasswordDelegate(
-          const GURL& url) OVERRIDE;
-#endif
 
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
       content::BrowserContext* browser_context,
       const GURL& url) OVERRIDE;
+
+  virtual bool IsPluginAllowedToUseDevChannelAPIs() OVERRIDE;
 
  private:
 #if defined(ENABLE_PLUGINS)

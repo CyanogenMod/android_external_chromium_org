@@ -135,6 +135,10 @@ class OmniboxView {
   // avoid selecting the "phantom newline" at the end of the edit.
   virtual void SelectAll(bool reversed) = 0;
 
+  // Sets focus, disables search term replacement, reverts the omnibox, and
+  // selects all.
+  void ShowURL();
+
   // Re-enables search term replacement on the ToolbarModel, and reverts the
   // edit and popup back to their unedited state (permanent text showing, popup
   // closed, no user input in progress).
@@ -208,7 +212,10 @@ class OmniboxView {
 
   // Returns the width in pixels needed to display the current text. The
   // returned value includes margins.
-  virtual int TextWidth() const = 0;
+  virtual int GetTextWidth() const = 0;
+
+  // Returns the omnibox's width in pixels.
+  virtual int GetWidth() const = 0;
 
   // Returns true if the user is composing something in an IME.
   virtual bool IsImeComposing() const = 0;
@@ -225,8 +232,6 @@ class OmniboxView {
   virtual bool IsIndicatingQueryRefinement() const;
 
 #if defined(TOOLKIT_VIEWS)
-  virtual int GetMaxEditWidth(int entry_width) const = 0;
-
   // Performs the drop of a drag and drop operation on the view.
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) = 0;
 #endif
@@ -255,9 +260,6 @@ class OmniboxView {
 
   // Internally invoked whenever the text changes in some way.
   virtual void TextChanged();
-
-  // Disables search term replacement, reverts the omnibox, and selects all.
-  void ShowURL();
 
   // Return the number of characters in the current buffer. The name
   // |GetTextLength| can't be used as the Windows override of this class

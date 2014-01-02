@@ -84,7 +84,6 @@
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tab_contents/chrome_web_contents_view_delegate.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
-#include "chrome/browser/validation_message_message_filter.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -140,6 +139,7 @@
 #include "net/cookies/cookie_options.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "ppapi/host/ppapi_host.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/message_center/message_center_util.h"
@@ -187,10 +187,6 @@
 #if defined(OS_ANDROID)
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/android/device_display_info.h"
-#endif
-
-#if defined(USE_NSS)
-#include "chrome/browser/ui/crypto_module_password_dialog.h"
 #endif
 
 #if !defined(OS_CHROMEOS)
@@ -382,15 +378,6 @@ bool HandleWebUI(GURL* url, content::BrowserContext* browser_context) {
     }
   }
 #endif
-
-  // Special case the new tab page. In older versions of Chrome, the new tab
-  // page was hosted at chrome-internal:<blah>. This might be in people's saved
-  // sessions or bookmarks, so we say any URL with that scheme triggers the new
-  // tab page.
-  if (url->SchemeIs(chrome::kChromeInternalScheme)) {
-    // Rewrite it with the proper new tab URL.
-    *url = GURL(chrome::kChromeUINewTabURL);
-  }
 
   return true;
 }
@@ -919,7 +906,6 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   host->AddFilter(new ChromeNetBenchmarkingMessageFilter(
       id, profile, context));
   host->AddFilter(new prerender::PrerenderMessageFilter(id, profile));
-  host->AddFilter(new ValidationMessageMessageFilter(id));
   host->AddFilter(new TtsMessageFilter(id, profile));
 #if defined(ENABLE_WEBRTC)
   WebRtcLoggingHandlerHost* webrtc_logging_handler_host =
@@ -1503,13 +1489,11 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 #endif
     }
 
-    if (message_center::IsRichNotificationEnabled())
-      command_line->AppendSwitch(switches::kDisableHTMLNotifications);
-
     // Please keep this in alphabetical order.
     static const char* const kSwitchNames[] = {
       autofill::switches::kDisableInteractiveAutocomplete,
       autofill::switches::kDisablePasswordGeneration,
+      autofill::switches::kEnableIgnoreAutocompleteOff,
       autofill::switches::kEnableInteractiveAutocomplete,
       autofill::switches::kEnablePasswordGeneration,
       autofill::switches::kNoAutofillNecessaryForPasswordGeneration,
@@ -2625,15 +2609,6 @@ void ChromeContentBrowserClient::PreSpawnRenderer(
 }
 #endif
 
-#if defined(USE_NSS)
-crypto::CryptoModuleBlockingPasswordDelegate*
-    ChromeContentBrowserClient::GetCryptoPasswordDelegate(
-        const GURL& url) {
-  return chrome::NewCryptoModuleBlockingDialogDelegate(
-      chrome::kCryptoModulePasswordKeygen, url.host());
-}
-#endif
-
 bool ChromeContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
     content::BrowserContext* browser_context,
     const GURL& url) {
@@ -2654,5 +2629,21 @@ bool ChromeContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
   return false;
 #endif
 }
+
+bool ChromeContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
+#if defined(ENABLE_PLUGINS)
+  // Allow access for tests.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnablePepperTesting)) {
+    return true;
+  }
+
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  return channel <= chrome::VersionInfo::CHANNEL_DEV;
+#else
+  return false;
+#endif
+}
+
 
 }  // namespace chrome

@@ -5,6 +5,7 @@ include_rules = [
   "+chrome/installer",
   "+chromeos",
   "+components/autofill/content/browser",
+  "+components/autofill/content/common",
   "+components/autofill/core/browser",
   "+components/autofill/core/common",
   "+components/breakpad",
@@ -18,6 +19,7 @@ include_rules = [
   "+components/sessions",
   "+components/startup_metric_utils",
   "+components/translate/common",
+  "+components/url_matcher",
   "+components/user_prefs",
   "+components/webdata",
   "+components/web_modal",
@@ -39,6 +41,7 @@ include_rules = [
   "+ppapi/c",  # For various types.
   "+ppapi/host",
   "+ppapi/proxy",
+  "+ppapi/shared_impl",
   # Defines some types that are marshalled over IPC.
   "+ppapi/shared_impl/ppp_flash_browser_operations_shared.h",
   "+rlz",

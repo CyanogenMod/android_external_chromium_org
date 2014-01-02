@@ -17,8 +17,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/autofill_manager.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
@@ -162,11 +162,11 @@ InfoBarDelegate::Type SavePasswordInfoBarDelegate::GetInfoBarType() const {
   return PAGE_ACTION_TYPE;
 }
 
-string16 SavePasswordInfoBarDelegate::GetMessageText() const {
+base::string16 SavePasswordInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SAVE_PASSWORD_PROMPT);
 }
 
-string16 SavePasswordInfoBarDelegate::GetButtonLabel(
+base::string16 SavePasswordInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_PASSWORD_MANAGER_SAVE_BUTTON : IDS_PASSWORD_MANAGER_BLACKLIST_BUTTON);

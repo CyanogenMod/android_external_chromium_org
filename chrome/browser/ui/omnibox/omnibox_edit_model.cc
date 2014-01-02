@@ -10,6 +10,7 @@
 #include "base/format_macros.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -50,6 +51,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/instant_controller.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -105,10 +107,15 @@ const char kFocusToEditTimeHistogram[] = "Omnibox.FocusToEditTime";
 // between focusing and opening an omnibox match.
 const char kFocusToOpenTimeHistogram[] = "Omnibox.FocusToOpenTime";
 
+// Split the percentage match histograms into buckets based on the width of the
+// omnibox.
+const int kPercentageMatchHistogramWidthBuckets[] = { 400, 700, 1200 };
+
 void RecordPercentageMatchHistogram(const base::string16& old_text,
                                     const base::string16& new_text,
                                     bool url_replacement_active,
-                                    content::PageTransition transition) {
+                                    content::PageTransition transition,
+                                    int omnibox_width) {
   size_t avg_length = (old_text.length() + new_text.length()) / 2;
 
   int percent = 0;
@@ -121,23 +128,40 @@ void RecordPercentageMatchHistogram(const base::string16& old_text,
     percent = static_cast<float>(matching_characters) / avg_length * 100;
   }
 
+  std::string histogram_name;
   if (url_replacement_active) {
     if (transition == content::PAGE_TRANSITION_TYPED) {
-      UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchV2_QuerytoURL", percent);
+      histogram_name = "InstantExtended.PercentageMatchV2_QuerytoURL";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
     } else {
-      UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchV2_QuerytoQuery", percent);
+      histogram_name = "InstantExtended.PercentageMatchV2_QuerytoQuery";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
     }
   } else {
     if (transition == content::PAGE_TRANSITION_TYPED) {
-      UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchV2_URLtoURL", percent);
+      histogram_name = "InstantExtended.PercentageMatchV2_URLtoURL";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
     } else {
-      UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchV2_URLtoQuery", percent);
+      histogram_name = "InstantExtended.PercentageMatchV2_URLtoQuery";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
     }
   }
+
+  std::string suffix = "large";
+  for (size_t i = 0; i < arraysize(kPercentageMatchHistogramWidthBuckets);
+       ++i) {
+    if (omnibox_width < kPercentageMatchHistogramWidthBuckets[i]) {
+      suffix = base::IntToString(kPercentageMatchHistogramWidthBuckets[i]);
+      break;
+    }
+  }
+
+  // Cannot rely on UMA histograms macro because the name of the histogram is
+  // generated dynamically.
+  base::HistogramBase* counter = base::LinearHistogram::FactoryGet(
+      histogram_name + "_" + suffix, 1, 101, 102,
+      base::Histogram::kUmaTargetedHistogramFlag);
+  counter->Add(percent);
 }
 
 }  // namespace
@@ -332,19 +356,27 @@ void OmniboxEditModel::OnChanged() {
 
   AutocompleteActionPredictor::Action recommended_action =
       AutocompleteActionPredictor::ACTION_NONE;
-  AutocompleteActionPredictor* action_predictor = user_input_in_progress_ ?
-      predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_) :
-      NULL;
-  if (action_predictor) {
-    action_predictor->RegisterTransitionalMatches(user_text_, result());
-    // Confer with the AutocompleteActionPredictor to determine what action, if
-    // any, we should take. Get the recommended action here even if we don't
-    // need it so we can get stats for anyone who is opted in to UMA, but only
-    // get it if the user has actually typed something to avoid constructing it
-    // before it's needed. Note: This event is triggered as part of startup when
-    // the initial tab transitions to the start page.
-    recommended_action =
-        action_predictor->RecommendAction(user_text_, current_match);
+  if (user_input_in_progress_) {
+    InstantSearchPrerenderer* prerenderer =
+        InstantSearchPrerenderer::GetForProfile(profile_);
+    if (prerenderer &&
+        prerenderer->IsAllowed(current_match, controller_->GetWebContents()) &&
+        popup_model()->IsOpen() && has_focus()) {
+      recommended_action = AutocompleteActionPredictor::ACTION_PRERENDER;
+    } else {
+      AutocompleteActionPredictor* action_predictor =
+          predictors::AutocompleteActionPredictorFactory::GetForProfile(
+              profile_);
+      action_predictor->RegisterTransitionalMatches(user_text_, result());
+      // Confer with the AutocompleteActionPredictor to determine what action,
+      // if any, we should take. Get the recommended action here even if we
+      // don't need it so we can get stats for anyone who is opted in to UMA,
+      // but only get it if the user has actually typed something to avoid
+      // constructing it before it's needed. Note: This event is triggered as
+      // part of startup when the initial tab transitions to the start page.
+      recommended_action =
+          action_predictor->RecommendAction(user_text_, current_match);
+    }
   }
 
   UMA_HISTOGRAM_ENUMERATION("AutocompleteActionPredictor.Action",
@@ -352,7 +384,7 @@ void OmniboxEditModel::OnChanged() {
                             AutocompleteActionPredictor::LAST_PREDICT_ACTION);
 
   // Hide any suggestions we might be showing.
-  view_->SetGrayTextAutocompletion(string16());
+  view_->SetGrayTextAutocompletion(base::string16());
 
   switch (recommended_action) {
     case AutocompleteActionPredictor::ACTION_PRERENDER:
@@ -494,8 +526,7 @@ void OmniboxEditModel::Revert() {
                                   false, true);
   AutocompleteActionPredictor* action_predictor =
       predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_);
-  if (action_predictor)
-    action_predictor->ClearTransitionalMatches();
+  action_predictor->ClearTransitionalMatches();
 }
 
 void OmniboxEditModel::StartAutocomplete(
@@ -777,7 +808,7 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
     RecordPercentageMatchHistogram(
         permanent_text_, current_text,
         controller_->GetToolbarModel()->WouldReplaceURL(),
-        match.transition);
+        match.transition, view_->GetWidth());
 
     // Track whether the destination URL sends us to a search results page
     // using the default search provider.
@@ -1241,13 +1272,13 @@ void OmniboxEditModel::ClearPopupKeywordMode() const {
   omnibox_controller_->ClearPopupKeywordMode();
 }
 
-string16 OmniboxEditModel::DisplayTextFromUserText(
+base::string16 OmniboxEditModel::DisplayTextFromUserText(
     const base::string16& text) const {
   return KeywordIsSelected() ?
       KeywordProvider::SplitReplacementStringFromInput(text, false) : text;
 }
 
-string16 OmniboxEditModel::UserTextFromDisplayText(
+base::string16 OmniboxEditModel::UserTextFromDisplayText(
     const base::string16& text) const {
   return KeywordIsSelected() ? (keyword_ + char16(' ') + text) : text;
 }

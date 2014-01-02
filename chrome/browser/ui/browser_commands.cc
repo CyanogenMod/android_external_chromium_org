@@ -814,7 +814,7 @@ void EmailPageLocation(Browser* browser) {
   std::string page_url = net::EscapeQueryParamValue(wc->GetURL().spec(), false);
   std::string mailto = std::string("mailto:?subject=Fwd:%20") +
       title + "&body=%0A%0A" + page_url;
-  platform_util::OpenExternal(GURL(mailto));
+  platform_util::OpenExternal(browser->profile(), GURL(mailto));
 }
 
 bool CanEmailPageLocation(const Browser* browser) {
@@ -1079,7 +1079,7 @@ void ViewSource(Browser* browser,
   entry->SetPageState(page_state.RemoveScrollOffset());
 
   // Do not restore title, derive it from the url.
-  entry->SetTitle(string16());
+  entry->SetTitle(base::string16());
 
   // Now show view-source entry.
   if (browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP)) {

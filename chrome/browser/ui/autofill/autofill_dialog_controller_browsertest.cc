@@ -4,6 +4,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -41,8 +42,11 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/page_transition_types.h"
+#include "content/public/common/referrer.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -50,7 +54,14 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/mac_util.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
+#include "chrome/browser/ui/cocoa/run_loop_testing.h"
+#endif
 
 namespace autofill {
 
@@ -174,6 +185,8 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   using AutofillDialogControllerImpl::IsSubmitPausedOn;
   using AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData;
   using AutofillDialogControllerImpl::AccountChooserModelForTesting;
+  using AutofillDialogControllerImpl::
+      ClearLastWalletItemsFetchTimestampForTesting;
 
   void set_use_validation(bool use_validation) {
     use_validation_ = use_validation;
@@ -277,6 +290,16 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
     InitializeController();
   }
 
+  // A helper function that cycles the MessageLoop, and on Mac, the Cocoa run
+  // loop. It also drains the NSAutoreleasePool.
+  void CycleRunLoops() {
+    content::RunAllPendingInMessageLoop();
+#if defined(OS_MACOSX)
+    chrome::testing::NSRunLoopRunAllPending();
+    AutoreleasePool()->Recycle();
+#endif
+  }
+
   void InitializeController() {
     FormData form;
     form.name = ASCIIToUTF16("TestForm");
@@ -301,6 +324,7 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
         metric_logger_,
         message_loop_runner_);
     controller_->Show();
+    CycleRunLoops();  // Ensures dialog is fully visible.
   }
 
   content::WebContents* GetActiveWebContents() {
@@ -503,7 +527,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
   view->ActivateInput(triggering_input);
 
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   // All inputs should be filled.
   AutofillProfileWrapper wrapper(&full_profile);
@@ -513,7 +537,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
   }
 
   // Now simulate some user edits and try again.
-  std::vector<string16> expectations;
+  std::vector<base::string16> expectations;
   for (size_t i = 0; i < inputs.size(); ++i) {
     base::string16 users_input = i % 2 == 0 ? base::string16()
                                             : ASCIIToUTF16("dummy");
@@ -530,7 +554,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
                                value.substr(0, value.size() / 2));
   view->ActivateInput(triggering_input);
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   for (size_t i = 0; i < inputs.size(); ++i) {
     EXPECT_EQ(expectations[i], view->GetTextContentsOfInput(inputs[i]));
@@ -556,7 +580,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   view->ActivateInput(triggering_input);
 
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   // All inputs should be filled.
   AutofillProfileWrapper wrapper(&full_profile);
@@ -569,7 +593,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   }
 
   // Now simulate some user edits and try again.
-  std::vector<string16> expectations;
+  std::vector<base::string16> expectations;
   for (size_t i = 0; i < inputs.size(); ++i) {
     base::string16 users_input = i % 2 == 0 ? base::string16()
                                             : ASCIIToUTF16("dummy");
@@ -589,7 +613,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
                                value.substr(0, value.size() / 2));
   view->ActivateInput(triggering_input);
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   for (size_t i = 0; i < inputs.size(); ++i) {
     EXPECT_EQ(expectations[i], view->GetTextContentsOfInput(inputs[i]));
@@ -603,11 +627,11 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   AutofillProfile full_profile(test::GetFullProfile());
 
   // Set up some variant data.
-  std::vector<string16> names;
+  std::vector<base::string16> names;
   names.push_back(ASCIIToUTF16("John Doe"));
   names.push_back(ASCIIToUTF16("Jane Doe"));
   full_profile.SetRawMultiInfo(NAME_FULL, names);
-  std::vector<string16> emails;
+  std::vector<base::string16> emails;
   emails.push_back(ASCIIToUTF16("user@example.com"));
   emails.push_back(ASCIIToUTF16("admin@example.com"));
   full_profile.SetRawMultiInfo(EMAIL_ADDRESS, emails);
@@ -623,7 +647,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
 
   // Choose the variant suggestion.
-  controller()->DidAcceptSuggestion(string16(), 1);
+  controller()->DidAcceptSuggestion(base::string16(), 1);
 
   // All inputs should be filled.
   AutofillProfileWrapper wrapper(
@@ -669,7 +693,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   view->ActivateInput(triggering_input);
 
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   // All inputs should be filled.
   AutofillCreditCardWrapper wrapper1(&card1);
@@ -685,7 +709,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
                                value.substr(0, value.size() / 2));
   view->ActivateInput(triggering_input);
   ASSERT_EQ(&triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   AutofillCreditCardWrapper wrapper2(&card2);
   for (size_t i = 0; i < inputs.size(); ++i) {
@@ -713,7 +737,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   view->ActivateInput(billing_triggering_input);
 
   ASSERT_EQ(&billing_triggering_input, controller()->input_showing_popup());
-  controller()->DidAcceptSuggestion(string16(), 0);
+  controller()->DidAcceptSuggestion(base::string16(), 0);
 
   for (size_t i = 0; i < inputs.size(); ++i) {
     const DetailInput& input = inputs[i];
@@ -895,7 +919,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
     // Create some valid inputted billing data.
     const DetailInput& cc_number =
         controller()->RequestedFieldsForSection(SECTION_CC)[0];
-    DCHECK_EQ(cc_number.type, CREDIT_CARD_NUMBER);
+    ASSERT_EQ(cc_number.type, CREDIT_CARD_NUMBER);
     view->SetTextContentsOfInput(cc_number, ASCIIToUTF16("4111111111111111"));
   }
 
@@ -1216,6 +1240,60 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, TabOpensToJustRight) {
   EXPECT_EQ(1, tab_strip->active_index());
   EXPECT_EQ(2, tab_strip->GetIndexOfWebContents(first_manage_tab));
   EXPECT_EQ(3, tab_strip->GetIndexOfWebContents(blank_tab));
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
+                       SignInWebViewOpensLinksInNewTab) {
+  controller()->OnDidFetchWalletCookieValue(std::string());
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItemsWithRequiredAction(wallet::GAIA_AUTH));
+
+  NavEntryCommittedObserver sign_in_page_observer(
+      controller()->SignInUrl(),
+      content::NotificationService::AllSources());
+
+  controller()->SignInLinkClicked();
+
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  content::WebContents* sign_in_contents = view->GetSignInWebContents();
+  ASSERT_TRUE(sign_in_contents);
+
+  sign_in_page_observer.Wait();
+
+  content::OpenURLParams params(GURL("http://google.com"),
+                                content::Referrer(),
+                                CURRENT_TAB,
+                                content::PAGE_TRANSITION_LINK,
+                                true);
+  int num_tabs = browser()->tab_strip_model()->count();
+  sign_in_contents->GetDelegate()->OpenURLFromTab(sign_in_contents, params);
+  EXPECT_EQ(num_tabs + 1, browser()->tab_strip_model()->count());
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, RefreshOnManageTabClose) {
+  ASSERT_TRUE(browser()->is_type_tabbed());
+
+  // GetWalletItems() is called when controller() is created in SetUp().
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  controller()->OnDidFetchWalletCookieValue(std::string());
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
+
+  content::WebContents* dialog_invoker = controller()->GetWebContents();
+  TabAutofillManagerDelegate::FromWebContents(dialog_invoker)->
+      SetDialogControllerForTesting(controller()->AsWeakPtr());
+
+  // Open a new tab by selecting "Manage my shipping details..." in Wallet mode.
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(2);
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  ASSERT_NE(dialog_invoker, GetActiveWebContents());
+
+  // Closing the tab opened by "Manage my shipping details..." should refresh
+  // the dialog.
+  controller()->ClearLastWalletItemsFetchTimestampForTesting();
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  GetActiveWebContents()->Close();
 }
 
 }  // namespace autofill

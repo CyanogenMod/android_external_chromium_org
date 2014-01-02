@@ -113,7 +113,7 @@ keyboard::KeyboardControllerProxy*
   return new KeyboardControllerProxyStub();
 }
 
-content::BrowserContext* ShellDelegateImpl::GetCurrentBrowserContext() {
+content::BrowserContext* ShellDelegateImpl::GetActiveBrowserContext() {
   return browser_context_;
 }
 
@@ -156,9 +156,6 @@ ash::MediaDelegate* ShellDelegateImpl::CreateMediaDelegate() {
 
 aura::client::UserActionClient* ShellDelegateImpl::CreateUserActionClient() {
   return NULL;
-}
-
-void ShellDelegateImpl::RecordUserMetricsAction(UserMetricsAction action) {
 }
 
 ui::MenuModel* ShellDelegateImpl::CreateContextMenu(aura::Window* root) {

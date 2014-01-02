@@ -115,7 +115,7 @@ void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
 }
 
 void TranslateInfoBarDelegate::TranslationDeclined() {
-  ui_delegate_.TranslationDeclined();
+  ui_delegate_.TranslationDeclined(false);
 }
 
 bool TranslateInfoBarDelegate::IsTranslatableLanguageByPrefs() {
@@ -168,7 +168,7 @@ void TranslateInfoBarDelegate::NeverTranslatePageLanguage() {
     infobar()->RemoveSelf();
 }
 
-string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
+base::string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
   if (infobar_type_ == TRANSLATING) {
     base::string16 target_language_name =
         language_name_at(target_language_index());
@@ -180,6 +180,7 @@ string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
   UMA_HISTOGRAM_ENUMERATION("Translate.ShowErrorInfobar",
                             error_type_,
                             TranslateErrors::TRANSLATE_ERROR_MAX);
+  ui_delegate_.OnErrorShown(error_type_);
   switch (error_type_) {
     case TranslateErrors::NETWORK:
       return l10n_util::GetStringUTF16(
@@ -205,7 +206,7 @@ string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
   }
 }
 
-string16 TranslateInfoBarDelegate::GetMessageInfoBarButtonText() {
+base::string16 TranslateInfoBarDelegate::GetMessageInfoBarButtonText() {
   if (infobar_type_ != TRANSLATION_ERROR) {
     DCHECK_EQ(TRANSLATING, infobar_type_);
   } else if ((error_type_ != TranslateErrors::IDENTICAL_LANGUAGES) &&
@@ -247,7 +248,7 @@ bool TranslateInfoBarDelegate::ShouldShowAlwaysTranslateShortcut() {
 }
 
 // static
-string16 TranslateInfoBarDelegate::GetLanguageDisplayableName(
+base::string16 TranslateInfoBarDelegate::GetLanguageDisplayableName(
     const std::string& language_code) {
   return l10n_util::GetDisplayNameForLocale(
       language_code, g_browser_process->GetApplicationLocale(), true);
@@ -255,7 +256,7 @@ string16 TranslateInfoBarDelegate::GetLanguageDisplayableName(
 
 // static
 void TranslateInfoBarDelegate::GetAfterTranslateStrings(
-    std::vector<string16>* strings,
+    std::vector<base::string16>* strings,
     bool* swap_languages,
     bool autodetermined_source_language) {
   DCHECK(strings);
@@ -300,8 +301,7 @@ TranslateInfoBarDelegate::TranslateInfoBarDelegate(
     : InfoBarDelegate(),
       infobar_type_(infobar_type),
       background_animation_(NONE),
-      ui_delegate_(web_contents, original_language, target_language,
-                   error_type),
+      ui_delegate_(web_contents, original_language, target_language),
       error_type_(error_type),
       prefs_(prefs),
       shortcut_config_(shortcut_config) {

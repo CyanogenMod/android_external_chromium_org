@@ -205,7 +205,7 @@ DownloadItemView::DownloadItemView(DownloadItem* download_item,
   body_hover_animation_.reset(new gfx::SlideAnimation(this));
   drop_hover_animation_.reset(new gfx::SlideAnimation(this));
 
-  set_accessibility_focusable(true);
+  SetAccessibilityFocusable(true);
 
   OnDownloadUpdated(download());
   UpdateDropDownButtonPosition();
@@ -1209,7 +1209,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
 
   base::string16 label_text = dangerous_download_label_->text();
   TrimWhitespace(label_text, TRIM_ALL, &label_text);
-  DCHECK_EQ(string16::npos, label_text.find('\n'));
+  DCHECK_EQ(base::string16::npos, label_text.find('\n'));
 
   // Make the label big so that GetPreferredSize() is not constrained by the
   // current width.

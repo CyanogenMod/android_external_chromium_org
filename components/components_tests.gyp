@@ -31,6 +31,10 @@
             'dom_distiller/core/dom_distiller_model_unittest.cc',
             'dom_distiller/core/dom_distiller_service_unittest.cc',
             'dom_distiller/core/dom_distiller_store_unittest.cc',
+            'dom_distiller/core/dom_distiller_test_util.cc',
+            'dom_distiller/core/dom_distiller_test_util.h',
+            'dom_distiller/core/fake_db.cc',
+            'dom_distiller/core/fake_db.h',
             'dom_distiller/core/fake_distiller.cc',
             'dom_distiller/core/fake_distiller.h',
             'dom_distiller/core/task_tracker_unittest.cc',
@@ -46,6 +50,11 @@
             'translate/common/translate_metrics_unittest.cc',
             'translate/common/translate_util_unittest.cc',
             'translate/language_detection/language_detection_util_unittest.cc',
+            'url_matcher/regex_set_matcher_unittest.cc',
+            'url_matcher/string_pattern_unittest.cc',
+            'url_matcher/substring_set_matcher_unittest.cc',
+            'url_matcher/url_matcher_factory_unittest.cc',
+            'url_matcher/url_matcher_unittest.cc',
             # TODO(asvitkine): These should be tested on iOS too.
             'variations/entropy_provider_unittest.cc',
             'variations/metrics_util_unittest.cc',
@@ -73,6 +82,11 @@
             # Dependencies of auto_login_parser
             'components.gyp:auto_login_parser',
 
+            # Dependencies of autofill
+            'components.gyp:autofill_core_browser',
+            'components.gyp:autofill_core_common',
+            'components.gyp:autofill_core_test_support',
+
             # Dependencies of dom_distiller
             'components.gyp:distilled_page_proto',
             'components.gyp:dom_distiller_core',
@@ -82,9 +96,6 @@
 
             # Dependencies of json_schema
             'components.gyp:json_schema',
-
-            # Dependencies of policy
-            'components.gyp:policy_component',
 
             # Dependencies of precache
             'components.gyp:precache_core',
@@ -99,10 +110,6 @@
           'conditions': [
             ['OS != "ios"', {
               'dependencies': [
-                # Dependencies of autofill
-                'components.gyp:autofill_core_browser',
-                'components.gyp:autofill_core_common',
-
                 # Dependencies of browser_context_keyed_service
                 'components.gyp:browser_context_keyed_service',
 
@@ -115,6 +122,9 @@
                 '../third_party/protobuf/protobuf.gyp:protobuf_lite',
                 'components.gyp:sessions',
                 'components.gyp:sessions_test_support',
+
+                # Dependencies of url_matcher.
+                'components.gyp:url_matcher',
 
                 # Dependencies of visitedlink
                 'components.gyp:visitedlink_browser',
@@ -134,6 +144,7 @@
                 # TODO(asvitkine): Bring up variations/ unittests on iOS.
                 # TODO(blundell): Bring up json_schema/ unittests on iOS.
                 ['include', '^auto_login_parser/'],
+                ['include', '^autofill/'],
                 ['include', '^dom_distiller/'],
                 ['include', '^precache/'],
                 ['include', '^translate/'],
@@ -189,10 +200,11 @@
             }],
             ['configuration_policy==1', {
               'dependencies': [
+                'components.gyp:policy_component',
                 'components.gyp:policy_component_test_support',
+                'components.gyp:policy_test_support',
               ],
               'sources': [
-                'policy/core/browser/policy_header_io_helper_unittest.cc',
                 'policy/core/common/async_policy_provider_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_client_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_core_unittest.cc',
@@ -206,11 +218,16 @@
                 'policy/core/common/cloud/device_management_service_unittest.cc',
                 'policy/core/common/cloud/external_policy_data_fetcher_unittest.cc',
                 'policy/core/common/cloud/external_policy_data_updater_unittest.cc',
+                'policy/core/common/cloud/policy_header_io_helper_unittest.cc',
+                'policy/core/common/cloud/policy_header_service_unittest.cc',
                 'policy/core/common/cloud/rate_limiter_unittest.cc',
                 'policy/core/common/cloud/resource_cache_unittest.cc',
+                'policy/core/common/cloud/user_cloud_policy_manager_unittest.cc',
+                'policy/core/common/cloud/user_cloud_policy_store_unittest.cc',
                 'policy/core/common/cloud/user_info_fetcher_unittest.cc',
                 'policy/core/common/config_dir_policy_loader_unittest.cc',
                 'policy/core/common/forwarding_policy_provider_unittest.cc',
+                'policy/core/common/generate_policy_source_unittest.cc',
                 'policy/core/common/policy_bundle_unittest.cc',
                 'policy/core/common/policy_loader_mac_unittest.cc',
                 'policy/core/common/policy_loader_win_unittest.cc',
@@ -234,6 +251,12 @@
                     'policy/core/common/cloud/external_policy_data_updater_unittest.cc',
                     'policy/core/common/cloud/resource_cache_unittest.cc',
                     'policy/core/common/config_dir_policy_loader_unittest.cc',
+                  ],
+                }],
+                ['chromeos==1', {
+                  'sources!': [
+                    'policy/core/common/cloud/user_cloud_policy_manager_unittest.cc',
+                    'policy/core/common/cloud/user_cloud_policy_store_unittest.cc',
                   ],
                 }],
               ],

@@ -36,15 +36,22 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_provider.h"
+#include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_source.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/user_metrics.h"
+#include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "media/audio/sounds/sounds_manager.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -133,9 +140,9 @@ class ScreenLockObserver : public chromeos::SessionManagerClient::Observer,
   DISALLOW_COPY_AND_ASSIGN(ScreenLockObserver);
 };
 
-void PlaySound(media::SoundsManager::Sound sound) {
+void PlaySound(int sound_key) {
   if (chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled())
-    media::SoundsManager::Get()->Play(sound);
+    media::SoundsManager::Get()->Play(sound_key);
 }
 
 static base::LazyInstance<ScreenLockObserver> g_screen_lock_observer =
@@ -161,15 +168,31 @@ ScreenLocker::ScreenLocker(const UserList& users)
   DCHECK(!screen_locker_);
   screen_locker_ = this;
 
-  ash::Shell::GetInstance()->lock_state_controller()->
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  media::SoundsManager* manager = media::SoundsManager::Get();
+  manager->Initialize(SOUND_LOCK,
+                      bundle.GetRawDataResource(IDR_SOUND_LOCK_WAV));
+  manager->Initialize(SOUND_UNLOCK,
+                      bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV));
+
+  ash::Shell::GetInstance()->
+      lock_state_controller()->
       SetLockScreenDisplayedCallback(
-          base::Bind(&PlaySound, media::SoundsManager::SOUND_LOCK));
+          base::Bind(&PlaySound, static_cast<int>(chromeos::SOUND_LOCK)));
 }
 
 void ScreenLocker::Init() {
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   delegate_.reset(new WebUIScreenLocker(this));
   delegate_->LockScreen();
+
+  // Ownership of |icon_image_source| is passed.
+  screenlock_icon_provider_.reset(new ScreenlockIconProvider);
+  ScreenlockIconSource* screenlock_icon_source =
+      new ScreenlockIconSource(screenlock_icon_provider_->AsWeakPtr());
+  content::URLDataSource::Add(
+      Profile::FromWebUI(GetAssociatedWebUI()),
+      screenlock_icon_source);
 }
 
 void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
@@ -204,25 +227,6 @@ void ScreenLocker::OnLoginSuccess(const UserContext& user_context) {
     base::TimeDelta delta = base::Time::Now() - authentication_start_time_;
     VLOG(1) << "Authentication success: " << delta.InSecondsF() << " second(s)";
     UMA_HISTOGRAM_TIMES("ScreenLocker.AuthenticationSuccessTime", delta);
-  }
-
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
-    // TODO(dzhioev): It seems like this branch never executed and should be
-    // removed before multi-profile enabling.
-    Profile* profile = ProfileManager::GetDefaultProfile();
-    if (profile && !user_context.password.empty()) {
-      // We have a non-empty password, so notify listeners (such as the sync
-      // engine).
-      SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
-      DCHECK(signin);
-      GoogleServiceSigninSuccessDetails details(
-          signin->GetAuthenticatedUsername(),
-          user_context.password);
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-          content::Source<Profile>(profile),
-          content::Details<const GoogleServiceSigninSuccessDetails>(&details));
-    }
   }
 
   if (const User* user = UserManager::Get()->FindUser(user_context.username)) {
@@ -310,6 +314,19 @@ void ScreenLocker::ShowBannerMessage(const std::string& message) {
   delegate_->ShowBannerMessage(message);
 }
 
+void ScreenLocker::ShowUserPodButton(const std::string& username,
+                                     const gfx::Image& icon,
+                                     const base::Closure& click_callback) {
+  if (!locked_)
+    return;
+
+  screenlock_icon_provider_->AddIcon(username, icon);
+  delegate_->ShowUserPodButton(
+      username,
+      ScreenlockIconSource::GetIconURLForUser(username),
+      click_callback);
+}
+
 void ScreenLocker::ShowErrorMessage(int error_msg_id,
                                     HelpAppLauncher::HelpTopic help_topic_id,
                                     bool sign_out_only) {
@@ -383,7 +400,7 @@ void ScreenLocker::ScheduleDeletion() {
     return;
   VLOG(1) << "Deleting ScreenLocker " << screen_locker_;
 
-  PlaySound(media::SoundsManager::SOUND_UNLOCK);
+  PlaySound(SOUND_UNLOCK);
 
   delete screen_locker_;
   screen_locker_ = NULL;

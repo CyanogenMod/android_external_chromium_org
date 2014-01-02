@@ -65,7 +65,7 @@ ManagePasswordItemView::ManagePasswordItemView(
       new views::Link(GetPasswordDisplayString(password_form_.password_value));
   label_2_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label_2_->set_listener(this);
-  label_2_->set_focusable(false);
+  label_2_->SetFocusable(false);
   label_2_->SetEnabled(false);
   label_2_->SetUnderline(false);
 
@@ -91,7 +91,7 @@ ManagePasswordItemView::ManagePasswordItemView(
 }
 
 // static
-string16 ManagePasswordItemView::GetPasswordDisplayString(
+base::string16 ManagePasswordItemView::GetPasswordDisplayString(
     const base::string16& password) {
   const wchar_t kPasswordBullet = 0x2022;
   const size_t kMaxPasswordChar = 22;

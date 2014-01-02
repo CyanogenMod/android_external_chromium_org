@@ -200,10 +200,10 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
   // display names using ICU comparator, but doing it is hard, thus we'll
   // use an auxiliary vector to achieve the same result.
   typedef std::pair<std::string, base::string16> LanguagePair;
-  typedef std::map<string16, LanguagePair> LanguageMap;
+  typedef std::map<base::string16, LanguagePair> LanguageMap;
   LanguageMap language_map;
   // The auxiliary vector mentioned above.
-  std::vector<string16> display_names;
+  std::vector<base::string16> display_names;
 
   // Build the list of display names, and build the language map.
   for (std::set<std::string>::const_iterator iter = language_codes.begin();
@@ -311,7 +311,7 @@ base::ListValue*
   return ime_ids_list.release();
 }
 
-string16 CrosLanguageOptionsHandler::GetProductName() {
+base::string16 CrosLanguageOptionsHandler::GetProductName() {
   return l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME);
 }
 

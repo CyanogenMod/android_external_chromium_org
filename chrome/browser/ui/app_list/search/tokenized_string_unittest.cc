@@ -12,7 +12,7 @@ namespace test {
 
 namespace {
 
-string16 GetContent(const TokenizedString& tokenized) {
+base::string16 GetContent(const TokenizedString& tokenized) {
   const TokenizedString::Tokens& tokens = tokenized.tokens();
   const TokenizedString::Mappings& mappings = tokenized.mappings();
 
@@ -31,7 +31,7 @@ string16 GetContent(const TokenizedString& tokenized) {
 TEST(TokenizedStringTest, Empty) {
   base::string16 empty;
   TokenizedString tokens(empty);
-  EXPECT_EQ(string16(), GetContent(tokens));
+  EXPECT_EQ(base::string16(), GetContent(tokens));
 }
 
 TEST(TokenizedStringTest, Basic) {

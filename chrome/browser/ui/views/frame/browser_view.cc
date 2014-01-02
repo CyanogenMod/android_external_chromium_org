@@ -1050,7 +1050,10 @@ void BrowserView::SetFocusToLocationBar(bool select_all) {
   LocationBarView* location_bar = GetLocationBarView();
   if (location_bar->omnibox_view()->IsFocusable()) {
     // Location bar got focus.
-    location_bar->FocusLocation(select_all);
+    if (chrome::ShouldDisplayOriginChip())
+      location_bar->omnibox_view()->ShowURL();
+    else
+      location_bar->FocusLocation(select_all);
   } else {
     // If none of location bar got focus, then clear focus.
     views::FocusManager* focus_manager = GetFocusManager();
@@ -1534,11 +1537,11 @@ bool BrowserView::CanActivate() const {
   return false;
 }
 
-string16 BrowserView::GetWindowTitle() const {
+base::string16 BrowserView::GetWindowTitle() const {
   return browser_->GetWindowTitleForCurrentTab();
 }
 
-string16 BrowserView::GetAccessibleWindowTitle() const {
+base::string16 BrowserView::GetAccessibleWindowTitle() const {
   if (IsOffTheRecord()) {
     return l10n_util::GetStringFUTF16(
         IDS_ACCESSIBLE_INCOGNITO_WINDOW_TITLE_FORMAT,
@@ -1819,7 +1822,7 @@ void BrowserView::Layout() {
   views::View::Layout();
 
   // TODO(jamescook): Why was this in the middle of layout code?
-  toolbar_->location_bar()->omnibox_view()->set_focusable(IsToolbarVisible());
+  toolbar_->location_bar()->omnibox_view()->SetFocusable(IsToolbarVisible());
 
   // The status bubble position requires that all other layout finish first.
   LayoutStatusBubble();

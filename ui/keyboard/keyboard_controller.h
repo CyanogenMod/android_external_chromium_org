@@ -62,9 +62,16 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // call is made by the system rather than initiated by the user.
   void HideKeyboard(HideReason reason);
 
+  // Notifies the keyboard observer for keyboard bounds changed.
+  void NotifyKeyboardBoundsChanging(const gfx::Rect& new_bounds);
+
   // Management of the observer list.
   virtual void AddObserver(KeyboardControllerObserver* observer);
   virtual void RemoveObserver(KeyboardControllerObserver* observer);
+
+  KeyboardControllerProxy* proxy() { return proxy_.get(); }
+
+  void set_lock_keyboard(bool lock) { lock_keyboard_ = lock; }
 
  private:
   // For access to Observer methods for simulation.
@@ -93,6 +100,7 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   scoped_ptr<aura::Window> container_;
   ui::InputMethod* input_method_;
   bool keyboard_visible_;
+  bool lock_keyboard_;
 
   ObserverList<KeyboardControllerObserver> observer_list_;
 

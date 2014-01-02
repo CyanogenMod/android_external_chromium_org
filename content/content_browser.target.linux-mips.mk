@@ -51,6 +51,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/browser_message_filter.cc \
 	content/public/browser/browser_plugin_guest_delegate.cc \
 	content/public/browser/content_browser_client.cc \
+	content/public/browser/desktop_media_id.cc \
 	content/public/browser/download_manager_delegate.cc \
 	content/public/browser/download_save_info.cc \
 	content/public/browser/download_url_parameters.cc \
@@ -389,6 +390,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_provider_host.cc \
 	content/browser/service_worker/service_worker_register_job.cc \
 	content/browser/service_worker/service_worker_registration.cc \
+	content/browser/service_worker/service_worker_registration_status.cc \
 	content/browser/service_worker/service_worker_storage.cc \
 	content/browser/service_worker/service_worker_version.cc \
 	content/browser/signed_certificate_timestamp_store_impl.cc \
@@ -501,6 +503,7 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -647,6 +650,7 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

@@ -167,12 +167,12 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   void OnJobComplete(Job* job, int rv);
   bool HasActiveSession(const HostPortProxyPair& host_port_proxy_pair);
   bool HasActiveJob(const HostPortProxyPair& host_port_proxy_pair);
-  QuicClientSession* CreateSession(
-      const HostPortProxyPair& host_port_proxy_pair,
-      bool is_https,
-      CertVerifier* cert_verifier,
-      const AddressList& address_list,
-      const BoundNetLog& net_log);
+  int CreateSession(const HostPortProxyPair& host_port_proxy_pair,
+                    bool is_https,
+                    CertVerifier* cert_verifier,
+                    const AddressList& address_list,
+                    const BoundNetLog& net_log,
+                    QuicClientSession** session);
   void ActivateSession(const HostPortProxyPair& host_port_proxy_pair,
                        QuicClientSession* session);
 
@@ -229,6 +229,14 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   RequestMap active_requests_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
+
+  // Each profile will (probably) have a unique port_seed_ value.  This value is
+  // used to help seed a pseudo-random number generator (PortSuggester) so that
+  // we consistently (within this profile) suggest the same ephemeral port when
+  // we re-connect to any given server/port.  The differences between profiles
+  // (probablistically) prevent two profiles from colliding in their ephemeral
+  // port requests.
+  uint64 port_seed_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStreamFactory);
 };

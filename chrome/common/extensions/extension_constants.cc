@@ -126,8 +126,7 @@ const char kTipsAndTricksAppId[] = "hkhhlkdconhgemhegnplaldnmnmkaemd";
 const char kAppLaunchHistogram[] = "Extensions.AppLaunch";
 const char kPlatformAppLaunchHistogram[] = "Apps.AppLaunch";
 #if defined(OS_CHROMEOS)
-const char kChromeVoxExtensionPath[] =
-    "/usr/share/chromeos-assets/accessibility/extensions/access_chromevox";
+const char kChromeVoxExtensionPath[] = "chromeos/chromevox";
 // The extension id for the built-in component extension.
 const char kChromeVoxExtensionId[] =
     "mndnfokpggljbaajbnioimlmbfngpief";
@@ -139,6 +138,8 @@ const char kSpeechSynthesisExtensionPath[] =
     "/usr/share/chromeos-assets/speech_synthesis/patts";
 const char kSpeechSynthesisExtensionId[] =
     "gjjabgpgjpampikjhjpfhneeoapjbjaf";
+const char kHighQuality_en_US_ExtensionId[] =
+    "efdojdlmjknacnljjdedapanceanigkh";
 const char kWallpaperManagerId[] = "obklkkbkpaoaejdabbfldmcfplpdgolj";
 const char kFirstRunDialogId[] = "jdgcneonijmofocbhmijhacgchbihela";
 #else

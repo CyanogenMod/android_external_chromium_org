@@ -666,8 +666,12 @@ base::string16 OmniboxViewViews::GetGrayTextAutocompletion() const {
 #endif
 }
 
-int OmniboxViewViews::TextWidth() const {
+int OmniboxViewViews::GetTextWidth() const {
   return native_wrapper_->GetWidthNeededForText();
+}
+
+int OmniboxViewViews::GetWidth() const {
+  return location_bar_view_->width();
 }
 
 bool OmniboxViewViews::IsImeComposing() const {
@@ -681,10 +685,6 @@ bool OmniboxViewViews::IsImeShowingPopup() const {
   const views::InputMethod* input_method = this->GetInputMethod();
   return input_method && input_method->IsCandidatePopupOpen();
 #endif
-}
-
-int OmniboxViewViews::GetMaxEditWidth(int entry_width) const {
-  return entry_width;
 }
 
 int OmniboxViewViews::OnPerformDrop(const ui::DropTargetEvent& event) {

@@ -60,7 +60,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.destinationStore_ = new print_preview.DestinationStore(
-        this.nativeLayer_, this.appState_);
+        this.nativeLayer_, this.appState_, this.metrics_);
 
     /**
      * Storage of the print ticket used to create the print job.
@@ -413,6 +413,7 @@ cr.define('print_preview', function() {
         this.uiState_ = PrintPreview.UiState_.PRINTING;
       }
       this.setIsEnabled_(false);
+      this.printHeader_.isCancelButtonEnabled = true;
       if (this.printIfReady_() &&
           ((this.destinationStore_.selectedDestination.isLocal &&
             !this.destinationStore_.selectedDestination.isPrivet &&

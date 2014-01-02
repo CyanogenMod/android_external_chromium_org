@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/first_run/first_run_controller.h"
 
-#include "ash/first_run/first_run_helper.h"
 #include "ash/shell.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -62,12 +61,16 @@ void FirstRunController::Init() {
   user_profile_ = user_manager->GetProfileByUser(user_manager->GetActiveUser());
 
   shell_helper_.reset(ash::Shell::GetInstance()->CreateFirstRunHelper());
+  shell_helper_->AddObserver(this);
 
   FirstRunView* view = new FirstRunView();
   view->Init(user_profile_);
   shell_helper_->GetOverlayWidget()->SetContentsView(view);
   actor_ = view->GetActor();
   actor_->set_delegate(this);
+  shell_helper_->GetOverlayWidget()->Show();
+  view->RequestFocus();
+
   if (actor_->IsInitialized())
     OnActorInitialized();
 }
@@ -79,30 +82,39 @@ void FirstRunController::Finalize() {
   if (actor_)
     actor_->set_delegate(NULL);
   actor_ = NULL;
+  shell_helper_->RemoveObserver(this);
   shell_helper_.reset();
 }
 
 void FirstRunController::OnActorInitialized() {
   RegisterSteps();
-  shell_helper_->GetOverlayWidget()->Show();
-  actor_->SetBackgroundVisible(true);
   ShowNextStep();
 }
 
 void FirstRunController::OnNextButtonClicked(const std::string& step_name) {
   DCHECK(GetCurrentStep() && GetCurrentStep()->name() == step_name);
-  ShowNextStep();
+  GetCurrentStep()->OnBeforeHide();
+  actor_->HideCurrentStep();
 }
 
 void FirstRunController::OnHelpButtonClicked() {
-  Stop();
-  chrome::ShowHelpForProfile(
-      user_profile_,
-      chrome::HOST_DESKTOP_TYPE_ASH,
-      chrome::HELP_SOURCE_MENU);
+  on_actor_finalized_ = base::Bind(chrome::ShowHelpForProfile,
+                                   user_profile_,
+                                   chrome::HOST_DESKTOP_TYPE_ASH,
+                                   chrome::HELP_SOURCE_MENU);
+  actor_->Finalize();
 }
 
-void FirstRunController::OnCloseButtonClicked() {
+void FirstRunController::OnStepHidden(const std::string& step_name) {
+  DCHECK(GetCurrentStep() && GetCurrentStep()->name() == step_name);
+  GetCurrentStep()->OnAfterHide();
+  if (!actor_->IsFinalizing())
+    ShowNextStep();
+}
+
+void FirstRunController::OnActorFinalized() {
+  if (!on_actor_finalized_.is_null())
+    on_actor_finalized_.Run();
   Stop();
 }
 
@@ -111,6 +123,10 @@ void FirstRunController::OnActorDestroyed() {
   // actor's lifetime.
   NOTREACHED() <<
     "FirstRunActor destroyed before FirstRunController::Finalize.";
+}
+
+void FirstRunController::OnCancelled() {
+  Stop();
 }
 
 void FirstRunController::RegisterSteps() {
@@ -123,13 +139,11 @@ void FirstRunController::RegisterSteps() {
 }
 
 void FirstRunController::ShowNextStep() {
-  if (GetCurrentStep())
-    GetCurrentStep()->OnBeforeHide();
   AdvanceStep();
   if (GetCurrentStep())
     GetCurrentStep()->Show();
   else
-    Stop();
+    actor_->Finalize();
 }
 
 void FirstRunController::AdvanceStep() {

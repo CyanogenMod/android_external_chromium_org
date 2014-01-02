@@ -16,7 +16,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
-#include "content/child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/child/indexed_db/webidbfactory_impl.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
@@ -68,6 +68,7 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "ui/gfx/color_profile.h"
 #include "url/gurl.h"
 #include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/common/quota/quota_types.h"
@@ -221,7 +222,7 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
     thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
     quota_message_filter_ = ChildThread::current()->quota_message_filter();
     blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
-    web_idb_factory_.reset(new RendererWebIDBFactoryImpl(thread_safe_sender_));
+    web_idb_factory_.reset(new WebIDBFactoryImpl(thread_safe_sender_));
     web_database_observer_impl_.reset(
         new WebDatabaseObserverImpl(sync_message_filter_));
   }
@@ -725,7 +726,8 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
   media::AudioParameters params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
       layout, input_channels,
-      static_cast<int>(sample_rate), 16, buffer_size);
+      static_cast<int>(sample_rate), 16, buffer_size,
+      media::AudioParameters::NO_EFFECTS);
 
   return new RendererWebAudioDeviceImpl(params, callback, session_id);
 }
@@ -828,10 +830,17 @@ RendererWebKitPlatformSupportImpl::signedPublicKeyAndChallengeString(
 
 void RendererWebKitPlatformSupportImpl::screenColorProfile(
     WebVector<char>* to_profile) {
+#if defined(OS_WIN)
+  // On Windows screen color profile is only available in the browser.
   std::vector<char> profile;
   RenderThread::Get()->Send(
       new ViewHostMsg_GetMonitorColorProfile(&profile));
   *to_profile = profile;
+#else
+  // On other platforms color profile can be obtained directly.
+  gfx::ColorProfile profile;
+  *to_profile = profile.profile();
+#endif
 }
 
 //------------------------------------------------------------------------------

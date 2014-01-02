@@ -131,7 +131,7 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
 
   virtual void ShowHelp() OVERRIDE {
     chrome::ShowHelpForProfile(
-        ProfileManager::GetDefaultProfileOrOffTheRecord(),
+        ProfileManager::GetLastUsedProfile(),
         chrome::HOST_DESKTOP_TYPE_ASH,
         chrome::HELP_SOURCE_MENU);
   }
@@ -152,6 +152,13 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
   }
 
   virtual void ShowUserLogin() OVERRIDE {
+  }
+
+  virtual void ShowSpringChargerReplacementDialog() OVERRIDE {
+  }
+
+  virtual bool HasUserConfirmedSafeSpringCharger() OVERRIDE {
+    return false;
   }
 
   virtual void ShutDown() OVERRIDE {

@@ -61,8 +61,8 @@
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "content/public/browser/web_contents.h"
 #endif
 
@@ -179,8 +179,7 @@ scoped_ptr<base::StringValue> DictionaryToJSONString(
     const base::DictionaryValue* dict) {
   std::string json_string;
   base::JSONWriter::WriteWithOptions(dict,
-                                     base::JSONWriter::OPTIONS_DO_NOT_ESCAPE |
-                                         base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                                     base::JSONWriter::OPTIONS_PRETTY_PRINT,
                                      &json_string);
   return make_scoped_ptr(new base::StringValue(json_string));
 }

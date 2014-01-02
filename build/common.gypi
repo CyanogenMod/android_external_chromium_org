@@ -147,6 +147,9 @@
         # Set ARM architecture version.
         'arm_version%': 7,
 
+        # Use aurax11 for clipboard implementation. This is true on linux_aura.
+        'use_clipboard_aurax11%': 0,
+
         # goma settings.
         # 1 to use goma.
         # If no gomadir is set, it uses the default gomadir.
@@ -236,6 +239,7 @@
       'use_cras%': '<(use_cras)',
       'use_ozone%': '<(use_ozone)',
       'use_ozone_evdev%': '<(use_ozone_evdev)',
+      'use_clipboard_aurax11%': '<(use_clipboard_aurax11)',
       'embedded%': '<(embedded)',
       'use_openssl%': '<(use_openssl)',
       'enable_viewport%': '<(enable_viewport)',
@@ -548,6 +552,10 @@
           'use_x11%': 1,
         }],
 
+        ['OS=="linux" and use_aura==1 and chromeos==0', {
+          'use_clipboard_aurax11%': 1,
+        }],
+
         # Flags to use glib.
         ['OS=="win" or OS=="mac" or OS=="ios" or OS=="android" or embedded==1', {
           'use_glib%': 0,
@@ -630,7 +638,7 @@
           'proprietary_codecs%': 0,
         }],
 
-        ['OS=="mac"', {
+        ['OS=="mac" or OS=="ios"', {
           'native_discardable_memory%': 1,
           'native_memory_pressure_signals%': 1,
         }],
@@ -888,6 +896,7 @@
     'use_cairo%': '<(use_cairo)',
     'use_ozone%': '<(use_ozone)',
     'use_ozone_evdev%': '<(use_ozone_evdev)',
+    'use_clipboard_aurax11%': '<(use_clipboard_aurax11)',
     'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
     'desktop_linux%': '<(desktop_linux)',
     'use_x11%': '<(use_x11)',
@@ -1113,13 +1122,6 @@
     'linux_use_tcmalloc%': 1,
     'android_use_tcmalloc%': 0,
 
-    # Disable TCMalloc's heapchecker.
-    'linux_use_heapchecker%': 0,
-
-    # Disable shadow stack keeping used by heapcheck to unwind the stacks
-    # better.
-    'linux_keep_shadow_stacks%': 0,
-
     # Set to 1 to link against libgnome-keyring instead of using dlopen().
     'linux_link_gnome_keyring%': 0,
     # Set to 1 to link against gsettings APIs instead of using dlopen().
@@ -1248,6 +1250,9 @@
     # Whether or not to use "icu*.dat" file for ICU data.
     # Do not use it by default.
     'icu_use_data_file_flag%': 0,
+
+    # Force disable libstdc++ debug mode.
+    'disable_glibcxx_debug%': 0,
 
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
@@ -1857,8 +1862,8 @@
       ['arm_version==6 and android_webview_build==0', {
         'arm_arch%': 'armv6',
         'arm_tune%': '',
-        'arm_fpu%': '',
-        'arm_float_abi%': 'soft',
+        'arm_fpu%': 'vfp',
+        'arm_float_abi%': 'softfp',
         'arm_thumb%': 0,
       }],
       ['arm_version==7 and android_webview_build==0', {
@@ -1913,11 +1918,8 @@
       }],
     ],
 
-
-    # The path to the ANGLE library. TODO(apatrick): This is to help
-    # transition to a new version of ANGLE at a new location. After the
-    # transition is complete, this can be removed.
-    'angle_path': '<(DEPTH)/third_party/angle_dx11',
+    # The path to the ANGLE library.
+    'angle_path': '<(DEPTH)/third_party/angle',
 
     # List of default apps to install in new profiles.  The first list contains
     # the source files as found in svn.  The second list, used only for linux,
@@ -2133,6 +2135,9 @@
       ['use_x11==1', {
         'defines': ['USE_X11=1'],
       }],
+      ['use_clipboard_aurax11==1', {
+        'defines': ['USE_CLIPBOARD_AURAX11=1'],
+      }],
       ['enable_one_click_signin==1', {
         'defines': ['ENABLE_ONE_CLICK_SIGNIN'],
       }],
@@ -2145,7 +2150,10 @@
         'defines': ['OS_CHROMEOS=1'],
       }],
       ['google_tv==1', {
-        'defines': ['GOOGLE_TV=1'],
+        'defines': [
+          'GOOGLE_TV=1',
+          'VIDEO_HOLE=1',
+        ],
       }],
       ['use_xi2_mt!=0 and use_x11==1', {
         'defines': ['USE_XI2_MT=<(use_xi2_mt)'],
@@ -2737,7 +2745,7 @@
               }],
             ],
           }],
-          ['OS=="linux" and target_arch!="ia32"', {
+          ['OS=="linux" and target_arch!="ia32" and disable_glibcxx_debug==0', {
             # Enable libstdc++ debugging facilities to help catch problems
             # early, see http://crbug.com/65151 .
             # TODO(phajdan.jr): Should we enable this for all of POSIX?
@@ -3552,31 +3560,8 @@
               }],
             ],
           }],
-          ['linux_use_heapchecker==1', {
-            'variables': {'linux_use_tcmalloc%': 1},
-            'defines': [
-                'USE_HEAPCHECKER',
-                'MEMORY_TOOL_REPLACES_ALLOCATOR',
-            ],
-            'conditions': [
-              ['component=="shared_library"', {
-                # See crbug.com/112389
-                # TODO(glider): replace with --dynamic-list or something
-                'ldflags': ['-rdynamic'],
-              }],
-            ],
-          }],
           ['linux_use_tcmalloc==0 and android_use_tcmalloc==0', {
             'defines': ['NO_TCMALLOC'],
-          }],
-          ['linux_keep_shadow_stacks==1', {
-            'defines': ['KEEP_SHADOW_STACKS'],
-            'cflags': [
-              '-finstrument-functions',
-              # Allow mmx intrinsics to inline, so that the compiler can expand
-              # the intrinsics.
-              '-finstrument-functions-exclude-file-list=mmintrin.h',
-            ],
           }],
           ['linux_use_gold_flags==1', {
             'target_conditions': [

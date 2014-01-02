@@ -7,6 +7,7 @@
 
 #include <string>
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/extension_message_bubble_controller.h"
 #include "extensions/common/extension.h"
 
 class Browser;
@@ -16,7 +17,10 @@ namespace extensions {
 
 class SuspiciousExtensionBubble;
 
-class SuspiciousExtensionBubbleController : public ProfileKeyedAPI {
+class SuspiciousExtensionBubbleController
+    : public ProfileKeyedAPI,
+      public ExtensionMessageBubbleController,
+      public ExtensionMessageBubbleController::Delegate {
  public:
   explicit SuspiciousExtensionBubbleController(Profile* profile);
   virtual ~SuspiciousExtensionBubbleController();
@@ -25,32 +29,32 @@ class SuspiciousExtensionBubbleController : public ProfileKeyedAPI {
   static ProfileKeyedAPIFactory<
       SuspiciousExtensionBubbleController>* GetFactoryInstance();
 
-  // Convenience method to get the SuspiciousExtensionBubbleController for a
-  // profile.
+  // Convenience method to get the SuspiciousExtensionBubbleController
+  // for a profile.
   static SuspiciousExtensionBubbleController* Get(Profile* profile);
 
-  // Check for suspicious extensions, returns true if found.
-  bool HasSuspiciousExtensions();
-
-  // Sets up the callbacks and shows the bubble.
-  void Show(SuspiciousExtensionBubble* bubble);
-
-  // Text for various UI labels shown in the bubble.
-  base::string16 GetTitle();
-  base::string16 GetMessageBody();
-  base::string16 GetOverflowText(const base::string16& overflow_count);
-  base::string16 GetLearnMoreLabel();
-  base::string16 GetDismissButtonLabel();
-
-  // Returns a vector of names of suspicious extensions found.
-  std::vector<string16> GetSuspiciousExtensionNames();
-
-  // Callbacks from bubble. Declared virtual for testing purposes.
-  virtual void OnBubbleDismiss();
-  virtual void OnLinkClicked();
-
+  // ExtensionMessageBubbleController::Delegate methods.
+  virtual bool ShouldIncludeExtension(const std::string& extension_id) OVERRIDE;
+  virtual void AcknowledgeExtension(
+      const std::string& extension_id,
+      ExtensionMessageBubbleController::BubbleAction user_action) OVERRIDE;
+  virtual void PerformAction(const ExtensionIdList& list) OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetMessageBody() const OVERRIDE;
+  virtual base::string16 GetOverflowText(
+      const string16& overflow_count) const OVERRIDE;
+  virtual base::string16 GetLearnMoreLabel() const OVERRIDE;
+  virtual GURL GetLearnMoreUrl() const OVERRIDE;
+  virtual base::string16 GetActionButtonLabel() const OVERRIDE;
+  virtual base::string16 GetDismissButtonLabel() const OVERRIDE;
+  virtual bool ShouldShowExtensionList() const OVERRIDE;
+  virtual std::vector<string16> GetExtensions() OVERRIDE;
+  virtual void LogExtensionCount(size_t count) OVERRIDE;
+  virtual void LogAction(
+      ExtensionMessageBubbleController::BubbleAction action) OVERRIDE;
  private:
-  friend class ProfileKeyedAPIFactory<SuspiciousExtensionBubbleController>;
+  friend class ProfileKeyedAPIFactory<
+      SuspiciousExtensionBubbleController>;
 
   // ProfileKeyedAPI implementation.
   static const char* service_name() {
@@ -58,23 +62,11 @@ class SuspiciousExtensionBubbleController : public ProfileKeyedAPI {
   }
   static const bool kServiceRedirectedInIncognito = true;
 
-  // Mark all extensions found as acknowledged (don't need to warn about them
-  // again).
-  void AcknowledgeWipeout();
-
-  // The list of suspicious extensions found. Reset at the beginning of each
-  // call to FoundSuspiciousExtensions.
-  ExtensionIdList suspicious_extensions_;
-
   // Our extension service. Weak, not owned by us.
   ExtensionService* service_;
 
   // A weak pointer to the profile we are associated with. Not owned by us.
   Profile* profile_;
-
-  // This object only checks once for suspicious extensions because the dataset
-  // doesn't change after startup.
-  bool has_notified_;
 
   DISALLOW_COPY_AND_ASSIGN(SuspiciousExtensionBubbleController);
 };

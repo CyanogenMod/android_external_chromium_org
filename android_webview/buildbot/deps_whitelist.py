@@ -27,7 +27,7 @@ class DepsWhitelist(object):
     # team and are in the process of having the required branches being created
     # in the Android tree.
     self._compile_but_not_snapshot_dependencies = [
-      'third_party/mesa/src',
+      'third_party/brotli/src',
     ]
 
     # Dependencies that need to be merged into the Android tree.
@@ -36,7 +36,6 @@ class DepsWhitelist(object):
       'testing/gtest',
       'third_party/WebKit',
       'third_party/angle',
-      'third_party/angle_dx11',
       ('third_party/eyesfree/src/android/java/src/com/googlecode/eyesfree/'
        'braille'),
       'third_party/freetype',
@@ -45,6 +44,7 @@ class DepsWhitelist(object):
       'third_party/libjingle/source/talk',
       'third_party/libphonenumber/src/phonenumbers',
       'third_party/libphonenumber/src/resources',
+      'third_party/mesa/src',
       'third_party/openssl',
       'third_party/opus/src',
       'third_party/ots',

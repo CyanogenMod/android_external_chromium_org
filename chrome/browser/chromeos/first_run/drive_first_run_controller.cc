@@ -17,7 +17,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -43,14 +42,15 @@ namespace chromeos {
 
 namespace {
 
-// The initial time to wait in seconds before starting the opt-in.
+// The initial time to wait in seconds before enabling offline mode.
 int kInitialDelaySeconds = 180;
 
 // Time to wait for Drive app background page to come up before giving up.
 int kWebContentsTimeoutSeconds = 15;
 
 // Google Drive offline opt-in endpoint.
-const char kDriveOfflineEndpointUrl[] = "https://drive.google.com/#offline";
+const char kDriveOfflineEndpointUrl[] =
+    "https://docs.google.com/offline/autoenable";
 
 // Google Drive app id.
 const char kDriveHostedAppId[] = "apdfllckaahabafndbhieahigkjlhalf";
@@ -318,8 +318,8 @@ void DriveWebContentsManager::Observe(
 ////////////////////////////////////////////////////////////////////////////////
 // DriveFirstRunController
 
-DriveFirstRunController::DriveFirstRunController()
-    : profile_(ProfileManager::GetDefaultProfile()),
+DriveFirstRunController::DriveFirstRunController(Profile* profile)
+    : profile_(profile),
       started_(false),
       initial_delay_secs_(kInitialDelaySeconds),
       web_contents_timeout_secs_(kWebContentsTimeoutSeconds),

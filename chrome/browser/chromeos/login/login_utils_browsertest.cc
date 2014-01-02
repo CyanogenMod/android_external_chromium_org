@@ -23,6 +23,7 @@
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
@@ -361,7 +362,6 @@ class LoginUtilsTest : public testing::Test,
     // we need to trigger creation of Profile-related services.
     ChromeBrowserMainExtraPartsProfiles::
         EnsureBrowserContextKeyedServiceFactoriesBuilt();
-    ProfileManager::AllowGetDefaultProfile();
 
     DeviceSettingsTestHelper device_settings_test_helper;
     DeviceSettingsService::Get()->SetSessionManager(
@@ -374,7 +374,7 @@ class LoginUtilsTest : public testing::Test,
 
     scoped_refptr<Authenticator> authenticator =
         LoginUtils::Get()->CreateAuthenticator(this);
-    authenticator->CompleteLogin(ProfileManager::GetDefaultProfile(),
+    authenticator->CompleteLogin(ProfileHelper::GetSigninProfile(),
                                  UserContext(username,
                                              "password",
                                              std::string(),
@@ -558,7 +558,7 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
   base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
       RLZTracker::CHROME_HOME_PAGE, &rlz_string));
-  EXPECT_EQ(string16(), rlz_string);
+  EXPECT_EQ(base::string16(), rlz_string);
 }
 #endif
 

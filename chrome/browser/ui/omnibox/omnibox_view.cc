@@ -16,7 +16,7 @@
 #include "ui/base/clipboard/clipboard.h"
 
 // static
-string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
+base::string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
   const base::string16 kJsPrefix(ASCIIToUTF16(content::kJavaScriptScheme) +
                            ASCIIToUTF16(":"));
   base::string16 out(text);
@@ -26,7 +26,7 @@ string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
 }
 
 // static
-string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
+base::string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
   // Check for non-newline whitespace; if found, collapse whitespace runs down
   // to single spaces.
   // TODO(shess): It may also make sense to ignore leading or
@@ -46,7 +46,7 @@ string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
 }
 
 // static
-string16 OmniboxView::GetClipboardText() {
+base::string16 OmniboxView::GetClipboardText() {
   // Try text format.
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
   if (clipboard->IsFormatAvailable(ui::Clipboard::GetPlainTextWFormatType(),
@@ -115,6 +115,14 @@ void OmniboxView::SetUserText(const base::string16& text,
                            true);
 }
 
+void OmniboxView::ShowURL() {
+  SetFocus();
+  controller_->GetToolbarModel()->set_url_replacement_enabled(false);
+  model_->UpdatePermanentText();
+  RevertWithoutResettingSearchTermReplacement();
+  SelectAll(true);
+}
+
 void OmniboxView::RevertAll() {
   controller_->GetToolbarModel()->set_url_replacement_enabled(true);
   RevertWithoutResettingSearchTermReplacement();
@@ -159,11 +167,4 @@ void OmniboxView::TextChanged() {
   EmphasizeURLComponents();
   if (model_.get())
     model_->OnChanged();
-}
-
-void OmniboxView::ShowURL() {
-  controller_->GetToolbarModel()->set_url_replacement_enabled(false);
-  model_->UpdatePermanentText();
-  RevertWithoutResettingSearchTermReplacement();
-  SelectAll(true);
 }

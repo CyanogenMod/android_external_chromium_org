@@ -33,7 +33,9 @@
       'sources': [
         'src/address_field.cc',
         'src/address_field_util.cc',
+        'src/address_problem.cc',
         'src/address_ui.cc',
+        'src/address_validator.cc',
         'src/localization.cc',
         'src/lookup_key_util.cc',
         'src/region_data_constants.cc',
@@ -42,8 +44,12 @@
         'src/rule_retriever.cc',
         'src/util/json.cc',
         'src/util/md5.cc',
+        'src/util/string_split.cc',
         'src/validating_storage.cc',
         'src/validating_util.cc',
+      ],
+      'defines': [
+        'VALIDATION_DATA_URL="https://i18napis.appspot.com/ssl-address/"',
       ],
       'dependencies': [
         'grit.gyp:generated_messages',
@@ -69,6 +75,7 @@
         'test/util/json_test.cc',
         'test/util/md5_unittest.cc',
         'test/util/scoped_ptr_unittest.cc',
+        'test/util/string_split_unittest.cc',
         'test/validating_storage_test.cc',
         'test/validating_util_test.cc',
       ],

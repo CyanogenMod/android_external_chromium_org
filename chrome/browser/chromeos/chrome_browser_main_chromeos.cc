@@ -41,7 +41,6 @@
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_screensaver.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
-#include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
@@ -143,10 +142,8 @@ class StubLogin : public LoginStatusConsumer,
   StubLogin(std::string username, std::string password)
       : profile_prepared_(false) {
     authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
-    Profile* primary_profile = g_browser_process->profile_manager()->
-        GetPrimaryUserProfileOrOffTheRecord();
     authenticator_.get()->AuthenticateToLogin(
-        primary_profile,
+        ProfileHelper::GetSigninProfile(),
         UserContext(username, password, std::string() /* auth_code */));
   }
 
@@ -771,10 +768,6 @@ void ChromeBrowserMainPartsChromeos::PostDestroyThreads() {
 
   // Destroy DeviceSettingsService after g_browser_process.
   DeviceSettingsService::Shutdown();
-}
-
-void ChromeBrowserMainPartsChromeos::SetupPlatformFieldTrials() {
-  default_pinned_apps_field_trial::SetupTrial();
 }
 
 }  //  namespace chromeos

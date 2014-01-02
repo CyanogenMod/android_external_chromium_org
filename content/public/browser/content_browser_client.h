@@ -43,9 +43,6 @@ namespace base {
 class DictionaryValue;
 class FilePath;
 }
-namespace crypto {
-class CryptoModuleBlockingPasswordDelegate;
-}
 
 namespace gfx {
 class ImageSkia;
@@ -605,19 +602,14 @@ class CONTENT_EXPORT ContentBrowserClient {
                                 bool* success) {}
 #endif
 
-#if defined(USE_NSS)
-  // Return a delegate to authenticate and unlock |module|.
-  // This is called on a worker thread.
-  virtual
-      crypto::CryptoModuleBlockingPasswordDelegate* GetCryptoPasswordDelegate(
-          const GURL& url);
-#endif
-
   // Returns true if plugin referred to by the url can use
   // pp::FileIO::RequestOSFileHandle.
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
       content::BrowserContext* browser_context,
       const GURL& url);
+
+  // Returns true if dev channel APIs are available for plugins.
+  virtual bool IsPluginAllowedToUseDevChannelAPIs();
 };
 
 }  // namespace content

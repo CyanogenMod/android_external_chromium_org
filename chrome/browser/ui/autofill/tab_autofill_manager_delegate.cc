@@ -21,7 +21,7 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
-#include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents_view.h"
@@ -46,10 +46,7 @@ TabAutofillManagerDelegate::~TabAutofillManagerDelegate() {
   DCHECK(!popup_controller_);
 }
 
-void TabAutofillManagerDelegate::TabActivated(int reason) {
-  if (reason != TabStripModelObserver::CHANGE_REASON_USER_GESTURE)
-    return;
-
+void TabAutofillManagerDelegate::TabActivated() {
   if (dialog_controller_.get())
     dialog_controller_->TabActivated();
 }
@@ -114,9 +111,9 @@ void TabAutofillManagerDelegate::ShowRequestAutocompleteDialog(
 void TabAutofillManagerDelegate::ShowAutofillPopup(
     const gfx::RectF& element_bounds,
     base::i18n::TextDirection text_direction,
-    const std::vector<string16>& values,
-    const std::vector<string16>& labels,
-    const std::vector<string16>& icons,
+    const std::vector<base::string16>& values,
+    const std::vector<base::string16>& labels,
+    const std::vector<base::string16>& icons,
     const std::vector<int>& identifiers,
     base::WeakPtr<AutofillPopupDelegate> delegate) {
   // Convert element_bounds to be in screen space.

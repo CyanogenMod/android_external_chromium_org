@@ -52,6 +52,8 @@ class MockSearchIPCRouterDelegate : public SearchIPCRouter::Delegate {
   MOCK_METHOD1(OnUndoMostVisitedDeletion, void(const GURL& url));
   MOCK_METHOD0(OnUndoAllMostVisitedDeletions, void());
   MOCK_METHOD1(OnLogEvent, void(NTPLoggingEventType event));
+  MOCK_METHOD2(OnLogImpression, void(int position,
+                                     const base::string16& provider));
   MOCK_METHOD1(PasteIntoOmnibox, void(const base::string16&));
   MOCK_METHOD1(OnChromeIdentityCheck, void(const base::string16& identity));
 };
@@ -348,6 +350,24 @@ TEST_F(SearchIPCRouterTest, IgnoreLogEventMsg) {
       contents->GetRoutingID(),
       contents->GetController().GetVisibleEntry()->GetPageID(),
       NTP_MOUSEOVER));
+  OnMessageReceived(*message);
+}
+
+TEST_F(SearchIPCRouterTest, ProcessLogImpressionMsg) {
+  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
+  SetupMockDelegateAndPolicy();
+  MockSearchIPCRouterPolicy* policy = GetSearchIPCRouterPolicy();
+  EXPECT_CALL(*mock_delegate(),
+              OnLogImpression(3, ASCIIToUTF16("Server"))).Times(1);
+  EXPECT_CALL(*policy, ShouldProcessLogEvent()).Times(1)
+      .WillOnce(testing::Return(true));
+
+  content::WebContents* contents = web_contents();
+  scoped_ptr<IPC::Message> message(new ChromeViewHostMsg_LogImpression(
+      contents->GetRoutingID(),
+      contents->GetController().GetVisibleEntry()->GetPageID(),
+      3,
+      ASCIIToUTF16("Server")));
   OnMessageReceived(*message);
 }
 
@@ -769,7 +789,7 @@ TEST_F(SearchIPCRouterTest, SendSubmitMsg) {
       .WillOnce(testing::Return(true));
 
   process()->sink().ClearMessages();
-  GetSearchIPCRouter().Submit(string16());
+  GetSearchIPCRouter().Submit(base::string16());
   EXPECT_TRUE(MessageWasSent(ChromeViewMsg_SearchBoxSubmit::ID));
 }
 
@@ -781,7 +801,7 @@ TEST_F(SearchIPCRouterTest, DoNotSendSubmitMsg) {
       .WillOnce(testing::Return(false));
 
   process()->sink().ClearMessages();
-  GetSearchIPCRouter().Submit(string16());
+  GetSearchIPCRouter().Submit(base::string16());
   EXPECT_FALSE(MessageWasSent(ChromeViewMsg_SearchBoxSubmit::ID));
 }
 

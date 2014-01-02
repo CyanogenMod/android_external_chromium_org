@@ -4,7 +4,8 @@
 
 #include "ash/touch/touch_uma.h"
 
-#include "ash/shell_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
+#include "ash/shell.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/env.h"
@@ -270,7 +271,7 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
       0, kBucketCountForLocation, kBucketCountForLocation + 1);
 
   if (event.type() == ui::ET_TOUCH_PRESSED) {
-    Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
         UMA_TOUCHSCREEN_TAP_DOWN);
 
     details->last_start_time_[event.touch_id()] = event.time_stamp();
@@ -299,7 +300,7 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
     if (details->last_start_time_.count(event.touch_id())) {
       base::TimeDelta duration = event.time_stamp() -
                                  details->last_start_time_[event.touch_id()];
-      UMA_HISTOGRAM_TIMES("Ash.TouchDuration", duration);
+      UMA_HISTOGRAM_TIMES("Ash.TouchDuration2", duration);
 
       // Look for touches that were [almost] stationary for a long time.
       const double kLongStationaryTouchDuration = 10;

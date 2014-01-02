@@ -948,11 +948,11 @@ TEST_F(AutofillDialogControllerTest, AutofillProfileVariants) {
 
   // Set up some variant data.
   AutofillProfile full_profile(test::GetVerifiedProfile());
-  std::vector<string16> names;
+  std::vector<base::string16> names;
   names.push_back(ASCIIToUTF16("John Doe"));
   names.push_back(ASCIIToUTF16("Jane Doe"));
   full_profile.SetRawMultiInfo(NAME_FULL, names);
-  std::vector<string16> emails;
+  std::vector<base::string16> emails;
   emails.push_back(ASCIIToUTF16(kFakeEmail));
   emails.push_back(ASCIIToUTF16("admin@example.com"));
   full_profile.SetRawMultiInfo(EMAIL_ADDRESS, emails);
@@ -1430,7 +1430,10 @@ TEST_F(AutofillDialogControllerTest, SelectInstrument) {
 TEST_F(AutofillDialogControllerTest, SaveAddress) {
   EXPECT_CALL(*controller()->GetView(), ModelChanged());
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(testing::IsNull(), testing::NotNull()));
+              SaveToWalletMock(testing::IsNull(),
+                               testing::NotNull(),
+                               testing::IsNull(),
+                               testing::IsNull()));
 
   scoped_ptr<wallet::WalletItems> wallet_items =
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
@@ -1452,7 +1455,10 @@ TEST_F(AutofillDialogControllerTest, SaveAddress) {
 TEST_F(AutofillDialogControllerTest, SaveInstrument) {
   EXPECT_CALL(*controller()->GetView(), ModelChanged());
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(testing::NotNull(), testing::IsNull()));
+              SaveToWalletMock(testing::NotNull(),
+                               testing::IsNull(),
+                               testing::IsNull(),
+                               testing::IsNull()));
 
   FillCCBillingInputs();
   scoped_ptr<wallet::WalletItems> wallet_items =
@@ -1464,7 +1470,10 @@ TEST_F(AutofillDialogControllerTest, SaveInstrument) {
 TEST_F(AutofillDialogControllerTest, SaveInstrumentWithInvalidInstruments) {
   EXPECT_CALL(*controller()->GetView(), ModelChanged());
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(testing::NotNull(), testing::IsNull()));
+              SaveToWalletMock(testing::NotNull(),
+                               testing::IsNull(),
+                               testing::IsNull(),
+                               testing::IsNull()));
 
   FillCCBillingInputs();
   scoped_ptr<wallet::WalletItems> wallet_items =
@@ -1476,7 +1485,10 @@ TEST_F(AutofillDialogControllerTest, SaveInstrumentWithInvalidInstruments) {
 
 TEST_F(AutofillDialogControllerTest, SaveInstrumentAndAddress) {
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(testing::NotNull(), testing::NotNull()));
+              SaveToWalletMock(testing::NotNull(),
+                               testing::NotNull(),
+                               testing::IsNull(),
+                               testing::IsNull()));
 
   FillCCBillingInputs();
   scoped_ptr<wallet::WalletItems> wallet_items =
@@ -1496,7 +1508,10 @@ MATCHER(UsesLocalBillingAddress, "uses the local billing address") {
 // matched shipping address, then a shipping address should be added.
 TEST_F(AutofillDialogControllerTest, BillingForShipping) {
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(testing::IsNull(), testing::NotNull()));
+              SaveToWalletMock(testing::IsNull(),
+                               testing::NotNull(),
+                               testing::IsNull(),
+                               testing::IsNull()));
 
   controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
   // Select "Same as billing" in the address menu.
@@ -1509,7 +1524,7 @@ TEST_F(AutofillDialogControllerTest, BillingForShipping) {
 // matched shipping address, then a shipping address should not be added.
 TEST_F(AutofillDialogControllerTest, BillingForShippingHasMatch) {
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(_, _)).Times(0);
+              SaveToWalletMock(_, _, _, _)).Times(0);
 
   scoped_ptr<wallet::WalletItems> wallet_items =
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
@@ -1561,13 +1576,16 @@ TEST_F(AutofillDialogControllerTest, SaveInstrumentSameAsBilling) {
   controller()->OnAccept();
 
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(testing::NotNull(), UsesLocalBillingAddress()));
+              SaveToWalletMock(testing::NotNull(),
+                               UsesLocalBillingAddress(),
+                               testing::IsNull(),
+                               testing::IsNull()));
   AcceptAndLoadFakeFingerprint();
 }
 
 TEST_F(AutofillDialogControllerTest, CancelNoSave) {
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              SaveToWalletMock(_, _)).Times(0);
+              SaveToWalletMock(_, _, _, _)).Times(0);
 
   EXPECT_CALL(*controller()->GetView(), ModelChanged());
 
@@ -2675,6 +2693,47 @@ TEST_F(AutofillDialogControllerTest, PassiveAuthFailure) {
   controller()->OnPassiveSigninFailure(GoogleServiceAuthError(
       GoogleServiceAuthError::NONE));
   EXPECT_FALSE(controller()->ShouldShowSpinner());
+}
+
+TEST_F(AutofillDialogControllerTest, WalletShippingSameAsBilling) {
+  // Assert initial state.
+  ASSERT_FALSE(profile()->GetPrefs()->HasPrefPath(
+      ::prefs::kAutofillDialogWalletShippingSameAsBilling));
+
+  // Verify that false pref defaults to wallet defaults.
+  scoped_ptr<wallet::WalletItems> wallet_items =
+      wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
+  wallet_items->AddAddress(wallet::GetTestNonDefaultShippingAddress());
+  wallet_items->AddAddress(wallet::GetTestShippingAddress());
+  controller()->OnDidGetWalletItems(wallet_items.Pass());
+  ASSERT_FALSE(profile()->GetPrefs()->GetBoolean(
+      ::prefs::kAutofillDialogWalletShippingSameAsBilling));
+  EXPECT_EQ(2, GetMenuModelForSection(SECTION_SHIPPING)->checked_item());
+
+  // Set "Same as Billing" for the shipping address and verify it sets the pref
+  // and selects the appropriate menu item.
+  UseBillingForShipping();
+  ASSERT_EQ(0, GetMenuModelForSection(SECTION_SHIPPING)->checked_item());
+  controller()->ForceFinishSubmit();
+  ASSERT_TRUE(profile()->GetPrefs()->GetBoolean(
+      ::prefs::kAutofillDialogWalletShippingSameAsBilling));
+
+  // Getting new wallet info shouldn't disrupt the preference and menu should be
+  // set accordingly.
+  Reset();
+  wallet_items = wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
+  wallet_items->AddAddress(wallet::GetTestNonDefaultShippingAddress());
+  wallet_items->AddAddress(wallet::GetTestShippingAddress());
+  controller()->OnDidGetWalletItems(wallet_items.Pass());
+  EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(
+      ::prefs::kAutofillDialogWalletShippingSameAsBilling));
+  EXPECT_EQ(0, GetMenuModelForSection(SECTION_SHIPPING)->checked_item());
+
+  // Choose a different address and ensure pref gets set to false.
+  controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(1);
+  controller()->ForceFinishSubmit();
+  EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
+      ::prefs::kAutofillDialogWalletShippingSameAsBilling));
 }
 
 }  // namespace autofill

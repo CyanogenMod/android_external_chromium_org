@@ -7,9 +7,14 @@
 #include <assert.h>
 #include <stddef.h>
 
-static mojo::Core* g_core = NULL;
+static mojo::CorePrivate* g_core = NULL;
 
 extern "C" {
+
+MojoTimeTicks MojoGetTimeTicksNow() {
+  assert(g_core);
+  return g_core->GetTimeTicksNow();
+}
 
 MojoResult MojoClose(MojoHandle handle) {
   assert(g_core);
@@ -31,46 +36,99 @@ MojoResult MojoWaitMany(const MojoHandle* handles,
   return g_core->WaitMany(handles, flags, num_handles, deadline);
 }
 
-MojoResult MojoCreateMessagePipe(MojoHandle* handle_0, MojoHandle* handle_1) {
+MojoResult MojoCreateMessagePipe(MojoHandle* message_pipe_handle_0,
+                                 MojoHandle* message_pipe_handle_1) {
   assert(g_core);
-  return g_core->CreateMessagePipe(handle_0, handle_1);
+  return g_core->CreateMessagePipe(message_pipe_handle_0,
+                                   message_pipe_handle_1);
 }
 
-MojoResult MojoWriteMessage(MojoHandle handle,
-                            const void* bytes, uint32_t num_bytes,
-                            const MojoHandle* handles, uint32_t num_handles,
+MojoResult MojoWriteMessage(MojoHandle message_pipe_handle,
+                            const void* bytes,
+                            uint32_t num_bytes,
+                            const MojoHandle* handles,
+                            uint32_t num_handles,
                             MojoWriteMessageFlags flags) {
   assert(g_core);
-  return g_core->WriteMessage(handle,
-                              bytes, num_bytes,
-                              handles, num_handles,
-                              flags);
+  return g_core->WriteMessage(message_pipe_handle, bytes, num_bytes, handles,
+                              num_handles, flags);
 }
 
-MojoResult MojoReadMessage(MojoHandle handle,
-                           void* bytes, uint32_t* num_bytes,
-                           MojoHandle* handles, uint32_t* num_handles,
+MojoResult MojoReadMessage(MojoHandle message_pipe_handle,
+                           void* bytes,
+                           uint32_t* num_bytes,
+                           MojoHandle* handles,
+                           uint32_t* num_handles,
                            MojoReadMessageFlags flags) {
   assert(g_core);
-  return g_core->ReadMessage(handle,
-                             bytes, num_bytes,
-                             handles, num_handles,
-                             flags);
+  return g_core->ReadMessage(message_pipe_handle, bytes, num_bytes, handles,
+                             num_handles, flags);
 }
 
-MojoTimeTicks MojoGetTimeTicksNow() {
+MojoResult MojoCreateDataPipe(const MojoCreateDataPipeOptions* options,
+                              MojoHandle* data_pipe_producer_handle,
+                              MojoHandle* data_pipe_consumer_handle) {
   assert(g_core);
-  return g_core->GetTimeTicksNow();
+  return g_core->CreateDataPipe(options, data_pipe_producer_handle,
+                                data_pipe_consumer_handle);
+}
+
+MojoResult MojoWriteData(MojoHandle data_pipe_producer_handle,
+                         const void* elements,
+                         uint32_t* num_elements,
+                         MojoWriteDataFlags flags) {
+  assert(g_core);
+  return g_core->WriteData(data_pipe_producer_handle, elements, num_elements,
+                           flags);
+}
+
+MojoResult MojoBeginWriteData(MojoHandle data_pipe_producer_handle,
+                              void** buffer,
+                              uint32_t* buffer_num_elements,
+                              MojoWriteDataFlags flags) {
+  assert(g_core);
+  return g_core->BeginWriteData(data_pipe_producer_handle, buffer,
+                                buffer_num_elements, flags);
+}
+
+MojoResult MojoEndWriteData(MojoHandle data_pipe_producer_handle,
+                            uint32_t num_elements_written) {
+  assert(g_core);
+  return g_core->EndWriteData(data_pipe_producer_handle, num_elements_written);
+}
+
+MojoResult MojoReadData(MojoHandle data_pipe_consumer_handle,
+                        void* elements,
+                        uint32_t* num_elements,
+                        MojoReadDataFlags flags) {
+  assert(g_core);
+  return g_core->ReadData(data_pipe_consumer_handle, elements, num_elements,
+                          flags);
+}
+
+MojoResult MojoBeginReadData(MojoHandle data_pipe_consumer_handle,
+                             const void** buffer,
+                             uint32_t* buffer_num_elements,
+                             MojoReadDataFlags flags) {
+  assert(g_core);
+  return g_core->BeginReadData(data_pipe_consumer_handle, buffer,
+                               buffer_num_elements, flags);
+}
+
+MojoResult MojoEndReadData(MojoHandle data_pipe_consumer_handle,
+                           uint32_t num_elements_read) {
+  assert(g_core);
+  return g_core->EndReadData(data_pipe_consumer_handle, num_elements_read);
 }
 
 }  // extern "C"
 
 namespace mojo {
 
-Core::~Core() {
+CorePrivate::~CorePrivate() {
 }
 
-void Core::Init(Core* core) {
+void CorePrivate::Init(CorePrivate* core) {
   assert(!g_core);
   g_core = core;
 }

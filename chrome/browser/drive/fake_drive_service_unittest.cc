@@ -278,6 +278,30 @@ TEST_F(FakeDriveServiceTest, Search_Deleted) {
                                std::string(),  // etag
                                test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(HTTP_NO_CONTENT, error);
+
+  error = GDATA_OTHER_ERROR;
+  scoped_ptr<ResourceList> resource_list;
+  fake_service_.Search(
+      "File",  // search_query
+      test_util::CreateCopyResultCallback(&error, &resource_list));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  ASSERT_TRUE(resource_list);
+  // Do some sanity check. There are 4 entries that contain "File" in their
+  // titles and one of them is deleted.
+  EXPECT_EQ(3U, resource_list->entries().size());
+}
+
+TEST_F(FakeDriveServiceTest, Search_Trashed) {
+  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
+      "gdata/root_feed.json"));
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  fake_service_.TrashResource("file:2_file_resource_id",
+                              test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(HTTP_SUCCESS, error);
 
   error = GDATA_OTHER_ERROR;
@@ -428,14 +452,49 @@ TEST_F(FakeDriveServiceTest, GetChangeList_DeletedEntry) {
   // (654321) to the existing entries.
   ASSERT_TRUE(fake_service_.LoadAccountMetadataForWapi(
       "gdata/account_metadata.json"));
-  // Add a new directory in the root directory. The new directory will have
-  // the changestamp of 654322.
   ASSERT_TRUE(Exists("file:2_file_resource_id"));
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
   fake_service_.DeleteResource("file:2_file_resource_id",
                                std::string(),  // etag
                                test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(HTTP_NO_CONTENT, error);
+  ASSERT_FALSE(Exists("file:2_file_resource_id"));
+
+  // Get the resource list newer than 654321.
+  error = GDATA_OTHER_ERROR;
+  scoped_ptr<ResourceList> resource_list;
+  fake_service_.GetChangeList(
+      654321 + 1,  // start_changestamp
+      test_util::CreateCopyResultCallback(&error, &resource_list));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  ASSERT_TRUE(resource_list);
+  EXPECT_EQ(fake_service_.largest_changestamp(),
+            resource_list->largest_changestamp());
+  // The result should only contain the deleted file.
+  ASSERT_EQ(1U, resource_list->entries().size());
+  const ResourceEntry& entry = *resource_list->entries()[0];
+  EXPECT_EQ("file:2_file_resource_id", entry.resource_id());
+  EXPECT_TRUE(entry.title().empty());
+  EXPECT_TRUE(entry.deleted());
+  EXPECT_EQ(1, fake_service_.change_list_load_count());
+}
+
+TEST_F(FakeDriveServiceTest, GetChangeList_TrashedEntry) {
+  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
+      "gdata/root_feed.json"));
+  // Load the account_metadata.json as well to add the largest changestamp
+  // (654321) to the existing entries.
+  ASSERT_TRUE(fake_service_.LoadAccountMetadataForWapi(
+      "gdata/account_metadata.json"));
+  ASSERT_TRUE(Exists("file:2_file_resource_id"));
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  fake_service_.TrashResource("file:2_file_resource_id",
+                              test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(HTTP_SUCCESS, error);
   ASSERT_FALSE(Exists("file:2_file_resource_id"));
@@ -452,7 +511,7 @@ TEST_F(FakeDriveServiceTest, GetChangeList_DeletedEntry) {
   ASSERT_TRUE(resource_list);
   EXPECT_EQ(fake_service_.largest_changestamp(),
             resource_list->largest_changestamp());
-  // The result should only contain the newly created directory.
+  // The result should only contain the trashed file.
   ASSERT_EQ(1U, resource_list->entries().size());
   const ResourceEntry& entry = *resource_list->entries()[0];
   EXPECT_EQ("file:2_file_resource_id", entry.resource_id());
@@ -834,7 +893,7 @@ TEST_F(FakeDriveServiceTest, DeleteResource_ExistingFile) {
                                test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(HTTP_NO_CONTENT, error);
   // Resource "file:2_file_resource_id" should be gone now.
   EXPECT_FALSE(Exists("file:2_file_resource_id"));
 
@@ -860,6 +919,36 @@ TEST_F(FakeDriveServiceTest, DeleteResource_NonexistingFile) {
   EXPECT_EQ(HTTP_NOT_FOUND, error);
 }
 
+TEST_F(FakeDriveServiceTest, DeleteResource_ETagMatch) {
+  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
+      "gdata/root_feed.json"));
+
+  // Resource "file:2_file_resource_id" should now exist.
+  scoped_ptr<ResourceEntry> entry = FindEntry("file:2_file_resource_id");
+  ASSERT_TRUE(entry);
+  ASSERT_FALSE(entry->deleted());
+  ASSERT_FALSE(entry->etag().empty());
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  fake_service_.DeleteResource("file:2_file_resource_id",
+                               entry->etag() + "_mismatch",
+                               test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(HTTP_PRECONDITION, error);
+  // Resource "file:2_file_resource_id" should still exist.
+  EXPECT_TRUE(Exists("file:2_file_resource_id"));
+
+  error = GDATA_OTHER_ERROR;
+  fake_service_.DeleteResource("file:2_file_resource_id",
+                               entry->etag(),
+                               test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(HTTP_NO_CONTENT, error);
+  // Resource "file:2_file_resource_id" should be gone now.
+  EXPECT_FALSE(Exists("file:2_file_resource_id"));
+}
+
 TEST_F(FakeDriveServiceTest, DeleteResource_Offline) {
   ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
       "gdata/root_feed.json"));
@@ -869,6 +958,55 @@ TEST_F(FakeDriveServiceTest, DeleteResource_Offline) {
   fake_service_.DeleteResource("file:2_file_resource_id",
                                std::string(),  // etag
                                test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(GDATA_NO_CONNECTION, error);
+}
+
+TEST_F(FakeDriveServiceTest, TrashResource_ExistingFile) {
+  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
+      "gdata/root_feed.json"));
+
+  // Resource "file:2_file_resource_id" should now exist.
+  ASSERT_TRUE(Exists("file:2_file_resource_id"));
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  fake_service_.TrashResource("file:2_file_resource_id",
+                              test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  // Resource "file:2_file_resource_id" should be gone now.
+  EXPECT_FALSE(Exists("file:2_file_resource_id"));
+
+  error = GDATA_OTHER_ERROR;
+  fake_service_.TrashResource("file:2_file_resource_id",
+                              test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(HTTP_NOT_FOUND, error);
+  EXPECT_FALSE(Exists("file:2_file_resource_id"));
+}
+
+TEST_F(FakeDriveServiceTest, TrashResource_NonexistingFile) {
+  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
+      "gdata/root_feed.json"));
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  fake_service_.TrashResource("file:nonexisting_resource_id",
+                              test_util::CreateCopyResultCallback(&error));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(HTTP_NOT_FOUND, error);
+}
+
+TEST_F(FakeDriveServiceTest, TrashResource_Offline) {
+  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
+      "gdata/root_feed.json"));
+  fake_service_.set_offline(true);
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  fake_service_.TrashResource("file:2_file_resource_id",
+                              test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(GDATA_NO_CONNECTION, error);
@@ -1051,67 +1189,6 @@ TEST_F(FakeDriveServiceTest, CopyResource_Offline) {
       "folder:1_folder_resource_id",
       "new title",
       base::Time(),
-      test_util::CreateCopyResultCallback(&error, &resource_entry));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(GDATA_NO_CONNECTION, error);
-  EXPECT_FALSE(resource_entry);
-}
-
-TEST_F(FakeDriveServiceTest, CopyHostedDocument_Existing) {
-  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
-      "gdata/root_feed.json"));
-  ASSERT_TRUE(fake_service_.LoadAccountMetadataForWapi(
-      "gdata/account_metadata.json"));
-
-  int64 old_largest_change_id = GetLargestChangeByAboutResource();
-
-  const std::string kResourceId = "document:5_document_resource_id";
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<ResourceEntry> resource_entry;
-  fake_service_.CopyHostedDocument(
-      kResourceId,
-      "new title",
-      test_util::CreateCopyResultCallback(&error, &resource_entry));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_entry);
-  // The copied entry should have the new resource ID and the title.
-  EXPECT_EQ(kResourceId + "_copied", resource_entry->resource_id());
-  EXPECT_EQ("new title", resource_entry->title());
-  // Should be incremented as a new hosted document was created.
-  EXPECT_EQ(old_largest_change_id + 1, fake_service_.largest_changestamp());
-  EXPECT_EQ(old_largest_change_id + 1, GetLargestChangeByAboutResource());
-}
-
-TEST_F(FakeDriveServiceTest, CopyHostedDocument_NonExisting) {
-  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
-      "gdata/root_feed.json"));
-
-  const std::string kResourceId = "document:nonexisting_resource_id";
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<ResourceEntry> resource_entry;
-  fake_service_.CopyHostedDocument(
-      kResourceId,
-      "new title",
-      test_util::CreateCopyResultCallback(&error, &resource_entry));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(HTTP_NOT_FOUND, error);
-}
-
-TEST_F(FakeDriveServiceTest, CopyHostedDocument_Offline) {
-  ASSERT_TRUE(fake_service_.LoadResourceListForWapi(
-      "gdata/root_feed.json"));
-  fake_service_.set_offline(true);
-
-  const std::string kResourceId = "document:5_document_resource_id";
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<ResourceEntry> resource_entry;
-  fake_service_.CopyHostedDocument(
-      kResourceId,
-      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 

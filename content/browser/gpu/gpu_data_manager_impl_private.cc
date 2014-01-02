@@ -587,6 +587,7 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
     return;
 
   gpu::MergeGPUInfo(&gpu_info_, gpu_info);
+  gpu::DetermineActiveGPU(&gpu_info_);
   complete_gpu_info_already_requested_ =
       complete_gpu_info_already_requested_ || gpu_info_.finalized;
 
@@ -853,11 +854,7 @@ void GpuDataManagerImplPrivate::GetDriverBugWorkarounds(
 
 void GpuDataManagerImplPrivate::AddLogMessage(
     int level, const std::string& header, const std::string& message) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("level", level);
-  dict->SetString("header", header);
-  dict->SetString("message", message);
-  log_messages_.Append(dict);
+  log_messages_.push_back(LogMessage(level, header, message));
 }
 
 void GpuDataManagerImplPrivate::ProcessCrashed(
@@ -881,8 +878,14 @@ void GpuDataManagerImplPrivate::ProcessCrashed(
 }
 
 base::ListValue* GpuDataManagerImplPrivate::GetLogMessages() const {
-  base::ListValue* value;
-  value = log_messages_.DeepCopy();
+  base::ListValue* value = new base::ListValue;
+  for (size_t ii = 0; ii < log_messages_.size(); ++ii) {
+    base::DictionaryValue* dict = new base::DictionaryValue();
+    dict->SetInteger("level", log_messages_[ii].level);
+    dict->SetString("header", log_messages_[ii].header);
+    dict->SetString("message", log_messages_[ii].message);
+    value->Append(dict);
+  }
   return value;
 }
 

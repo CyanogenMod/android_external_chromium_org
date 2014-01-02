@@ -165,20 +165,25 @@ class WalletClient : public net::URLFetcherDelegate {
   virtual void GetFullWallet(const FullWalletRequest& full_wallet_request);
 
   // Saves the data in |instrument| and/or |address| to Wallet. |instrument|
-  // does not have to be complete if its being used to update an existing
+  // does not have to be complete if it's being used to update an existing
   // instrument, like in the case of expiration date or address only updates.
-  virtual void SaveToWallet(scoped_ptr<Instrument> instrument,
-                            scoped_ptr<Address> address);
+  // |reference_instrument| and |reference_address| are the original instrument
+  // and address to be updated on the server (and should be NULL if |instrument|
+  // or |address| are new data).
+  virtual void SaveToWallet(
+      scoped_ptr<Instrument> instrument,
+      scoped_ptr<Address> address,
+      const WalletItems::MaskedInstrument* reference_instrument,
+      const Address* reference_address);
 
   bool HasRequestInProgress() const;
 
   // Cancels and clears the current |request_| and |pending_requests_| (if any).
   void CancelRequests();
 
+  // Sets the user index and cancels any pending requests.
+  void SetUserIndex(size_t user_index);
   size_t user_index() const { return user_index_; }
-  void set_user_index(size_t user_index) {
-    user_index_ = user_index;
-  }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(WalletClientTest, PendingRequest);
@@ -202,7 +207,8 @@ class WalletClient : public net::URLFetcherDelegate {
   // |delegate_| when the request is complete.
   void MakeWalletRequest(const GURL& url,
                          const std::string& post_body,
-                         const std::string& mime_type);
+                         const std::string& mime_type,
+                         RequestType request_type);
 
   // Performs bookkeeping tasks for any invalid requests.
   void HandleMalformedResponse(RequestType request_type,

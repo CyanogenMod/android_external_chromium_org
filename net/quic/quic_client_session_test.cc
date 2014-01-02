@@ -64,9 +64,8 @@ class TestPacketWriter : public QuicDefaultPacketWriter {
 class QuicClientSessionTest : public ::testing::Test {
  protected:
   QuicClientSessionTest()
-      : guid_(1),
-        writer_(new TestPacketWriter()),
-        connection_(new PacketSavingConnection(guid_, IPEndPoint(), false)),
+      : writer_(new TestPacketWriter()),
+        connection_(new PacketSavingConnection(false)),
         session_(connection_, GetSocket().Pass(), writer_.Pass(), NULL, NULL,
                  kServerHostname, DefaultQuicConfig(), &crypto_config_,
                  &net_log_) {
@@ -93,7 +92,6 @@ class QuicClientSessionTest : public ::testing::Test {
     ASSERT_EQ(OK, callback_.WaitForResult());
   }
 
-  QuicGuid guid_;
   scoped_ptr<QuicDefaultPacketWriter> writer_;
   PacketSavingConnection* connection_;
   CapturingNetLog net_log_;
@@ -116,15 +114,15 @@ TEST_F(QuicClientSessionTest, MaxNumStreams) {
 
   std::vector<QuicReliableClientStream*> streams;
   for (size_t i = 0; i < kDefaultMaxStreamsPerConnection; i++) {
-    QuicReliableClientStream* stream = session_.CreateOutgoingReliableStream();
+    QuicReliableClientStream* stream = session_.CreateOutgoingDataStream();
     EXPECT_TRUE(stream);
     streams.push_back(stream);
   }
-  EXPECT_FALSE(session_.CreateOutgoingReliableStream());
+  EXPECT_FALSE(session_.CreateOutgoingDataStream());
 
   // Close a stream and ensure I can now open a new one.
   session_.CloseStream(streams[0]->id());
-  EXPECT_TRUE(session_.CreateOutgoingReliableStream());
+  EXPECT_TRUE(session_.CreateOutgoingDataStream());
 }
 
 TEST_F(QuicClientSessionTest, MaxNumStreamsViaRequest) {
@@ -132,7 +130,7 @@ TEST_F(QuicClientSessionTest, MaxNumStreamsViaRequest) {
 
   std::vector<QuicReliableClientStream*> streams;
   for (size_t i = 0; i < kDefaultMaxStreamsPerConnection; i++) {
-    QuicReliableClientStream* stream = session_.CreateOutgoingReliableStream();
+    QuicReliableClientStream* stream = session_.CreateOutgoingDataStream();
     EXPECT_TRUE(stream);
     streams.push_back(stream);
   }
@@ -157,7 +155,7 @@ TEST_F(QuicClientSessionTest, GoAwayReceived) {
   // After receiving a GoAway, I should no longer be able to create outgoing
   // streams.
   session_.OnGoAway(QuicGoAwayFrame(QUIC_PEER_GOING_AWAY, 1u, "Going away."));
-  EXPECT_EQ(NULL, session_.CreateOutgoingReliableStream());
+  EXPECT_EQ(NULL, session_.CreateOutgoingDataStream());
 }
 
 }  // namespace

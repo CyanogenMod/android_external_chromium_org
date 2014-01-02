@@ -30,6 +30,9 @@ const char kEasyOffStoreExtensionInstall[] = "easy-off-store-extension-install";
 const char kEnableExperimentalExtensionApis[] =
     "enable-experimental-extension-apis";
 
+// Enables extensions to hide bookmarks UI elements.
+const char kEnableOverrideBookmarksUI[] = "enable-override-bookmarks-ui";
+
 // Allows the ErrorConsole to collect runtime and manifest errors, and display
 // them in the chrome:extensions page.
 const char kErrorConsole[] = "error-console";
@@ -46,6 +49,9 @@ const char kEventPageSuspendingTime[]       = "event-page-unloading-time";
 // Extensions still need to explicitly request access to chrome:// URLs in the
 // manifest.
 const char kExtensionsOnChromeURLs[] = "extensions-on-chrome-urls";
+
+// Whether to force developer mode extensions highlighting.
+const char kForceDevModeHighlighting[] = "force-dev-mode-highlighting";
 
 // Enables setting global commands through the Extensions Commands API.
 const char kGlobalCommands[] = "global-commands";

@@ -24,6 +24,7 @@ include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.t
 include $(LOCAL_PATH)/cc/cc.target.linux-x86.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.linux-x86.mk
+include $(LOCAL_PATH)/components/autofill_content_common.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_content_renderer.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_core_browser.target.linux-x86.mk
@@ -151,6 +152,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap_asm_stubs.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-x86.mk
@@ -163,8 +165,8 @@ include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_generate_devtools_grd.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/translator.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/angle/src/translator.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-x86.mk

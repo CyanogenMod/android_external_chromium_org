@@ -1583,7 +1583,7 @@ bool ProfileSyncService::IsPassphraseRequiredForDecryption() const {
   return IsEncryptedDatatypeEnabled() && IsPassphraseRequired();
 }
 
-string16 ProfileSyncService::GetLastSyncedTimeString() const {
+base::string16 ProfileSyncService::GetLastSyncedTimeString() const {
   if (last_synced_time_.is_null())
     return l10n_util::GetStringUTF16(IDS_SYNC_TIME_NEVER);
 
@@ -1618,7 +1618,7 @@ const browser_sync::user_selectable_type::UserSelectableSyncType
     browser_sync::user_selectable_type::PROXY_TABS
   };
 
-  COMPILE_ASSERT(29 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
+  COMPILE_ASSERT(30 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
 
   if (!sync_everything) {
     const syncer::ModelTypeSet current_types = GetPreferredDataTypes();

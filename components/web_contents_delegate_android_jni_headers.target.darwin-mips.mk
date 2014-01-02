@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "components_components_gyp_web_contents_delegate_android_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ColorChooserAndroid.java', 'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/WebContentsDelegateAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'int'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ColorChooserAndroid.java', 'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ValidationMessageBubble.java', 'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/WebContentsDelegateAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'int'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -25,6 +25,16 @@ $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAnd
 
 .PHONY: components_web_contents_delegate_android_jni_headers_gyp_rule_trigger
 components_web_contents_delegate_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h
+
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h: $(LOCAL_PATH)/components/web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ValidationMessageBubble.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ValidationMessageBubble.java --output_dir "$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type int
+
+.PHONY: components_web_contents_delegate_android_jni_headers_gyp_rule_trigger
+components_web_contents_delegate_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h
 
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -40,6 +50,7 @@ components_web_contents_delegate_android_jni_headers_gyp_rule_trigger: $(gyp_sha
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h \
 	$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h
 
 # Make sure our deps and generated files are built first.
@@ -47,6 +58,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ValidationMessageBubble_jni.h \
 	$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h \
 	components_web_contents_delegate_android_jni_headers_gyp_rule_trigger
 

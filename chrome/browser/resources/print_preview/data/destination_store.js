@@ -11,10 +11,11 @@ cr.define('print_preview', function() {
    * @param {!print_preview.NativeLayer} nativeLayer Used to fetch local print
    *     destinations.
    * @param {!print_preview.AppState} appState Application state.
+   * @param {!print_preview.Metrics} metrics Metrics.
    * @constructor
    * @extends {cr.EventTarget}
    */
-  function DestinationStore(nativeLayer, appState) {
+  function DestinationStore(nativeLayer, appState, metrics) {
     cr.EventTarget.call(this);
 
     /**
@@ -30,6 +31,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.appState_ = appState;
+
+    /**
+     * Used to track metrics.
+     * @type {!print_preview.AppState}
+     * @private
+     */
+    this.metrics_ = metrics;
 
     /**
      * Internal backing store for the data store.
@@ -361,6 +369,23 @@ cr.define('print_preview', function() {
                                                              true);
       }
       this.appState_.persistSelectedDestination(this.selectedDestination_);
+
+      if (destination.cloudID &&
+          this.destinations.some(function(otherDestination) {
+            return otherDestination.cloudID == destination.cloudID &&
+                otherDestination != destination;
+            })) {
+        if (destination.isPrivet) {
+          this.metrics_.incrementDestinationSearchBucket(
+              print_preview.Metrics.DestinationSearchBucket.
+                  PRIVET_DUPLICATE_SELECTED);
+        } else {
+          this.metrics_.incrementDestinationSearchBucket(
+              print_preview.Metrics.DestinationSearchBucket.
+                  CLOUD_DUPLICATE_SELECTED);
+        }
+      }
+
       cr.dispatchSimpleEvent(
           this, DestinationStore.EventType.DESTINATION_SELECT);
       if (destination.capabilities == null) {
@@ -440,6 +465,7 @@ cr.define('print_preview', function() {
      *     updated or {@code null} if it was the new destination.
      */
     updateDestination: function(destination) {
+      assert(destination.constructor !== Array, 'Single printer expected');
       var key = this.getDestinationKey_(destination.origin, destination.id);
       var existingDestination = this.destinationMap_[key];
       if (existingDestination != null) {
@@ -716,10 +742,12 @@ cr.define('print_preview', function() {
      */
     onPrivetCapabilitiesSet_: function(event) {
       var destinationId = event.printerId;
-      var dest = print_preview.PrivetDestinationParser.parse(event.printer);
-      dest.capabilities = event.capabilities;
-
-      this.updateDestination(dest);
+      var destinations =
+          print_preview.PrivetDestinationParser.parse(event.printer);
+      destinations.forEach(function(dest) {
+        dest.capabilities = event.capabilities;
+        this.updateDestination(dest);
+      }, this);
     },
 
     /**
@@ -730,7 +758,7 @@ cr.define('print_preview', function() {
       this.isPrivetDestinationSearchInProgress_ = false;
       this.hasLoadedAllPrivetDestinations_ = true;
       cr.dispatchSimpleEvent(
-        this, DestinationStore.EventType.DESTINATION_SEARCH_DONE);
+          this, DestinationStore.EventType.DESTINATION_SEARCH_DONE);
     },
 
     /**

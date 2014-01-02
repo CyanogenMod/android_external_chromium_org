@@ -662,7 +662,7 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
       break;
     case TRACE_VALUE_TYPE_STRING:
     case TRACE_VALUE_TYPE_COPY_STRING:
-      JsonDoubleQuote(value.as_string ? value.as_string : "NULL", true, out);
+      EscapeJSONString(value.as_string ? value.as_string : "NULL", true, out);
       break;
     default:
       NOTREACHED() << "Don't know how to print this value";
@@ -1142,13 +1142,18 @@ TraceLog::TraceLog()
   // NaCl also shouldn't access the command line.
   if (CommandLine::InitializedForCurrentProcess() &&
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kTraceToConsole)) {
-    CategoryFilter filter(
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kTraceToConsole));
-    filter.Merge(CategoryFilter(kEchoToConsoleCategoryFilter));
+    std::string filter = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        switches::kTraceToConsole);
+    if (filter.empty()) {
+      filter = kEchoToConsoleCategoryFilter;
+    } else {
+      filter.append(",");
+      filter.append(kEchoToConsoleCategoryFilter);
+    }
+
     LOG(ERROR) << "Start " << switches::kTraceToConsole
-               << " with CategoryFilter '" << filter.ToString() << "'.";
-    SetEnabled(filter, ECHO_TO_CONSOLE);
+               << " with CategoryFilter '" << filter << "'.";
+    SetEnabled(CategoryFilter(filter), ECHO_TO_CONSOLE);
   }
 #endif
 
@@ -1282,8 +1287,7 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
 
     if (options != old_options) {
       subtle::NoBarrier_Store(&trace_options_, options);
-      logged_events_.reset(CreateTraceBuffer());
-      NextGeneration();
+      UseNextTraceBuffer();
     }
 
     num_traces_recorded_++;
@@ -1573,8 +1577,7 @@ void TraceLog::FinishFlush(int generation) {
     AutoLock lock(lock_);
 
     previous_logged_events.swap(logged_events_);
-    logged_events_.reset(CreateTraceBuffer());
-    NextGeneration();
+    UseNextTraceBuffer();
     thread_message_loops_.clear();
 
     flush_message_loop_proxy_ = NULL;
@@ -1647,6 +1650,13 @@ void TraceLog::FlushButLeaveBufferIntact(
 
   ConvertTraceEventsToTraceFormat(previous_logged_events.Pass(),
                                   flush_output_callback);
+}
+
+void TraceLog::UseNextTraceBuffer() {
+  logged_events_.reset(CreateTraceBuffer());
+  subtle::NoBarrier_AtomicIncrement(&generation_, 1);
+  thread_shared_chunk_.reset();
+  thread_shared_chunk_index_ = 0;
 }
 
 TraceEventHandle TraceLog::AddTraceEvent(

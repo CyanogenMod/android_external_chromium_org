@@ -155,7 +155,6 @@ class RendererAccessibility;
 class RendererDateTimePicker;
 class RendererWebColorChooserImpl;
 class SpeechRecognitionDispatcher;
-class StatsCollectionController;
 class WebPluginDelegateProxy;
 struct CustomContextMenuContext;
 struct DropData;
@@ -440,6 +439,14 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame,
                                           bool is_reload,
                                           const blink::WebString& message);
+  virtual void showValidationMessage(const blink::WebRect& anchor_in_root_view,
+                                     const blink::WebString& main_text,
+                                     const blink::WebString& sub_text,
+                                     blink::WebTextDirection hint) OVERRIDE;
+  virtual void hideValidationMessage() OVERRIDE;
+  virtual void moveValidationMessage(
+      const blink::WebRect& anchor_in_root_view) OVERRIDE;
+
   // DEPRECATED
   virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame,
                                           const blink::WebString& message);
@@ -789,6 +796,8 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            GetCompositionCharacterBoundsTest);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavigationHttpPost);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           DecideNavigationPolicyHandlesAllTopLevel);
 #if defined(OS_MACOSX)
   FRIEND_TEST_ALL_PREFIXES(RenderViewTest, MacTestCmdUp);
 #endif
@@ -1500,10 +1509,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Allows JS to access DOM automation. The JS object is only exposed when the
   // DOM automation bindings are enabled.
   scoped_ptr<DomAutomationController> dom_automation_controller_;
-
-  // Allows JS to read out a variety of internal various metrics. The JS object
-  // is only exposed when the stats collection bindings are enabled.
-  scoped_ptr<StatsCollectionController> stats_collection_controller_;
 
   // This field stores drag/drop related info for the event that is currently
   // being handled. If the current event results in starting a drag/drop

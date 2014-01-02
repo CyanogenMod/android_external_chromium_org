@@ -567,6 +567,18 @@ const char kAudioMute[] = "settings.audio.mute";
 // |kAudioDevicesVolumePercent| setting.
 const char kAudioVolumePercent[] = "settings.audio.volume_percent";
 
+// An integer pref to record user's spring charger check result.
+// 0 - unknown charger, not checked yet.
+// 1 - confirmed safe charger.
+// 2 - confirmed original charger and declined to order new charger.
+// 3 - confirmed original charger and ordered new charger online.
+// 4 - confirmed original charger and ordered new charger by phone.
+// 5 - confirmed original charger, ordered a new one online, but continue to use
+//     the old one.
+// 6 - confirmed original charger, ordered a new one by phone, but continue to
+//     use the old one.
+const char kSpringChargerCheck[] = "settings.spring_charger.check_result";
+
 // A boolean pref set to true if touchpad tap-to-click is enabled.
 const char kTapToClickEnabled[] = "settings.touchpad.enable_tap_to_click";
 
@@ -853,6 +865,11 @@ const char kMultiProfileNotificationDismissed[] =
 // in a multiprofile session. See ChromeOsMultiProfileUserBehavior policy
 // for more details of the valid values.
 const char kMultiProfileUserBehavior[] = "settings.multiprofile_user_behavior";
+
+// List of the set of language codes for which high quality local speech
+// synthesis has been enabled.
+const char kHighQualitySpeechSynthesisLanguages[] =
+    "settings.speech_synthesis.high_quality_languages";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -1082,12 +1099,17 @@ const char kAutofillDialogWalletLocationAcceptance[] =
 // Whether a user wants to save data locally in Autofill.
 const char kAutofillDialogSaveData[] = "autofill.save_data";
 
+// Whether the user has selected "Same as billing" for the shipping address when
+// using Google Wallet.
+const char kAutofillDialogWalletShippingSameAsBilling[] =
+    "autofill.wallet_shipping_same_as_billing";
+
 // The number of times the generated credit card bubble has been shown.
 const char kAutofillGeneratedCardBubbleTimesShown[] =
     "autofill.generated_card_bubble_times_shown";
 
 // A dictionary that tracks the defaults to be set on the next invocation
-// of the requestAutocomplete/Autocheckout dialog.
+// of the requestAutocomplete dialog.
 const char kAutofillDialogDefaults[] = "autofill.rac_dialog_defaults";
 
 // Modifying bookmarks is completely disabled when this is set to false.
@@ -1827,6 +1849,7 @@ const char kSyncKeepEverythingSynced[] = "sync.keep_everything_synced";
 
 // Booleans specifying whether the user has selected to sync the following
 // datatypes.
+const char kSyncAppList[] = "sync.app_list";
 const char kSyncAppNotifications[] = "sync.app_notifications";
 const char kSyncAppSettings[] = "sync.app_settings";
 const char kSyncApps[] = "sync.apps";
@@ -2619,10 +2642,13 @@ const char kDRMSalt[] = "settings.privacy.drm_salt";
 // enables the use of remote attestation for content protection.
 const char kEnableDRM[] = "settings.privacy.drm_enabled";
 
-// A boolean per-profile pref that signals if the watchdog extension is
+// An integer per-profile pref that signals if the watchdog extension is
 // installed and active. We need to know if the watchdog extension active for
 // ActivityLog initialization before the extension system is initialized.
 const char kWatchdogExtensionActive[] =
+    "profile.extensions.activity_log.num_consumers_active";
+// The old version was a bool.
+const char kWatchdogExtensionActiveOld[] =
     "profile.extensions.activity_log.watchdog_extension_active";
 
 // A dictionary pref which maps profile names to dictionary values which hold

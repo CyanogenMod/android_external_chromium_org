@@ -135,7 +135,8 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
 
   def __init__(self, server_address, request_hander_class, pem_cert_and_key,
                ssl_client_auth, ssl_client_cas, ssl_bulk_ciphers,
-               record_resume_info, tls_intolerant, signed_cert_timestamps):
+               record_resume_info, tls_intolerant, signed_cert_timestamps,
+               fallback_scsv_enabled, ocsp_response):
     self.cert_chain = tlslite.api.X509CertChain().parseChain(pem_cert_and_key)
     # Force using only python implementation - otherwise behavior is different
     # depending on whether m2crypto Python module is present (error is thrown
@@ -148,6 +149,8 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
     self.ssl_client_cas = []
     self.tls_intolerant = tls_intolerant
     self.signed_cert_timestamps = signed_cert_timestamps
+    self.fallback_scsv_enabled = fallback_scsv_enabled
+    self.ocsp_response = ocsp_response
 
     for ca_file in ssl_client_cas:
       s = open(ca_file).read()
@@ -181,7 +184,9 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
                                     reqCAs=self.ssl_client_cas,
                                     tlsIntolerant=self.tls_intolerant,
                                     signedCertTimestamps=
-                                    self.signed_cert_timestamps)
+                                    self.signed_cert_timestamps,
+                                    fallbackSCSV=self.fallback_scsv_enabled,
+                                    ocspResponse = self.ocsp_response)
       tlsConnection.ignoreAbruptClose = True
       return True
     except tlslite.api.TLSAbruptCloseError:
@@ -1570,7 +1575,10 @@ class TestPageHandler(testserver_base.BasePageHandler):
     self.send_header('Content-Type', 'application/octet-stream')
     self.send_header('Content-Length', last_byte - first_byte + 1)
     if send_verifiers:
-      self.send_header('Etag', '"XYZZY"')
+      # If fail_precondition is non-zero, then the ETag for each request will be
+      # different.
+      etag = "%s%d" % (token, fail_precondition)
+      self.send_header('ETag', etag)
       self.send_header('Last-Modified', 'Tue, 19 Feb 2013 14:32 EST')
     self.end_headers()
 
@@ -1940,14 +1948,21 @@ class ServerRunner(testserver_base.TestServerRunner):
             raise testserver_base.OptionError(
                 'specified trusted client CA file not found: ' + ca_cert +
                 ' exiting...')
+
+        stapled_ocsp_response = None
+        if self.__ocsp_server and self.options.staple_ocsp_response:
+          stapled_ocsp_response = self.__ocsp_server.ocsp_response
+
         server = HTTPSServer((host, port), TestPageHandler, pem_cert_and_key,
                              self.options.ssl_client_auth,
                              self.options.ssl_client_ca,
                              self.options.ssl_bulk_cipher,
                              self.options.record_resume,
                              self.options.tls_intolerant,
-                             self.options.signed_cert_timestamps.decode(
-                                 "base64"))
+                             self.options.signed_cert_timestamps_tls_ext.decode(
+                                 "base64"),
+                             self.options.fallback_scsv,
+                             stapled_ocsp_response)
         print 'HTTPS server started on %s:%d...' % (host, server.server_port)
       else:
         server = HTTPServer((host, port), TestPageHandler)
@@ -2085,13 +2100,26 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'aborted. 2 means TLS 1.1 or higher will be '
                                   'aborted. 3 means TLS 1.2 or higher will be '
                                   'aborted.')
-    self.option_parser.add_option('--signed-cert-timestamps',
-                                  dest='signed_cert_timestamps',
+    self.option_parser.add_option('--signed-cert-timestamps-tls-ext',
+                                  dest='signed_cert_timestamps_tls_ext',
                                   default='',
                                   help='Base64 encoded SCT list. If set, '
                                   'server will respond with a '
                                   'signed_certificate_timestamp TLS extension '
                                   'whenever the client supports it.')
+    self.option_parser.add_option('--fallback-scsv', dest='fallback_scsv',
+                                  default=False, const=True,
+                                  action='store_const',
+                                  help='If given, TLS_FALLBACK_SCSV support '
+                                  'will be enabled. This causes the server to '
+                                  'reject fallback connections from compatible '
+                                  'clients (e.g. Chrome).')
+    self.option_parser.add_option('--staple-ocsp-response',
+                                  dest='staple_ocsp_response',
+                                  default=False, action='store_true',
+                                  help='If set, server will staple the OCSP '
+                                  'response whenever OCSP is on and the client '
+                                  'supports OCSP stapling.')
     self.option_parser.add_option('--https-record-resume',
                                   dest='record_resume', const=True,
                                   default=False, action='store_const',

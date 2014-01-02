@@ -140,7 +140,7 @@ void ReportCorrupt(sql::Connection* db, size_t startup_kb) {
     std::vector<std::string> messages;
 
     const base::TimeTicks before = base::TimeTicks::Now();
-    db->IntegrityCheck(&messages);
+    db->FullIntegrityCheck(&messages);
     base::StringAppendF(&debug_info, "# %" PRIx64 " ms, %" PRIuS " records\n",
                         (base::TimeTicks::Now() - before).InMilliseconds(),
                         messages.size());
@@ -526,9 +526,8 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
     if (original_size > 0 &&
         base::GetFileSize(db_path, &final_size) &&
         final_size > 0) {
-      int percentage = static_cast<int>(original_size * 100 / final_size);
       UMA_HISTOGRAM_PERCENTAGE("History.FaviconsRecoveredPercentage",
-                               std::max(100, percentage));
+                               final_size * 100 / original_size);
     }
 
     // Using 10,000 because these cases mostly care about "none

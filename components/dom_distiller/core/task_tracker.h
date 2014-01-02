@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_DOM_DISTILLER_CORE_DOM_TASK_TRACKER_H_
-#define COMPONENTS_DOM_DISTILLER_CORE_DOM_TASK_TRACKER_H_
+#ifndef COMPONENTS_DOM_DISTILLER_CORE_TASK_TRACKER_H_
+#define COMPONENTS_DOM_DISTILLER_CORE_TASK_TRACKER_H_
+
+#include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
@@ -79,8 +82,8 @@ class TaskTracker {
   // The ViewerHandle should be destroyed before the ViewRequestDelegate.
   scoped_ptr<ViewerHandle> AddViewer(ViewRequestDelegate* delegate);
 
-  bool HasEntryId(const std::string& entry_id);
-  bool HasUrl(const GURL& url);
+  bool HasEntryId(const std::string& entry_id) const;
+  bool HasUrl(const GURL& url) const;
 
  private:
   void OnDistilledDataReady(scoped_ptr<DistilledPageProto> distilled_page);

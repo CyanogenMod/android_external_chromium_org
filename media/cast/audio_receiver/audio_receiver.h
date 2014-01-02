@@ -17,7 +17,7 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_receiver.h"
 #include "media/cast/rtcp/rtcp.h"  // RtcpCastMessage
-#include "media/cast/rtp_common/rtp_defines.h"  // RtpCastHeader
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"  // RtpCastHeader
 
 namespace crypto {
   class Encryptor;
@@ -132,7 +132,6 @@ class AudioReceiver : public base::NonThreadSafe,
   uint32 first_incoming_rtp_timestamp_;
   scoped_ptr<crypto::Encryptor> decryptor_;
   std::string iv_mask_;
-  base::TimeTicks last_playout_time_;
 
   std::list<AudioFrameEncodedCallback> queued_encoded_callbacks_;
   std::list<DecodedAudioCallbackData> queued_decoded_callbacks_;

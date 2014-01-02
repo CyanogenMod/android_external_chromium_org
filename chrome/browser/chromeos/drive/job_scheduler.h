@@ -111,10 +111,10 @@ class JobScheduler
                    const ClientContext& context,
                    const google_apis::GetShareUrlCallback& callback);
 
-  // Adds a DeleteResource operation to the queue.
-  void DeleteResource(const std::string& resource_id,
-                      const ClientContext& context,
-                      const google_apis::EntryActionCallback& callback);
+  // Adds a TrashResource operation to the queue.
+  void TrashResource(const std::string& resource_id,
+                     const ClientContext& context,
+                     const google_apis::EntryActionCallback& callback);
 
   // Adds a CopyResource operation to the queue.
   void CopyResource(
@@ -122,12 +122,6 @@ class JobScheduler
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::GetResourceEntryCallback& callback);
-
-  // Adds a CopyHostedDocument operation to the queue.
-  void CopyHostedDocument(
-      const std::string& resource_id,
-      const std::string& new_title,
       const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a UpdateResource operation to the queue.

@@ -8,17 +8,15 @@
 #include <string>
 #include <vector>
 
+#include "ash/first_run/first_run_helper.h"
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_actor.h"
 
 class Profile;
-
-namespace ash {
-class FirstRunHelper;
-}
 
 namespace chromeos {
 
@@ -29,7 +27,8 @@ class Step;
 // FirstRunController creates and manages first-run tutorial.
 // Object manages its lifetime and deletes itself after completion of the
 // tutorial.
-class FirstRunController : public FirstRunActor::Delegate {
+class FirstRunController : public FirstRunActor::Delegate,
+                           public ash::FirstRunHelper::Observer {
   typedef std::vector<linked_ptr<first_run::Step> > Steps;
 
  public:
@@ -50,8 +49,12 @@ class FirstRunController : public FirstRunActor::Delegate {
   virtual void OnActorInitialized() OVERRIDE;
   virtual void OnNextButtonClicked(const std::string& step_name) OVERRIDE;
   virtual void OnHelpButtonClicked() OVERRIDE;
-  virtual void OnCloseButtonClicked() OVERRIDE;
+  virtual void OnStepHidden(const std::string& step_name) OVERRIDE;
+  virtual void OnActorFinalized() OVERRIDE;
   virtual void OnActorDestroyed() OVERRIDE;
+
+  // Overriden from ash::FirstRunHelper::Observer.
+  virtual void OnCancelled() OVERRIDE;
 
   void RegisterSteps();
   void ShowNextStep();
@@ -73,6 +76,9 @@ class FirstRunController : public FirstRunActor::Delegate {
 
   // Profile used for webui and help app.
   Profile* user_profile_;
+
+  // The work that should be made after actor has been finalized.
+  base::Closure on_actor_finalized_;
 
   DISALLOW_COPY_AND_ASSIGN(FirstRunController);
 };

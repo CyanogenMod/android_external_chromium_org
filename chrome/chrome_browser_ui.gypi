@@ -62,6 +62,7 @@
         '<(SHARED_INTERMEDIATE_DIR)',
       ],
       'export_dependent_settings': [
+        '../components/components.gyp:dom_distiller_core',
         '../sync/sync.gyp:sync',
       ],
       'sources': [
@@ -119,8 +120,6 @@
         'browser/ui/android/tab_model/tab_model_list.cc',
         'browser/ui/android/tab_model/tab_model_list.h',
         'browser/ui/android/tab_restore_service_delegate_android.cc',
-        'browser/ui/android/validation_message_bubble_android.h',
-        'browser/ui/android/validation_message_bubble_android.cc',
         'browser/ui/android/website_settings_popup_android.cc',
         'browser/ui/android/website_settings_popup_android.h',
         'browser/ui/android/window_android_helper.cc',
@@ -338,8 +337,6 @@
         'browser/ui/ash/session_state_delegate_chromeos.h',
         'browser/ui/ash/session_state_delegate_views.cc',
         'browser/ui/ash/session_state_delegate_views.h',
-        'browser/ui/ash/system_tray_delegate_chromeos.cc',
-        'browser/ui/ash/system_tray_delegate_chromeos.h',
         'browser/ui/ash/system_tray_delegate_win.cc',
         'browser/ui/ash/system_tray_delegate_win.h',
         'browser/ui/ash/tabs/dock_info_ash.cc',
@@ -1089,10 +1086,11 @@
         'browser/ui/content_settings/content_setting_media_menu_model.h',
         'browser/ui/content_settings/media_setting_changed_infobar_delegate.cc',
         'browser/ui/content_settings/media_setting_changed_infobar_delegate.h',
-        'browser/ui/crypto_module_password_dialog.cc',
+        'browser/ui/crypto_module_delegate_nss.cc',
+        'browser/ui/crypto_module_delegate_nss.h',
         'browser/ui/crypto_module_password_dialog.h',
         'browser/ui/crypto_module_password_dialog_nss.cc',
-        'browser/ui/crypto_module_password_dialog_openssl.cc',
+        'browser/ui/crypto_module_password_dialog_nss.h',
         'browser/ui/extensions/application_launch.cc',
         'browser/ui/extensions/application_launch.h',
         'browser/ui/extensions/extension_installed_bubble.cc',
@@ -1809,6 +1807,8 @@
         'browser/ui/views/extensions/extension_installed_bubble_view.h',
         'browser/ui/views/extensions/extension_keybinding_registry_views.cc',
         'browser/ui/views/extensions/extension_keybinding_registry_views.h',
+        'browser/ui/views/extensions/extension_message_bubble_view.cc',
+        'browser/ui/views/extensions/extension_message_bubble_view.h',
         'browser/ui/views/extensions/extension_popup.cc',
         'browser/ui/views/extensions/extension_popup.h',
         'browser/ui/views/extensions/extension_uninstall_dialog_view.cc',
@@ -1818,8 +1818,6 @@
         'browser/ui/views/extensions/media_galleries_dialog_views.h',
         'browser/ui/views/external_protocol_dialog.cc',
         'browser/ui/views/external_protocol_dialog.h',
-        'browser/ui/views/extensions/suspicious_extension_bubble_view.h',
-        'browser/ui/views/extensions/suspicious_extension_bubble_view.cc',
         'browser/ui/views/external_tab_container_win.cc',
         'browser/ui/views/external_tab_container_win.h',
         'browser/ui/views/find_bar_host.cc',
@@ -2191,6 +2189,10 @@
         'browser/ui/webui/chrome_web_ui_controller_factory.h',
         'browser/ui/webui/chromeos/bluetooth_pairing_ui.cc',
         'browser/ui/webui/chromeos/bluetooth_pairing_ui.h',
+        'browser/ui/webui/chromeos/charger_replacement_handler.cc',
+        'browser/ui/webui/chromeos/charger_replacement_handler.h',
+        'browser/ui/webui/chromeos/charger_replacement_ui.cc',
+        'browser/ui/webui/chromeos/charger_replacement_ui.h',
         'browser/ui/webui/chromeos/choose_mobile_network_ui.cc',
         'browser/ui/webui/chromeos/choose_mobile_network_ui.h',
         'browser/ui/webui/chromeos/cryptohome_ui.cc',
@@ -2244,6 +2246,10 @@
         'browser/ui/webui/chromeos/login/oobe_ui.h',
         'browser/ui/webui/chromeos/login/reset_screen_handler.cc',
         'browser/ui/webui/chromeos/login/reset_screen_handler.h',
+        'browser/ui/webui/chromeos/login/screenlock_icon_provider.cc',
+        'browser/ui/webui/chromeos/login/screenlock_icon_provider.h',
+        'browser/ui/webui/chromeos/login/screenlock_icon_source.cc',
+        'browser/ui/webui/chromeos/login/screenlock_icon_source.h',
         'browser/ui/webui/chromeos/login/screen_manager_handler.cc',
         'browser/ui/webui/chromeos/login/screen_manager_handler.h',
         'browser/ui/webui/chromeos/login/signin_screen_handler.cc',
@@ -2719,7 +2725,7 @@
         }],
         ['configuration_policy==1', {
           'dependencies': [
-            'app/policy/cloud_policy_codegen.gyp:policy',
+            '../components/components.gyp:policy',
           ],
         }, {  # configuration_policy==0
           'sources/': [
@@ -2953,6 +2959,10 @@
           'sources!': [
             'browser/ui/webui/options/certificate_manager_handler.cc',
             'browser/ui/webui/options/certificate_manager_handler.h',
+            'browser/ui/crypto_module_delegate_nss.cc',
+            'browser/ui/crypto_module_delegate_nss.h',
+            'browser/ui/crypto_module_password_dialog_nss.cc',
+            'browser/ui/crypto_module_password_dialog_nss.h',
           ],
         }],
         ['use_nss==0 and use_openssl==0', {
@@ -3083,7 +3093,6 @@
             # Also not used on android
             'browser/ui/apps/chrome_shell_window_delegate.cc',
             'browser/ui/autofill/account_chooser_model.cc',
-            'browser/ui/autofill/autocheckout_bubble.cc',
             'browser/ui/autofill/autofill_dialog_sign_in_delegate.cc',
             'browser/ui/autofill/country_combobox_model.cc',
             'browser/ui/bookmarks/bookmark_drag_drop.cc',
@@ -3157,8 +3166,6 @@
           'sources!': [
             'browser/ui/certificate_dialogs.cc',
             'browser/ui/certificate_dialogs.h',
-            'browser/ui/crypto_module_password_dialog.cc',
-            'browser/ui/crypto_module_password_dialog_nss.cc',
             'browser/ui/screen_capture_notification_ui_stub.cc',
             'browser/ui/tabs/dock_info.cc',
             'browser/ui/tabs/tab_resources.cc',
@@ -3235,8 +3242,6 @@
           'sources!': [
             'browser/ui/certificate_dialogs.cc',
             'browser/ui/certificate_dialogs.h',
-            'browser/ui/crypto_module_password_dialog.cc',
-            'browser/ui/crypto_module_password_dialog_nss.cc',
             'browser/ui/screen_capture_notification_ui_stub.cc',
             'browser/ui/startup/autolaunch_prompt.cc',
             'browser/ui/views/frame/taskbar_decorator.cc',
@@ -3301,14 +3306,6 @@
             }],
           ],
         }],
-        [ 'use_openssl==1', {
-          'sources!': [
-            'browser/ui/crypto_module_password_dialog_nss.cc',
-          ]}, {
-           'sources!': [
-             'browser/ui/crypto_module_password_dialog_openssl.cc',
-          ]},
-        ],
         # File manager extension replaces the native OS file open/save dialog.
         ['file_manager_extension==1', {
           'sources/': [

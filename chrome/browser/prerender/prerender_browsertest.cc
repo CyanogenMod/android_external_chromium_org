@@ -54,6 +54,8 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -101,8 +103,8 @@ namespace prerender {
 namespace {
 
 // Constants used in the test HTML files.
-static const char* kReadyTitle = "READY";
-static const char* kPassTitle = "PASS";
+const char* kReadyTitle = "READY";
+const char* kPassTitle = "PASS";
 
 std::string CreateClientRedirect(const std::string& dest_url) {
   const char* const kClientRedirectBase = "client-redirect?";
@@ -828,10 +830,10 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
 
   void NavigateToDestURLInNewTab() const {
     // First, open a new tab.
-    current_browser()->OpenURL(
-        content::OpenURLParams(GURL("chrome://blank"), Referrer(),
-                               NEW_FOREGROUND_TAB,
-                               content::PAGE_TRANSITION_TYPED, false));
+    ui_test_utils::NavigateToURLWithDisposition(
+        current_browser(), GURL(content::kAboutBlankURL),
+        NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
     // Next, navigate to the destination URL. The swap-in will not succeed,
     // due to session storage namespace mismatch. The merge is only kicked off
     // asynchronously.
@@ -1946,7 +1948,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderReferrer) {
 // Checks that the referrer is not set when prerendering and the source page is
 // HTTPS.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderNoSSLReferrer) {
+                       PrerenderNoSSLReferrer) {
   set_use_https_src(true);
   PrerenderTestURL("files/prerender/prerender_no_referrer.html",
                    FINAL_STATUS_USED,
@@ -2952,7 +2954,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderReferrerPolicy) {
 
 // Checks that the referrer policy is used when prerendering on HTTPS.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderSSLReferrerPolicy) {
+                       PrerenderSSLReferrerPolicy) {
   set_use_https_src(true);
   set_loader_path("files/prerender/prerender_loader_with_referrer_policy.html");
   PrerenderTestURL("files/prerender/prerender_referrer_policy.html",
@@ -3349,6 +3351,26 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderNewNavigationEntry) {
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPageNewTab) {
   PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
   NavigateToDestURLInNewTab();
+}
+
+// Checks that prerenders honor |should_replace_current_entry|.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderReplaceCurrentEntry) {
+  PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
+
+  content::OpenURLParams params(dest_url(), Referrer(), CURRENT_TAB,
+                                content::PAGE_TRANSITION_TYPED, false);
+  params.should_replace_current_entry = true;
+  NavigateToURLWithParams(params, false);
+
+  WebContents* web_contents =
+      current_browser()->tab_strip_model()->GetActiveWebContents();
+  const NavigationController& controller = web_contents->GetController();
+  // First entry is about:blank, second is prerender_page.html.
+  EXPECT_TRUE(controller.GetPendingEntry() == NULL);
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(GURL(content::kAboutBlankURL),
+            controller.GetEntryAtIndex(0)->GetURL());
+  EXPECT_EQ(dest_url(), controller.GetEntryAtIndex(1)->GetURL());
 }
 
 }  // namespace prerender

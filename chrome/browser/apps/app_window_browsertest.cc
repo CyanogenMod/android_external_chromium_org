@@ -26,7 +26,9 @@ class GeometryCacheChangeHelper : ShellWindowGeometryCache::Observer {
       : cache_(cache),
         extension_id_(extension_id),
         window_id_(window_id),
-        bounds_(bounds) {
+        bounds_(bounds),
+        satisfied_(false),
+        waiting_(false) {
     cache_->AddObserver(this);
   }
 
@@ -34,6 +36,10 @@ class GeometryCacheChangeHelper : ShellWindowGeometryCache::Observer {
   // provide a bound for |window_id_| that is entirely different (as in x/y/w/h)
   // from the initial |bounds_|.
   void WaitForEntirelyChanged() {
+    if (satisfied_)
+      return;
+
+    waiting_ = true;
     content::RunMessageLoop();
   }
 
@@ -49,8 +55,11 @@ class GeometryCacheChangeHelper : ShellWindowGeometryCache::Observer {
         bounds_.y() != bounds.y() &&
         bounds_.width() != bounds.width() &&
         bounds_.height() != bounds.height()) {
+      satisfied_ = true;
       cache_->RemoveObserver(this);
-      base::MessageLoopForUI::current()->Quit();
+
+      if (waiting_)
+        base::MessageLoopForUI::current()->Quit();
     }
   }
 
@@ -59,10 +68,12 @@ class GeometryCacheChangeHelper : ShellWindowGeometryCache::Observer {
   std::string extension_id_;
   std::string window_id_;
   gfx::Rect bounds_;
+  bool satisfied_;
+  bool waiting_;
 };
 
 // Helper class for tests related to the Apps Window API (chrome.app.window).
-class AppWindowAPI : public extensions::PlatformAppBrowserTest {
+class AppWindowAPITest : public extensions::PlatformAppBrowserTest {
  public:
   bool RunAppWindowAPITest(const char* testName) {
     ExtensionTestMessageListener launched_listener("Launched", true);
@@ -87,36 +98,41 @@ class AppWindowAPI : public extensions::PlatformAppBrowserTest {
 // These tests are flaky after https://codereview.chromium.org/57433010/.
 // See http://crbug.com/319613.
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestCreate) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestCreate) {
   ASSERT_TRUE(RunAppWindowAPITest("testCreate")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestSingleton) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestSingleton) {
   ASSERT_TRUE(RunAppWindowAPITest("testSingleton")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestBounds) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestBounds) {
   ASSERT_TRUE(RunAppWindowAPITest("testBounds")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestCloseEvent) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestCloseEvent) {
   ASSERT_TRUE(RunAppWindowAPITest("testCloseEvent")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestMaximize) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestMaximize) {
   ASSERT_TRUE(RunAppWindowAPITest("testMaximize")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestRestore) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestRestore) {
   ASSERT_TRUE(RunAppWindowAPITest("testRestore")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestRestoreAfterClose) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestRestoreAfterClose) {
   ASSERT_TRUE(RunAppWindowAPITest("testRestoreAfterClose")) << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestSizeConstraints) {
+  ASSERT_TRUE(RunAppWindowAPITest("testSizeConstraints")) << message_;
+}
+
 // Flaky failures on mac_rel and WinXP, see http://crbug.com/324915.
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestRestoreGeometryCacheChange) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest,
+                       DISABLED_TestRestoreGeometryCacheChange) {
   // This test is similar to the other AppWindowAPI tests except that at some
   // point the app will send a 'ListenGeometryChange' message at which point the
   // test will check if the geometry cache entry for the test window has
@@ -144,19 +160,22 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestRestoreGeometryCacheChange) {
 
   ASSERT_TRUE(geometry_listener.WaitUntilSatisfied());
 
-  GeometryCacheChangeHelper geo_change_helper(
+  GeometryCacheChangeHelper geo_change_helper_1(
       ShellWindowGeometryCache::Get(browser()->profile()), extension->id(),
       // The next line has information that has to stay in sync with the app.
-      "test-ps", gfx::Rect(200, 200, 200, 200));
+      "test-ra", gfx::Rect(200, 200, 200, 200));
 
-  // This call will block until the shell window geometry cache will be changed.
-  geo_change_helper.WaitForEntirelyChanged();
+  GeometryCacheChangeHelper geo_change_helper_2(
+      ShellWindowGeometryCache::Get(browser()->profile()), extension->id(),
+      // The next line has information that has to stay in sync with the app.
+      "test-rb", gfx::Rect(200, 200, 200, 200));
+
+  // These calls will block until the shell window geometry cache will change.
+  geo_change_helper_1.WaitForEntirelyChanged();
+  geo_change_helper_2.WaitForEntirelyChanged();
 
   ResultCatcher catcher;
   geometry_listener.Reply("");
   ASSERT_TRUE(catcher.GetNextResult());
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPI, DISABLED_TestSizeConstraints) {
-  ASSERT_TRUE(RunAppWindowAPITest("testSizeConstraints")) << message_;
-}

@@ -61,6 +61,11 @@ const int kNoSelection = -1;
 const int kBodyButtonImages[] = IMAGE_GRID(IDR_COMBOBOX_BUTTON);
 const int kHoveredBodyButtonImages[] = IMAGE_GRID(IDR_COMBOBOX_BUTTON_H);
 const int kPressedBodyButtonImages[] = IMAGE_GRID(IDR_COMBOBOX_BUTTON_P);
+const int kFocusedBodyButtonImages[] = IMAGE_GRID(IDR_COMBOBOX_BUTTON_F);
+const int kFocusedHoveredBodyButtonImages[] =
+    IMAGE_GRID(IDR_COMBOBOX_BUTTON_F_H);
+const int kFocusedPressedBodyButtonImages[] =
+    IMAGE_GRID(IDR_COMBOBOX_BUTTON_F_P);
 
 #define MENU_IMAGE_GRID(x) { \
     x ## _MENU_TOP, x ## _MENU_CENTER, x ## _MENU_BOTTOM, }
@@ -68,6 +73,11 @@ const int kPressedBodyButtonImages[] = IMAGE_GRID(IDR_COMBOBOX_BUTTON_P);
 const int kMenuButtonImages[] = MENU_IMAGE_GRID(IDR_COMBOBOX_BUTTON);
 const int kHoveredMenuButtonImages[] = MENU_IMAGE_GRID(IDR_COMBOBOX_BUTTON_H);
 const int kPressedMenuButtonImages[] = MENU_IMAGE_GRID(IDR_COMBOBOX_BUTTON_P);
+const int kFocusedMenuButtonImages[] = MENU_IMAGE_GRID(IDR_COMBOBOX_BUTTON_F);
+const int kFocusedHoveredMenuButtonImages[] =
+    MENU_IMAGE_GRID(IDR_COMBOBOX_BUTTON_F_H);
+const int kFocusedPressedMenuButtonImages[] =
+    MENU_IMAGE_GRID(IDR_COMBOBOX_BUTTON_F_P);
 
 #undef MENU_IMAGE_GRID
 
@@ -125,9 +135,6 @@ int GetAdjacentIndex(ui::ComboboxModel* model, int increment, int index) {
 //
 // TODO(hajimehoshi): This function should return the images for the 'disabled'
 // status. (crbug/270052)
-//
-// TODO(hajimehoshi): Currently, |focused| is ignored. This should return the
-// images for the 'focused' status. (crbug/270052)
 const int* GetBodyButtonImageIds(bool focused,
                                  Button::ButtonState state,
                                  size_t* num) {
@@ -135,13 +142,15 @@ const int* GetBodyButtonImageIds(bool focused,
   *num = 9;
   switch (state) {
     case Button::STATE_DISABLED:
-      return kBodyButtonImages;
+      return focused ? kFocusedBodyButtonImages : kBodyButtonImages;
     case Button::STATE_NORMAL:
-      return kBodyButtonImages;
+      return focused ? kFocusedBodyButtonImages : kBodyButtonImages;
     case Button::STATE_HOVERED:
-      return kHoveredBodyButtonImages;
+      return focused ?
+          kFocusedHoveredBodyButtonImages : kHoveredBodyButtonImages;
     case Button::STATE_PRESSED:
-      return kPressedBodyButtonImages;
+      return focused ?
+          kFocusedPressedBodyButtonImages : kPressedBodyButtonImages;
     default:
       NOTREACHED();
   }
@@ -156,13 +165,15 @@ const int* GetMenuButtonImageIds(bool focused,
   *num = 3;
   switch (state) {
     case Button::STATE_DISABLED:
-      return kMenuButtonImages;
+      return focused ? kFocusedMenuButtonImages : kMenuButtonImages;
     case Button::STATE_NORMAL:
-      return kMenuButtonImages;
+      return focused ? kFocusedMenuButtonImages : kMenuButtonImages;
     case Button::STATE_HOVERED:
-      return kHoveredMenuButtonImages;
+      return focused ?
+          kFocusedHoveredMenuButtonImages : kHoveredMenuButtonImages;
     case Button::STATE_PRESSED:
-      return kPressedMenuButtonImages;
+      return focused ?
+          kFocusedPressedMenuButtonImages : kPressedMenuButtonImages;
     default:
       NOTREACHED();
   }
@@ -238,7 +249,7 @@ Combobox::Combobox(ui::ComboboxModel* model)
       arrow_button_(new TransparentButton(this)) {
   model_->AddObserver(this);
   UpdateFromModel();
-  set_focusable(true);
+  SetFocusable(true);
   UpdateBorder();
 
   // Initialize the button images.
@@ -263,8 +274,8 @@ Combobox::Combobox(ui::ComboboxModel* model)
 
   text_button_->SetVisible(true);
   arrow_button_->SetVisible(true);
-  text_button_->set_focusable(false);
-  arrow_button_->set_focusable(false);
+  text_button_->SetFocusable(false);
+  arrow_button_->SetFocusable(false);
   AddChildView(text_button_);
   AddChildView(arrow_button_);
 }

@@ -48,8 +48,6 @@
         'mojo_system_impl',
       ],
       'sources': [
-        'common/test/multiprocess_test_base.cc',
-        'common/test/multiprocess_test_base.h',
         'common/test/run_all_unittests.cc',
       ],
     },
@@ -78,11 +76,19 @@
       'sources': [
         'system/channel.cc',
         'system/channel.h',
+        'system/constants.h',
         'system/core_impl.cc',
         'system/core_impl.h',
+        'system/data_pipe.cc',
+        'system/data_pipe.h',
+        'system/data_pipe_consumer_dispatcher.cc',
+        'system/data_pipe_consumer_dispatcher.h',
+        'system/data_pipe_producer_dispatcher.cc',
+        'system/data_pipe_producer_dispatcher.h',
         'system/dispatcher.cc',
         'system/dispatcher.h',
-        'system/limits.h',
+        'system/local_data_pipe.cc',
+        'system/local_data_pipe.h',
         'system/local_message_pipe_endpoint.cc',
         'system/local_message_pipe_endpoint.h',
         'system/memory.cc',
@@ -119,6 +125,7 @@
       'dependencies': [
         '../base/base.gyp:run_all_unittests',
         '../testing/gtest.gyp:gtest',
+        'mojo_common_test_support',
         'mojo_system',
         'mojo_system_impl',
       ],
@@ -129,6 +136,7 @@
         'system/dispatcher_unittest.cc',
         'system/message_pipe_dispatcher_unittest.cc',
         'system/message_pipe_unittest.cc',
+        'system/multiprocess_message_pipe_unittest.cc',
         'system/raw_channel_posix_unittest.cc',
         'system/remote_message_pipe_posix_unittest.cc',
         'system/simple_dispatcher_unittest.cc',
@@ -141,16 +149,19 @@
       ],
     },
     {
-      'target_name': 'mojo_gles2',
+      'target_name': 'mojo_gles2_impl',
       'type': '<(component)',
       'dependencies': [
         '../gpu/gpu.gyp:gles2_c_lib',
+        'mojo_gles2',
       ],
       'defines': [
-        'MOJO_GLES2_IMPLEMENTATION',
+        'MOJO_GLES2_IMPL_IMPLEMENTATION',
       ],
       'sources': [
-        'gles2/gles2.cc',
+        'gles2/export.h',
+        'gles2/gles2_impl.cc',
+        'gles2/gles2_impl.h',
       ],
     },
     {
@@ -185,6 +196,21 @@
       ],
     },
     {
+      'target_name': 'mojo_common_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
+        'mojo_system',
+        'mojo_system_impl',
+      ],
+      'sources': [
+        'common/test/multiprocess_test_base.cc',
+        'common/test/multiprocess_test_base.h',
+      ],
+    },
+    {
       'target_name': 'mojo_common_unittests',
       'type': 'executable',
       'dependencies': [
@@ -193,6 +219,7 @@
         '../testing/gtest.gyp:gtest',
         'mojo_bindings',
         'mojo_common_lib',
+        'mojo_common_test_support',
         'mojo_public_test_support',
         'mojo_run_all_unittests',
         'mojo_system',
@@ -221,9 +248,10 @@
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
         'mojo_bindings',
+        'mojo_gles2_impl',
+        'mojo_native_viewport_service',
         'mojo_system',
         'mojo_system_impl',
-        'mojo_native_viewport_service',
       ],
       'sources': [
         'shell/app_container.cc',

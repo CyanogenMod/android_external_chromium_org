@@ -611,8 +611,6 @@
             'host/setup/daemon_controller_delegate_win.h',
             'host/setup/daemon_installer_win.cc',
             'host/setup/daemon_installer_win.h',
-            'host/setup/host_starter.cc',
-            'host/setup/host_starter.h',
             'host/setup/me2me_native_messaging_host.cc',
             'host/setup/me2me_native_messaging_host.h',
             'host/setup/oauth_client.cc',
@@ -735,14 +733,8 @@
               'msvs_settings': {
                 'VCManifestTool': {
                   'EmbedManifest': 'true',
-                },
-                'VCLinkerTool': {
-                  'AdditionalOptions': [
-                    "\"/manifestdependency:type='win32' "
-                        "name='Microsoft.Windows.Common-Controls' "
-                        "version='6.0.0.0' "
-                        "processorArchitecture='*' "
-                        "publicKeyToken='6595b64144ccf1df' language='*'\"",
+                  'AdditionalManifestFiles': [
+                    'host/win/common-controls.manifest',
                   ],
                 },
               },
@@ -761,7 +753,6 @@
             'remoting_host_event_logger',
             'remoting_host_logging',
             'remoting_infoplist_strings',
-            'remoting_host_setup_base',
             'remoting_jingle_glue',
             'remoting_resources',
           ],
@@ -1139,6 +1130,8 @@
             'remoting_host_setup_base',
           ],
           'sources': [
+            'host/setup/host_starter.cc',
+            'host/setup/host_starter.h',
             'host/setup/start_host.cc',
           ],
           'conditions': [
@@ -1478,44 +1471,6 @@
             },
           ],
         },  # end of target 'remoting_lib_rc'
-        {
-          'target_name': 'remoting_configurer',
-          'type': 'executable',
-          'defines': [
-            '_ATL_NO_EXCEPTIONS',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../crypto/crypto.gyp:crypto',
-            'remoting_host',
-            'remoting_host_setup_base',
-          ],
-          'sources': [
-            'host/branding.cc',
-            'host/setup/win/host_configurer.cc',
-            'host/setup/win/host_configurer.rc',
-            'host/setup/win/host_configurer_window.cc',
-            'host/setup/win/host_configurer_window.h',
-            'host/setup/win/host_configurer_resource.h',
-            'host/setup/win/load_string_from_resource.cc',
-            'host/setup/win/load_string_from_resource.h',
-            'host/setup/win/start_host_window.cc',
-            'host/setup/win/start_host_window.h',
-          ],
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'AdditionalOptions': [
-                "\"/manifestdependency:type='win32' "
-                    "name='Microsoft.Windows.Common-Controls' "
-                    "version='6.0.0.0' "
-                    "processorArchitecture='*' "
-                    "publicKeyToken='6595b64144ccf1df' language='*'\"",
-              ],
-              # 2 == /SUBSYSTEM:WINDOWS
-              'SubSystem': '2',
-            },
-          },
-        },  # end of target 'remoting_configurer'
         # The only difference between |remoting_console.exe| and
         # |remoting_host.exe| is that the former is a console application.
         # |remoting_console.exe| is used for debugging purposes.
@@ -1644,6 +1599,9 @@
           'msvs_settings': {
             'VCManifestTool': {
               'EmbedManifest': 'true',
+              'AdditionalManifestFiles': [
+                'host/win/common-controls.manifest',
+              ],
             },
             'VCLinkerTool': {
               'AdditionalDependencies': [
@@ -1654,12 +1612,6 @@
                 'wtsapi32.lib',
               ],
               'AdditionalOptions': [
-                "\"/manifestdependency:type='win32' "
-                    "name='Microsoft.Windows.Common-Controls' "
-                    "version='6.0.0.0' "
-                    "processorArchitecture='*' "
-                    "publicKeyToken='6595b64144ccf1df' language='*'\"",
-
                 # Export the proxy/stub entry points. Note that the generated
                 # routines have 'Ps' prefix to avoid conflicts with our own
                 # DllMain().
@@ -1965,6 +1917,23 @@
       ],  # end of 'targets'
     }],  # 'OS=="android"'
 
+    ['OS=="android" and gtest_target_type=="shared_library"', {
+      'targets': [
+        {
+          'target_name': 'remoting_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'remoting_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'remoting_unittests',
+            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)remoting_unittests<(SHARED_LIB_SUFFIX)',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
+        },
+      ],
+    }],  # 'OS=="android" and gtest_target_type=="shared_library"'
+
     # The host installation is generated only if WiX is available. If
     # component build is used the produced installation will not work due to
     # missing DLLs. We build it anyway to make sure the GYP scripts are executed
@@ -2140,7 +2109,6 @@
         'remoting_jingle_glue',
         '../net/net.gyp:net',
         '../ppapi/ppapi.gyp:ppapi_cpp_objects',
-        '../skia/skia.gyp:skia',
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
         '../ui/events/events.gyp:dom4_keycode_converter',
       ],
@@ -2180,9 +2148,13 @@
             'client/plugin/normalizing_input_filter_cros.cc',
           ],
         }],
+        [ 'OS=="android"', {
+          'sources/': [
+            ['exclude', '^client/plugin/'],
+          ],
+        }],
       ],
     },  # end of target 'remoting_client_plugin'
-
     {
       'target_name': 'remoting_host_event_logger',
       'type': 'static_library',
@@ -2526,7 +2498,6 @@
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/ui.gyp:ui',
         '../net/net.gyp:net',
-        '../skia/skia.gyp:skia',
         '../third_party/libvpx/libvpx.gyp:libvpx',
         '../third_party/libyuv/libyuv.gyp:libyuv',
         '../third_party/opus/opus.gyp:opus',
@@ -2541,7 +2512,6 @@
       'export_dependent_settings': [
         '../base/base.gyp:base',
         '../net/net.gyp:net',
-        '../skia/skia.gyp:skia',
         '../third_party/protobuf/protobuf.gyp:protobuf_lite',
         'proto/chromotocol.gyp:chromotocol_proto_lib',
       ],
@@ -2797,8 +2767,6 @@
         'protocol/ssl_hmac_channel_authenticator.h',
         'protocol/transport.cc',
         'protocol/transport.h',
-        'protocol/transport_config.cc',
-        'protocol/transport_config.h',
         'protocol/util.cc',
         'protocol/util.h',
         'protocol/third_party_authenticator_base.cc',
@@ -2820,7 +2788,7 @@
     # Remoting unit tests
     {
       'target_name': 'remoting_unittests',
-      'type': 'executable',
+      'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
@@ -3017,6 +2985,11 @@
             'webapp/all_js_load.gtestjs',
             'webapp/format_iq.gtestjs',
             '<@(remoting_webapp_js_files)',
+          ],
+        }],
+        ['OS=="android" and gtest_target_type=="shared_library"', {
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
         [ '(OS!="linux" or chromeos==0)', {

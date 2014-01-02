@@ -7,10 +7,10 @@
 #include <string>
 
 #include "ash/desktop_background/user_wallpaper_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
@@ -88,20 +88,30 @@ void LauncherContextMenu::Init() {
       if (!controller_->IsPlatformApp(item_.id) &&
           item_.type != ash::TYPE_WINDOWED_APP) {
         AddSeparator(ui::NORMAL_SEPARATOR);
-        AddCheckItemWithStringId(
-            LAUNCH_TYPE_REGULAR_TAB,
-            IDS_APP_CONTEXT_MENU_OPEN_REGULAR);
-        AddCheckItemWithStringId(
-            LAUNCH_TYPE_PINNED_TAB,
-            IDS_APP_CONTEXT_MENU_OPEN_PINNED);
-        AddCheckItemWithStringId(
-            LAUNCH_TYPE_WINDOW,
-            IDS_APP_CONTEXT_MENU_OPEN_WINDOW);
-        // Even though the launch type is Full Screen it is more accurately
-        // described as Maximized in Ash.
-        AddCheckItemWithStringId(
-            LAUNCH_TYPE_FULLSCREEN,
-            IDS_APP_CONTEXT_MENU_OPEN_MAXIMIZED);
+        if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableStreamlinedHostedApps)) {
+          // Streamlined hosted apps launch in a window by default. This menu
+          // item is re-interpreted as a single, toggle-able option to launch
+          // the hosted app as a tab.
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_REGULAR_TAB,
+              IDS_APP_CONTEXT_MENU_OPEN_TAB);
+        } else {
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_REGULAR_TAB,
+              IDS_APP_CONTEXT_MENU_OPEN_REGULAR);
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_PINNED_TAB,
+              IDS_APP_CONTEXT_MENU_OPEN_PINNED);
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_WINDOW,
+              IDS_APP_CONTEXT_MENU_OPEN_WINDOW);
+          // Even though the launch type is Full Screen it is more accurately
+          // described as Maximized in Ash.
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_FULLSCREEN,
+              IDS_APP_CONTEXT_MENU_OPEN_MAXIMIZED);
+        }
       }
     } else if (item_.type == ash::TYPE_BROWSER_SHORTCUT) {
       AddItem(MENU_NEW_WINDOW,
@@ -160,7 +170,7 @@ bool LauncherContextMenu::IsItemForCommandIdDynamic(int command_id) const {
   return command_id == MENU_OPEN_NEW;
 }
 
-string16 LauncherContextMenu::GetLabelForCommandId(int command_id) const {
+base::string16 LauncherContextMenu::GetLabelForCommandId(int command_id) const {
   if (command_id == MENU_OPEN_NEW) {
     if (item_.type == ash::TYPE_PLATFORM_APP) {
       return l10n_util::GetStringUTF16(IDS_LAUNCHER_CONTEXT_MENU_NEW_WINDOW);
@@ -237,7 +247,7 @@ void LauncherContextMenu::ExecuteCommand(int command_id, int event_flags) {
       break;
     case MENU_CLOSE:
       controller_->Close(item_.id);
-      ChromeShellDelegate::instance()->RecordUserMetricsAction(
+      ash::Shell::GetInstance()->metrics()->RecordUserMetricsAction(
           ash::UMA_CLOSE_THROUGH_CONTEXT_MENU);
       break;
     case MENU_PIN:
@@ -246,9 +256,21 @@ void LauncherContextMenu::ExecuteCommand(int command_id, int event_flags) {
     case LAUNCH_TYPE_PINNED_TAB:
       controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_PINNED);
       break;
-    case LAUNCH_TYPE_REGULAR_TAB:
-      controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_REGULAR);
+    case LAUNCH_TYPE_REGULAR_TAB: {
+      extensions::LaunchType launch_type =
+          extensions::LAUNCH_TYPE_REGULAR;
+      // Streamlined hosted apps can only toggle between LAUNCH_WINDOW and
+      // LAUNCH_REGULAR.
+      if (CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kEnableStreamlinedHostedApps)) {
+        launch_type = controller_->GetLaunchType(item_.id) ==
+                    extensions::LAUNCH_TYPE_REGULAR
+                ? extensions::LAUNCH_TYPE_WINDOW
+                : extensions::LAUNCH_TYPE_REGULAR;
+      }
+      controller_->SetLaunchType(item_.id, launch_type);
       break;
+    }
     case LAUNCH_TYPE_WINDOW:
       controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_WINDOW);
       break;

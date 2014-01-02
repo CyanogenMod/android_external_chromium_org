@@ -22,6 +22,7 @@
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/net/resource_prefetch_predictor_observer.h"
+#include "chrome/browser/prefetch/prefetch_field_trial.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_pending_swap_throttle.h"
 #include "chrome/browser/prerender/prerender_resource_throttle.h"
@@ -58,7 +59,7 @@
 #include "net/url_request/url_request.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "components/policy/core/browser/policy_header_io_helper.h"
+#include "components/policy/core/common/cloud/policy_header_io_helper.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -212,7 +213,7 @@ bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
       return false;
 
     // If prefetch is disabled, kill the request.
-    if (!prerender::PrerenderManager::IsPrefetchEnabled())
+    if (!prefetch::IsPrefetchEnabled())
       return false;
   }
 

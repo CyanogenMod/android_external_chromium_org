@@ -62,6 +62,7 @@
 #include "content/public/browser/resource_context.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
+#include "net/base/keygen_handler.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_transaction_factory.h"
@@ -81,11 +82,11 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/cloud/policy_header_service.h"
 #include "chrome/browser/policy/cloud/policy_header_service_factory.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
-#include "components/policy/core/browser/policy_header_io_helper.h"
+#include "components/policy/core/common/cloud/policy_header_io_helper.h"
+#include "components/policy/core/common/cloud/policy_header_service.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -107,10 +108,11 @@
 #include "chromeos/settings/cros_settings_names.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
+#include "net/ssl/client_cert_store_chromeos.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(USE_NSS)
-#include "chrome/browser/ui/crypto_module_password_dialog.h"
+#include "chrome/browser/ui/crypto_module_delegate_nss.h"
 #include "net/ssl/client_cert_store_nss.h"
 #endif
 
@@ -852,9 +854,14 @@ net::URLRequestContext* ProfileIOData::ResourceContext::GetRequestContext()  {
 
 scoped_ptr<net::ClientCertStore>
 ProfileIOData::ResourceContext::CreateClientCertStore() {
-#if defined(USE_NSS)
+#if defined(OS_CHROMEOS)
+  return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreChromeOS(
+      io_data_->username_hash(),
+      base::Bind(&CreateCryptoModuleBlockingPasswordDelegate,
+                 chrome::kCryptoModulePasswordClientAuth)));
+#elif defined(USE_NSS)
   return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreNSS(
-      base::Bind(&chrome::NewCryptoModuleBlockingDialogDelegate,
+      base::Bind(&CreateCryptoModuleBlockingPasswordDelegate,
                  chrome::kCryptoModulePasswordClientAuth)));
 #elif defined(OS_WIN)
   return scoped_ptr<net::ClientCertStore>(new net::ClientCertStoreWin());
@@ -867,6 +874,37 @@ ProfileIOData::ResourceContext::CreateClientCertStore() {
   return scoped_ptr<net::ClientCertStore>();
 #else
 #error Unknown platform.
+#endif
+}
+
+void ProfileIOData::ResourceContext::CreateKeygenHandler(
+    uint32 key_size_in_bits,
+    const std::string& challenge_string,
+    const GURL& url,
+    const base::Callback<void(scoped_ptr<net::KeygenHandler>)>& callback) {
+  DCHECK(!callback.is_null());
+#if defined(USE_NSS)
+  scoped_ptr<net::KeygenHandler> keygen_handler(
+      new net::KeygenHandler(key_size_in_bits, challenge_string, url));
+
+  scoped_ptr<ChromeNSSCryptoModuleDelegate> delegate(
+      new ChromeNSSCryptoModuleDelegate(chrome::kCryptoModulePasswordKeygen,
+                                        url.host()));
+  ChromeNSSCryptoModuleDelegate* delegate_ptr = delegate.get();
+  keygen_handler->set_crypto_module_delegate(
+      delegate.PassAs<crypto::NSSCryptoModuleDelegate>());
+
+  base::Closure bound_callback =
+      base::Bind(callback, base::Passed(&keygen_handler));
+  if (delegate_ptr->InitializeSlot(this, bound_callback)) {
+    // Initialization complete, run the callback synchronously.
+    bound_callback.Run();
+    return;
+  }
+  // Otherwise, the InitializeSlot will run the callback asynchronously.
+#else
+  callback.Run(make_scoped_ptr(
+      new net::KeygenHandler(key_size_in_bits, challenge_string, url)));
 #endif
 }
 

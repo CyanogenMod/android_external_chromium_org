@@ -298,16 +298,13 @@ const wchar_t* ContentBrowserClient::GetResourceDllName() {
 }
 #endif
 
-#if defined(USE_NSS)
-crypto::CryptoModuleBlockingPasswordDelegate*
-    ContentBrowserClient::GetCryptoPasswordDelegate(const GURL& url) {
-  return NULL;
-}
-#endif
-
 bool ContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
     content::BrowserContext* browser_context,
     const GURL& url) {
+  return false;
+}
+
+bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
   return false;
 }
 

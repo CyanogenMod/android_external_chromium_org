@@ -537,16 +537,6 @@ void WebGraphicsContext3DCommandBufferImpl::setVisibilityCHROMIUM(
 DELEGATE_TO_GL_3(discardFramebufferEXT, DiscardFramebufferEXT, WGC3Denum,
                  WGC3Dsizei, const WGC3Denum*)
 
-void WebGraphicsContext3DCommandBufferImpl::discardBackbufferCHROMIUM() {
-  gl_->Flush();
-  command_buffer_->DiscardBackbuffer();
-}
-
-void WebGraphicsContext3DCommandBufferImpl::ensureBackbufferCHROMIUM() {
-  gl_->Flush();
-  command_buffer_->EnsureBackbuffer();
-}
-
 void WebGraphicsContext3DCommandBufferImpl::copyTextureToParentTextureCHROMIUM(
     WebGLId texture, WebGLId parentTexture) {
   NOTIMPLEMENTED();
@@ -697,6 +687,10 @@ DELEGATE_TO_GL_4(framebufferRenderbuffer, FramebufferRenderbuffer,
 
 DELEGATE_TO_GL_5(framebufferTexture2D, FramebufferTexture2D,
                  WGC3Denum, WGC3Denum, WGC3Denum, WebGLId, WGC3Dint)
+
+DELEGATE_TO_GL_6(framebufferTexture2DMultisampleEXT,
+                 FramebufferTexture2DMultisampleEXT,
+                 WGC3Denum, WGC3Denum, WGC3Denum, WebGLId, WGC3Dint, WGC3Dsizei)
 
 DELEGATE_TO_GL_1(frontFace, FrontFace, WGC3Denum)
 

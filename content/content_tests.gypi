@@ -490,7 +490,7 @@
         'browser/webui/web_ui_message_handler_unittest.cc',
         'child/fileapi/webfilewriter_base_unittest.cc',
         'child/indexed_db/indexed_db_dispatcher_unittest.cc',
-        'child/indexed_db/proxy_webidbcursor_impl_unittest.cc',
+        'child/indexed_db/webidbcursor_impl_unittest.cc',
         'child/npapi/plugin_lib_unittest.cc',
         'child/power_monitor_broadcast_source_unittest.cc',
         'child/resource_dispatcher_unittest.cc',
@@ -522,9 +522,9 @@
         'renderer/device_orientation/device_orientation_event_pump_unittest.cc',
         'renderer/disambiguation_popup_helper_unittest.cc',
         'renderer/dom_storage/dom_storage_cached_area_unittest.cc',
-        'renderer/gpu/input_event_filter_unittest.cc',
-        'renderer/gpu/input_handler_proxy_unittest.cc',
         'renderer/ico_image_decoder_unittest.cc',
+        'renderer/input/input_event_filter_unittest.cc',
+        'renderer/input/input_handler_proxy_unittest.cc',
         'renderer/media/android/media_info_loader_unittest.cc',
         'renderer/media/audio_message_filter_unittest.cc',
         'renderer/media/audio_renderer_mixer_manager_unittest.cc',
@@ -771,10 +771,7 @@
         ['use_aura==1', {
           'dependencies': [
             '../ui/aura/aura.gyp:aura',
-          ],
-          'sources!': [
-            'browser/accessibility/browser_accessibility_win_unittest.cc',
-          ],
+          ]
         }],
         ['use_aura==1 or toolkit_views==1', {
           'dependencies': [
@@ -896,6 +893,7 @@
             'content_shell_lib',
             'content_shell_pak',
             '../base/base.gyp:test_support_base',
+            '../gin/gin.gyp:gin',
             '../gpu/gpu.gyp:gpu',
             '../ipc/ipc.gyp:test_support_ipc',
             '../media/media.gyp:media_test_support',
@@ -996,6 +994,7 @@
             'renderer/browser_plugin/mock_browser_plugin_manager.h',
             'renderer/cpp_bound_class_unittest.cc',
             'renderer/dom_serializer_browsertest.cc',
+            'renderer/gin_browsertest.cc',
             'renderer/mouse_lock_dispatcher_browsertest.cc',
             'renderer/pepper/fake_pepper_plugin_instance.cc',
             'renderer/pepper/mock_renderer_ppapi_host.cc',
@@ -1262,8 +1261,8 @@
               }],
               ['OS=="win"', {
                 'dependencies': [
-                  '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
-                  '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
+                  '<(angle_path)/src/build_angle.gyp:libEGL',
+                  '<(angle_path)/src/build_angle.gyp:libGLESv2',
                 ],
               }],
               ['(OS=="win" and win_use_allocator_shim==1) or '

@@ -1202,8 +1202,8 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_ENCODING_AUTO_DETECT" desc="The text label of the Auto Detect submenu">
           Auto detect
         </message>
-        <message name="IDC_VISIT_DESKTOP_OF_LRU_USER" desc="The text label of the menu item which allows the user to move a window from one users desktop to another.">
-          Teleport window to '<ph name="USER_NAME">$1<ex>User name</ex></ph>'
+        <message name="IDS_VISIT_DESKTOP_OF_LRU_USER" desc="The text label of the menu item which allows the user to move a window from one users desktop to another.">
+          Move window to <ph name="USER_NAME">$1<ex>User name</ex></ph>
         </message>
       </if>
       <message name="IDS_ACCNAME_ZOOM_PLUS2" desc="The accessible description of the Make Text Larger menu item in the merged menu">
@@ -1523,9 +1523,6 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       </if>
 
       <!-- Keywords -->
-      <message name="IDS_ANNOTATED_SUGGESTION" desc="A suggested search query in the omnibox dropdown, annotated to disambiguate it from other similar queries.">
-        <ph name="SUGGESTION">$1<ex>roosevelt</ex></ph> - <ph name="ANNOTATION">$2<ex>Franklin D. Roosevelt, 32nd U.S. President</ex></ph>
-      </message>
       <message name="IDS_AUTOCOMPLETE_MATCH_DESCRIPTION_SEPARATOR" desc="The separator between a result in the autocomplete popup and its description.">
         ''' - '''
       </message>
@@ -2515,6 +2512,16 @@ Even if you have downloaded files from this website before, the website might ha
       </message>
       <message name="IDS_CERT_ERROR_WEAK_KEY_DESCRIPTION" desc="Description of the error page for a certificate containing a weak key">
         The server certificate contains a weak cryptographic key.
+      </message>
+
+      <message name="IDS_CERT_ERROR_NAME_CONSTRAINT_VIOLATION_TITLE" desc="Title of the error page for a certificate that contains a name outside of its scope">
+        The server certificate contains a domain name that shouldn't be there.
+      </message>
+      <message name="IDS_CERT_ERROR_NAME_CONSTRAINT_VIOLATION_DETAILS" desc="Details of the error page for a certificate that contains a name outside of its scope">
+        You attempted to reach <ph name="DOMAIN">&lt;strong&gt;$1<ex>paypal.com</ex>&lt;/strong&gt;</ph>, but the server presented an invalid certificate. The authority who created the certificate is not allowed to speak on behalf of some websites. One of those websites is mentioned in the certificate, even though it shouldn't be.
+      </message>
+      <message name="IDS_CERT_ERROR_NAME_CONSTRAINT_VIOLATION_DESCRIPTION" desc="Description of the error page for a certificate that contains a name outside of its scope">
+        Server's certificate violates name constraints.
       </message>
 
       <message name="IDS_CERT_ERROR_UNKNOWN_ERROR_TITLE" desc="Title of the error page for an unknown ssl error">
@@ -4386,6 +4393,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_SCREENLOCK_PRIVATE" desc="Permission string for locking an unlocking the screen.">
         Lock and unlock the screen
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HIDE_BOOKMARK_STAR" desc="Permission string for hiding the bookmark star button.">
+        Hide the bookmark star
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_ACTIVITY_LOG_PRIVATE" desc="Permission string for the observing other extensions' API calls">
         Monitor the behavior of other extensions, including visited URLs
@@ -6286,11 +6296,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SPELLCHECK_AUTOCORRECT_DESCRIPTION" desc="Description for the flag to force synchronous spellchecking.">
         Turn on autocorrection of text while typing. Synchronous spellchecking is not compatible with this feature.
       </message>
-      <message name="IDS_FLAGS_DOCKED_WINDOWS_NAME" desc="Name for the flag to disable docked windows feature.">
-        Disable docking of windows near screen edges.
+      <message name="IDS_FLAGS_DOCKED_WINDOWS_NAME" desc="Name for the flag to enable docked windows feature.">
+        Enable docking of windows near screen edges.
       </message>
-      <message name="IDS_FLAGS_DOCKED_WINDOWS_DESCRIPTION" desc="Description for the flag to disable docked windows feature.">
-        Turns off docking of windows near screen edges, a feature that provides an easier way to interact with panel and other small windows.
+      <message name="IDS_FLAGS_DOCKED_WINDOWS_DESCRIPTION" desc="Description for the flag to enable docked windows feature.">
+        Turns on docking of windows near screen edges, a feature that provides an easier way to interact with panel and other small windows.
       </message>
       <message name="IDS_FLAGS_IMMERSIVE_FULLSCREEN_FOR_ALL_WINDOWS_NAME" desc="Name for the flag to enable immersive fullscreen for all windows.">
         Enable immersive fullscreen for non browser windows.
@@ -6671,12 +6681,26 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_DESCRIPTION" desc="Description for the flag to disable sync of user account image.">
         Disables sync of user account image between different ChromeOS devices.
       </message>
+      <if expr="is_android">
+        <message name="IDS_FLAGS_ENABLE_CAST_NAME" desc="Name of the flag to enable Chromecast support.">
+          Enable Chromecast support
+        </message>
+        <message name="IDS_FLAGS_ENABLE_CAST_DESCRIPTION" desc="Description for the flag to disable playing videos remotely on Chromecast.">
+          Enable playing videos remotely on Chromecast.
+        </message>
+      </if>
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_FLAGS_DISABLE_FIRST_RUN_UI_NAME" desc="Name of the flag to disable new first-run UI.">
           Disable new first-run UI.
         </message>
         <message name="IDS_FLAGS_DISABLE_FIRST_RUN_UI_DESCRIPTION" desc="Description for the flag to disable new first-run UI.">
           If disabled, overlay tutorial won't be shown after first login.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_TRANSITIONS_NAME" desc="Name of the flag to enable animated transitions for the first-run tutorial.">
+          Enable animated transitions in the first-run tutorial.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_TRANSITIONS_DESCRIPTION" desc="Description for the flag to enable animated transition in the first-run tutorial.">
+          If enabled, transitions during first-run tutorial are animated.
         </message>
       </if>
       <message name="IDS_FLAGS_HIDPI_NAME" desc="Name of flag to enable/disable HiDPI Support.">
@@ -6752,6 +6776,27 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_ENHANCED_BOOKMARKS_DESCRIPTION" desc="Description of about:flags option to enable Enhanced Bookmarks extension.">
         Provides an off switch for enhanced bookmarks experiment
+      </message>
+      <message name="IDS_FLAGS_ORIGIN_CHIP_NAME" desc="Name of about:flags option to enable the display of the Origin Chip experiment.">
+        Enable origin chip
+      </message>
+      <message name="IDS_FLAGS_ORIGIN_CHIP_DESCRIPTION" desc="Description of about:flags option to enable the display of the Origin Chip experiment.">
+        Moves the URL out of the Omnibox and shows the hostname in the origin chip in the toolbar.
+      </message>
+      <message name="IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_NAME" desc="Name of about:flags option to enable the search button in omnibox experiment.">
+        Enable search button in Omnibox
+      </message>
+      <message name="IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_DESCRIPTION" desc="Description of about:flags option to enable the search button in omnibox experiment.">
+        Places a search button in the Omnibox.
+      </message>
+      <message name="IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_ENABLE_FOR_STR" desc="Option in a drop-down menu to enable the display of the search button in the omnibox on search result pages.">
+        Enabled on search result pages
+      </message>
+      <message name="IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_ENABLE_FOR_STR_OR_IIP" desc="Option in a drop-down menu to enable the display of the search button in the omnibox on search result pages or whenever input is in progress.">
+        Enabled on search result pages or when input in progress
+      </message>
+      <message name="IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_ENABLED" desc="Option in a drop-down menu to enable the display of the search button at all times (on all pages).">
+        Enabled on all pages
       </message>
 
       <!-- Crashes -->
@@ -7335,6 +7380,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
       </if>
 
+      <message name="IDS_SITE_CHIP_EV_SSL_LABEL" desc="Formatting for the string displayed in the EV SSL site chip next to the omnibox.">
+        <ph name="ORGNAME">$1<ex>Google, Inc. [US]</ex></ph> <ph name="HOSTNAME">$2<ex>google.com</ex></ph>
+      </message>
+
       <!--Script Bubble-->
       <message name="IDS_SCRIPT_BUBBLE_HEADLINE" desc="The headline of the script bubble.">
         Extensions interacting with this page:
@@ -7703,31 +7752,31 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Obliterate the following items from:
       </message>
       <message name="IDS_DEL_BROWSING_HISTORY_CHKBOX" desc="Checkbox for deleting Browsing History">
-        Clear browsing history
+        Browsing history
       </message>
       <message name="IDS_DEL_DOWNLOAD_HISTORY_CHKBOX" desc="Checkbox for deleting Download History">
-        Clear download history
+        Download history
       </message>
       <message name="IDS_DEL_CACHE_CHKBOX" desc="Checkbox for deleting Cache">
-        Empty the cache
+        Cached images and files
       </message>
       <message name="IDS_DEL_COOKIES_CHKBOX" desc="Checkbox for deleting Cookies and other site data">
-        Delete cookies and other site data
+        Cookies and other site data
       </message>
       <message name="IDS_DEL_COOKIES_FLASH_CHKBOX" desc="Checkbox for deleting Cookies and other site data">
-        Delete cookies and other site and plug-in data
+        Cookies and other site and plug-in data
       </message>
       <message name="IDS_DEL_PASSWORDS_CHKBOX" desc="Checkbox for deleting Passwords">
-        Clear saved passwords
+        Passwords
       </message>
       <message name="IDS_DEL_FORM_DATA_CHKBOX" desc="Checkbox for deleting form data saved for Autofill">
-        Clear saved Autofill form data
+        Autofill form data
       </message>
       <message name="IDS_DEL_HOSTED_APPS_DATA_CHKBOX" desc="Checkbox for deleting data of hosted apps">
-        Clear data from hosted apps
+        Hosted app data
       </message>
       <message name="IDS_DEAUTHORIZE_CONTENT_LICENSES_CHKBOX" desc="Checkbox for deauthorizing content licenses (DRM videos, etc.)">
-        Deauthorize content licenses
+        Content licenses
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_COMMIT" desc="Title for OK button on dialog">
         Clear browsing data
@@ -7749,6 +7798,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_CLEAR_DATA_EVERYTHING" desc="deletion period combo box: everything. In English this finishes the sentence that starts with 'Delete the following items from'.">
         the beginning of time
+      </message>
+      <message name="IDS_CLEAR_BROWSING_DATA_SOME_STUFF_REMAINS" desc="Information that some data may remain even though the user clears their browsing history. The text in '|'s and '#'s will be turned into buttons. The translated text should contain exactly one phrase in '|'s and one in '#'s.">
+        Saved |content settings| and #search engines# will not be cleared and may reflect your browsing habits.
       </message>
 
       <!-- Managed User Avatar Menu -->
@@ -10991,14 +11043,16 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_OTR_MESSAGE_MOBILE"
                  desc="Mobile: Used when a person opens an OTR tab">
           <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept. Going incognito doesn't affect the behavior of other people, servers, software, or people standing behind you.
+          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept.
           <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>However, you aren't invisible.<ph name="END_BOLD">&lt;/strong&gt;</ph> Going incognito doesn't hide your browsing from your employer, your internet service provider, or the websites you visit.
           <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
         </message>
         <message name="IDS_NEW_TAB_OTR_MESSAGE"
                  desc="Mobile: Used when a person opens an OTR tab">
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">"&lt;/strong&gt;</ph>
-          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept. Going incognito doesn't affect the behavior of other people, servers, software, or people standing behind you.
+          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept.
+          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>However, you aren't invisible.<ph name="END_BOLD">&lt;/strong&gt;</ph> Going incognito doesn't hide your browsing from your employer, your internet service provider, or the websites you visit.
           <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
           <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
         </message>
@@ -11007,7 +11061,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_OTR_MESSAGE"
                  desc="Used when a person opens an OTR window">
           <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept. Going incognito doesn't affect the behavior of other people, servers, software, or people standing behind you.
+          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept.
+          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>However, you aren't invisible.<ph name="END_BOLD">&lt;/strong&gt;</ph> Going incognito doesn't hide your browsing from your employer, your internet service provider, or the websites you visit.
           <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
           <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
         </message>
@@ -14212,6 +14268,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_ENTERPRISE_ENROLLMENT_MISSING_LICENSES_ERROR" desc="Error message to show when the domain the device is trying to enroll into has expired or exhausted licenses.">
         You do not have enough software licenses to enroll this device. Please contact sales to purchase more. If you believe you're seeing this message in error, please contact support.
       </message>
+      <message name="IDS_ENTERPRISE_ENROLLMENT_DEPROVISIONED_ERROR" desc="Error message to show when enrollment fails because the administrator has deprovisioned the device on the server side.">
+        This device has been placed into a deprovisioned state by the administrator. To enable it for enrollment, please have your administrator place the device into a pending state.
+      </message>
       <message name="IDS_ENTERPRISE_ENROLLMENT_SCREEN_TITLE" desc="The title on the enterprise enrollment dialog.">
         Enterprise enrollment
       </message>
@@ -15088,6 +15147,9 @@ Do you accept?
     </message>
 
     <!-- Reset Profile Settings strings -->
+    <message name="IDS_RESET_PROFILE_SETTINGS_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that the settings might have been changed without the user's knowledge.">
+      Some of your settings may have been changed without your knowledge.
+    </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_SECTION_TITLE" desc="The title of the section in chrome://settings that allows resetting some settings in a profile">
       Reset browser settings
     </message>
@@ -15414,6 +15476,12 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ZERO_SUGGEST_ETHER_NO_SERP" desc="A choice in dropdown dialog on about:flags page to show zero suggest on http pages only">
       Related URLs only
+    </message>
+    <message name="IDS_FLAGS_ENABLE_IGNORE_AUTOCOMPLETE_OFF_NAME" desc="Name of the ignore autocomplete='off' lab">
+      Ignore autocomplete='off'
+    </message>
+    <message name="IDS_FLAGS_ENABLE_IGNORE_AUTOCOMPLETE_OFF_DESCRIPTION" desc="Description of the ignore autocomplete='off' lab">
+      Ignore autocomplete='off' for password forms in the password manager.
     </message>
   </messages>
 

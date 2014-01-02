@@ -38,19 +38,25 @@ void CastSessionDelegate::SetSocketFactory(
   remote_address_ = remote_address;
 }
 
-void CastSessionDelegate::StartAudio(const AudioSenderConfig& config) {
+void CastSessionDelegate::StartAudio(
+    const AudioSenderConfig& config,
+    const FrameInputAvailableCallback& callback) {
   DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   audio_configured_ = true;
   audio_config_ = config;
+  frame_input_available_callbacks_.push_back(callback);
   MaybeStartSending();
 }
 
-void CastSessionDelegate::StartVideo(const VideoSenderConfig& config) {
+void CastSessionDelegate::StartVideo(
+    const VideoSenderConfig& config,
+    const FrameInputAvailableCallback& callback) {
   DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   video_configured_ = true;
   video_config_ = config;
+  frame_input_available_callbacks_.push_back(callback);
   MaybeStartSending();
 }
 
@@ -92,6 +98,12 @@ void CastSessionDelegate::StartSending() {
       video_config_,
       NULL,
       this));
+
+  for (size_t i = 0; i < frame_input_available_callbacks_.size(); ++i) {
+    frame_input_available_callbacks_[i].Run(
+        cast_sender_->frame_input());
+  }
+  frame_input_available_callbacks_.clear();
 }
 
   // media::cast::PacketSender Implementation
@@ -137,7 +149,8 @@ void CastSessionDelegate::OnError() {
 }
 
 void CastSessionDelegate::OnDataReceived(const net::IPEndPoint& address,
-                                         const std::vector<char>& data) {
+                                         const std::vector<char>& data,
+                                         const base::TimeTicks& timestamp) {
   uint8 *packet_copy = new uint8[data.size()];
   memcpy(packet_copy, &data[0], data.size());
   cast_sender_->packet_receiver()->ReceivedPacket(

@@ -32,12 +32,10 @@ std::string JobTypeToString(JobType type) {
       return "TYPE_GET_RESOURCE_ENTRY";
     case TYPE_GET_SHARE_URL:
       return "TYPE_GET_SHARE_URL";
-    case TYPE_DELETE_RESOURCE:
-      return "TYPE_DELETE_RESOURCE";
+    case TYPE_TRASH_RESOURCE:
+      return "TYPE_TRASH_RESOURCE";
     case TYPE_COPY_RESOURCE:
       return "TYPE_COPY_RESOURCE";
-    case TYPE_COPY_HOSTED_DOCUMENT:
-      return "TYPE_COPY_HOSTED_DOCUMENT";
     case TYPE_UPDATE_RESOURCE:
       return "TYPE_UPDATE_RESOURCE";
     case TYPE_RENAME_RESOURCE:
@@ -125,9 +123,8 @@ bool IsActiveFileTransferJobInfo(const JobInfo& job_info) {
     case TYPE_GET_REMAINING_FILE_LIST:
     case TYPE_GET_RESOURCE_ENTRY:
     case TYPE_GET_SHARE_URL:
-    case TYPE_DELETE_RESOURCE:
+    case TYPE_TRASH_RESOURCE:
     case TYPE_COPY_RESOURCE:
-    case TYPE_COPY_HOSTED_DOCUMENT:
     case TYPE_UPDATE_RESOURCE:
     case TYPE_RENAME_RESOURCE:
     case TYPE_ADD_RESOURCE_TO_DIRECTORY:

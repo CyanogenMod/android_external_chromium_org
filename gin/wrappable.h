@@ -7,14 +7,16 @@
 
 #include "base/template_util.h"
 #include "gin/converter.h"
+#include "gin/gin_export.h"
 #include "gin/public/wrapper_info.h"
 
 namespace gin {
 
 namespace internal {
 
-void* FromV8Impl(v8::Isolate* isolate, v8::Handle<v8::Value> val,
-                 WrapperInfo* info);
+GIN_EXPORT void* FromV8Impl(v8::Isolate* isolate,
+                            v8::Handle<v8::Value> val,
+                            WrapperInfo* info);
 
 }  // namespace internal
 
@@ -42,7 +44,7 @@ class Wrappable;
 
 
 // Non-template base class to share code between templates instances.
-class WrappableBase {
+class GIN_EXPORT WrappableBase {
  protected:
   WrappableBase();
   virtual ~WrappableBase();
@@ -63,13 +65,11 @@ class WrappableBase {
 template<typename T>
 class Wrappable : public WrappableBase {
  public:
-  static WrapperInfo kWrapperInfo;
-
   // Retrieve (or create) the v8 wrapper object cooresponding to this object.
   // To customize the wrapper created for a subclass, override GetWrapperInfo()
   // instead of overriding this function.
   v8::Handle<v8::Object> GetWrapper(v8::Isolate* isolate) {
-    return GetWrapperImpl(isolate, &kWrapperInfo);
+    return GetWrapperImpl(isolate, &T::kWrapperInfo);
   }
 
  protected:
@@ -80,14 +80,6 @@ class Wrappable : public WrappableBase {
   DISALLOW_COPY_AND_ASSIGN(Wrappable);
 };
 
-
-// Subclasses of Wrappable must call this within a cc file to initialize their
-// WrapperInfo. This template must be used inside namespace gin.
-#define INIT_WRAPPABLE(TYPE)                              \
-  template <>                                             \
-  gin::WrapperInfo gin::Wrappable<TYPE>::kWrapperInfo = { \
-      gin::kEmbedderNativeGin                             \
-  }
 
 // This converter handles any subclass of Wrappable.
 template<typename T>

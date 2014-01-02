@@ -164,7 +164,7 @@
             '../courgette/courgette.gyp:*',
             '../rlz/rlz.gyp:*',
             '../sandbox/sandbox.gyp:*',
-            '../third_party/angle_dx11/src/build_angle.gyp:*',
+            '<(angle_path)/src/build_angle.gyp:*',
             '../third_party/bspatch/bspatch.gyp:*',
           ],
         }, {
@@ -635,6 +635,11 @@
                 '../skia/skia.gyp:filter_fuzz_stub',
               ],
             }],
+            ['OS=="linux" and enable_ipc_fuzzer==1', {
+              'dependencies': [
+                '../tools/ipc_fuzzer/ipc_fuzzer.gyp:*',
+              ],
+            }],
             ['internal_filter_fuzzer==1', {
               'dependencies': [
                 '../skia/tools/clusterfuzz-data/fuzzers/filter_fuzzer/filter_fuzzer.gyp:filter_fuzzer',
@@ -944,7 +949,7 @@
               'dependencies': [
                 '../chrome/chrome.gyp:crash_service',
                 '../chrome/chrome.gyp:gcapi_dll',
-                '../chrome/chrome.gyp:policy_templates',
+                '../chrome/chrome.gyp:pack_policy_templates',
                 '../courgette/courgette.gyp:courgette64',
                 '../chrome/installer/mini_installer.gyp:mini_installer',
                 '../courgette/courgette.gyp:courgette',

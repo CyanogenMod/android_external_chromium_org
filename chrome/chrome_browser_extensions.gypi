@@ -29,6 +29,7 @@
         'sync_file_system_proto',
         '../components/component_strings.gyp:component_strings',
         '../components/components.gyp:onc_component',
+        '../components/components.gyp:url_matcher',
         '../components/components.gyp:wifi_component',
         '../content/content.gyp:content_browser',
         '../crypto/crypto.gyp:crypto',
@@ -660,6 +661,8 @@
         'browser/extensions/data_deleter.h',
         'browser/extensions/default_apps.cc',
         'browser/extensions/default_apps.h',
+        'browser/extensions/dev_mode_bubble_controller.cc',
+        'browser/extensions/dev_mode_bubble_controller.h',
         'browser/extensions/devtools_util.h',
         'browser/extensions/devtools_util.cc',
         'browser/extensions/error_console/error_console.cc',
@@ -712,6 +715,8 @@
         'browser/extensions/extension_installer.h',
         'browser/extensions/extension_keybinding_registry.cc',
         'browser/extensions/extension_keybinding_registry.h',
+        'browser/extensions/extension_message_bubble_controller.cc',
+        'browser/extensions/extension_message_bubble_controller.h',
         'browser/extensions/policy_handlers.cc',
         'browser/extensions/policy_handlers.h',
         'browser/extensions/extension_pref_store.cc',
@@ -934,8 +939,6 @@
             'browser/extensions/api/log_private/log_private_api_chromeos.cc',
             'browser/extensions/api/log_private/syslog_parser.cc',
             'browser/extensions/api/log_private/syslog_parser.h',
-            'browser/chromeos/extensions/screenlock_private_api.cc',
-            'browser/chromeos/extensions/screenlock_private_api.h',
             'browser/extensions/api/networking_private/networking_private_api_chromeos.cc',
             'browser/extensions/api/networking_private/networking_private_api.h',
             'browser/extensions/api/networking_private/networking_private_event_router_chromeos.cc',
@@ -1047,7 +1050,7 @@
         }],
         ['configuration_policy==1', {
           'dependencies': [
-            'app/policy/cloud_policy_codegen.gyp:policy',
+            '../components/components.gyp:policy',
           ],
         }, {  # configuration_policy==0
           'sources!': [
@@ -1152,6 +1155,7 @@
             'browser/extensions/extension_function_util.cc',
             'browser/extensions/extension_infobar_delegate.cc',
             'browser/extensions/extension_install_ui.cc',
+            'browser/extensions/extension_list_bubble_controller.cc',
             'browser/extensions/extension_tab_util.cc',
             'browser/extensions/extension_uninstall_dialog.cc',
             'browser/extensions/suspicious_extension_bubble_controller.cc',

@@ -249,7 +249,14 @@ const CGFloat kMinimumContentsHeight = 101;
       [[loadingShieldController_ view] isHidden] &&
       [[overlayController_ view] isHidden] &&
       [[signInContainer_ view] isHidden];
+  BOOL wasVisible = ![[mainContainer_ view] isHidden];
   [[mainContainer_ view] setHidden:!visible];
+
+  // Postpone [mainContainer_ didBecomeVisible] until layout is complete.
+  if (visible && !wasVisible) {
+    mainContainerBecameVisible_ = YES;
+    [self requestRelayout];
+  }
 }
 
 - (AutofillDialogWindow*)autofillWindow {
@@ -321,7 +328,13 @@ const CGFloat kMinimumContentsHeight = 101;
 
   NSRect frameRect = [[self window] frameRectForContentRect:contentRect];
   [[self window] setFrame:frameRect display:YES];
+
   [[self window] recalculateKeyViewLoop];
+
+  if (mainContainerBecameVisible_) {
+    [mainContainer_ scrollInitialEditorIntoViewAndMakeFirstResponder];
+    mainContainerBecameVisible_ = NO;
+  }
 }
 
 - (IBAction)accept:(id)sender {
@@ -396,7 +409,12 @@ const CGFloat kMinimumContentsHeight = 101;
 
 - (content::NavigationController*)showSignIn {
   [self updateSignInSizeConstraints];
+  // Ensure |signInContainer_| is set to the same size as |mainContainer_|, to
+  // force its minimum size so that there will not be a resize until the
+  // contents are loaded.
+  [[signInContainer_ view] setFrameSize:[[mainContainer_ view] frame].size];
   [signInContainer_ loadSignInPage];
+
   [[signInContainer_ view] setHidden:NO];
   [self updateMainContainerVisibility];
   [self requestRelayout];

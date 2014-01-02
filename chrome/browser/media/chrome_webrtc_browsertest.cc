@@ -28,24 +28,17 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/test/browser_test_utils.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/perf/perf_test.h"
 
 static const char kMainWebrtcTestHtmlPage[] =
     "/webrtc/webrtc_jsep01_test.html";
 
-// Temporarily disabled on Linux.
-// http://crbug.com/281268.
-#if defined(OS_LINUX)
-#define MAYBE_WebrtcBrowserTest DISABLED_WebrtcBrowserTest
-#else
-#define MAYBE_WebrtcBrowserTest WebrtcBrowserTest
-#endif
-
 // Top-level integration test for WebRTC. Requires a real webcam and microphone
 // on the running system. This test is not meant to run in the main browser
 // test suite since normal tester machines do not have webcams.
-class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
+class WebrtcBrowserTest : public WebRtcTestBase {
  public:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
@@ -65,6 +58,10 @@ class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
 
     // Flag used by TestWebAudioMediaStream to force garbage collection.
     command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
+#if defined(OS_MACOSX)
+    // TODO(mcasas): Remove this switch when http://crbug.com/327618 is solved.
+    command_line->AppendSwitch(switches::kDisableAVFoundation);
+#endif
   }
 
   void EstablishCall(content::WebContents* from_tab,
@@ -178,19 +175,14 @@ class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
   }
 
   content::WebContents* OpenTestPageAndGetUserMediaInNewTab() {
-    chrome::AddTabAt(browser(), GURL(), -1, true);
-    ui_test_utils::NavigateToURL(
-        browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
-    content::WebContents* left_tab =
-        browser()->tab_strip_model()->GetActiveWebContents();
-    GetUserMediaAndAccept(left_tab);
-    return left_tab;
+    return OpenPageAndGetUserMediaInNewTab(
+        embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   }
 
   PeerConnectionServerRunner peerconnection_server_;
 };
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        MANUAL_RunsAudioVideoWebRTCCallInTwoTabs) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
@@ -213,7 +205,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest, MANUAL_CpuUsage15Seconds) {
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, MANUAL_CpuUsage15Seconds) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
 
@@ -261,7 +253,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest, MANUAL_CpuUsage15Seconds) {
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        MANUAL_TestMediaStreamTrackEnableDisable) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
@@ -292,7 +284,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        MANUAL_RunsAudioVideoCall60SecsAndLogsInternalMetrics) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
@@ -340,7 +332,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest, TestWebAudioMediaStream) {
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, TestWebAudioMediaStream) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   GURL url(embedded_test_server()->GetURL("/webrtc/webaudio_crash.html"));
   ui_test_utils::NavigateToURL(browser(), url);

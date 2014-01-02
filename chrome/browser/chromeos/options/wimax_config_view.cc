@@ -69,7 +69,7 @@ WimaxConfigView::~WimaxConfigView() {
   RemoveAllChildViews(true);  // Destroy children before models
 }
 
-string16 WimaxConfigView::GetTitle() const {
+base::string16 WimaxConfigView::GetTitle() const {
   return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS);
 }
 
@@ -269,7 +269,7 @@ void WimaxConfigView::Init() {
   } else {
     // Password visible button.
     passphrase_visible_button_ = new views::ToggleImageButton(this);
-    passphrase_visible_button_->set_focusable(true);
+    passphrase_visible_button_->SetFocusable(true);
     passphrase_visible_button_->SetTooltipText(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_SHOW));

@@ -65,8 +65,12 @@ bool DefaultAccessibilityDelegate::IsAutoclickEnabled() const {
   return autoclick_enabled_;
 }
 
-bool DefaultAccessibilityDelegate::ShouldAlwaysShowAccessibilityMenu() const {
-  return false;
+bool DefaultAccessibilityDelegate::ShouldShowAccessibilityMenu() const {
+  return spoken_feedback_enabled_ ||
+         high_contrast_enabled_ ||
+         screen_magnifier_enabled_ ||
+         large_cursor_enabled_ ||
+         autoclick_enabled_;
 }
 
 void DefaultAccessibilityDelegate::SilenceSpokenFeedback() const {
@@ -91,6 +95,10 @@ void DefaultAccessibilityDelegate::TriggerAccessibilityAlert(
 
 AccessibilityAlert DefaultAccessibilityDelegate::GetLastAccessibilityAlert() {
   return accessibility_alert_;
+}
+
+base::TimeDelta DefaultAccessibilityDelegate::PlayShutdownSound() const {
+  return base::TimeDelta();
 }
 
 }  // namespace internal

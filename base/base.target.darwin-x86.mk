@@ -120,6 +120,8 @@ LOCAL_SRC_FILES := \
 	base/memory/aligned_memory.cc \
 	base/memory/discardable_memory_allocator_android.cc \
 	base/memory/discardable_memory_android.cc \
+	base/memory/discardable_memory_emulated.cc \
+	base/memory/discardable_memory_provider.cc \
 	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
 	base/memory/ref_counted_memory.cc \

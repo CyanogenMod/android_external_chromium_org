@@ -83,7 +83,7 @@ class QueryNodeWord : public QueryNode {
   void set_literal(bool literal) { literal_ = literal; }
 
   // QueryNode:
-  virtual int AppendToSQLiteQuery(string16* query) const OVERRIDE;
+  virtual int AppendToSQLiteQuery(base::string16* query) const OVERRIDE;
   virtual bool IsWord() const OVERRIDE;
   virtual bool Matches(const base::string16& word, bool exact) const OVERRIDE;
   virtual bool HasMatchIn(
@@ -91,7 +91,7 @@ class QueryNodeWord : public QueryNode {
       Snippet::MatchPositions* match_positions) const OVERRIDE;
   virtual bool HasMatchIn(
       const std::vector<QueryWord>& words) const OVERRIDE;
-  virtual void AppendWords(std::vector<string16>* words) const OVERRIDE;
+  virtual void AppendWords(std::vector<base::string16>* words) const OVERRIDE;
 
  private:
   base::string16 word_;
@@ -106,7 +106,7 @@ QueryNodeWord::QueryNodeWord(const base::string16& word)
 
 QueryNodeWord::~QueryNodeWord() {}
 
-int QueryNodeWord::AppendToSQLiteQuery(string16* query) const {
+int QueryNodeWord::AppendToSQLiteQuery(base::string16* query) const {
   query->append(word_);
 
   // Use prefix search if we're not literal and long enough.
@@ -352,7 +352,7 @@ int QueryParser::ParseQuery(const base::string16& query,
 }
 
 void QueryParser::ParseQueryWords(const base::string16& query,
-                                  std::vector<string16>* words) {
+                                  std::vector<base::string16>* words) {
   QueryNodeList root;
   if (!ParseQueryImpl(query, &root))
     return;

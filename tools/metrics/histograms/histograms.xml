@@ -216,6 +216,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.ActiveWindowShowTypeOverTime" enum="ActiveWindowShowType">
+  <summary>
+    The show type of the active window tracked over time by logging on a regular
+    basis (30 minutes).
+  </summary>
+</histogram>
+
 <histogram name="Ash.Dock.Action" enum="DockedAction">
   <summary>
     User-initiated action taken that affects docked windows such as docking,
@@ -287,6 +294,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.ImmersiveFullscreen.WindowType" enum="WindowType">
+  <summary>
+    The type of the window which is put into immersive fullscreen. Immersive
+    fullscreen is entered via the F4 key.
+  </summary>
+</histogram>
+
 <histogram name="Ash.ShelfAlignmentOverTime" enum="ShelfAlignmentValue">
   <summary>
     The current state of the shelf (alignment) tracked over time by logging on a
@@ -306,6 +320,13 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Ash.TouchDuration" units="milliseconds">
+  <obsolete>
+    Deprecated 12/2013 in r239809, and replaced by Ash.TouchDuration2.
+  </obsolete>
+  <summary>The duration of a touch-sequence.</summary>
+</histogram>
+
+<histogram name="Ash.TouchDuration2" units="milliseconds">
   <summary>The duration of a touch-sequence.</summary>
 </histogram>
 
@@ -1670,6 +1691,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Cros.ClickOnShelf" enum="CrosShelfClickTarget">
+  <obsolete>
+    Deprecated as of 12/2013. Default pinned apps trial is finished.
+  </obsolete>
   <summary>Chrome OS shelf clicks.</summary>
 </histogram>
 
@@ -3185,6 +3209,22 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Download.OriginStateOnFullResumption"
+    enum="DownloadOriginStateOnResumption">
+  <summary>
+    Changes observed when a response is received for a full download resumption
+    request.
+  </summary>
+</histogram>
+
+<histogram name="Download.OriginStateOnPartialResumption"
+    enum="DownloadOriginStateOnResumption">
+  <summary>
+    Changes observed when a response is received for a partial (byte-range)
+    download resumption request.
+  </summary>
+</histogram>
+
 <histogram name="Download.PotentialBandwidth" units="Bytes/second">
   <summary>
     The maximum bandwidth (per read) that Chrome could have provided for the
@@ -4017,9 +4057,21 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Event.Latency.RendererImpl.GestureScroll" units="microseconds">
+  <obsolete>
+    Deprecated 12/2013 and replaced by Event.Latency.RendererImpl.GestureScroll2
+  </obsolete>
   <summary>
-    Time between initial creation of touch event and the resulting ScrollGesture
-    reaches Impl thread.
+    Time between initial creation of touch event and when the resulting
+    ScrollGesture reaches Impl thread. Maximum is 200ms.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.RendererImpl.GestureScroll2"
+    units="microseconds">
+  <summary>
+    Time between initial creation of touch event and when the resulting
+    ScrollGesture reaches Impl thread. Maximum is 1000ms. This supersedes the
+    Event.Latency.RendererImpl.GestureScroll metric.
   </summary>
 </histogram>
 
@@ -5585,11 +5637,67 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="InertialSensor.AccelerometerWindowsAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the SENSOR_TYPE_ACCELEROMETER_3D was available at the start of
+    Device Motion on the Windows platform.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.GyrometerWindowsAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the SENSOR_TYPE_GYROMETER_3D was available at the start of Device
+    Motion on the Windows platform.
+  </summary>
+</histogram>
+
 <histogram name="InertialSensor.GyroscopeAndroidAvailable"
     enum="BooleanAvailable">
   <summary>
     Whether the Sensor.TYPE_GYROSCOPE was available at the start of Device
     Motion.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.InclinometerWindowsAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the SENSOR_TYPE_INCLINOMETER_3D was available at the start of Device
+    Orientation on the Windows platform.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.MotionDefaultAvailable" enum="BooleanAvailable">
+  <summary>
+    This histogram counts the number of Device Motion API invocations in the
+    default implementation (Linux and CrOS). The default implementation does not
+    provide any sensors so the result is always false.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.MotionMacAvailable" enum="BooleanAvailable">
+  <summary>
+    Whether the sudden motion sensor was available at the start of Device Motion
+    on the MacOS platform.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.OrientationDefaultAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    This histogram counts the number of Device Orientation API invocations in
+    the default implementation (Linux and CrOS). The default implementation does
+    not provide any sensors so the result is always false.
+  </summary>
+</histogram>
+
+<histogram name="InertialSensor.OrientationMacAvailable"
+    enum="BooleanAvailable">
+  <summary>
+    Whether the sudden motion sensor was available at the start of Device
+    Orientation on the MacOS platform.
   </summary>
 </histogram>
 
@@ -9074,6 +9182,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicEphemeralPortsSuggested">
+  <summary>The number of ports suggested per server.</summary>
+</histogram>
+
 <histogram name="Net.QuicNumSentClientHellos">
   <summary>The number of client hello messages sent.</summary>
 </histogram>
@@ -9930,6 +10042,18 @@ other types of suffix sets.
     The counts of the type of sockets returned by the TCP pool (either for
     direct or non-socks use).
   </summary>
+</histogram>
+
+<histogram name="Net.UdpSocketBindErrorFromPosix" units="PosixError">
+  <summary>Posix error code from call to bind() UDP socket.</summary>
+</histogram>
+
+<histogram name="Net.UdpSocketBindErrorFromWinOS" units="WinError">
+  <summary>Windows error code from call to bind() UDP socket.</summary>
+</histogram>
+
+<histogram name="Net.UdpSocketRandomBindErrorCode" enum="NetErrorCodes">
+  <summary>Chromium error code from call to RandomBind() UDP socket.</summary>
 </histogram>
 
 <histogram name="Net.UDPSocketWinClose" units="milliseconds">
@@ -11590,6 +11714,13 @@ other types of suffix sets.
   <summary>Time spent on the Suggested Sites NTP pane, in seconds.</summary>
 </histogram>
 
+<histogram name="NewTabPage.SuggestionsImpression">
+  <summary>
+    Histogram for impressions on the various most visited tiles. The value is
+    equal to the index of the thumbnail.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.SuggestionsType" enum="NtpSuggestionsType">
   <summary>
     Indicate, for each impression of the New Tab Page, whether the suggestions
@@ -12145,6 +12276,13 @@ other types of suffix sets.
     The password manager only shows those credentials that are considered the
     best match for a particular form. This stat keep track of the credentials
     that were not as good of a match and were suppressed.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.OsPasswordStatus"
+    enum="PasswordManagerOsPasswordStatus">
+  <summary>
+    Indicates whether the user's OS password is blank or not at browser startup.
   </summary>
 </histogram>
 
@@ -13897,6 +14035,14 @@ other types of suffix sets.
   <summary>
     Number of times the user has adjusted brightness up and down while running
     on AC power.
+  </summary>
+</histogram>
+
+<histogram name="Power.ChargerType" enum="PowerChargerType">
+  <summary>
+    External power supply type such as MAINS_CHARGER, USB_CHARGER,
+    UNCONFIRMED_SPRING_CHARGER, SAFE_SPRING_CHARGER. A sample is reported each
+    time a charger is connected to the device.
   </summary>
 </histogram>
 
@@ -19952,6 +20098,17 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Translate.DeclineTranslateDismissUI">
+  <summary>
+    The number of times the translate UI was closed without translating in the
+    way that the user doesn't deny translating explicityly, like pressing 'Nope'
+    button. This is counted on both the infobar and the bubble UI. We are
+    comparing this on infobar to that on bubble by A/B testing and expecting
+    that the user will click 'Nope' button on bubble less times than infobar. We
+    won't delete this histogram after the experiment.
+  </summary>
+</histogram>
+
 <histogram name="Translate.HtmlLang" enum="TranslateLanguage">
   <summary>
     A page may provide a lang attribute in html tag. For each page load,
@@ -20076,6 +20233,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Translate.ShowErrorUI" enum="TranslateError">
+  <summary>
+    Chrome Translate shows an error UI (infobar or bubble) when an error happens
+    on translation and the UI message depends on what kind of error happens.
+    This metric counts how often each error message is shown.
+  </summary>
+</histogram>
+
 <histogram name="Translate.SimilarLanguageMatch" enum="BooleanMatched">
   <summary>
     This metrics is logged whenever a page is loaded. The logged value is
@@ -20192,6 +20357,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="UMA.LoadLogsTime" units="milliseconds">
+  <summary>
+    The time spent to load (de-serialize) unsent logs from local state, recorded
+    during the MetricsService startup sequence.
+  </summary>
+</histogram>
+
 <histogram name="UMA.LogLoadComplete called">
   <summary>
     Simple counter of the number of times LogLoadComplete was called (bug
@@ -20230,6 +20402,13 @@ other types of suffix sets.
 <histogram name="UMA.ProtoGzippedKBSaved" units="KB">
   <summary>
     Kilobytes saved from gzipping the protobufs before uploading them.
+  </summary>
+</histogram>
+
+<histogram name="UMA.StoreLogsTime" units="milliseconds">
+  <summary>
+    The time spent to store unsent logs to local state, which is done
+    periodically and also during start up if there was an initial stability log.
   </summary>
 </histogram>
 
@@ -21373,6 +21552,14 @@ other types of suffix sets.
   <int value="2" label="Use resource from cache"/>
 </enum>
 
+<enum name="ActiveWindowShowType" type="int">
+  <int value="0" label="No Active Window"/>
+  <int value="1" label="Other"/>
+  <int value="2" label="Maximized"/>
+  <int value="3" label="Fullscreen"/>
+  <int value="4" label="Snapped"/>
+</enum>
+
 <enum name="AndroidEvictionReason" type="int">
   <int value="0" label="TabUnusedTooLong"/>
   <int value="1" label="TabUnusedInSession"/>
@@ -22238,6 +22425,9 @@ other types of suffix sets.
 </enum>
 
 <enum name="CrosShelfClickTarget" type="int">
+  <obsolete>
+    Deprecated as of 12/2013. Default pinned apps trial is finished.
+  </obsolete>
   <int value="0" label="Chrome"/>
   <int value="1" label="AppLauncher"/>
   <int value="2" label="Gmail"/>
@@ -22676,6 +22866,17 @@ other types of suffix sets.
   <int value="2" label="Opened with plaform handler by user choice"/>
 </enum>
 
+<enum name="DownloadOriginStateOnResumption" type="int">
+  <int value="0" label="No changes"/>
+  <int value="1" label="New redirects"/>
+  <int value="2" label="New validators"/>
+  <int value="3" label="New redirects + validators"/>
+  <int value="4" label="New Content-Disposition"/>
+  <int value="5" label="New redirects + Content-Disposition"/>
+  <int value="6" label="New validators + Content-Disposition"/>
+  <int value="7" label="New redirects + validators + Content-Disposition"/>
+</enum>
+
 <enum name="DownloadSavePackageEvent" type="int">
   <int value="0" label="Started"/>
   <int value="1" label="Cancelled"/>
@@ -22914,10 +23115,14 @@ other types of suffix sets.
     Enrollment failed due to an error persisting the device robot refresh token
     on the device.
   </int>
+  <int value="22" label="Deprovisioned device">
+    Enrollment failed because the administrator has deprovisioned the device.
+  </int>
 </enum>
 
 <enum name="EnterprisePolicies" type="int">
-<!-- Generated from ../../../chrome/app/policy/policy_templates.json -->
+<!-- Generated from
+     ../../../components/policy/resources/policy_templates.json -->
 
   <int value="1" label="Configure the home page URL"/>
   <int value="2" label="Use New Tab Page as homepage"/>
@@ -24118,6 +24323,7 @@ other types of suffix sets.
   <int value="647" label="SOCKETS_UDP_SETPAUSED"/>
   <int value="648" label="WEBVIEW_CAPTUREVISIBLEREGION"/>
   <int value="649" label="MEDIAGALLERIES_GETMETADATA"/>
+  <int value="650" label="INPUT_IME_SENDKEYEVENTS"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -24471,6 +24677,21 @@ other types of suffix sets.
   <int value="201" label="DocumentBeforeUnloadFired"/>
   <int value="202" label="DocumentUnloadRegistered"/>
   <int value="203" label="DocumentUnloadFired"/>
+  <int value="204" label="SVGLocatableNearestViewportElement"/>
+  <int value="205" label="SVGLocatableFarthestViewportElement"/>
+  <int value="206" label="IsIndexElement"/>
+  <int value="207" label="HTMLHeadElementProfile"/>
+  <int value="208" label="OverflowChangedEvent"/>
+  <int value="209" label="SVGPointMatrixTransform"/>
+  <int value="210" label="HTMLHtmlElementManifest"/>
+  <int value="211" label="DOMFocusInOutEvent"/>
+  <int value="212" label="FileGetLastModifiedDate"/>
+  <int value="213" label="HTMLElementInnerText"/>
+  <int value="214" label="HTMLElementOuterText"/>
+  <int value="215" label="ReplaceDocumentViaJavaScriptURL"/>
+  <int value="216" label="ElementSetAttributeNodeNS"/>
+  <int value="217" label="ElementPrefixedMatchesSelector"/>
+  <int value="218" label="DOMImplementationCreateCSSStyleSheet"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -28044,6 +28265,15 @@ other types of suffix sets.
              / form submit succeeded"/>
 </enum>
 
+<enum name="PasswordManagerOsPasswordStatus" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Unsupported platform"/>
+  <int value="2" label="Password is blank"/>
+  <int value="3" label="Password is non blank"/>
+  <int value="4"
+      label="Password status not checked as user is on a Windows Domain"/>
+</enum>
+
 <enum name="PasswordManagerPslDomainMatchTriggering" type="int">
   <summary>
     The value indicates whether an entry returned by password autofill contains
@@ -28172,6 +28402,14 @@ other types of suffix sets.
   <int value="0" label="Brightness Down"/>
   <int value="1" label="Brightness Up"/>
   <int value="2" label="Brightness Absolute"/>
+</enum>
+
+<enum name="PowerChargerType" type="int">
+  <int value="0" label="Unknown charger"/>
+  <int value="1" label="MAINS charger"/>
+  <int value="2" label="USB Charger"/>
+  <int value="3" label="Unconfirmed Spring Charger"/>
+  <int value="4" label="Safe Spring Charger"/>
 </enum>
 
 <enum name="PreconnectedNavigation" type="int">
@@ -30739,6 +30977,13 @@ other types of suffix sets.
   <int value="5" label="Windows 8"/>
 </enum>
 
+<enum name="WindowType" type="int">
+  <int value="0" label="Other"/>
+  <int value="1" label="Browser"/>
+  <int value="2" label="Hosted App"/>
+  <int value="3" label="Packaged App"/>
+</enum>
+
 <enum name="XMLHttpRequestSendArrayBufferOrView" type="int">
   <int value="0" label="XMLHttpRequestSendArrayBuffer"/>
   <int value="1" label="XMLHttpRequestSendArrayBufferView"/>
@@ -31010,6 +31255,9 @@ other types of suffix sets.
 </fieldtrial>
 
 <fieldtrial name="DefaultPinnedApps">
+  <obsolete>
+    Deprecated as of 12/2013. Default pinned apps trial is finished.
+  </obsolete>
   <group name="Existing"/>
   <group name="Control"/>
   <group name="Alternate"/>
@@ -31166,6 +31414,105 @@ other types of suffix sets.
   <affected-histogram name="PLT.PT_StartToFinish"/>
 </fieldtrial>
 
+<fieldtrial name="GWSChromeJointExperiment">
+  <group name="Experiment1"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment2"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment3"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment4"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment5"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment6"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment7"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment8"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment9"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment10"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment11"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment12"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment13"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment14"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment15"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment16"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment17"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment18"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment19"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <group name="Experiment20"
+      label="Only page loads that are a result of a navigation from a web
+             search under a specific web search/Chrome joint experiment.
+             Unused at this moment."/>
+  <affected-histogram name="PLT.BeginToFinish_FromGWS"/>
+  <affected-histogram name="PLT.BeginToFinishDoc_FromGWS"/>
+  <affected-histogram name="PLT.BeginToFirstPaint_FromGWS"/>
+  <affected-histogram name="PLT.CommitToFirstPaint_FromGWS"/>
+  <affected-histogram name="PLT.PT_BeginToCommit_FromGWS"/>
+  <affected-histogram name="PLT.PT_BeginToFinish_FromGWS"/>
+  <affected-histogram name="PLT.PT_BeginToFinishDoc_FromGWS"/>
+  <affected-histogram name="PLT.PT_CommitToFinish_FromGWS"/>
+  <affected-histogram name="PLT.PT_CommitToFinishDoc_FromGWS"/>
+  <affected-histogram name="PLT.PT_RequestToCommit_FromGWS"/>
+  <affected-histogram name="PLT.PT_RequestToDomContentLoaded_FromGWS"/>
+  <affected-histogram name="PLT.PT_RequestToFinish_FromGWS"/>
+  <affected-histogram name="PLT.PT_RequestToFinishDoc_FromGWS"/>
+  <affected-histogram name="PLT.PT_RequestToStart_FromGWS"/>
+  <affected-histogram name="PLT.PT_StartToCommit_FromGWS"/>
+  <affected-histogram name="PLT.PT_StartToFinish_FromGWS"/>
+</fieldtrial>
+
 <fieldtrial name="HttpPipeliningCompatibility">
   <group name="disable_test" label="Do nothing"/>
   <group name="enable_test" label="Test connection for HTTP pipelining"/>
@@ -31238,6 +31585,17 @@ other types of suffix sets.
   <group name="Extended" label="Suggestions + Results"/>
   <group name="Instant" label="Results"/>
   <affected-histogram name="Instant.SessionsStorageNamespace"/>
+</fieldtrial>
+
+<fieldtrial name="InstantExtended_QuerytoQuery">
+  <group name="400" label="Omnibox width &lt; 400"/>
+  <group name="700" label="Omnibox width &lt; 700"/>
+  <group name="1200" label="Omnibox width &lt; 1200"/>
+  <group name="large" label="Omnibox width &gt;= 1200"/>
+  <affected-histogram name="InstantExtended.PercentageMatchV2_QuerytoQuery"/>
+  <affected-histogram name="InstantExtended.PercentageMatchV2_QuerytoURL"/>
+  <affected-histogram name="InstantExtended.PercentageMatchV2_URLtoQuery"/>
+  <affected-histogram name="InstantExtended.PercentageMatchV2_URLtoURL"/>
 </fieldtrial>
 
 <fieldtrial name="Interval" separator="_">
@@ -32556,6 +32914,17 @@ other types of suffix sets.
   <group name="UrlOver8K" label="URL length was over 8K"/>
   <group name="UrlOver128K" label="URL length was over 128K"/>
   <affected-histogram name="Net.ProxyResolver.ExecutionTime"/>
+</fieldtrial>
+
+<fieldtrial name="NewTabPageProviders" separator=".">
+  <group name="client" label="Suggestions coming from the client."/>
+  <group name="server" label="Suggestions coming from the server."/>
+  <group name="server1" label="Suggestions coming from server source 1."/>
+  <group name="server2" label="Suggestions coming from server source 2."/>
+  <group name="server3" label="Suggestions coming from server source 3."/>
+  <group name="server4" label="Suggestions coming from server source 4."/>
+  <affected-histogram name="NewTabPage.MostVisited"/>
+  <affected-histogram name="NewTabPage.SuggestionsImpression"/>
 </fieldtrial>
 
 <fieldtrial name="OmniboxProviderTime" separator=".">

@@ -121,8 +121,8 @@ AudioManagerBase::~AudioManagerBase() {
   DCHECK_EQ(0, num_input_streams_);
 }
 
-string16 AudioManagerBase::GetAudioInputDeviceModel() {
-  return string16();
+base::string16 AudioManagerBase::GetAudioInputDeviceModel() {
+  return base::string16();
 }
 
 scoped_refptr<base::MessageLoopProxy> AudioManagerBase::GetMessageLoop() {
@@ -421,7 +421,6 @@ int AudioManagerBase::GetUserBufferSize() {
 
 scoped_ptr<AudioLog> AudioManagerBase::CreateAudioLog(
     AudioLogFactory::AudioComponent component) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
   return audio_log_factory_->CreateAudioLog(component);
 }
 

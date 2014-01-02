@@ -78,6 +78,7 @@
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_cache.h"
@@ -550,6 +551,12 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaNotification, OnMediaNotification)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidFirstVisuallyNonEmptyPaint,
                         OnFirstVisuallyNonEmptyPaint)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ShowValidationMessage,
+                        OnShowValidationMessage)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_HideValidationMessage,
+                        OnHideValidationMessage)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_MoveValidationMessage,
+                        OnMoveValidationMessage)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   render_view_message_source_ = NULL;
@@ -1601,6 +1608,26 @@ FrameTree* WebContentsImpl::GetFrameTree() {
   return &frame_tree_;
 }
 
+void WebContentsImpl::OnShowValidationMessage(
+    const gfx::Rect& anchor_in_root_view,
+    const string16& main_text,
+    const string16& sub_text) {
+  if (delegate_)
+    delegate_->ShowValidationMessage(
+        this, anchor_in_root_view, main_text, sub_text);
+}
+
+void WebContentsImpl::OnHideValidationMessage() {
+  if (delegate_)
+    delegate_->HideValidationMessage(this);
+}
+
+void WebContentsImpl::OnMoveValidationMessage(
+    const gfx::Rect& anchor_in_root_view) {
+  if (delegate_)
+    delegate_->MoveValidationMessage(this, anchor_in_root_view);
+}
+
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
   if (browser_plugin_embedder_)
     browser_plugin_embedder_->DidSendScreenRects();
@@ -1675,8 +1702,8 @@ bool WebContentsImpl::NavigateToEntry(
 
   // The renderer will reject IPC messages with URLs longer than
   // this limit, so don't attempt to navigate with a longer URL.
-  if (entry.GetURL().spec().size() > kMaxURLChars) {
-    LOG(WARNING) << "Refusing to load URL as it exceeds " << kMaxURLChars
+  if (entry.GetURL().spec().size() > GetMaxURLChars()) {
+    LOG(WARNING) << "Refusing to load URL as it exceeds " << GetMaxURLChars()
                  << " characters.";
     return false;
   }

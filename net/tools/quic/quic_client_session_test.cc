@@ -10,7 +10,7 @@
 #include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
-#include "net/tools/quic/quic_reliable_client_stream.h"
+#include "net/tools/quic/quic_spdy_client_stream.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using net::test::CryptoTestUtils;
@@ -28,8 +28,7 @@ const char kServerHostname[] = "www.example.com";
 class ToolsQuicClientSessionTest : public ::testing::Test {
  protected:
   ToolsQuicClientSessionTest()
-      : guid_(1),
-        connection_(new PacketSavingConnection(guid_, IPEndPoint(), false)) {
+      : connection_(new PacketSavingConnection(false)) {
     crypto_config_.SetDefaults();
     session_.reset(new QuicClientSession(kServerHostname, DefaultQuicConfig(),
                                          connection_, &crypto_config_));
@@ -42,7 +41,6 @@ class ToolsQuicClientSessionTest : public ::testing::Test {
         connection_, session_->GetCryptoStream());
   }
 
-  QuicGuid guid_;
   PacketSavingConnection* connection_;
   scoped_ptr<QuicClientSession> session_;
   QuicCryptoClientConfig crypto_config_;
@@ -58,14 +56,14 @@ TEST_F(ToolsQuicClientSessionTest, MaxNumStreams) {
   // Initialize crypto before the client session will create a stream.
   CompleteCryptoHandshake();
 
-  QuicReliableClientStream* stream =
-      session_->CreateOutgoingReliableStream();
+  QuicSpdyClientStream* stream =
+      session_->CreateOutgoingDataStream();
   ASSERT_TRUE(stream);
-  EXPECT_FALSE(session_->CreateOutgoingReliableStream());
+  EXPECT_FALSE(session_->CreateOutgoingDataStream());
 
   // Close a stream and ensure I can now open a new one.
   session_->CloseStream(stream->id());
-  stream = session_->CreateOutgoingReliableStream();
+  stream = session_->CreateOutgoingDataStream();
   EXPECT_TRUE(stream);
 }
 
@@ -75,7 +73,7 @@ TEST_F(ToolsQuicClientSessionTest, GoAwayReceived) {
   // After receiving a GoAway, I should no longer be able to create outgoing
   // streams.
   session_->OnGoAway(QuicGoAwayFrame(QUIC_PEER_GOING_AWAY, 1u, "Going away."));
-  EXPECT_EQ(NULL, session_->CreateOutgoingReliableStream());
+  EXPECT_EQ(NULL, session_->CreateOutgoingDataStream());
 }
 
 }  // namespace

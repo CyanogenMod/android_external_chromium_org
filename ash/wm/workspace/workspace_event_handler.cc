@@ -4,9 +4,9 @@
 
 #include "ash/wm/workspace/workspace_event_handler.h"
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/touch/touch_uma.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/window_state.h"
@@ -55,13 +55,10 @@ void ToggleMaximizedState(wm::WindowState* window_state) {
 namespace internal {
 
 WorkspaceEventHandler::WorkspaceEventHandler(aura::Window* owner)
-    : ToplevelWindowEventHandler(owner),
-      destroyed_(NULL) {
+    : ToplevelWindowEventHandler(owner) {
 }
 
 WorkspaceEventHandler::~WorkspaceEventHandler() {
-  if (destroyed_)
-    *destroyed_ = true;
 }
 
 void WorkspaceEventHandler::OnMouseEvent(ui::MouseEvent* event) {
@@ -91,14 +88,9 @@ void WorkspaceEventHandler::OnMouseEvent(ui::MouseEvent* event) {
           event->IsOnlyLeftMouseButton() &&
           target->delegate()->GetNonClientComponent(event->location()) ==
           HTCAPTION) {
-        bool destroyed = false;
-        destroyed_ = &destroyed;
-        ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+        ash::Shell::GetInstance()->metrics()->RecordUserMetricsAction(
             ash::UMA_TOGGLE_MAXIMIZE_CAPTION_CLICK);
         ToggleMaximizedState(target_state);
-        if (destroyed)
-          return;
-        destroyed_ = NULL;
       }
       multi_window_resize_controller_.Hide();
       HandleVerticalResizeDoubleClick(target_state, event);
@@ -116,13 +108,12 @@ void WorkspaceEventHandler::OnGestureEvent(ui::GestureEvent* event) {
       target->delegate()->GetNonClientComponent(event->location()) ==
       HTCAPTION) {
     if (event->details().tap_count() == 2) {
-      ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+      ash::Shell::GetInstance()->metrics()->RecordUserMetricsAction(
           ash::UMA_TOGGLE_MAXIMIZE_CAPTION_GESTURE);
       // Note: TouchUMA::GESTURE_FRAMEVIEW_TAP is counted twice each time
       // TouchUMA::GESTURE_MAXIMIZE_DOUBLETAP is counted once.
       TouchUMA::GetInstance()->RecordGestureAction(
           TouchUMA::GESTURE_MAXIMIZE_DOUBLETAP);
-      // |this| may be destroyed from here.
       ToggleMaximizedState(wm::GetWindowState(target));
       event->StopPropagation();
       return;

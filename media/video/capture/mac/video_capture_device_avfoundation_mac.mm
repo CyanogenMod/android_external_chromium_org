@@ -111,10 +111,7 @@
                         queue:dispatch_get_global_queue(
                             DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)];
   [captureSession_ addOutput:captureVideoDataOutput_];
-
-  // Set the default capture resolution. Needs to go after initialisation of
-  // |captureVideoDataOutput_|.
-  return [self setCaptureHeight:720 width:1280 frameRate:30];
+  return YES;
 }
 
 - (BOOL)setCaptureHeight:(int)height width:(int)width frameRate:(int)frameRate {
@@ -167,11 +164,17 @@
 
   CrAVCaptureConnection* captureConnection = [captureVideoDataOutput_
       connectionWithMediaType:AVFoundationGlue::AVMediaTypeVideo()];
-  if ([captureConnection isVideoMinFrameDurationSupported]) {
+  // TODO(mcasas): Check selector existence, related to bugs
+  // http://crbug.com/327532 and http://crbug.com/328096.
+  if ([captureConnection
+           respondsToSelector:@selector(isVideoMinFrameDurationSupported)] &&
+      [captureConnection isVideoMinFrameDurationSupported]) {
     [captureConnection setVideoMinFrameDuration:
         CoreMediaGlue::CMTimeMake(1, frameRate)];
   }
-  if ([captureConnection isVideoMaxFrameDurationSupported]) {
+  if ([captureConnection
+           respondsToSelector:@selector(isVideoMaxFrameDurationSupported)] &&
+      [captureConnection isVideoMaxFrameDurationSupported]) {
     [captureConnection setVideoMaxFrameDuration:
         CoreMediaGlue::CMTimeMake(1, frameRate)];
   }

@@ -5,11 +5,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "components/autofill/content/renderer/test_password_autofill_agent.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -131,13 +131,6 @@ const char kWebpageWithDynamicContent[] =
     "       </script>"
     "   </body>"
     "</html>";
-
-const char kAutocompleteOffFormHTML[] =
-    "<FORM name='LoginTestForm' autocomplete='off'>"
-    "  <INPUT type='text' id='username'/>"
-    "  <INPUT type='password' id='password'/>"
-    "  <INPUT type='submit' value='Login'/>"
-    "</FORM>";
 
 const char kJavaScriptClick[] =
     "var event = new MouseEvent('click', {"
@@ -468,49 +461,6 @@ TEST_F(PasswordAutofillAgentTest, InputWithNoForms) {
 
   // Input elements that aren't in a <form> won't autofill.
   CheckTextFieldsState(std::string(), false, std::string(), false);
-}
-
-// Makes sure that we are ignoring autocomplete="off" on usernames and paswords.
-TEST_F(PasswordAutofillAgentTest, IgnoreElementAutocompleteOff) {
-  username_element_.setAttribute(WebString::fromUTF8("autocomplete"),
-                                 WebString::fromUTF8("off"));
-  password_element_.setAttribute(WebString::fromUTF8("autocomplete"),
-                                 WebString::fromUTF8("off"));
-
-  // Simulate the browser sending back the login info, it triggers the
-  // autocomplete.
-  SimulateOnFillPasswordForm(fill_data_);
-
-  CheckTextFieldsState(kAliceUsername, true, kAlicePassword, true);
-}
-
-// Makes sure that we are ignoring autocomplete="off" on forms
-TEST_F(PasswordAutofillAgentTest, IgnoreFormAutocompleteOff) {
-  // We need to set the origin so it matches the frame URL and the action so
-  // it matches the form action, otherwise we won't autocomplete.
-  LoadHTML(kAutocompleteOffFormHTML);
-
-  // Retrieve the input elements so the test can access them.
-  WebDocument document = GetMainFrame()->document();
-  WebElement element =
-      document.getElementById(WebString::fromUTF8(kUsernameName));
-  ASSERT_FALSE(element.isNull());
-  username_element_ = element.to<blink::WebInputElement>();
-  element = document.getElementById(WebString::fromUTF8(kPasswordName));
-  ASSERT_FALSE(element.isNull());
-  password_element_ = element.to<blink::WebInputElement>();
-
-  // Set the expected form origin and action URLs.
-  std::string origin("data:text/html;charset=utf-8,");
-  origin += kAutocompleteOffFormHTML;
-  fill_data_.basic_data.origin = GURL(origin);
-  fill_data_.basic_data.action = GURL(origin);
-
-  // Simulate the browser sending back the login info, it triggers the
-  // autocomplete.
-  SimulateOnFillPasswordForm(fill_data_);
-
-  CheckTextFieldsState(kAliceUsername, true, kAlicePassword, true);
 }
 
 TEST_F(PasswordAutofillAgentTest, NoAutocompleteForTextFieldPasswords) {

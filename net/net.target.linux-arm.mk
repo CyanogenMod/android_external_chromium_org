@@ -328,6 +328,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
 	net/quic/iovector.cc \
+	net/quic/port_suggester.cc \
 	net/quic/quic_ack_notifier.cc \
 	net/quic/quic_ack_notifier_manager.cc \
 	net/quic/quic_alarm.cc \
@@ -343,6 +344,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_crypto_server_stream.cc \
 	net/quic/quic_crypto_stream.cc \
 	net/quic/quic_data_reader.cc \
+	net/quic/quic_data_stream.cc \
 	net/quic/quic_data_writer.cc \
 	net/quic/quic_default_packet_writer.cc \
 	net/quic/quic_fec_group.cc \

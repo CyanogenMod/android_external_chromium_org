@@ -159,11 +159,11 @@ void FileVideoCaptureDevice::GetDeviceNames(Names* const device_names) {
 
 void FileVideoCaptureDevice::GetDeviceSupportedFormats(
     const Name& device,
-    VideoCaptureCapabilities* formats) {
+    VideoCaptureFormats* supported_formats) {
   base::PlatformFile file = OpenFileForRead(GetFilePathFromCommandLine());
-  VideoCaptureCapability capture_capability;
-  ParseFileAndExtractVideoFormat(file, &capture_capability.supported_format);
-  formats->push_back(capture_capability);
+  VideoCaptureFormat capture_format;
+  ParseFileAndExtractVideoFormat(file, &capture_format);
+  supported_formats->push_back(capture_format);
 
   CHECK(base::ClosePlatformFile(file));
 }
@@ -288,8 +288,6 @@ void FileVideoCaptureDevice::OnCaptureTask() {
                                    frame_size_,
                                    base::Time::Now(),
                                    0,
-                                   false,
-                                   false,
                                    capture_format_);
   // Reschedule next CaptureTask.
   base::MessageLoop::current()->PostDelayedTask(

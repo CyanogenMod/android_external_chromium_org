@@ -211,9 +211,6 @@ class PrerenderManager::OnCloseWebContentsDeleter
 };
 
 // static
-bool PrerenderManager::is_prefetch_enabled_ = false;
-
-// static
 int PrerenderManager::prerenders_per_session_count_ = 0;
 
 // static
@@ -494,7 +491,8 @@ bool PrerenderManager::MaybeUsePrerenderedPage(const GURL& url,
     RecordEvent(prerender_data->contents(),
                 PRERENDER_EVENT_SWAPIN_ISSUING_MERGE);
     prerender_data->set_pending_swap(new PendingSwap(
-        this, web_contents, prerender_data, url));
+        this, web_contents, prerender_data, url,
+        params->should_replace_current_entry));
     prerender_data->pending_swap()->BeginSwap();
     // Although this returns false, creating a PendingSwap registers with
     // PrerenderTracker to throttle MAIN_FRAME navigations while the swap is
@@ -503,8 +501,9 @@ bool PrerenderManager::MaybeUsePrerenderedPage(const GURL& url,
   }
 
   // No need to merge; swap synchronously.
-  WebContents* new_web_contents = SwapInternal(url, web_contents,
-                                               prerender_data);
+  WebContents* new_web_contents = SwapInternal(
+      url, web_contents, prerender_data,
+      params->should_replace_current_entry);
   if (!new_web_contents)
     return false;
 
@@ -516,7 +515,8 @@ bool PrerenderManager::MaybeUsePrerenderedPage(const GURL& url,
 WebContents* PrerenderManager::SwapInternal(
     const GURL& url,
     WebContents* web_contents,
-    PrerenderData* prerender_data) {
+    PrerenderData* prerender_data,
+    bool should_replace_current_entry) {
   DCHECK(CalledOnValidThread());
   DCHECK(!IsWebContentsPrerendering(web_contents, NULL));
 
@@ -642,7 +642,8 @@ WebContents* PrerenderManager::SwapInternal(
 
   // Merge the browsing history.
   new_web_contents->GetController().CopyStateFromAndPrune(
-      &old_web_contents->GetController());
+      &old_web_contents->GetController(),
+      should_replace_current_entry);
   CoreTabHelper::FromWebContents(old_web_contents)->delegate()->
       SwapTabContents(old_web_contents, new_web_contents);
   prerender_contents->CommitHistory(new_web_contents);
@@ -780,16 +781,6 @@ void PrerenderManager::RecordFractionPixelsFinalAtSwapin(
 void PrerenderManager::set_enabled(bool enabled) {
   DCHECK(CalledOnValidThread());
   enabled_ = enabled;
-}
-
-// static
-bool PrerenderManager::IsPrefetchEnabled() {
-  return is_prefetch_enabled_;
-}
-
-// static
-void PrerenderManager::SetIsPrefetchEnabled(bool value) {
-  is_prefetch_enabled_ = value;
 }
 
 // static
@@ -1152,12 +1143,14 @@ PrerenderManager::PendingSwap::PendingSwap(
     PrerenderManager* manager,
     content::WebContents* target_contents,
     PrerenderData* prerender_data,
-    const GURL& url)
+    const GURL& url,
+    bool should_replace_current_entry)
     : content::WebContentsObserver(target_contents),
       manager_(manager),
       target_contents_(target_contents),
       prerender_data_(prerender_data),
       url_(url),
+      should_replace_current_entry_(should_replace_current_entry),
       start_time_(base::TimeTicks::Now()),
       swap_successful_(false),
       weak_factory_(this) {
@@ -1294,7 +1287,8 @@ void PrerenderManager::PendingSwap::OnMergeCompleted(
   // TODO(davidben): See about deleting PrerenderData asynchronously so this
   // behavior is more reasonable.
   WebContents* new_web_contents =
-      manager_->SwapInternal(GURL(url_), target_contents_, prerender_data_);
+      manager_->SwapInternal(GURL(url_), target_contents_, prerender_data_,
+                             should_replace_current_entry_);
   if (!new_web_contents) {
     RecordEvent(PRERENDER_EVENT_MERGE_RESULT_SWAPIN_FAILED);
     prerender_data_->ClearPendingSwap();

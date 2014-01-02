@@ -269,6 +269,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(inactive_selection_fg_color)
   IPC_STRUCT_TRAITS_MEMBER(browser_handles_non_local_top_level_requests)
   IPC_STRUCT_TRAITS_MEMBER(browser_handles_all_top_level_requests)
+  IPC_STRUCT_TRAITS_MEMBER(browser_handles_all_top_level_link_clicks)
   IPC_STRUCT_TRAITS_MEMBER(caret_blink_interval)
   IPC_STRUCT_TRAITS_MEMBER(use_custom_colors)
   IPC_STRUCT_TRAITS_MEMBER(enable_referrers)
@@ -1440,10 +1441,6 @@ IPC_SYNC_MESSAGE_CONTROL0_2(ViewHostMsg_GetAudioHardwareConfig,
 IPC_SYNC_MESSAGE_CONTROL0_1(ViewHostMsg_GetCPUUsage,
                             int /* CPU usage in percents */)
 
-// Asks the browser for the user's monitor profile.
-IPC_SYNC_MESSAGE_CONTROL0_1(ViewHostMsg_GetMonitorColorProfile,
-                            std::vector<char> /* profile */)
-
 // Asks the browser for the renderer process memory size stats.
 IPC_SYNC_MESSAGE_CONTROL0_2(ViewHostMsg_GetProcessMemorySizes,
                             size_t /* private_bytes */,
@@ -1732,6 +1729,10 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_WindowlessPluginDummyWindowCreated,
 
 IPC_MESSAGE_ROUTED1(ViewHostMsg_WindowlessPluginDummyWindowDestroyed,
                     gfx::NativeViewId /* dummy_activation_window */)
+
+// Asks the browser for the user's monitor profile.
+IPC_SYNC_MESSAGE_CONTROL0_1(ViewHostMsg_GetMonitorColorProfile,
+                            std::vector<char> /* profile */)
 #endif
 
 // Get the list of proxies to use for |url|, as a semicolon delimited list
@@ -2235,6 +2236,22 @@ IPC_MESSAGE_CONTROL0(ViewHostMsg_CancelVibration)
 // node is editable.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_FocusedNodeTouched,
                     bool /* editable */)
+
+// Message sent from the renderer to the browser when an HTML form has failed
+// validation constraints.
+IPC_MESSAGE_ROUTED3(ViewHostMsg_ShowValidationMessage,
+                    gfx::Rect /* anchor rectangle in root view coordinate */,
+                    base::string16 /* validation message */,
+                    base::string16 /* supplemental text */)
+
+// Message sent from the renderer to the browser when a HTML form validation
+// message should be hidden from view.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_HideValidationMessage)
+
+// Message sent from the renderer to the browser when the suggested co-ordinates
+// of the anchor for a HTML form validation message have changed.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_MoveValidationMessage,
+                    gfx::Rect /* anchor rectangle in root view coordinate */)
 
 #if defined(OS_ANDROID)
 // Response to ViewMsg_FindMatchRects.

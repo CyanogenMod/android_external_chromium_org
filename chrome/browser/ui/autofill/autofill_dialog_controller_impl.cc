@@ -487,9 +487,10 @@ gfx::Image CreditCardIconForType(const std::string& credit_card_type) {
   if (input_card_idr == IDR_AUTOFILL_CC_GENERIC) {
     // When the credit card type is unknown, no image should be shown. However,
     // to simplify the view code on Mac, save space for the credit card image by
-    // returning a transparent image of the appropriate size.
+    // returning a transparent image of the appropriate size. Not all credit
+    // card images are the same size, but none is larger than the Visa icon.
     result = gfx::Image(gfx::ImageSkiaOperations::CreateTransparentImage(
-        result.AsImageSkia(), 0));
+        rb.GetImageNamed(IDR_AUTOFILL_CC_VISA).AsImageSkia(), 0));
   }
   return result;
 }
@@ -547,6 +548,10 @@ void AutofillDialogController::RegisterProfilePrefs(
   registry->RegisterBooleanPref(
       ::prefs::kAutofillDialogSaveData,
       true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      ::prefs::kAutofillDialogWalletShippingSameAsBilling,
+      false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
@@ -1862,7 +1867,7 @@ void AutofillDialogControllerImpl::UserEditedOrActivatedInput(
     return;
   }
 
-  std::vector<string16> popup_values, popup_labels, popup_icons;
+  std::vector<base::string16> popup_values, popup_labels, popup_icons;
   if (common::IsCreditCardType(type)) {
     GetManager()->GetCreditCardSuggestions(AutofillType(type),
                                            field_contents,
@@ -2202,7 +2207,7 @@ void AutofillDialogControllerImpl::Observe(
       content::Details<content::LoadCommittedDetails>(details).ptr();
   size_t user_index = 0;
   if (IsSignInContinueUrl(load_details->entry->GetVirtualURL(), &user_index)) {
-    GetWalletClient()->set_user_index(user_index);
+    GetWalletClient()->SetUserIndex(user_index);
     FetchWalletCookie();
 
     // NOTE: |HideSignIn()| may delete the WebContents which doesn't expect to
@@ -2368,7 +2373,7 @@ void AutofillDialogControllerImpl::OnDidGetWalletItems(
     // Making sure the user index is in sync shouldn't be necessary, but is an
     // extra precaution. But if there is no active account (such as in the
     // PASSIVE_AUTH case), stick with the old active account.
-    GetWalletClient()->set_user_index(wallet_items_->active_account_index());
+    GetWalletClient()->SetUserIndex(wallet_items_->active_account_index());
 
     std::vector<std::string> usernames;
     for (size_t i = 0; i < wallet_items_->gaia_accounts().size(); ++i) {
@@ -2436,7 +2441,7 @@ void AutofillDialogControllerImpl::AccountChoiceChanged() {
       account_chooser_model_->GetActiveWalletAccountIndex();
   if (account_chooser_model_->WalletIsSelected() &&
       client->user_index() != selected_user_index) {
-    client->set_user_index(selected_user_index);
+    client->SetUserIndex(selected_user_index);
     // Clear |wallet_items_| so we don't try to restore the selected instrument
     // and address.
     wallet_items_.reset();
@@ -2681,6 +2686,13 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
   if (IsPayingWithWallet()) {
     const std::vector<wallet::Address*>& addresses =
         wallet_items_->addresses();
+
+    bool shipping_same_as_billing = profile_->GetPrefs()->GetBoolean(
+        ::prefs::kAutofillDialogWalletShippingSameAsBilling);
+
+    if (shipping_same_as_billing)
+      suggested_shipping_.SetCheckedItem(kSameAsBillingKey);
+
     for (size_t i = 0; i < addresses.size(); ++i) {
       std::string key = base::IntToString(i);
       suggested_shipping_.AddKeyedItemWithMinorText(
@@ -2688,12 +2700,17 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
           addresses[i]->DisplayName(),
           addresses[i]->DisplayNameDetail());
 
+      // TODO(scr): Move this assignment outside the loop or comment why it
+      // can't be there.
       const std::string default_shipping_address_id =
           GetIdToSelect(wallet_items_->default_address_id(),
                         previous_default_shipping_address_id_,
                         previously_selected_shipping_address_id_);
-      if (addresses[i]->object_id() == default_shipping_address_id)
+
+      if (!shipping_same_as_billing &&
+          addresses[i]->object_id() == default_shipping_address_id) {
         suggested_shipping_.SetCheckedItem(key);
+      }
     }
 
     if (!IsSubmitPausedOn(wallet::VERIFY_CVV)) {
@@ -3172,10 +3189,6 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
 
   scoped_ptr<wallet::Instrument> inputted_instrument =
       CreateTransientInstrument();
-  if (inputted_instrument && IsEditingExistingData(SECTION_CC_BILLING)) {
-    inputted_instrument->set_object_id(active_instrument->object_id());
-    DCHECK(!inputted_instrument->object_id().empty());
-  }
 
   scoped_ptr<wallet::Address> inputted_address;
   if (active_address_id_.empty() && IsShippingAddressRequired()) {
@@ -3195,10 +3208,6 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
       }
     } else {
       inputted_address = CreateTransientAddress();
-      if (IsEditingExistingData(SECTION_SHIPPING)) {
-        inputted_address->set_object_id(active_address->object_id());
-        DCHECK(!inputted_address->object_id().empty());
-      }
     }
   }
 
@@ -3210,8 +3219,11 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
     return;
   }
 
-  GetWalletClient()->SaveToWallet(inputted_instrument.Pass(),
-                                  inputted_address.Pass());
+  GetWalletClient()->SaveToWallet(
+      inputted_instrument.Pass(),
+      inputted_address.Pass(),
+      IsEditingExistingData(SECTION_CC_BILLING) ? active_instrument : NULL,
+      IsEditingExistingData(SECTION_SHIPPING) ? active_address : NULL);
 }
 
 scoped_ptr<wallet::Instrument> AutofillDialogControllerImpl::
@@ -3320,7 +3332,13 @@ void AutofillDialogControllerImpl::DoFinishSubmit() {
     FillOutputForSection(SECTION_SHIPPING);
   }
 
-  if (!IsPayingWithWallet()) {
+  if (IsPayingWithWallet()) {
+    if (SectionIsActive(SECTION_SHIPPING)) {
+      profile_->GetPrefs()->SetBoolean(
+          ::prefs::kAutofillDialogWalletShippingSameAsBilling,
+          suggested_shipping_.GetItemKeyForCheckedItem() == kSameAsBillingKey);
+    }
+  } else {
     for (size_t i = SECTION_MIN; i <= SECTION_MAX; ++i) {
       DialogSection section = static_cast<DialogSection>(i);
       if (!SectionIsActive(section))

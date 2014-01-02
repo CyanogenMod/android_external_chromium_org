@@ -23,7 +23,6 @@
       'dependencies': [
         # TODO(tbarzic): Cleanup this list.
         'attestation_proto',
-        'app/policy/cloud_policy_codegen.gyp:policy',
         'browser/performance_monitor/performance_monitor.gyp:performance_monitor',
         'browser_extensions',
         'cert_logger_proto',
@@ -52,6 +51,7 @@
         '../chromeos/ime/input_method.gyp:gencode',
         '../components/components.gyp:cloud_policy_proto',
         '../components/components.gyp:onc_component',
+        '../components/components.gyp:policy',
         # This depends directly on the variations target, rather than just
         # transitively via the common target because the proto sources need to
         # be generated before code in this target can start building.
@@ -163,6 +163,10 @@
         'browser/chromeos/boot_times_loader.h',
         'browser/chromeos/camera_detector.cc',
         'browser/chromeos/camera_detector.h',
+        'browser/chromeos/charger_replace/charger_link_dialog.cc',
+        'browser/chromeos/charger_replace/charger_link_dialog.h',
+        'browser/chromeos/charger_replace/charger_replacement_dialog.cc',
+        'browser/chromeos/charger_replace/charger_replacement_dialog.h',
         'browser/chromeos/choose_mobile_network_dialog.cc',
         'browser/chromeos/choose_mobile_network_dialog.h',
         'browser/chromeos/chrome_browser_main_chromeos.cc',
@@ -816,6 +820,8 @@
         'browser/chromeos/status/data_promo_notification.h',
         'browser/chromeos/status/network_menu.cc',
         'browser/chromeos/status/network_menu.h',
+        'browser/chromeos/system/ash_system_tray_delegate.cc',
+        'browser/chromeos/system/ash_system_tray_delegate.h',
         'browser/chromeos/system/automatic_reboot_manager.cc',
         'browser/chromeos/system/automatic_reboot_manager.h',
         'browser/chromeos/system/automatic_reboot_manager_observer.h',
@@ -915,6 +921,8 @@
             'browser/chromeos/extensions/first_run_private_api.h',
             'browser/chromeos/extensions/input_method_api.cc',
             'browser/chromeos/extensions/input_method_api.h',
+            'browser/chromeos/extensions/screenlock_private_api.cc',
+            'browser/chromeos/extensions/screenlock_private_api.h',
             'browser/chromeos/extensions/media_player_api.cc',
             'browser/chromeos/extensions/media_player_api.h',
             'browser/chromeos/extensions/wallpaper_manager_util.cc',

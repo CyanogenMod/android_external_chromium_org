@@ -136,7 +136,6 @@ LOCAL_SRC_FILES := \
 	media/filters/gpu_video_decoder.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
 	media/filters/in_memory_url_protocol.cc \
-	media/filters/opus_audio_decoder.cc \
 	media/filters/skcanvas_video_renderer.cc \
 	media/filters/source_buffer_stream.cc \
 	media/filters/stream_parser_factory.cc \
@@ -250,6 +249,7 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -367,6 +367,7 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

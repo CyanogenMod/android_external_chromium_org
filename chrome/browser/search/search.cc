@@ -307,10 +307,8 @@ base::string16 GetSearchTermsFromURL(Profile* profile, const GURL& url) {
   if (url.is_valid() && url == GetSearchResultPrefetchBaseURL(profile)) {
     // InstantSearchPrerenderer has the search query for the Instant search base
     // page.
-    InstantService* instant_service =
-        InstantServiceFactory::GetForProfile(profile);
     InstantSearchPrerenderer* prerenderer =
-        instant_service ? instant_service->instant_search_prerenderer() : NULL;
+        InstantSearchPrerenderer::GetForProfile(profile);
     DCHECK(prerenderer);
     return prerenderer->get_last_query();
   }
@@ -526,6 +524,17 @@ bool ShouldShowInstantNTP() {
 }
 
 DisplaySearchButtonConditions GetDisplaySearchButtonConditions() {
+  const CommandLine* cl = CommandLine::ForCurrentProcess();
+  if (cl->HasSwitch(switches::kDisableSearchButtonInOmnibox)) {
+    return DISPLAY_SEARCH_BUTTON_NEVER;
+  } else if (cl->HasSwitch(switches::kEnableSearchButtonInOmniboxForStr)) {
+    return DISPLAY_SEARCH_BUTTON_FOR_STR;
+  } else if (cl->HasSwitch(switches::kEnableSearchButtonInOmniboxForStrOrIip)) {
+    return DISPLAY_SEARCH_BUTTON_FOR_STR_OR_IIP;
+  } else if (cl->HasSwitch(switches::kEnableSearchButtonInOmniboxAlways)) {
+    return DISPLAY_SEARCH_BUTTON_ALWAYS;
+  }
+
   FieldTrialFlags flags;
   if (!GetFieldTrialInfo(&flags))
     return DISPLAY_SEARCH_BUTTON_NEVER;
@@ -537,6 +546,13 @@ DisplaySearchButtonConditions GetDisplaySearchButtonConditions() {
 }
 
 bool ShouldDisplayOriginChip() {
+  const CommandLine* cl = CommandLine::ForCurrentProcess();
+  if (cl->HasSwitch(switches::kDisableOriginChip)) {
+    return false;
+  } else if (cl->HasSwitch(switches::kEnableOriginChip)) {
+    return true;
+  }
+
   FieldTrialFlags flags;
   return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
       kEnableOriginChipFlagName, false, flags);

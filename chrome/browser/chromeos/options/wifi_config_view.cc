@@ -629,7 +629,7 @@ void WifiConfigView::OnSelectedIndexChanged(views::Combobox* combobox) {
     passphrase_textfield_->SetEnabled(passphrase_enabled &&
                                       passphrase_ui_data_.IsEditable());
     if (!passphrase_enabled)
-      passphrase_textfield_->SetText(string16());
+      passphrase_textfield_->SetText(base::string16());
     RefreshShareCheckbox();
   } else if (combobox == user_cert_combobox_) {
     RefreshShareCheckbox();
@@ -1084,7 +1084,7 @@ void WifiConfigView::Init(bool show_8021x) {
   } else {
     // Password visible button.
     passphrase_visible_button_ = new views::ToggleImageButton(this);
-    passphrase_visible_button_->set_focusable(true);
+    passphrase_visible_button_->SetFocusable(true);
     passphrase_visible_button_->SetTooltipText(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_SHOW));

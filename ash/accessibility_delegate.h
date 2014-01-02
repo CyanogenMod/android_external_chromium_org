@@ -7,6 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/magnifier/magnifier_constants.h"
+#include "base/time/time.h"
 
 namespace ash {
 
@@ -62,9 +63,8 @@ class ASH_EXPORT AccessibilityDelegate {
   // Returns if autoclick is enabled or not.
   virtual bool IsAutoclickEnabled() const = 0;
 
-  // Returns true if the user wants to show accesibility menu even when all the
-  // accessibility features are disabled.
-  virtual bool ShouldAlwaysShowAccessibilityMenu() const = 0;
+  // Returns true when the accessibility menu should be shown.
+  virtual bool ShouldShowAccessibilityMenu() const = 0;
 
   // Cancel all current and queued speech immediately.
   virtual void SilenceSpokenFeedback() const = 0;
@@ -81,6 +81,9 @@ class ASH_EXPORT AccessibilityDelegate {
 
   // Gets the last accessibility alert that was triggered.
   virtual AccessibilityAlert GetLastAccessibilityAlert() = 0;
+
+  // Initiates play of shutdown sound and returns it's duration.
+  virtual base::TimeDelta PlayShutdownSound() const = 0;
 };
 
 }  // namespace ash

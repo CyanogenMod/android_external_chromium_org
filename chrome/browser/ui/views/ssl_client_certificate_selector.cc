@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
-#include "chrome/browser/ui/crypto_module_password_dialog.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -31,6 +30,10 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
+
+#if defined(USE_NSS)
+#include "chrome/browser/ui/crypto_module_password_dialog_nss.h"
+#endif
 
 using content::BrowserThread;
 using content::WebContents;
@@ -59,7 +62,7 @@ class CertificateSelectorTableModel : public ui::TableModel {
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
 
  private:
-  std::vector<string16> items_;
+  std::vector<base::string16> items_;
 
   DISALLOW_COPY_AND_ASSIGN(CertificateSelectorTableModel);
 };
@@ -80,7 +83,8 @@ int CertificateSelectorTableModel::RowCount() {
   return items_.size();
 }
 
-string16 CertificateSelectorTableModel::GetText(int index, int column_id) {
+base::string16 CertificateSelectorTableModel::GetText(int index,
+                                                      int column_id) {
   DCHECK_EQ(column_id, 0);
   DCHECK_GE(index, 0);
   DCHECK_LT(index, static_cast<int>(items_.size()));
@@ -184,7 +188,7 @@ bool SSLClientCertificateSelector::CanResize() const {
   return true;
 }
 
-string16 SSLClientCertificateSelector::GetWindowTitle() const {
+base::string16 SSLClientCertificateSelector::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_CLIENT_CERT_DIALOG_TITLE);
 }
 

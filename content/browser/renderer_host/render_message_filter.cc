@@ -102,11 +102,13 @@ const int kPluginsRefreshThresholdInSeconds = 3;
 // usage only once and send it as a response for both queries.
 static const int64 kCPUUsageSampleIntervalMs = 900;
 
+#if defined(OS_WIN)
 // On Windows, |g_color_profile| can run on an arbitrary background thread.
 // We avoid races by using LazyInstance's constructor lock to initialize the
 // object.
 base::LazyInstance<gfx::ColorProfile>::Leaky g_color_profile =
     LAZY_INSTANCE_INITIALIZER;
+#endif
 
 // Common functionality for converting a sync renderer message to a callback
 // function in the browser. Derive from this, create it on the heap when
@@ -432,8 +434,10 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetCPUUsage, OnGetCPUUsage)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetAudioHardwareConfig,
                         OnGetAudioHardwareConfig)
+#if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
+#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvents, OnMediaLogEvents)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Are3DAPIsBlocked, OnAre3DAPIsBlocked)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidLose3DContext, OnDidLose3DContext)
@@ -852,14 +856,14 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
       media::AudioManagerBase::kDefaultDeviceId);
 }
 
-void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 #if defined(OS_WIN)
+void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (BackingStoreWin::ColorManagementEnabled())
     return;
-#endif
   *profile = g_color_profile.Get().profile();
 }
+#endif
 
 void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
                                         const GURL& url,
@@ -985,40 +989,41 @@ void RenderMessageFilter::OnKeygen(uint32 key_size_index,
       return;
   }
 
+  resource_context_->CreateKeygenHandler(
+      key_size_in_bits,
+      challenge_string,
+      url,
+      base::Bind(
+          &RenderMessageFilter::PostKeygenToWorkerThread, this, reply_msg));
+}
+
+void RenderMessageFilter::PostKeygenToWorkerThread(
+    IPC::Message* reply_msg,
+    scoped_ptr<net::KeygenHandler> keygen_handler) {
   VLOG(1) << "Dispatching keygen task to worker pool.";
   // Dispatch to worker pool, so we do not block the IO thread.
   if (!base::WorkerPool::PostTask(
            FROM_HERE,
-           base::Bind(
-               &RenderMessageFilter::OnKeygenOnWorkerThread, this,
-               key_size_in_bits, challenge_string, url, reply_msg),
+           base::Bind(&RenderMessageFilter::OnKeygenOnWorkerThread,
+                      this,
+                      base::Passed(&keygen_handler),
+                      reply_msg),
            true)) {
     NOTREACHED() << "Failed to dispatch keygen task to worker pool";
     ViewHostMsg_Keygen::WriteReplyParams(reply_msg, std::string());
     Send(reply_msg);
-    return;
   }
 }
 
 void RenderMessageFilter::OnKeygenOnWorkerThread(
-    int key_size_in_bits,
-    const std::string& challenge_string,
-    const GURL& url,
+    scoped_ptr<net::KeygenHandler> keygen_handler,
     IPC::Message* reply_msg) {
   DCHECK(reply_msg);
 
   // Generate a signed public key and challenge, then send it back.
-  net::KeygenHandler keygen_handler(key_size_in_bits, challenge_string, url);
-
-#if defined(USE_NSS)
-  // Attach a password delegate so we can authenticate.
-  keygen_handler.set_crypto_module_password_delegate(
-      GetContentClient()->browser()->GetCryptoPasswordDelegate(url));
-#endif  // defined(USE_NSS)
-
   ViewHostMsg_Keygen::WriteReplyParams(
       reply_msg,
-      keygen_handler.GenKeyAndSignChallenge());
+      keygen_handler->GenKeyAndSignChallenge());
   Send(reply_msg);
 }
 

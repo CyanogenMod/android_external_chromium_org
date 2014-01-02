@@ -46,6 +46,7 @@ class PageActionImageView;
 class Profile;
 class ScriptBubbleIconView;
 class SelectedKeywordView;
+class SiteChipView;
 class StarView;
 class TemplateURLService;
 class TranslateIconView;
@@ -199,6 +200,10 @@ class LocationBarView : public LocationBar,
   // The translate icon. It may not be visible.
   TranslateIconView* translate_icon_view() { return translate_icon_view_; }
 
+  void set_site_chip_view(SiteChipView* site_chip_view) {
+    site_chip_view_ = site_chip_view;
+  }
+
   // Shows the bookmark prompt.
   void ShowBookmarkPrompt();
 
@@ -243,7 +248,7 @@ class LocationBarView : public LocationBar,
   // The point will be returned in the coordinates of the LocationBarView.
   gfx::Point GetLocationBarAnchorPoint() const;
 
-  views::View* omnibox_view() { return omnibox_view_; }
+  OmniboxViewViews* omnibox_view() { return omnibox_view_; }
 
   views::View* generated_credit_card_view();
 
@@ -417,6 +422,9 @@ class LocationBarView : public LocationBar,
   // don't normally use this). Sets the value and clears the selection.
   void AccessibilitySetValue(const base::string16& new_value);
 
+  // Checks if an extension has specified the bookmark star be hidden.
+  bool IsBookmarkStarHiddenByExtension();
+
   // The Browser this LocationBarView is in.  Note that at least
   // chromeos::SimpleWebViewDialog uses a LocationBarView outside any browser
   // window, so this may be NULL.
@@ -488,6 +496,9 @@ class LocationBarView : public LocationBar,
 
   // The script bubble.
   ScriptBubbleIconView* script_bubble_icon_view_;
+
+  // The Site Chip.
+  SiteChipView* site_chip_view_;
 
   // The icon for Translate.
   TranslateIconView* translate_icon_view_;

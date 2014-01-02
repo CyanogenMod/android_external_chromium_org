@@ -530,7 +530,6 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImageFromProfileImage) {
   EXPECT_EQ(profile_image.height(), saved_image->height());
 }
 
-
 IN_PROC_BROWSER_TEST_F(UserImageManagerTest,
                        PRE_ProfileImageDownloadDoesNotClobber) {
   RegisterUser(kTestUser1);

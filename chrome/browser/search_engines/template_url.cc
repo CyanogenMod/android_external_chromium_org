@@ -87,6 +87,7 @@ const char kGoogleSearchFieldtrialParameter[] =
 const char kGoogleSourceIdParameter[] = "google:sourceId";
 const char kGoogleSuggestAPIKeyParameter[] = "google:suggestAPIKeyParameter";
 const char kGoogleSuggestClient[] = "google:suggestClient";
+const char kGoogleSuggestRequestId[] = "google:suggestRid";
 
 // Same as kSearchTermsParameter, with no escaping.
 const char kGoogleUnescapedSearchTermsParameter[] =
@@ -201,7 +202,7 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(
     const base::string16& search_terms)
     : search_terms(search_terms),
       accepted_suggestion(NO_SUGGESTIONS_AVAILABLE),
-      cursor_position(string16::npos),
+      cursor_position(base::string16::npos),
       omnibox_start_margin(-1),
       page_classification(AutocompleteInput::INVALID_SPEC),
       bookmark_bar_pinned(false),
@@ -376,7 +377,7 @@ bool TemplateURLRef::IsValidUsingTermsData(
   return valid_;
 }
 
-string16 TemplateURLRef::DisplayURL() const {
+base::string16 TemplateURLRef::DisplayURL() const {
   ParseIfNecessary();
   base::string16 result(UTF8ToUTF16(GetURL()));
   if (valid_ && !replacements_.empty()) {
@@ -418,7 +419,8 @@ const std::string& TemplateURLRef::GetSearchTermKey() const {
   return search_term_key_;
 }
 
-string16 TemplateURLRef::SearchTermToString16(const std::string& term) const {
+base::string16 TemplateURLRef::SearchTermToString16(
+    const std::string& term) const {
   const std::vector<std::string>& encodings = owner_->input_encodings();
   base::string16 result;
 
@@ -477,7 +479,7 @@ bool TemplateURLRef::ExtractSearchTermsFromURL(
   // so we use the empty string.
   // Currently we assume the search term only shows in URL, not in post params.
   GURL pattern(ReplaceSearchTermsUsingTermsData(
-      SearchTermsArgs(string16()), search_terms_data, NULL));
+      SearchTermsArgs(base::string16()), search_terms_data, NULL));
   // Host, path and port must match.
   if (url.port() != pattern.port() ||
       url.host() != host_ ||
@@ -611,6 +613,8 @@ bool TemplateURLRef::ParseParameter(size_t start,
                 net::EscapeQueryParamValue(google_apis::GetAPIKey(), false));
   } else if (parameter == kGoogleSuggestClient) {
     replacements->push_back(Replacement(GOOGLE_SUGGEST_CLIENT, start));
+  } else if (parameter == kGoogleSuggestRequestId) {
+    replacements->push_back(Replacement(GOOGLE_SUGGEST_REQUEST_ID, start));
   } else if (parameter == kGoogleUnescapedSearchTermsParameter) {
     replacements->push_back(Replacement(GOOGLE_UNESCAPED_SEARCH_TERMS, start));
   } else if (parameter == kInputEncodingParameter) {
@@ -799,7 +803,7 @@ std::string TemplateURLRef::HandleReplacements(
     if (i->type == SEARCH_TERMS) {
       base::string16::size_type query_start = parsed_url_.find('?');
       is_in_query = query_start != base::string16::npos &&
-          (static_cast<string16::size_type>(i->index) > query_start);
+          (static_cast<base::string16::size_type>(i->index) > query_start);
       break;
     }
   }
@@ -966,6 +970,12 @@ std::string TemplateURLRef::HandleReplacements(
             std::string(), search_terms_data.GetSuggestClient(), *i, &url);
         break;
 
+      case GOOGLE_SUGGEST_REQUEST_ID:
+        HandleReplacement(
+            std::string(), search_terms_data.GetSuggestRequestIdentifier(), *i,
+            &url);
+        break;
+
       case GOOGLE_UNESCAPED_SEARCH_TERMS: {
         std::string unescaped_terms;
         base::UTF16ToCodepage(search_terms_args.search_terms,
@@ -1100,7 +1110,7 @@ GURL TemplateURL::GenerateFaviconURL(const GURL& url) {
   return url.ReplaceComponents(rep);
 }
 
-string16 TemplateURL::AdjustedShortNameForLocaleDirection() const {
+base::string16 TemplateURL::AdjustedShortNameForLocaleDirection() const {
   base::string16 bidi_safe_short_name = data_.short_name;
   base::i18n::AdjustStringForLocaleDirection(&bidi_safe_short_name);
   return bidi_safe_short_name;

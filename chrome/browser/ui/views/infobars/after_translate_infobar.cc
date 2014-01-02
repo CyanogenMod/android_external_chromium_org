@@ -88,7 +88,7 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(
     return;
   }
 
-  std::vector<string16> strings;
+  std::vector<base::string16> strings;
   TranslateInfoBarDelegate::GetAfterTranslateStrings(
       &strings, &swapped_language_buttons_, autodetermined_source_language_);
   DCHECK_EQ(autodetermined_source_language_ ? 2U : 3U, strings.size());
@@ -97,11 +97,11 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(
   AddChildView(label_1_);
 
   TranslateInfoBarDelegate* delegate = GetDelegate();
-  original_language_menu_button_ = CreateMenuButton(string16(), this);
+  original_language_menu_button_ = CreateMenuButton(base::string16(), this);
   original_language_menu_model_.reset(new TranslateLanguageMenuModel(
       TranslateLanguageMenuModel::ORIGINAL, delegate, this,
       original_language_menu_button_, true));
-  target_language_menu_button_ = CreateMenuButton(string16(), this);
+  target_language_menu_button_ = CreateMenuButton(base::string16(), this);
   target_language_menu_model_.reset(new TranslateLanguageMenuModel(
       TranslateLanguageMenuModel::TARGET, delegate, this,
       target_language_menu_button_, true));

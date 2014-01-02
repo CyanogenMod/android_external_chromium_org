@@ -172,7 +172,8 @@ bool SaveImage(const UserImage& user_image, const base::FilePath& image_path) {
     return false;
   }
 
-  if (file_util::WriteFile(image_path,
+  if (!encoded_image->size() ||
+      file_util::WriteFile(image_path,
                            reinterpret_cast<const char*>(&(*encoded_image)[0]),
                            encoded_image->size()) == -1) {
     LOG(ERROR) << "Failed to save image to file.";
@@ -219,8 +220,7 @@ class UserImageManagerImpl::Job {
   // Saves the |user_image| to disk and sets the user image for |user_id_| in
   // local state to that image. Also updates the |user| object for |user_id_|
   // with the new image.
-  void SetToImage(int image_index,
-                  const UserImage& user_image);
+  void SetToImage(int image_index, const UserImage& user_image);
 
   // Decodes the JPEG image |data|, crops and resizes the image, saves it to
   // disk and sets the user image for |user_id_| in local state to that image.
@@ -244,11 +244,15 @@ class UserImageManagerImpl::Job {
   void UpdateUser();
 
   // Saves |user_image_| to disk in JPEG format. Local state will be updated
-  // when a callback indicates that the save has been successful.
+  // when a callback indicates that the image has been saved.
   void SaveImageAndUpdateLocalState();
 
-  // Called back after the |user_image_| has been saved to disk. If |success| is
-  // true sets the user image for |user_id_| in local state to that image.
+  // Called back after the |user_image_| has been saved to disk. Updates the
+  // user image information for |user_id_| in local state. The information is
+  // only updated if |success| is true (indicating that the image was saved
+  // successfully) or the user image is the profile image (indicating that even
+  // if the image could not be saved because it is not available right now, it
+  // will be downloaded eventually).
   void OnSaveImageDone(bool success);
 
   // Updates the user image for |user_id_| in local state, setting it to
@@ -428,7 +432,7 @@ void UserImageManagerImpl::Job::SaveImageAndUpdateLocalState() {
 }
 
 void UserImageManagerImpl::Job::OnSaveImageDone(bool success) {
-  if (success)
+  if (success || image_index_ == User::kProfileImageIndex)
     UpdateLocalState();
   NotifyJobDone();
 }

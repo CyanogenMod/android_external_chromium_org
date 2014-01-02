@@ -36,7 +36,9 @@
 #include "ppapi/c/ppp.h"
 #include "ppapi/proxy/interface_list.h"
 #include "ppapi/proxy/plugin_globals.h"
+#include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/resource_reply_thread_registrar.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -72,6 +74,12 @@ PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
 
   webkit_platform_support_.reset(new PpapiWebKitPlatformSupportImpl);
   blink::initialize(webkit_platform_support_.get());
+
+  if (!is_broker_) {
+    channel()->AddFilter(
+        new ppapi::proxy::PluginMessageFilter(
+            NULL, globals->resource_reply_thread_registrar()));
+  }
 }
 
 PpapiThread::~PpapiThread() {
@@ -104,7 +112,6 @@ bool PpapiThread::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PpapiMsg_SetNetworkState, OnSetNetworkState)
     IPC_MESSAGE_HANDLER(PpapiMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(PpapiMsg_Hang, OnHang)
-    IPC_MESSAGE_HANDLER(PpapiPluginMsg_ResourceReply, OnResourceReply)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -199,7 +206,8 @@ void PpapiThread::Unregister(uint32 plugin_dispatcher_id) {
 }
 
 void PpapiThread::OnLoadPlugin(const base::FilePath& path,
-                               const ppapi::PpapiPermissions& permissions) {
+                               const ppapi::PpapiPermissions& permissions,
+                               bool supports_dev_channel) {
   // In case of crashes, the crash dump doesn't indicate which plugin
   // it came from.
   base::debug::SetCrashKeyValue("ppapi_path", path.MaybeAsASCII());
@@ -209,6 +217,7 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // This must be set before calling into the plugin so it can get the
   // interfaces it has permission for.
   ppapi::proxy::InterfaceList::SetProcessGlobalPermissions(permissions);
+  ppapi::proxy::InterfaceList::SetSupportsDevChannel(supports_dev_channel);
   permissions_ = permissions;
 
   // Trusted Pepper plugins may be "internal", i.e. built-in to the browser
@@ -353,13 +362,6 @@ void PpapiThread::OnCreateChannel(base::ProcessId renderer_pid,
   }
 
   Send(new PpapiHostMsg_ChannelCreated(channel_handle));
-}
-
-void PpapiThread::OnResourceReply(
-    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-    const IPC::Message& nested_msg) {
-  ppapi::proxy::PluginDispatcher::DispatchResourceReply(reply_params,
-                                                        nested_msg);
 }
 
 void PpapiThread::OnSetNetworkState(bool online) {

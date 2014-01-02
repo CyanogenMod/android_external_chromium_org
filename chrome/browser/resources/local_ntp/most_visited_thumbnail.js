@@ -14,10 +14,13 @@ window.addEventListener('DOMContentLoaded', function() {
     function logEvent(eventName) {
       chrome.embeddedSearch.newTabPage.logEvent(eventName);
     }
+    function logImpression(tileIndex, provider) {
+      chrome.embeddedSearch.newTabPage.logImpression(tileIndex, provider);
+    }
     function showDomainElement() {
       logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ERROR);
       var link = createMostVisitedLink(
-          params, data.url, data.title, undefined, data.ping);
+          params, data.url, data.title, undefined, data.ping, data.provider);
       var domain = document.createElement('div');
       domain.textContent = data.domain;
       link.appendChild(domain);
@@ -27,7 +30,7 @@ window.addEventListener('DOMContentLoaded', function() {
     // externally by the page itself.
     function showEmptyTile() {
       var link = createMostVisitedLink(
-          params, data.url, data.title, undefined, data.ping);
+          params, data.url, data.title, undefined, data.ping, data.provider);
       document.body.appendChild(link);
       logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE);
     }
@@ -37,7 +40,7 @@ window.addEventListener('DOMContentLoaded', function() {
         var shadow = document.createElement('span');
         shadow.classList.add('shadow');
         var link = createMostVisitedLink(
-            params, data.url, data.title, undefined, data.ping);
+            params, data.url, data.title, undefined, data.ping, data.provider);
         link.appendChild(shadow);
         link.appendChild(image);
         // We add 'position: absolute' in anticipation that there could be more
@@ -50,6 +53,11 @@ window.addEventListener('DOMContentLoaded', function() {
       }
       return image;
     }
+    // Log an impression if we know the position of the tile.
+    if (isFinite(params.pos) && data.provider) {
+      logImpression(parseInt(params.pos, 10), data.provider);
+    }
+
     if (data.thumbnailUrl) {
       var image = createAndAppendThumbnail(true);
       // If a backup thumbnail URL was provided, preload it in case the first

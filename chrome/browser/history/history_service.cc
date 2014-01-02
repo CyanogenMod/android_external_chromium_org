@@ -410,6 +410,13 @@ void HistoryService::DeleteKeywordSearchTermForURL(const GURL& url) {
                     url);
 }
 
+void HistoryService::DeleteMatchingURLsForKeyword(TemplateURLID keyword_id,
+                                                  const base::string16& term) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  ScheduleAndForget(PRIORITY_UI, &HistoryBackend::DeleteMatchingURLsForKeyword,
+                    keyword_id, term);
+}
+
 void HistoryService::URLsNoLongerBookmarked(const std::set<GURL>& urls) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::URLsNoLongerBookmarked,
@@ -1023,8 +1030,7 @@ bool HistoryService::CanAddURL(const GURL& url) {
       url.SchemeIs(chrome::kChromeNativeScheme) ||
       url.SchemeIs(chrome::kChromeUIScheme) ||
       url.SchemeIs(chrome::kChromeSearchScheme) ||
-      url.SchemeIs(content::kViewSourceScheme) ||
-      url.SchemeIs(chrome::kChromeInternalScheme))
+      url.SchemeIs(content::kViewSourceScheme))
     return false;
 
   // Allow all about: and chrome: URLs except about:blank, since the user may

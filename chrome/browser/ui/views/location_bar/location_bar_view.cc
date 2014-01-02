@@ -17,6 +17,8 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/script_bubble_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -56,8 +58,10 @@
 #include "chrome/browser/ui/views/location_bar/zoom_view.h"
 #include "chrome/browser/ui/views/passwords/manage_passwords_bubble_view.h"
 #include "chrome/browser/ui/views/passwords/manage_passwords_icon_view.h"
+#include "chrome/browser/ui/views/toolbar/site_chip_view.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -183,6 +187,7 @@ LocationBarView::LocationBarView(Browser* browser,
       open_pdf_in_reader_view_(NULL),
       manage_passwords_icon_view_(NULL),
       script_bubble_icon_view_(NULL),
+      site_chip_view_(NULL),
       translate_icon_view_(NULL),
       star_view_(NULL),
       search_button_(NULL),
@@ -273,7 +278,7 @@ void LocationBarView::Init() {
   omnibox_view_ = new OmniboxViewViews(this, profile_, command_updater(),
                                        is_popup_mode_, this, font_list);
   omnibox_view_->Init();
-  omnibox_view_->set_focusable(true);
+  omnibox_view_->SetFocusable(true);
   AddChildView(omnibox_view_);
 
   // Initialize the inline autocomplete view which is visible only when IME is
@@ -311,7 +316,7 @@ void LocationBarView::Init() {
 
   mic_search_view_ = new views::ImageButton(this);
   mic_search_view_->set_id(VIEW_ID_MIC_SEARCH_BUTTON);
-  mic_search_view_->set_accessibility_focusable(true);
+  mic_search_view_->SetAccessibilityFocusable(true);
   mic_search_view_->SetTooltipText(
       l10n_util::GetStringUTF16(IDS_TOOLTIP_MIC_SEARCH));
   mic_search_view_->SetImage(
@@ -364,7 +369,7 @@ void LocationBarView::Init() {
   search_button_->set_triggerable_event_flags(
       ui::EF_LEFT_MOUSE_BUTTON | ui::EF_MIDDLE_MOUSE_BUTTON);
   search_button_->SetStyle(views::Button::STYLE_BUTTON);
-  search_button_->set_focusable(false);
+  search_button_->SetFocusable(false);
   search_button_->set_min_size(gfx::Size());
   views::LabelButtonBorder* search_button_border =
       static_cast<views::LabelButtonBorder*>(search_button_->border());
@@ -393,9 +398,12 @@ void LocationBarView::Init() {
   search_button_->SetVisible(false);
   AddChildView(search_button_);
 
+  content::Source<Profile> profile_source = content::Source<Profile>(profile_);
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
-                 content::Source<Profile>(profile_));
+                 profile_source);
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED, profile_source);
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED, profile_source);
 
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
@@ -720,8 +728,8 @@ void LocationBarView::Layout() {
         selected_keyword_view_->set_is_extension_icon(false);
       }
     }
-  } else if (GetToolbarModel()->GetSecurityLevel(false) ==
-      ToolbarModel::EV_SECURE) {
+  } else if (!site_chip_view_ &&
+      (GetToolbarModel()->GetSecurityLevel(false) == ToolbarModel::EV_SECURE)) {
     ev_bubble_view_->SetLabel(GetToolbarModel()->GetEVCertName());
     // The largest fraction of the omnibox that can be taken by the EV bubble.
     const double kMaxBubbleFraction = 0.5;
@@ -821,7 +829,7 @@ void LocationBarView::Layout() {
   leading_decorations.LayoutPass2(&entry_width);
   trailing_decorations.LayoutPass2(&entry_width);
 
-  int location_needed_width = omnibox_view_->TextWidth();
+  int location_needed_width = omnibox_view_->GetTextWidth();
   int available_width = entry_width - location_needed_width;
   // The bounds must be wide enough for all the decorations to fit.
   gfx::Rect location_bounds(
@@ -970,11 +978,13 @@ void LocationBarView::SelectAll() {
 }
 
 views::ImageView* LocationBarView::GetLocationIconView() {
-  return location_icon_view_;
+  return site_chip_view_ ?
+      site_chip_view_->location_icon_view() : location_icon_view_;
 }
 
 const views::ImageView* LocationBarView::GetLocationIconView() const {
-  return location_icon_view_;
+  return site_chip_view_ ?
+      site_chip_view_->location_icon_view() : location_icon_view_;
 }
 
 views::View* LocationBarView::GetLocationBarAnchor() {
@@ -1012,7 +1022,7 @@ void LocationBarView::Update(const WebContents* contents) {
 
   bool star_enabled = browser_defaults::bookmarks_enabled && !is_popup_mode_ &&
       star_view_ && !GetToolbarModel()->input_in_progress() &&
-      edit_bookmarks_enabled_.GetValue();
+      edit_bookmarks_enabled_.GetValue() && !IsBookmarkStarHiddenByExtension();
 
   command_updater()->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
   command_updater()->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
@@ -1047,6 +1057,9 @@ void LocationBarView::OnChanged() {
       views::Button::STATE_NORMAL,
       *GetThemeProvider()->GetImageSkiaNamed((icon_id == IDR_OMNIBOX_SEARCH) ?
           IDR_OMNIBOX_SEARCH_BUTTON_LOUPE : IDR_OMNIBOX_SEARCH_BUTTON_ARROW));
+
+  if (site_chip_view_)
+    site_chip_view_->OnChanged();
 
   Layout();
   SchedulePaint();
@@ -1297,6 +1310,11 @@ void LocationBarView::Observe(int type,
         UpdatePageActions();
       break;
     }
+
+    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+      Update(NULL);
+      break;
 
     default:
       NOTREACHED() << "Unexpected notification.";
@@ -1551,4 +1569,23 @@ void LocationBarView::PaintPageActionBackgrounds(gfx::Canvas* canvas) {
 
 void LocationBarView::AccessibilitySetValue(const base::string16& new_value) {
   omnibox_view_->SetUserText(new_value, new_value, true);
+}
+
+bool LocationBarView::IsBookmarkStarHiddenByExtension() {
+  if (!extensions::FeatureSwitch::enable_override_bookmarks_ui()->IsEnabled())
+    return false;
+
+  const ExtensionSet* extension_set =
+      extensions::ExtensionSystem::GetForBrowserContext(profile_)
+          ->extension_service()->extensions();
+  for (ExtensionSet::const_iterator i = extension_set->begin();
+       i != extension_set->end(); ++i) {
+    const extensions::SettingsOverrides* settings_overrides =
+        extensions::SettingsOverrides::Get(i->get());
+    if (settings_overrides &&
+        settings_overrides->RequiresHideBookmarkButtonPermission())
+      return true;
+  }
+
+  return false;
 }

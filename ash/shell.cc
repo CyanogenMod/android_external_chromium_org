@@ -83,6 +83,7 @@
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
 #include "base/debug/trace_event.h"
+#include "content/public/browser/user_metrics.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/env.h"
@@ -517,8 +518,9 @@ ShelfDelegate* Shell::GetShelfDelegate() {
     DCHECK(app_list_id);
     shelf_item_delegate_manager_->SetShelfItemDelegate(app_list_id,
                                                        controller.Pass());
-    shelf_window_watcher_.reset(
-        new internal::ShelfWindowWatcher(shelf_model_.get()));
+    shelf_window_watcher_.reset(new internal::ShelfWindowWatcher(
+                                        shelf_model_.get(),
+                                        shelf_item_delegate_manager_.get()));
   }
   return shelf_delegate_.get();
 }
@@ -575,7 +577,7 @@ Shell::Shell(ShellDelegate* delegate)
           gpu::GPU_FEATURE_TYPE_PANEL_FITTING);
 
   output_configurator_->Init(!is_panel_fitting_disabled);
-  periodic_metrics_recorder_.reset(new PeriodicMetricsRecorder);
+  user_metrics_recorder_.reset(new UserMetricsRecorder);
 
   base::MessagePumpX11::Current()->AddDispatcherForRootWindow(
       output_configurator());
@@ -645,6 +647,7 @@ Shell::~Shell() {
   shadow_controller_.reset();
   resize_shadow_controller_.reset();
 
+  window_selector_controller_.reset();
   window_cycle_controller_.reset();
   mru_window_tracker_.reset();
 

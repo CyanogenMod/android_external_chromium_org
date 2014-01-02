@@ -30,7 +30,6 @@
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/auth_sync_observer.h"
 #include "chrome/browser/chromeos/login/auth_sync_observer_factory.h"
-#include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/multi_profile_first_run_notification.h"
@@ -584,9 +583,17 @@ User* UserManagerImpl::GetUserByProfile(Profile* profile) const {
 }
 
 Profile* UserManagerImpl::GetProfileByUser(const User* user) const {
-  if (IsMultipleProfilesAllowed())
-    return ProfileHelper::GetProfileByUserIdHash(user->username_hash());
-  return g_browser_process->profile_manager()->GetDefaultProfile();
+  Profile* profile = NULL;
+  if (IsMultipleProfilesAllowed() && user->is_profile_created())
+    profile = ProfileHelper::GetProfileByUserIdHash(user->username_hash());
+  else
+    profile = g_browser_process->profile_manager()->GetDefaultProfile();
+
+  // GetDefaultProfile() or GetProfileByUserIdHash() returns a new instance of
+  // ProfileImpl(), but actually its OffTheRecordProfile() should be used.
+  if (profile && IsLoggedInAsGuest())
+    profile = profile->GetOffTheRecordProfile();
+  return profile;
 }
 
 void UserManagerImpl::SaveUserOAuthStatus(
@@ -655,7 +662,7 @@ void UserManagerImpl::SaveUserDisplayName(const std::string& user_id,
   }
 }
 
-string16 UserManagerImpl::GetUserDisplayName(
+base::string16 UserManagerImpl::GetUserDisplayName(
     const std::string& user_id) const {
   const User* user = FindUser(user_id);
   return user ? user->display_name() : base::string16();
@@ -1203,8 +1210,6 @@ void UserManagerImpl::RegularUserLoggedIn(const std::string& user_id) {
   user_image_manager_->UserLoggedIn(user_id, is_current_user_new_, false);
 
   WallpaperManager::Get()->EnsureLoggedInUserWallpaperLoaded();
-
-  default_pinned_apps_field_trial::SetupForUser(user_id, is_current_user_new_);
 
   // Make sure that new data is persisted to Local State.
   g_browser_process->local_state()->CommitPendingWrite();

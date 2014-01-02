@@ -44,9 +44,9 @@ namespace {
 // Returns the message that should be displayed when the user is authenticated
 // and can connect to the sync server. If the user hasn't yet authenticated, an
 // empty string is returned.
-string16 GetSyncedStateStatusLabel(ProfileSyncService* service,
-                                   const SigninManagerBase& signin,
-                                   StatusLabelStyle style) {
+base::string16 GetSyncedStateStatusLabel(ProfileSyncService* service,
+                                         const SigninManagerBase& signin,
+                                         StatusLabelStyle style) {
   base::string16 user_name = UTF8ToUTF16(signin.GetAuthenticatedUsername());
 
   if (!user_name.empty()) {
@@ -289,7 +289,7 @@ MessageType GetStatusInfoForNewTabPage(ProfileSyncService* service,
       // NOT first machine.
       // Show a link and present as an error ("needs attention").
       if (status_label && link_label) {
-        status_label->assign(string16());
+        status_label->assign(base::string16());
         link_label->assign(
             l10n_util::GetStringUTF16(IDS_SYNC_CONFIGURE_ENCRYPTION));
       }
@@ -360,7 +360,7 @@ MessageType GetStatus(
   return sync_ui_util::GetStatusInfo(service, signin, WITH_HTML, NULL, NULL);
 }
 
-string16 ConstructTime(int64 time_in_int) {
+base::string16 ConstructTime(int64 time_in_int) {
   base::Time time = base::Time::FromInternalValue(time_in_int);
 
   // If time is null the format function returns a time in 1969.

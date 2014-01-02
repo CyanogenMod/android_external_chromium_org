@@ -61,7 +61,7 @@ bool GetStorageInfoOnUIThread(const base::string16& storage_path,
 //
 // Returns an empty string if the device is detached while the request is in
 // progress or when the |file_path| is invalid.
-string16 GetFileObjectIdFromPathOnBlockingPoolThread(
+base::string16 GetFileObjectIdFromPathOnBlockingPoolThread(
     const MTPDeviceDelegateImplWin::StorageDeviceInfo& device_info,
     const base::FilePath& file_path) {
   base::ThreadRestrictions::AssertIOAllowed();
@@ -80,7 +80,7 @@ string16 GetFileObjectIdFromPathOnBlockingPoolThread(
           file_path, &relative_path))
     return base::string16();
 
-  std::vector<string16> path_components;
+  std::vector<base::string16> path_components;
   relative_path.GetComponents(&path_components);
   DCHECK(!path_components.empty());
   base::string16 parent_id(device_info.storage_object_id);

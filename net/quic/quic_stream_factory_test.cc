@@ -64,7 +64,8 @@ class QuicStreamFactoryPeer {
 class QuicStreamFactoryTest : public ::testing::Test {
  protected:
   QuicStreamFactoryTest()
-      : clock_(new MockClock()),
+      : random_generator_(0),
+        clock_(new MockClock()),
         factory_(&host_resolver_, &socket_factory_,
                  base::WeakPtr<HttpServerProperties>(),
                  &crypto_client_stream_factory_,
@@ -80,7 +81,7 @@ class QuicStreamFactoryTest : public ::testing::Test {
       QuicPacketSequenceNumber num,
       QuicStreamId stream_id) {
     QuicPacketHeader header;
-    header.public_header.guid = 0xDEADBEEF;
+    header.public_header.guid = random_generator_.RandUint64();
     header.public_header.reset_flag = false;
     header.public_header.version_flag = true;
     header.packet_sequence_number = num;
@@ -98,7 +99,7 @@ class QuicStreamFactoryTest : public ::testing::Test {
       QuicPacketSequenceNumber largest_received,
       QuicPacketSequenceNumber least_unacked) {
     QuicPacketHeader header;
-    header.public_header.guid = 0xDEADBEEF;
+    header.public_header.guid = random_generator_.RandUint64();
     header.public_header.reset_flag = false;
     header.public_header.version_flag = false;
     header.packet_sequence_number = 2;
@@ -126,7 +127,7 @@ class QuicStreamFactoryTest : public ::testing::Test {
   scoped_ptr<QuicEncryptedPacket> ConstructFeedbackPacket(
       QuicPacketSequenceNumber sequence_number) {
     QuicPacketHeader header;
-    header.public_header.guid = 0xDEADBEEF;
+    header.public_header.guid = random_generator_.RandUint64();
     header.public_header.reset_flag = false;
     header.public_header.version_flag = false;
     header.packet_sequence_number = sequence_number;
@@ -205,6 +206,21 @@ TEST_F(QuicStreamFactoryTest, Create) {
 
   EXPECT_TRUE(socket_data.at_read_eof());
   EXPECT_TRUE(socket_data.at_write_eof());
+}
+
+TEST_F(QuicStreamFactoryTest, FailedCreate) {
+  MockConnect connect(SYNCHRONOUS, ERR_ADDRESS_IN_USE);
+  DeterministicSocketData socket_data(NULL, 0, NULL, 0);
+  socket_data.set_connect_data(connect);
+  socket_factory_.AddSocketDataProvider(&socket_data);
+  socket_data.StopAfter(1);
+
+  QuicStreamRequest request(&factory_);
+  EXPECT_EQ(ERR_IO_PENDING, request.Request(host_port_proxy_pair_, is_https_,
+                                            cert_verifier_.get(), net_log_,
+                                            callback_.callback()));
+
+  EXPECT_EQ(ERR_ADDRESS_IN_USE, callback_.WaitForResult());
 }
 
 TEST_F(QuicStreamFactoryTest, Goaway) {

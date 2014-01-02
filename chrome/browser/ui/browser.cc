@@ -134,6 +134,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 #include "chrome/browser/ui/unload_controller.h"
+#include "chrome/browser/ui/validation_message_bubble.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
@@ -163,6 +164,7 @@
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -212,6 +214,7 @@ using content::NavigationEntry;
 using content::OpenURLParams;
 using content::PluginService;
 using content::Referrer;
+using content::RenderWidgetHostView;
 using content::SiteInstance;
 using content::UserMetricsAction;
 using content::WebContents;
@@ -846,90 +849,6 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// static
-bool Browser::ShouldRunUnloadEventsHelper(content::WebContents* contents) {
-  if (IsFastTabUnloadEnabled())
-    return chrome::FastUnloadController::ShouldRunUnloadEventsHelper(contents);
-  return chrome::UnloadController::ShouldRunUnloadEventsHelper(contents);
-}
-
-// static
-bool Browser::RunUnloadEventsHelper(WebContents* contents) {
-  if (IsFastTabUnloadEnabled())
-    return chrome::FastUnloadController::RunUnloadEventsHelper(contents);
-  return chrome::UnloadController::RunUnloadEventsHelper(contents);
-}
-
-// static
-void Browser::JSOutOfMemoryHelper(WebContents* web_contents) {
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents);
-  if (!infobar_service)
-    return;
-  SimpleAlertInfoBarDelegate::Create(
-      infobar_service, InfoBarDelegate::kNoIconID,
-      l10n_util::GetStringUTF16(IDS_JS_OUT_OF_MEMORY_PROMPT), true);
-}
-
-// static
-void Browser::RegisterProtocolHandlerHelper(WebContents* web_contents,
-                                            const std::string& protocol,
-                                            const GURL& url,
-                                            const base::string16& title,
-                                            bool user_gesture,
-                                            BrowserWindow* window) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (profile->IsOffTheRecord())
-    return;
-
-  ProtocolHandler handler =
-      ProtocolHandler::CreateProtocolHandler(protocol, url, title);
-
-  ProtocolHandlerRegistry* registry =
-      ProtocolHandlerRegistryFactory::GetForProfile(profile);
-  if (registry->SilentlyHandleRegisterHandlerRequest(handler))
-    return;
-
-  TabSpecificContentSettings* tab_content_settings =
-      TabSpecificContentSettings::FromWebContents(web_contents);
-  if (!user_gesture && window) {
-    tab_content_settings->set_pending_protocol_handler(handler);
-    tab_content_settings->set_previous_protocol_handler(
-        registry->GetHandlerFor(handler.protocol()));
-    window->GetLocationBar()->UpdateContentSettingsIcons();
-    return;
-  }
-
-  // Make sure content-setting icon is turned off in case the page does
-  // ungestured and gestured RPH calls.
-  if (window) {
-    tab_content_settings->ClearPendingProtocolHandler();
-    window->GetLocationBar()->UpdateContentSettingsIcons();
-  }
-
-  RegisterProtocolHandlerInfoBarDelegate::Create(
-      InfoBarService::FromWebContents(web_contents), registry, handler);
-}
-
-// static
-void Browser::FindReplyHelper(WebContents* web_contents,
-                              int request_id,
-                              int number_of_matches,
-                              const gfx::Rect& selection_rect,
-                              int active_match_ordinal,
-                              bool final_update) {
-  FindTabHelper* find_tab_helper = FindTabHelper::FromWebContents(web_contents);
-  if (!find_tab_helper)
-    return;
-
-  find_tab_helper->HandleFindReply(request_id,
-                                   number_of_matches,
-                                   selection_rect,
-                                   active_match_ordinal,
-                                   final_update);
-}
-
 void Browser::UpdateUIForNavigationInTab(WebContents* contents,
                                          content::PageTransition transition,
                                          bool user_initiated) {
@@ -1115,7 +1034,7 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
     instant_controller_->ActiveTabChanged();
 
   autofill::TabAutofillManagerDelegate::FromWebContents(new_contents)->
-      TabActivated(reason);
+      TabActivated();
   SearchTabHelper::FromWebContents(new_contents)->OnTabActivated();
 }
 
@@ -1230,6 +1149,36 @@ bool Browser::TabsNeedBeforeUnloadFired() {
 
 void Browser::OverscrollUpdate(int delta_y) {
   window_->OverscrollUpdate(delta_y);
+}
+
+void Browser::ShowValidationMessage(content::WebContents* web_contents,
+                                    const gfx::Rect& anchor_in_root_view,
+                                    const string16& main_text,
+                                    const string16& sub_text) {
+  RenderWidgetHostView* rwhv = web_contents->GetRenderWidgetHostView();
+  if (rwhv) {
+    validation_message_bubble_ =
+        chrome::ValidationMessageBubble::CreateAndShow(
+            rwhv->GetRenderWidgetHost(),
+            anchor_in_root_view,
+            main_text,
+            sub_text);
+  }
+}
+
+void Browser::HideValidationMessage(content::WebContents* web_contents) {
+  validation_message_bubble_.reset();
+}
+
+void Browser::MoveValidationMessage(content::WebContents* web_contents,
+                                    const gfx::Rect& anchor_in_root_view) {
+  if (!validation_message_bubble_)
+    return;
+  RenderWidgetHostView* rwhv = web_contents->GetRenderWidgetHostView();
+  if (rwhv) {
+    validation_message_bubble_->SetPositionRelativeToAnchor(
+        rwhv->GetRenderWidgetHost(), anchor_in_root_view);
+  }
 }
 
 bool Browser::IsMouseLocked() const {
@@ -1633,7 +1582,13 @@ bool Browser::IsFullscreenForTabOrPending(
 }
 
 void Browser::JSOutOfMemory(WebContents* web_contents) {
-  JSOutOfMemoryHelper(web_contents);
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents);
+  if (!infobar_service)
+    return;
+  SimpleAlertInfoBarDelegate::Create(
+      infobar_service, InfoBarDelegate::kNoIconID,
+      l10n_util::GetStringUTF16(IDS_JS_OUT_OF_MEMORY_PROMPT), true);
 }
 
 void Browser::RegisterProtocolHandler(WebContents* web_contents,
@@ -1641,8 +1596,38 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
                                       const GURL& url,
                                       const base::string16& title,
                                       bool user_gesture) {
-  RegisterProtocolHandlerHelper(
-      web_contents, protocol, url, title, user_gesture, window());
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  if (profile->IsOffTheRecord())
+    return;
+
+  ProtocolHandler handler =
+      ProtocolHandler::CreateProtocolHandler(protocol, url, title);
+
+  ProtocolHandlerRegistry* registry =
+      ProtocolHandlerRegistryFactory::GetForProfile(profile);
+  if (registry->SilentlyHandleRegisterHandlerRequest(handler))
+    return;
+
+  TabSpecificContentSettings* tab_content_settings =
+      TabSpecificContentSettings::FromWebContents(web_contents);
+  if (!user_gesture && window_) {
+    tab_content_settings->set_pending_protocol_handler(handler);
+    tab_content_settings->set_previous_protocol_handler(
+        registry->GetHandlerFor(handler.protocol()));
+    window_->GetLocationBar()->UpdateContentSettingsIcons();
+    return;
+  }
+
+  // Make sure content-setting icon is turned off in case the page does
+  // ungestured and gestured RPH calls.
+  if (window_) {
+    tab_content_settings->ClearPendingProtocolHandler();
+    window_->GetLocationBar()->UpdateContentSettingsIcons();
+  }
+
+  RegisterProtocolHandlerInfoBarDelegate::Create(
+      InfoBarService::FromWebContents(web_contents), registry, handler);
 }
 
 void Browser::UpdatePreferredSize(WebContents* source,
@@ -1661,8 +1646,15 @@ void Browser::FindReply(WebContents* web_contents,
                         const gfx::Rect& selection_rect,
                         int active_match_ordinal,
                         bool final_update) {
-  FindReplyHelper(web_contents, request_id, number_of_matches, selection_rect,
-                  active_match_ordinal, final_update);
+  FindTabHelper* find_tab_helper = FindTabHelper::FromWebContents(web_contents);
+  if (!find_tab_helper)
+    return;
+
+  find_tab_helper->HandleFindReply(request_id,
+                                   number_of_matches,
+                                   selection_rect,
+                                   active_match_ordinal,
+                                   final_update);
 }
 
 void Browser::RequestToLockMouse(WebContents* web_contents,

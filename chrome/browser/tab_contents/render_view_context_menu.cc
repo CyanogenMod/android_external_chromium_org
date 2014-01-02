@@ -370,7 +370,7 @@ void DevToolsInspectElementAt(RenderViewHost* rvh, int x, int y) {
 }
 
 // Helper function to escape "&" as "&&".
-void EscapeAmpersands(string16* text) {
+void EscapeAmpersands(base::string16* text) {
   const char16 ampersand[] = {'&', 0};
   base::ReplaceChars(*text, ampersand, ASCIIToUTF16("&&"), text);
 }
@@ -2039,7 +2039,7 @@ bool RenderViewContextMenu::IsDevCommandEnabled(int id) const {
   return true;
 }
 
-string16 RenderViewContextMenu::PrintableSelectionText() {
+base::string16 RenderViewContextMenu::PrintableSelectionText() {
   return gfx::TruncateString(params_.selection_text,
                             kMaxSelectionTextLength);
 }

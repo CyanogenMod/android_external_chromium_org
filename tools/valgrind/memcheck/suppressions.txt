@@ -6337,3 +6337,23 @@
    fun:_ZN6crypto12_GLOBAL__N_116NSSInitSingleton13OpenTestNSSDBEv
    fun:_ZN6crypto15ScopedTestNSSDBC1Ev
 }
+{
+   bug_327672
+   Memcheck:Uninitialized
+   fun:_ZNK7WebCore18StyleSheetContents11isCacheableEv
+   fun:_ZN7WebCore9LinkStyle16setCSSStyleSheetERKN3WTF6StringERKNS_4KURLES4_PKNS_21CSSStyleSheetResourceE
+   fun:_ZN7WebCore21CSSStyleSheetResource11checkNotifyEv
+   ...
+   fun:_ZN11webkit_glue16WebURLLoaderImpl7Context18OnCompletedRequestEibRKSsRKN4base9TimeTicksE
+}
+{
+   bug_328987
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN4base8internal20PostTaskAndReplyImpl16PostTaskAndReplyERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEESA_
+   fun:_ZN4base10TaskRunner16PostTaskAndReplyERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEES9_
+   fun:_ZN4base26PostTaskAndReplyWithResultIN3net20WifiPHYLayerProtocolES2_EEbPNS_10TaskRunnerERKN15tracked_objects8LocationERKNS_8CallbackIFT_vEEERKNS9_IFvT0_EEE
+   fun:_ZN22MetricsNetworkObserver25ProbeWifiPHYLayerProtocolEv
+   fun:_ZN22MetricsNetworkObserverC1Ev
+   fun:_ZN10MetricsLogC1ERKSsi
+}

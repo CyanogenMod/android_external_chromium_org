@@ -9,6 +9,7 @@
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
 #include "ash/drag_drop/drag_image_view.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
 #include "ash/scoped_target_root_window.h"
 #include "ash/shelf/alternate_app_list_button.h"
@@ -26,7 +27,7 @@
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_tooltip_manager.h"
 #include "ash/shelf/shelf_widget.h"
-#include "ash/shell_delegate.h"
+#include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "base/auto_reset.h"
 #include "base/memory/scoped_ptr.h"
@@ -1129,7 +1130,7 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
   }
   // Check if we are too far away from the shelf to enter the ripped off state.
   // Determine the distance to the shelf.
-  int delta = CalculateShelfDistance(event.root_location());
+  int delta = CalculateShelfDistance(screen_location);
   if (delta > kRipOffDistance) {
     // Create a proxy view item which can be moved anywhere.
     ShelfButton* button = static_cast<ShelfButton*>(drag_view_);
@@ -1776,12 +1777,12 @@ void ShelfView::ButtonPressed(views::Button* sender, const ui::Event& event) {
       case TYPE_WINDOWED_APP:
       case TYPE_PLATFORM_APP:
       case TYPE_BROWSER_SHORTCUT:
-        Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+        Shell::GetInstance()->metrics()->RecordUserMetricsAction(
             UMA_LAUNCHER_CLICK_ON_APP);
         break;
 
       case TYPE_APP_LIST:
-        Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+        Shell::GetInstance()->metrics()->RecordUserMetricsAction(
             UMA_LAUNCHER_CLICK_ON_APPLIST_BUTTON);
         break;
 

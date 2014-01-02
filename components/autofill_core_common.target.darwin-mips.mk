@@ -11,7 +11,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,components_autofill_jni_headers_gyp)/autofill_jni_headers.stamp
@@ -32,13 +31,13 @@ LOCAL_SRC_FILES := \
 	components/autofill/core/browser/android/component_jni_registrar.cc \
 	components/autofill/core/browser/android/personal_data_manager_android.cc \
 	components/autofill/core/common/autofill_constants.cc \
-	components/autofill/core/common/autofill_message_generator.cc \
 	components/autofill/core/common/autofill_pref_names.cc \
 	components/autofill/core/common/autofill_switches.cc \
 	components/autofill/core/common/form_data.cc \
 	components/autofill/core/common/form_data_predictions.cc \
 	components/autofill/core/common/form_field_data.cc \
 	components/autofill/core/common/form_field_data_predictions.cc \
+	components/autofill/core/common/password_autofill_util.cc \
 	components/autofill/core/common/password_form.cc \
 	components/autofill/core/common/password_form_fill_data.cc \
 	components/autofill/core/common/password_generation_util.cc \
@@ -102,6 +101,7 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -127,9 +127,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/autofill \
 	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/khronos \
-	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -217,6 +214,7 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -243,9 +241,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/autofill \
 	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/khronos \
-	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \

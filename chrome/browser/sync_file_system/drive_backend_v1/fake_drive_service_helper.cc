@@ -138,12 +138,22 @@ GDataErrorCode FakeDriveServiceHelper::UpdateFile(
   return error;
 }
 
-GDataErrorCode FakeDriveServiceHelper::RemoveResource(
+GDataErrorCode FakeDriveServiceHelper::DeleteResource(
     const std::string& file_id) {
   GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
   fake_drive_service_->DeleteResource(
       file_id,
       std::string(),  // etag
+      CreateResultReceiver(&error));
+  base::RunLoop().RunUntilIdle();
+  return error;
+}
+
+GDataErrorCode FakeDriveServiceHelper::TrashResource(
+    const std::string& file_id) {
+  GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+  fake_drive_service_->TrashResource(
+      file_id,
       CreateResultReceiver(&error));
   base::RunLoop().RunUntilIdle();
   return error;

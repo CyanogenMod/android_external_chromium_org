@@ -11,13 +11,17 @@
 
 #define TELEMETRY 1
 
+#include "base/environment.h"
 #include "chrome/test/nacl/nacl_browsertest_util.h"
 
 namespace {
 
 #if defined(OS_WIN)
+// crbug.com/98721
+#  define MAYBE_Crash DISABLED_Crash
 #  define MAYBE_SysconfNprocessorsOnln DISABLED_SysconfNprocessorsOnln
 #else
+#  define MAYBE_Crash Crash
 #  define MAYBE_SysconfNprocessorsOnln SysconfNprocessorsOnln
 #endif
 
@@ -44,8 +48,20 @@ NACL_BROWSER_TEST_F(NaClBrowserTest, PPAPICore, {
   RunNaClIntegrationTest(FILE_PATH_LITERAL("ppapi_ppb_core.html"));
 })
 
+NACL_BROWSER_TEST_F(NaClBrowserTest, PPAPIPPBInstance, {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL("ppapi_ppb_instance.html"));
+})
+
+NACL_BROWSER_TEST_F(NaClBrowserTest, PPAPIPPPInstance, {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL("ppapi_ppp_instance.html"));
+})
+
 NACL_BROWSER_TEST_F(NaClBrowserTest, ProgressEvents, {
   RunNaClIntegrationTest(FILE_PATH_LITERAL("ppapi_progress_events.html"));
+})
+
+NACL_BROWSER_TEST_F(NaClBrowserTest, MAYBE_Crash, {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL("ppapi_crash.html"));
 })
 
 // Some versions of Visual Studio does not like preprocessor
@@ -157,6 +173,68 @@ IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnacl, PnaclMimeType) {
 
 IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnaclDisabled, PnaclMimeType) {
   RunLoadTest(FILE_PATH_LITERAL("pnacl_mime_type.html"));
+}
+
+class NaClBrowserTestNewlibStdoutPM : public NaClBrowserTestNewlib {
+ public:
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    // Env needs to be set early because nacl_helper is spawned before the test
+    // body on Linux.
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    env->SetVar("NACL_EXE_STDOUT", "DEBUG_ONLY:dev://postmessage");
+    NaClBrowserTestNewlib::SetUpInProcessBrowserTestFixture();
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStdoutPM, RedirectFg0) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stdout&thread=fg&delay_us=0"));
+}
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStdoutPM, RedirectBg0) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stdout&thread=bg&delay_us=0"));
+}
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStdoutPM, RedirectFg1) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stdout&thread=fg&delay_us=1000000"));
+}
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStdoutPM, RedirectBg1) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stdout&thread=bg&delay_us=1000000"));
+}
+
+class NaClBrowserTestNewlibStderrPM : public NaClBrowserTestNewlib {
+ public:
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    // Env needs to be set early because nacl_helper is spawned before the test
+    // body on Linux.
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    env->SetVar("NACL_EXE_STDERR", "DEBUG_ONLY:dev://postmessage");
+    NaClBrowserTestNewlib::SetUpInProcessBrowserTestFixture();
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStderrPM, RedirectFg0) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stderr&thread=fg&delay_us=0"));
+}
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStderrPM, RedirectBg0) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stderr&thread=bg&delay_us=0"));
+}
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStderrPM, RedirectFg1) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stderr&thread=fg&delay_us=1000000"));
+}
+
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStderrPM, RedirectBg1) {
+  RunNaClIntegrationTest(FILE_PATH_LITERAL(
+      "pm_redir_test.html?stream=stderr&thread=bg&delay_us=1000000"));
 }
 
 }  // namespace

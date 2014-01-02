@@ -55,7 +55,7 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
 
 // static
 void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
-    VideoCaptureCapabilities* formats) {
+    VideoCaptureFormats* formats) {
   NOTIMPLEMENTED();
 }
 
@@ -195,9 +195,7 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
     jobject obj,
     jbyteArray data,
     jint length,
-    jint rotation,
-    jboolean flip_vert,
-    jboolean flip_horiz) {
+    jint rotation) {
   DVLOG(3) << "VideoCaptureDeviceAndroid::OnFrameAvailable: length =" << length;
 
   base::AutoLock lock(lock_);
@@ -226,8 +224,6 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
                                      length,
                                      base::Time::Now(),
                                      rotation,
-                                     flip_vert,
-                                     flip_horiz,
                                      capture_format_);
   }
 

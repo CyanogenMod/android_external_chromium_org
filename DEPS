@@ -19,30 +19,30 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "163628",
+  "webkit_revision": "163968",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "230490",
-  "nacl_revision": "12515",
+  "nacl_revision": "12544",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
-  "nacl_tools_revision": "12289",  # native_client/DEPS: tools_rev
+  "nacl_tools_revision": "12526",  # native_client/DEPS: tools_rev
   "gtm_revision": "616",
   "libaddressinput_revision": "176",
   "libphonenumber_revision": "621",
-  "libvpx_revision": "237125",
+  "libvpx_revision": "240222",
   "lss_revision": "24",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "237181",
-  "ffmpeg_hash": "9186343787c9fe2af1a3b0350ac556508dfbaaf6",
+  "ffmpeg_revision": "240434",
+  "ffmpeg_hash": "c6c988923be6b8fd1f381522d478813e14505ce2",
 
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "12614",
-  "skia_hash": "e6a98d4259532d2f1d899131b72c6c4cd58f2903",
+  "skia_revision": "12678",
+  "skia_hash": "e132f5031fb700e34af1ea08b575b2c774393047",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
@@ -50,13 +50,13 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "5234",
+  "webrtc_revision": "5268",
   "jsoncpp_revision": "248",
   "nss_revision": "239365",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
-  "swarming_revision": "aab3a62beb7e1d7a6785dcaee707479691fd6ddf",
+  "swarming_revision": "f89de358c2edb260e0ca8429c16d1037a4ec4fa4",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -65,7 +65,7 @@ vars = {
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1247",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1253",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -234,7 +234,7 @@ deps = {
         "/trunk/jsoncpp/src/lib_json@" + Var("jsoncpp_revision"),
 
   "src/third_party/libyuv":
-    (Var("googlecode_url") % "libyuv") + "/trunk@723",
+    (Var("googlecode_url") % "libyuv") + "/trunk@911",
 
   "src/third_party/smhasher/src":
     (Var("googlecode_url") % "smhasher") + "/trunk@149",

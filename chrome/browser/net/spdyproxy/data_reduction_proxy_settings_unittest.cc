@@ -24,6 +24,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_cache.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -42,6 +43,13 @@ const char kProbeURLWithOKResponse[] = "http://ok.org/";
 const char kProbeURLWithBadResponse[] = "http://bad.org/";
 const char kProbeURLWithNoResponse[] = "http://no.org/";
 
+// Transform "normal"-looking headers (\n-separated) to the appropriate
+// input format for ParseRawHeaders (\0-separated).
+void HeadersToRaw(std::string* headers) {
+  std::replace(headers->begin(), headers->end(), '\n', '\0');
+  if (!headers->empty())
+    *headers += '\0';
+}
 
 DataReductionProxySettingsTestBase::DataReductionProxySettingsTestBase()
     : testing::Test() {
@@ -95,7 +103,7 @@ void DataReductionProxySettingsTestBase::ResetSettings() {
       .Times(AnyNumber())
       .WillRepeatedly(Return(&pref_service_));
   EXPECT_CALL(*settings, GetURLFetcher()).Times(0);
-  EXPECT_CALL(*settings, LogProxyState(_, _)).Times(0);
+  EXPECT_CALL(*settings, LogProxyState(_, _, _)).Times(0);
   settings_.reset(settings);
 }
 
@@ -156,11 +164,12 @@ void DataReductionProxySettingsTestBase::CheckProxyPref(
 }
 
 void DataReductionProxySettingsTestBase::CheckProxyConfigs(
-    bool expected_enabled) {
+    bool expected_enabled, bool expected_restricted) {
   if (expected_enabled) {
     std::string main_proxy = kDataReductionProxyOrigin;
     std::string fallback_proxy = kDataReductionProxyFallback;
-    std::string servers =
+    std::string servers = expected_restricted ?
+        "http=" + fallback_proxy + ",direct://;" :
         "http=" + main_proxy + "," + fallback_proxy + ",direct://;";
     CheckProxyPref(servers,
                    ProxyModeToString(ProxyPrefs::MODE_FIXED_SERVERS));
@@ -174,38 +183,38 @@ void DataReductionProxySettingsTestBase::CheckProbe(
     const std::string& probe_url,
     const std::string& response,
     bool request_success,
-    bool expected_enabled) {
+    bool expected_enabled,
+    bool expected_restricted) {
   pref_service_.SetBoolean(prefs::kSpdyProxyAuthEnabled, initially_enabled);
-  settings_->disabled_by_carrier_ = false;
+  settings_->restricted_by_carrier_ = false;
   SetProbeResult(
       probe_url, response, request_success, initially_enabled ? 1 : 0);
   settings_->MaybeActivateDataReductionProxy(false);
   base::MessageLoop::current()->RunUntilIdle();
-  CheckProxyConfigs(expected_enabled);
+  CheckProxyConfigs(expected_enabled, expected_restricted);
 }
 
 void DataReductionProxySettingsTestBase::CheckProbeOnIPChange(
     const std::string& probe_url,
     const std::string& response,
     bool request_success,
-    bool expected_enabled) {
+    bool expected_restricted) {
   SetProbeResult(probe_url, response, request_success, 1);
   settings_->OnIPAddressChanged();
   base::MessageLoop::current()->RunUntilIdle();
-  CheckProxyConfigs(expected_enabled);
+  CheckProxyConfigs(true, expected_restricted);
 }
 
 void DataReductionProxySettingsTestBase::CheckOnPrefChange(
     bool enabled,
-    const std::string& probe_url,
-    const std::string& response,
-    bool request_success,
     bool expected_enabled) {
+  // Always have a sucessful probe for pref change tests.
   SetProbeResult(
-      probe_url, response, request_success, expected_enabled ? 1 : 0);
+      kProbeURLWithOKResponse, "OK", true, expected_enabled ? 1 : 0);
   pref_service_.SetBoolean(prefs::kSpdyProxyAuthEnabled, enabled);
   base::MessageLoop::current()->RunUntilIdle();
-  CheckProxyConfigs(expected_enabled);
+  // Never expect the proxy to be restricted for pref change tests.
+  CheckProxyConfigs(expected_enabled, false);
 }
 
 void DataReductionProxySettingsTestBase::CheckInitDataReductionProxy(
@@ -218,7 +227,7 @@ void DataReductionProxySettingsTestBase::CheckInitDataReductionProxy(
   settings_->InitDataReductionProxySettings();
   base::MessageLoop::current()->RunUntilIdle();
   if (enabled_at_startup) {
-    CheckProxyConfigs(enabled_at_startup);
+    CheckProxyConfigs(enabled_at_startup, false);
   } else {
     // This presumes the proxy preference hadn't been set up by Chrome.
     CheckProxyPref(std::string(), std::string());
@@ -469,16 +478,16 @@ TEST_F(DataReductionProxySettingsTest, TestMaybeActivateDataReductionProxy) {
 
   // TODO(bengr): Test enabling/disabling while a probe is outstanding.
   base::MessageLoop loop(base::MessageLoop::TYPE_UI);
-  // The proxy is enabled initially.
-  // Request succeeded but with bad response, expect proxy to be disabled.
-  CheckProbe(true, kProbeURLWithBadResponse, "Bad", true, false);
-  // Request succeeded with valid response, expect proxy to be enabled.
-  CheckProbe(true, kProbeURLWithOKResponse, "OK", true, true);
-  // Request failed, expect proxy to be disabled.
-  CheckProbe(true, kProbeURLWithNoResponse, "", false, false);
+  // The proxy is enabled and unrestructed initially.
+  // Request succeeded but with bad response, expect proxy to be restricted.
+  CheckProbe(true, kProbeURLWithBadResponse, "Bad", true, true, true);
+  // Request succeeded with valid response, expect proxy to be unrestricted.
+  CheckProbe(true, kProbeURLWithOKResponse, "OK", true, true, false);
+  // Request failed, expect proxy to be enabled but restricted.
+  CheckProbe(true, kProbeURLWithNoResponse, "", false, true, true);
   // The proxy is disabled initially. Probes should not be emitted to change
   // state.
-  CheckProbe(false, kProbeURLWithOKResponse, "OK", true, false);
+  CheckProbe(false, kProbeURLWithOKResponse, "OK", true, false, false);
 }
 
 TEST_F(DataReductionProxySettingsTest, TestOnIPAddressChanged) {
@@ -486,15 +495,17 @@ TEST_F(DataReductionProxySettingsTest, TestOnIPAddressChanged) {
   base::MessageLoop loop(base::MessageLoop::TYPE_UI);
   // The proxy is enabled initially.
   settings_->enabled_by_user_ = true;
-  settings_->SetProxyConfigs(true, true);
-  // IP address change triggers a probe that succeeds. Proxy remains enabled.
-  CheckProbeOnIPChange(kProbeURLWithOKResponse, "OK", true, true);
-  // IP address change triggers a probe that fails. Proxy is disabled.
-  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, false);
-  // IP address change triggers a probe that fails. Proxy remains disabled.
-  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, false);
-  // IP address change triggers a probe that succeed. Proxy is enabled.
-  CheckProbeOnIPChange(kProbeURLWithBadResponse, "OK", true, true);
+  settings_->restricted_by_carrier_ = false;
+  settings_->SetProxyConfigs(true, false, true);
+  // IP address change triggers a probe that succeeds. Proxy remains
+  // unrestricted.
+  CheckProbeOnIPChange(kProbeURLWithOKResponse, "OK", true, false);
+  // IP address change triggers a probe that fails. Proxy is restricted.
+  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, true);
+  // IP address change triggers a probe that fails. Proxy remains restricted.
+  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, true);
+  // IP address change triggers a probe that succeed. Proxy is unrestricted.
+  CheckProbeOnIPChange(kProbeURLWithBadResponse, "OK", true, false);
 }
 
 TEST_F(DataReductionProxySettingsTest, TestOnProxyEnabledPrefChange) {
@@ -503,11 +514,11 @@ TEST_F(DataReductionProxySettingsTest, TestOnProxyEnabledPrefChange) {
   base::MessageLoop loop(base::MessageLoop::TYPE_UI);
   // The proxy is enabled initially.
   settings_->enabled_by_user_ = true;
-  settings_->SetProxyConfigs(true, true);
+  settings_->SetProxyConfigs(true, false, true);
   // The pref is disabled, so correspondingly should be the proxy.
-  CheckOnPrefChange(false, kProbeURLWithOKResponse, "OK", true, false);
+  CheckOnPrefChange(false, false);
   // The pref is enabled, so correspondingly should be the proxy.
-  CheckOnPrefChange(true, kProbeURLWithOKResponse, "OK", true, true);
+  CheckOnPrefChange(true, true);
 }
 
 TEST_F(DataReductionProxySettingsTest, TestInitDataReductionProxyOn) {
@@ -518,7 +529,7 @@ TEST_F(DataReductionProxySettingsTest, TestInitDataReductionProxyOff) {
   // InitDataReductionProxySettings with the preference off will directly call
   // LogProxyState.
   MockSettings* settings = static_cast<MockSettings*>(settings_.get());
-  EXPECT_CALL(*settings, LogProxyState(false, true)).Times(1);
+  EXPECT_CALL(*settings, LogProxyState(false, false, true)).Times(1);
   CheckInitDataReductionProxy(false);
 }
 
@@ -558,5 +569,47 @@ TEST_F(DataReductionProxySettingsTest, TestBypassList) {
   for (std::vector<std::string>::iterator it = settings_->bypass_rules_.begin();
        it != settings_->bypass_rules_.end(); ++it) {
     EXPECT_EQ(expected[i++], *it);
+  }
+}
+
+TEST_F(DataReductionProxySettingsTest, WasFetchedViaProxy) {
+  const struct {
+     const char* headers;
+     bool expected_result;
+  } tests[] = {
+    { "HTTP/1.1 200 OK\n"
+      "Via: 1.1 Chrome Proxy\n",
+      false,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Via: 1.1 Chrome Compression Proxy\n",
+      true,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Via: 1.1 Foo Bar, 1.1 Chrome Compression Proxy\n",
+      true,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Via: 1.1 Chrome Compression Proxy, 1.1 Bar Foo\n",
+      true,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Via: 1.1 chrome compression proxy\n",
+      false,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Via: 1.1 Foo Bar\n"
+      "Via: 1.1 Chrome Compression Proxy\n",
+      true,
+    },
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+    std::string headers(tests[i].headers);
+    HeadersToRaw(&headers);
+    scoped_refptr<net::HttpResponseHeaders> parsed(
+        new net::HttpResponseHeaders(headers));
+
+    EXPECT_EQ(tests[i].expected_result,
+              DataReductionProxySettings::WasFetchedViaProxy(parsed));
   }
 }

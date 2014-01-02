@@ -192,7 +192,7 @@ class DriveServiceInterface {
   virtual google_apis::CancelCallback GetAppList(
       const google_apis::AppListCallback& callback) = 0;
 
-  // Deletes a resource identified by its |resource_id|.
+  // Permanently deletes a resource identified by its |resource_id|.
   // If |etag| is not empty and did not match, the deletion fails with
   // HTTP_PRECONDITION error.
   // Upon completion, invokes |callback| with results on the calling thread.
@@ -200,6 +200,13 @@ class DriveServiceInterface {
   virtual google_apis::CancelCallback DeleteResource(
       const std::string& resource_id,
       const std::string& etag,
+      const google_apis::EntryActionCallback& callback) = 0;
+
+  // Trashes a resource identified by its |resource_id|.
+  // Upon completion, invokes |callback| with results on the calling thread.
+  // |callback| must not be null.
+  virtual google_apis::CancelCallback TrashResource(
+      const std::string& resource_id,
       const google_apis::EntryActionCallback& callback) = 0;
 
   // Makes a copy of a resource with |resource_id|.
@@ -216,19 +223,6 @@ class DriveServiceInterface {
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
-
-  // Makes a copy of a hosted document identified by its |resource_id|.
-  // The copy is named as the UTF-8 encoded |new_title| and is not added to any
-  // collection. Use AddResourceToDirectory() to add the copy to a collection
-  // when needed. Upon completion, invokes |callback| with results on the
-  // calling thread.
-  // |callback| must not be null.
-  // TODO(hidehiko): After the migration to Drive API v2, remove this method,
-  // because we can use CopyResource instead.
-  virtual google_apis::CancelCallback CopyHostedDocument(
-      const std::string& resource_id,
-      const std::string& new_title,
       const google_apis::GetResourceEntryCallback& callback) = 0;
 
   // Updates a resource with |resource_id| to the directory of

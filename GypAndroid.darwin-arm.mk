@@ -24,6 +24,7 @@ include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.t
 include $(LOCAL_PATH)/cc/cc.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/autofill_content_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_renderer.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_core_browser.target.darwin-arm.mk
@@ -146,6 +147,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.da
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap_asm_stubs.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_arm_neon.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.darwin-arm.mk
@@ -159,8 +161,8 @@ include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_generate_devtools_grd.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/translator.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/angle/src/translator.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-arm.mk

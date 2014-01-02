@@ -106,6 +106,9 @@ class GDataWapiService : public DriveServiceInterface,
       const std::string& resource_id,
       const std::string& etag,
       const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback TrashResource(
+      const std::string& resource_id,
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback DownloadFile(
       const base::FilePath& local_cache_path,
       const std::string& resource_id,
@@ -117,10 +120,6 @@ class GDataWapiService : public DriveServiceInterface,
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback CopyHostedDocument(
-      const std::string& resource_id,
-      const std::string& new_title,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback UpdateResource(
       const std::string& resource_id,

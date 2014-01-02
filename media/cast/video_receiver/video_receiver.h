@@ -17,8 +17,8 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_receiver.h"
 #include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtp_common/rtp_defines.h"
 #include "media/cast/rtp_receiver/rtp_receiver.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace crypto {
   class Encryptor;
@@ -121,7 +121,6 @@ class VideoReceiver : public base::NonThreadSafe,
   bool time_incoming_packet_updated_;
   base::TimeTicks time_incoming_packet_;
   uint32 incoming_rtp_timestamp_;
-  base::TimeTicks last_render_time_;
 
   base::WeakPtrFactory<VideoReceiver> weak_factory_;
 

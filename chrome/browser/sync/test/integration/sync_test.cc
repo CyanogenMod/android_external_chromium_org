@@ -31,7 +31,7 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -639,12 +639,12 @@ void SyncTest::DisableNetwork(Profile* profile) {
   net::NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
 }
 
-bool SyncTest::EnableEncryption(int index, syncer::ModelType type) {
-  return GetClient(index)->EnableEncryptionForType(type);
+bool SyncTest::EnableEncryption(int index) {
+  return GetClient(index)->EnableEncryption();
 }
 
-bool SyncTest::IsEncrypted(int index, syncer::ModelType type) {
-  return GetClient(index)->IsTypeEncrypted(type);
+bool SyncTest::IsEncryptionComplete(int index) {
+  return GetClient(index)->IsEncryptionComplete();
 }
 
 bool SyncTest::AwaitQuiescence() {

@@ -27,6 +27,7 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
+#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/geolocation_permission_context.h"
@@ -514,8 +515,14 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
                         OnDragStatusUpdate)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ExecuteEditCommand,
                         OnExecuteEditCommand)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ExtendSelectionAndDelete,
+                        OnExtendSelectionAndDelete)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_HandleInputEvent,
                         OnHandleInputEvent)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ImeConfirmComposition,
+                        OnImeConfirmComposition)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ImeSetComposition,
+                        OnImeSetComposition)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_LockMouse_ACK, OnLockMouseAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_NavigateGuest, OnNavigateGuest)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_PluginDestroyed, OnPluginDestroyed)
@@ -1076,11 +1083,13 @@ void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
 }
 
 void BrowserPluginGuest::RenderViewReady() {
+  RenderViewHost* rvh = GetWebContents()->GetRenderViewHost();
+  // The guest RenderView should always live in a guest process.
+  CHECK(rvh->GetProcess()->IsGuest());
   // TODO(fsamuel): Investigate whether it's possible to update state earlier
   // here (see http://crbug.com/158151).
   Send(new InputMsg_SetFocus(routing_id(), focused_));
   UpdateVisibility();
-  RenderViewHost* rvh = GetWebContents()->GetRenderViewHost();
   if (auto_size_enabled_)
     rvh->EnableAutoResize(min_auto_size_, max_auto_size_);
   else
@@ -1137,7 +1146,10 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_CopyFromCompositingSurfaceAck::ID:
     case BrowserPluginHostMsg_DragStatusUpdate::ID:
     case BrowserPluginHostMsg_ExecuteEditCommand::ID:
+    case BrowserPluginHostMsg_ExtendSelectionAndDelete::ID:
     case BrowserPluginHostMsg_HandleInputEvent::ID:
+    case BrowserPluginHostMsg_ImeConfirmComposition::ID:
+    case BrowserPluginHostMsg_ImeSetComposition::ID:
     case BrowserPluginHostMsg_LockMouse_ACK::ID:
     case BrowserPluginHostMsg_NavigateGuest::ID:
     case BrowserPluginHostMsg_PluginDestroyed::ID:
@@ -1173,6 +1185,14 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
  #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowWidget, OnShowWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputTypeChanged,
+                        OnTextInputTypeChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
+                        OnImeCancelComposition)
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
+                        OnImeCompositionRangeChanged)
+#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateFrameName, OnUpdateFrameName)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
@@ -1279,6 +1299,34 @@ void BrowserPluginGuest::OnDragStatusUpdate(int instance_id,
 void BrowserPluginGuest::OnExecuteEditCommand(int instance_id,
                                               const std::string& name) {
   Send(new InputMsg_ExecuteEditCommand(routing_id(), name, std::string()));
+}
+
+void BrowserPluginGuest::OnImeSetComposition(
+    int instance_id,
+    const std::string& text,
+    const std::vector<blink::WebCompositionUnderline>& underlines,
+    int selection_start,
+    int selection_end) {
+  Send(new ViewMsg_ImeSetComposition(routing_id(),
+                                     UTF8ToUTF16(text), underlines,
+                                     selection_start, selection_end));
+}
+
+void BrowserPluginGuest::OnImeConfirmComposition(
+    int instance_id,
+    const std::string& text,
+    bool keep_selection) {
+  Send(new ViewMsg_ImeConfirmComposition(routing_id(),
+                                         UTF8ToUTF16(text),
+                                         gfx::Range::InvalidRange(),
+                                         keep_selection));
+}
+
+void BrowserPluginGuest::OnExtendSelectionAndDelete(
+    int instance_id,
+    int before,
+    int after) {
+  Send(new ViewMsg_ExtendSelectionAndDelete(routing_id(), before, after));
 }
 
 void BrowserPluginGuest::OnReclaimCompositorResources(
@@ -1778,6 +1826,29 @@ void BrowserPluginGuest::OnUpdateRect(
   SendMessageToEmbedder(
       new BrowserPluginMsg_UpdateRect(instance_id(), relay_params));
 }
+
+void BrowserPluginGuest::OnTextInputTypeChanged(ui::TextInputType type,
+                                                ui::TextInputMode input_mode,
+                                                bool can_compose_inline) {
+  RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView())->TextInputTypeChanged(
+          type, input_mode, can_compose_inline);
+}
+
+void BrowserPluginGuest::OnImeCancelComposition() {
+  RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView())->ImeCancelComposition();
+}
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+void BrowserPluginGuest::OnImeCompositionRangeChanged(
+      const gfx::Range& range,
+      const std::vector<gfx::Rect>& character_bounds) {
+  RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView())->ImeCompositionRangeChanged(
+          range, character_bounds);
+}
+#endif
 
 void BrowserPluginGuest::DidRetrieveDownloadURLFromRequestId(
     const std::string& request_method,

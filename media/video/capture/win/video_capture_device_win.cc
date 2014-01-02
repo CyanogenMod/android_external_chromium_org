@@ -166,7 +166,7 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
 
 // static
 void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
-    VideoCaptureCapabilities* formats) {
+    VideoCaptureFormats* formats) {
   NOTIMPLEMENTED();
 }
 
@@ -478,7 +478,7 @@ void VideoCaptureDeviceWin::StopAndDeAllocate() {
 void VideoCaptureDeviceWin::FrameReceived(const uint8* buffer,
                                           int length) {
   client_->OnIncomingCapturedFrame(
-      buffer, length, base::Time::Now(), 0, false, false, capture_format_);
+      buffer, length, base::Time::Now(), 0, capture_format_);
 }
 
 bool VideoCaptureDeviceWin::CreateCapabilityMap() {

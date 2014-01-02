@@ -15,14 +15,19 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/text_elider.h"
 
-ExternalProtocolDialogDelegate::ExternalProtocolDialogDelegate(const GURL& url)
-    : ProtocolDialogDelegate(url) {
+ExternalProtocolDialogDelegate::ExternalProtocolDialogDelegate(
+    const GURL& url,
+    int render_process_host_id,
+    int tab_contents_id)
+    : ProtocolDialogDelegate(url),
+      render_process_host_id_(render_process_host_id),
+      tab_contents_id_(tab_contents_id) {
 }
 
 ExternalProtocolDialogDelegate::~ExternalProtocolDialogDelegate() {
 }
 
-string16 ExternalProtocolDialogDelegate::GetMessageText() const {
+base::string16 ExternalProtocolDialogDelegate::GetMessageText() const {
   const int kMaxUrlWithoutSchemeSize = 256;
   const int kMaxCommandSize = 256;
   // TODO(calamity): Look up the command in ExternalProtocolHandler and pass it
@@ -49,11 +54,11 @@ string16 ExternalProtocolDialogDelegate::GetMessageText() const {
   return message_text;
 }
 
-string16 ExternalProtocolDialogDelegate::GetCheckboxText() const {
+base::string16 ExternalProtocolDialogDelegate::GetCheckboxText() const {
   return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_CHECKBOX_TEXT);
 }
 
-string16 ExternalProtocolDialogDelegate::GetTitleText() const {
+base::string16 ExternalProtocolDialogDelegate::GetTitleText() const {
   return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_TITLE);
 }
 
@@ -65,7 +70,8 @@ void ExternalProtocolDialogDelegate::DoAccept(
           url.scheme(), ExternalProtocolHandler::DONT_BLOCK);
   }
 
-  ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(url);
+  ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
+      url, render_process_host_id_, tab_contents_id_);
 }
 
 void ExternalProtocolDialogDelegate::DoCancel(

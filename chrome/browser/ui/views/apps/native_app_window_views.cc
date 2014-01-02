@@ -206,17 +206,20 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
 
 }  // namespace
 
-NativeAppWindowViews::NativeAppWindowViews(
-    ShellWindow* shell_window,
-    const ShellWindow::CreateParams& create_params)
-    : shell_window_(shell_window),
-      web_view_(NULL),
+NativeAppWindowViews::NativeAppWindowViews()
+    : web_view_(NULL),
       window_(NULL),
       is_fullscreen_(false),
-      frameless_(create_params.frame == ShellWindow::FRAME_NONE),
-      transparent_background_(create_params.transparent_background),
-      resizable_(create_params.resizable),
       weak_ptr_factory_(this) {
+}
+
+void NativeAppWindowViews::Init(
+    apps::ShellWindow* shell_window,
+    const ShellWindow::CreateParams& create_params) {
+  shell_window_ = shell_window;
+  frameless_ = create_params.frame == ShellWindow::FRAME_NONE;
+  transparent_background_ = create_params.transparent_background;
+  resizable_ = create_params.resizable;
   Observe(web_contents());
 
   window_ = new views::Widget;
@@ -689,7 +692,7 @@ bool NativeAppWindowViews::CanMaximize() const {
       !shell_window_->window_type_is_panel();
 }
 
-string16 NativeAppWindowViews::GetWindowTitle() const {
+base::string16 NativeAppWindowViews::GetWindowTitle() const {
   return shell_window_->GetTitle();
 }
 
@@ -915,6 +918,7 @@ void NativeAppWindowViews::SetFullscreen(int fullscreen_types) {
     // |immersive_fullscreen_controller_| should only be set if immersive
     // fullscreen is the fullscreen type used by the OS.
     immersive_fullscreen_controller_->SetEnabled(
+        ash::ImmersiveFullscreenController::WINDOW_TYPE_PACKAGED_APP,
         (fullscreen_types & ShellWindow::FULLSCREEN_TYPE_OS) != 0);
     // Autohide the shelf instead of hiding the shelf completely when only in
     // OS fullscreen.
