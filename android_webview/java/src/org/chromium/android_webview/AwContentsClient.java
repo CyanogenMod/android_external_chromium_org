@@ -242,8 +242,8 @@ public abstract class AwContentsClient {
             String mimeType, long contentLength);
 
     // TODO(joth): Make abstract once this has rolled in downstream.
-    public /*abstract*/ void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
-            FileChooserParams fileChooserParams) { }
+    public abstract void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
+            FileChooserParams fileChooserParams);
 
     public abstract void onGeolocationPermissionsShowPrompt(String origin,
             GeolocationPermissions.Callback callback);
