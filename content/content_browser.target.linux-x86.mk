@@ -95,6 +95,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/download_controller_android_impl.cc \
 	content/browser/android/devtools_auth.cc \
 	content/browser/android/edge_effect.cc \
+	content/browser/android/in_process/synchronous_compositor_factory_impl.cc \
 	content/browser/android/in_process/synchronous_compositor_impl.cc \
 	content/browser/android/in_process/synchronous_compositor_output_surface.cc \
 	content/browser/android/in_process/synchronous_input_event_filter.cc \
