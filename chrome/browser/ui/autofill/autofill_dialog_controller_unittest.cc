@@ -317,12 +317,6 @@ class TestAutofillDialogController
     open_tab_url_ = url;
   }
 
-  // Whether the information input in this dialog will be securely transmitted
-  // to the requesting site.
-  virtual bool TransmissionWillBeSecure() const OVERRIDE {
-    return true;
-  }
-
   virtual void ShowNewCreditCardBubble(
       scoped_ptr<CreditCard> new_card,
       scoped_ptr<AutofillProfile> billing_profile) OVERRIDE {
@@ -2623,7 +2617,8 @@ TEST_F(AutofillDialogControllerTest, InputEditability) {
 
 // When the default country is something besides US, wallet is not selected
 // and the account chooser shouldn't be visible.
-TEST_F(AutofillDialogControllerTest, HideWalletInOtherCountries) {
+// TODO(estade): this is disabled until http://crbug.com/323641 is fixed.
+TEST_F(AutofillDialogControllerTest, DISABLED_HideWalletInOtherCountries) {
   ResetControllerWithFormData(DefaultFormData());
   controller()->GetTestingManager()->set_default_country_code("US");
   controller()->Show();

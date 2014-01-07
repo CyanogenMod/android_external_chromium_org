@@ -310,6 +310,50 @@ HRESULT GetBitsManager(IBackgroundCopyManager** bits_manager) {
   return S_OK;
 }
 
+void CleanupJobFiles(IBackgroundCopyJob* job) {
+  std::vector<ScopedComPtr<IBackgroundCopyFile> > files;
+  if (FAILED(GetFilesInJob(job, &files)))
+    return;
+  for (size_t i = 0; i != files.size(); ++i) {
+    base::string16 local_name;
+    HRESULT hr(GetJobFileProperties(files[i], &local_name, NULL, NULL));
+    if (SUCCEEDED(hr))
+      DeleteFileAndEmptyParentDirectory(base::FilePath(local_name));
+  }
+}
+
+// Cleans up incompleted jobs that are too old.
+HRESULT CleanupStaleJobs(
+    base::win::ScopedComPtr<IBackgroundCopyManager> bits_manager) {
+  if (!bits_manager)
+    return E_FAIL;
+
+  static base::Time last_sweep;
+
+  const base::TimeDelta time_delta(base::TimeDelta::FromDays(
+      kPurgeStaleJobsIntervalBetweenChecksDays));
+  const base::Time current_time(base::Time::Now());
+  if (last_sweep + time_delta > current_time)
+    return S_OK;
+
+  last_sweep = current_time;
+
+  std::vector<ScopedComPtr<IBackgroundCopyJob> > jobs;
+  HRESULT hr = FindBitsJobIf(
+      std::bind2nd(JobCreationOlderThanDays(), kPurgeStaleJobsAfterDays),
+      bits_manager,
+      &jobs);
+  if (FAILED(hr))
+    return hr;
+
+  for (size_t i = 0; i != jobs.size(); ++i) {
+    jobs[i]->Cancel();
+    CleanupJobFiles(jobs[i]);
+  }
+
+  return S_OK;
+}
+
 }  // namespace
 
 BackgroundDownloader::BackgroundDownloader(
@@ -345,13 +389,15 @@ void BackgroundDownloader::BeginDownload(const GURL& url) {
 
   DCHECK(!timer_);
 
+  is_completed_ = false;
+  download_start_time_ = base::Time::Now();
+  job_stuck_begin_time_ = download_start_time_;
+
   HRESULT hr = QueueBitsJob(url);
   if (FAILED(hr)) {
     EndDownload(hr);
     return;
   }
-
-  job_stuck_begin_time_ = base::Time::Now();
 
   // A repeating timer retains the user task. This timer can be stopped and
   // reset multiple times.
@@ -427,14 +473,20 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
 
   timer_.reset();
 
+  const base::Time download_end_time(base::Time::Now());
+  const base::TimeDelta download_time =
+    download_end_time >= download_start_time_ ?
+    download_end_time - download_start_time_ : base::TimeDelta();
+
   base::FilePath response;
+  BG_FILE_PROGRESS progress = {0};
+
   if (SUCCEEDED(error)) {
     DCHECK(job_);
     std::vector<ScopedComPtr<IBackgroundCopyFile> > files;
     GetFilesInJob(job_, &files);
     DCHECK(files.size() == 1);
     base::string16 local_name;
-    BG_FILE_PROGRESS progress = {0};
     HRESULT hr = GetJobFileProperties(files[0], &local_name, NULL, &progress);
     if (SUCCEEDED(hr)) {
       DCHECK(progress.Completed);
@@ -444,8 +496,10 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
     }
   }
 
-  if (FAILED(error) && job_)
+  if (FAILED(error) && job_) {
     job_->Cancel();
+    CleanupJobFiles(job_);
+  }
 
   job_ = NULL;
 
@@ -454,9 +508,19 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
   const bool is_handled = SUCCEEDED(error) ||
                           IsHttpServerError(GetHttpStatusFromBitsError(error));
 
+  DownloadMetrics download_metrics;
+  download_metrics.url = url();
+  download_metrics.downloader = DownloadMetrics::kBits;
+  download_metrics.error = SUCCEEDED(error) ? 0 : error;
+  download_metrics.bytes_downloaded = progress.BytesTransferred;
+  download_metrics.bytes_total = progress.BytesTotal;
+  download_metrics.download_time_ms = download_time.InMilliseconds();
+
+  // Clean up stale jobs before invoking the callback.
+  CleanupStaleJobs(bits_manager_);
+
   Result result;
   result.error = error;
-  result.is_background_download = true;
   result.response = response;
   BrowserThread::PostTask(
         BrowserThread::UI,
@@ -464,9 +528,15 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
         base::Bind(&BackgroundDownloader::OnDownloadComplete,
                    base::Unretained(this),
                    is_handled,
-                   result));
+                   result,
+                   download_metrics));
 
-  CleanupStaleJobs(bits_manager_);
+  bits_manager_ = NULL;
+
+  // Once the task is posted to the the UI thread, this object may be deleted
+  // by its owner. It is not safe to access members of this object on the
+  // FILE thread from this point on. The timer is stopped and all BITS
+  // interface pointers have been released.
 }
 
 // Called when the BITS job has been transferred successfully. Completes the
@@ -627,40 +697,6 @@ bool BackgroundDownloader::IsStuck() {
   const base::TimeDelta job_stuck_timeout(
       base::TimeDelta::FromMinutes(kJobStuckTimeoutMin));
   return job_stuck_begin_time_ + job_stuck_timeout < base::Time::Now();
-}
-
-
-// Cleans up incompleted jobs that are too old.
-HRESULT BackgroundDownloader::CleanupStaleJobs(
-    base::win::ScopedComPtr<IBackgroundCopyManager> bits_manager) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  if (!bits_manager)
-    return E_FAIL;
-
-  static base::Time last_sweep;
-
-  const base::TimeDelta time_delta(base::TimeDelta::FromDays(
-      kPurgeStaleJobsIntervalBetweenChecksDays));
-  const base::Time current_time(base::Time::Now());
-  if (last_sweep + time_delta > current_time)
-    return S_OK;
-
-  last_sweep = current_time;
-
-  std::vector<ScopedComPtr<IBackgroundCopyJob> > jobs;
-  HRESULT hr = FindBitsJobIf(
-      std::bind2nd(JobCreationOlderThanDays(), kPurgeStaleJobsAfterDays),
-      bits_manager,
-      &jobs);
-  if (FAILED(hr))
-    return hr;
-
-  for (size_t i = 0; i != jobs.size(); ++i) {
-    jobs[i]->Cancel();
-  }
-
-  return S_OK;
 }
 
 }  // namespace component_updater

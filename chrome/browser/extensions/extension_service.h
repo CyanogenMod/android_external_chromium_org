@@ -127,9 +127,9 @@ class ExtensionService
       public content::NotificationObserver,
       public extensions::Blacklist::Observer {
  public:
-  // Returns the Extension of an extension from a given url or NULL if the url
-  // doesn't belong to an installed extension. This may be a hosted app extent
-  // or a chrome-extension:// url.
+  // Returns the Extension for a given url or NULL if the url doesn't belong to
+  // an installed extension. This may be a hosted app extent or a
+  // chrome-extension:// url.
   const extensions::Extension* GetInstalledExtensionByUrl(
       const GURL& url) const;
 
@@ -208,6 +208,13 @@ class ExtensionService
 
   // Initialize and start all installed extensions.
   void Init();
+
+  // Attempts to verify all extensions using the InstallVerifier.
+  void VerifyAllExtensions();
+
+  // Once the verifier work is finished, we may want to re-check management
+  // policy if |success| indicates the verifier got a new signature back.
+  void FinishVerifyAllExtensions(bool success);
 
   // Called when the associated Profile is going to be destroyed.
   void Shutdown();
@@ -596,6 +603,13 @@ class ExtensionService
     install_updates_when_idle_ = value;
   }
 
+  // Set a callback to be called when all external providers are ready and their
+  // extensions have been installed.
+  void set_external_updates_finished_callback_for_test(
+      const base::Closure& callback) {
+    external_updates_finished_callback_ = callback;
+  }
+
   // Adds/Removes update observers.
   void AddUpdateObserver(extensions::UpdateObserver* observer);
   void RemoveUpdateObserver(extensions::UpdateObserver* observer);
@@ -805,6 +819,11 @@ class ExtensionService
   // OnAllExternalProvidersReady() to determine if an update check is needed to
   // install pending extensions.
   bool update_once_all_providers_are_ready_;
+
+  // A callback to be called when all external providers are ready and their
+  // extensions have been installed. Normally this is a null callback, but
+  // is used in external provider related tests.
+  base::Closure external_updates_finished_callback_;
 
   // Set when the browser is terminating. Prevents us from installing or
   // updating additional extensions and allows in-progress installations to

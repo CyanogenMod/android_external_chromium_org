@@ -9,6 +9,10 @@
 
 class GURL;
 
+namespace base {
+class FilePath;
+}
+
 namespace net {
 class URLFetcher;
 class URLFetcherDelegate;
@@ -16,6 +20,8 @@ class URLRequestContextGetter;
 }
 
 namespace component_updater {
+
+struct CrxUpdateItem;
 
 // An update protocol request starts with a common preamble which includes
 // version and platform information for Chrome and the operating system,
@@ -25,14 +31,18 @@ namespace component_updater {
 // <?xml version="1.0" encoding="UTF-8"?>
 // <request protocol="3.0" version="chrome-32.0.1.0"  prodversion="32.0.1.0"
 //        requestid="{7383396D-B4DD-46E1-9104-AAC6B918E792}"
-//        updaterchannel="canary" arch="x86" nacl_arch="x86-64">
+//        updaterchannel="canary" arch="x86" nacl_arch="x86-64"
+//        ADDITIONAL ATTRIBUTES>
 //   <os platform="win" version="6.1" arch="x86"/>
 //   ... REQUEST BODY ...
 // </request>
 
 // Builds a protocol request string by creating the outer envelope for
 // the request and including the request body specified as a parameter.
-std::string BuildProtocolRequest(const std::string& request_body);
+// If specified, |additional_attributes| are appended as attributes of the
+// request element.
+std::string BuildProtocolRequest(const std::string& request_body,
+                                 const std::string& additional_attributes);
 
 // Sends a protocol request to the the service endpoint specified by |url|.
 // The body of the request is provided by |protocol_request| and it is
@@ -52,8 +62,16 @@ bool FetchSuccess(const net::URLFetcher& fetcher);
 // fetch is pending or canceled.
 int GetFetchError(const net::URLFetcher& fetcher);
 
+// Returns true if the |update_item| contains a valid differential update url.
+bool HasDiffUpdate(const CrxUpdateItem* update_item);
+
 // Returns true if the |status_code| represents a server error 5xx.
 bool IsHttpServerError(int status_code);
+
+// Deletes the file and its directory, if the directory is empty. If the
+// parent directory is not empty, the function ignores deleting the directory.
+// Returns true if the file and the empty directory are deleted.
+bool DeleteFileAndEmptyParentDirectory(const base::FilePath& filepath);
 
 }  // namespace component_updater
 

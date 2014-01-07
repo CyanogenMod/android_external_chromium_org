@@ -46,6 +46,9 @@
 
 using content::BrowserThread;
 
+using component_updater::CrxDownloader;
+using component_updater::CrxUpdateItem;
+
 // The component updater is designed to live until process shutdown, so
 // base::Bind() calls are not refcounted.
 
@@ -101,18 +104,19 @@ net::URLFetcherDelegate* MakeContextDelegate(Del* delegate, Ctx* context) {
   return new DelegateWithContext<Del, Ctx>(delegate, context);
 }
 
-// Returns true if a differential update is available for the update item.
-bool IsDiffUpdateAvailable(const CrxUpdateItem* update_item) {
-  return update_item->diff_crx_url.is_valid();
-}
-
 // Returns true if a differential update is available, it has not failed yet,
 // and the configuration allows it.
 bool CanTryDiffUpdate(const CrxUpdateItem* update_item,
                       const ComponentUpdateService::Configurator& config) {
-  return IsDiffUpdateAvailable(update_item) &&
+  return component_updater::HasDiffUpdate(update_item) &&
          !update_item->diff_update_failed &&
          config.DeltasEnabled();
+}
+
+void AppendDownloadMetrics(
+    const std::vector<CrxDownloader::DownloadMetrics>& source,
+    std::vector<CrxDownloader::DownloadMetrics>* destination) {
+  destination->insert(destination->end(), source.begin(), source.end());
 }
 
 }  // namespace
@@ -265,7 +269,7 @@ class CrxUpdateService : public ComponentUpdateService {
 
   void DownloadComplete(
       scoped_ptr<CRXContext> crx_context,
-      const component_updater::CrxDownloader::Result& download_result);
+      const CrxDownloader::Result& download_result);
 
   Status OnDemandUpdateInternal(CrxUpdateItem* item);
 
@@ -315,7 +319,7 @@ class CrxUpdateService : public ComponentUpdateService {
 
   scoped_ptr<component_updater::PingManager> ping_manager_;
 
-  scoped_ptr<component_updater::CrxDownloader> crx_downloader_;
+  scoped_ptr<CrxDownloader> crx_downloader_;
 
   // A collection of every work item.
   typedef std::vector<CrxUpdateItem*> UpdateItems;
@@ -665,12 +669,12 @@ void CrxUpdateService::UpdateComponent(CrxUpdateItem* workitem) {
   crx_context->id = workitem->id;
   crx_context->installer = workitem->component.installer;
   crx_context->fingerprint = workitem->next_fp;
-  GURL package_url;
+  const std::vector<GURL>* urls = NULL;
   if (CanTryDiffUpdate(workitem, *config_)) {
-    package_url = workitem->diff_crx_url;
+    urls = &workitem->crx_diffurls;
     ChangeItemState(workitem, CrxUpdateItem::kDownloadingDiff);
   } else {
-    package_url = workitem->crx_url;
+    urls = &workitem->crx_urls;
     ChangeItemState(workitem, CrxUpdateItem::kDownloading);
   }
 
@@ -678,14 +682,14 @@ void CrxUpdateService::UpdateComponent(CrxUpdateItem* workitem) {
   const bool is_background_download = !workitem->on_demand &&
                                        config_->UseBackgroundDownloader();
 
-  crx_downloader_.reset(component_updater::CrxDownloader::Create(
+  crx_downloader_.reset(CrxDownloader::Create(
       is_background_download,
       config_->RequestContext(),
       blocking_task_runner_,
       base::Bind(&CrxUpdateService::DownloadComplete,
                  base::Unretained(this),
                  base::Passed(&crx_context))));
-  crx_downloader_->StartDownloadFromUrl(package_url);
+  crx_downloader_->StartDownload(*urls);
 }
 
 // Sets the state of the component to be checked for updates. After the
@@ -731,8 +735,8 @@ void CrxUpdateService::AddItemToUpdateCheck(CrxUpdateItem* item,
 
   ChangeItemState(item, CrxUpdateItem::kChecking);
   item->last_check = base::Time::Now();
-  item->crx_url = GURL();
-  item->diff_crx_url = GURL();
+  item->crx_urls.clear();
+  item->crx_diffurls.clear();
   item->previous_version = item->component.version;
   item->next_version = Version();
   item->previous_fp = item->component.fingerprint;
@@ -744,6 +748,7 @@ void CrxUpdateService::AddItemToUpdateCheck(CrxUpdateItem* item,
   item->diff_error_category = 0;
   item->diff_error_code = 0;
   item->diff_extra_code1 = 0;
+  item->download_metrics.clear();
 }
 
 // Builds the sequence of <app> elements in the update check and returns it
@@ -767,7 +772,7 @@ void CrxUpdateService::DoUpdateCheck(const std::string& update_check_items) {
   using component_updater::BuildProtocolRequest;
   url_fetcher_.reset(component_updater::SendProtocolRequest(
       config_->UpdateUrl(),
-      BuildProtocolRequest(update_check_items),
+      BuildProtocolRequest(update_check_items, config_->ExtraRequestParams()),
       MakeContextDelegate(this, new UpdateContext()),
       config_->RequestContext()));
 }
@@ -851,12 +856,17 @@ void CrxUpdateService::OnParseUpdateResponseSucceeded(
     const Package& package(it->manifest.packages[0]);
     crx->next_fp = package.fingerprint;
 
-    // Select the first url from the list of urls until support for
-    // fall back urls is implemented.
-    if (!it->crx_urls.empty())
-      crx->crx_url = it->crx_urls[0].Resolve(package.name);
-    if (!it->crx_diffurls.empty())
-      crx->diff_crx_url = it->crx_diffurls[0].Resolve(package.namediff);
+    // Resolve the urls by combining the base urls with the package names.
+    for (size_t i = 0; i != it->crx_urls.size(); ++i) {
+      const GURL url(it->crx_urls[i].Resolve(package.name));
+      if (url.is_valid())
+         crx->crx_urls.push_back(url);
+    }
+    for (size_t i = 0; i != it->crx_diffurls.size(); ++i) {
+      const GURL url(it->crx_diffurls[i].Resolve(package.namediff));
+      if (url.is_valid())
+         crx->crx_diffurls.push_back(url);
+    }
 
     ChangeItemState(crx, CrxUpdateItem::kCanUpdate);
     ++num_updates_pending;
@@ -885,12 +895,15 @@ void CrxUpdateService::OnParseUpdateResponseFailed(
 // to be called in the file thread.
 void CrxUpdateService::DownloadComplete(
     scoped_ptr<CRXContext> crx_context,
-    const component_updater::CrxDownloader::Result& download_result) {
+    const CrxDownloader::Result& download_result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   CrxUpdateItem* crx = FindUpdateItemById(crx_context->id);
   DCHECK(crx->status == CrxUpdateItem::kDownloadingDiff ||
          crx->status == CrxUpdateItem::kDownloading);
+
+  AppendDownloadMetrics(crx_downloader_->download_metrics(),
+                        &crx->download_metrics);
 
   if (download_result.error) {
     if (crx->status == CrxUpdateItem::kDownloadingDiff) {
@@ -928,7 +941,6 @@ void CrxUpdateService::DownloadComplete(
                                CrxUpdateItem::kUpdating);
     }
     DCHECK_EQ(count, 1ul);
-
     crx_downloader_.reset();
 
     // Why unretained? See comment at top of file.
@@ -954,8 +966,9 @@ void CrxUpdateService::Install(scoped_ptr<CRXContext> context,
                              context->fingerprint,
                              component_patcher_.get(),
                              context->installer);
-  if (!base::DeleteFile(crx_path, false))
+  if (!component_updater::DeleteFileAndEmptyParentDirectory(crx_path))
     NOTREACHED() << crx_path.value();
+
   // Why unretained? See comment at top of file.
   BrowserThread::PostDelayedTask(
       BrowserThread::UI,

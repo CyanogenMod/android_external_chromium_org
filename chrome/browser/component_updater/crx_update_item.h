@@ -13,8 +13,11 @@
 #include "base/time/time.h"
 #include "base/version.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/crx_downloader.h"
 
 class CUResourceThrottle;
+
+namespace component_updater {
 
 // This is the one and only per-item state structure. Designed to be hosted
 // in a std::vector or a std::list. The two main members are |component|
@@ -76,9 +79,9 @@ struct CrxUpdateItem {
 
   base::Time last_check;
 
-  // The url the full and differential update CRXs are downloaded from.
-  GURL crx_url;
-  GURL diff_crx_url;
+  // A component can be made available for download from several urls.
+  std::vector<GURL> crx_urls;
+  std::vector<GURL> crx_diffurls;
 
   // The from/to version and fingerprint values.
   Version previous_version;
@@ -105,6 +108,8 @@ struct CrxUpdateItem {
   int diff_error_code;
   int diff_extra_code1;
 
+  std::vector<CrxDownloader::DownloadMetrics> download_metrics;
+
   std::vector<base::WeakPtr<CUResourceThrottle> > throttles;
 
   CrxUpdateItem();
@@ -122,5 +127,7 @@ struct CrxUpdateItem {
     const std::string& id_;
   };
 };
+
+}  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_CRX_UPDATE_ITEM_H_

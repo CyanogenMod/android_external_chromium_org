@@ -64,9 +64,6 @@ class BackgroundDownloader : public CrxDownloader {
   // has not been making progress toward completion.
   bool IsStuck();
 
-  static HRESULT CleanupStaleJobs(
-    base::win::ScopedComPtr<IBackgroundCopyManager> bits_manager);
-
   net::URLRequestContextGetter* context_getter_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
@@ -75,7 +72,12 @@ class BackgroundDownloader : public CrxDownloader {
   base::win::ScopedComPtr<IBackgroundCopyManager> bits_manager_;
   base::win::ScopedComPtr<IBackgroundCopyJob> job_;
 
+  // Contains the time when the download of the current url has started.
+  base::Time download_start_time_;
+
+  // Contains the time when the BITS job is last seen making progress.
   base::Time job_stuck_begin_time_;
+
   bool is_completed_;
 
   DISALLOW_COPY_AND_ASSIGN(BackgroundDownloader);

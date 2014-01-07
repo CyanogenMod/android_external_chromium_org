@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/component_updater/component_updater_utils.h"
+#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/guid.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/component_updater/crx_update_item.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/omaha_query_params/omaha_query_params.h"
 #include "net/base/load_flags.h"
@@ -16,34 +19,50 @@
 
 namespace component_updater {
 
-std::string BuildProtocolRequest(const std::string& request_body) {
-  const char request_format[] =
-      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-      "<request protocol=\"3.0\" version=\"%s-%s\" prodversion=\"%s\" "
-      "requestid=\"{%s}\" updaterchannel=\"%s\" arch=\"%s\" nacl_arch=\"%s\">"
-      "<os platform=\"%s\" version=\"%s\" arch=\"%s\"/>"
-      "%s"
-      "</request>";
-
+std::string BuildProtocolRequest(const std::string& request_body,
+                                 const std::string& additional_attributes) {
   const std::string prod_id(chrome::OmahaQueryParams::GetProdIdString(
       chrome::OmahaQueryParams::CHROME));
-  const std::string chrome_version(chrome::VersionInfo().Version().c_str());
+  const chrome::VersionInfo chrome_version_info;
+  const std::string chrome_version(chrome_version_info.Version());
 
-  const std::string request(base::StringPrintf(request_format,
-      // Chrome version and platform information.
+  std::string request(
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+      "<request protocol=\"3.0\" ");
+
+  if (!additional_attributes.empty())
+     base::StringAppendF(&request, "%s ", additional_attributes.c_str());
+
+  // Chrome version and platform information.
+  base::StringAppendF(
+      &request,
+      "version=\"%s-%s\" prodversion=\"%s\" "
+      "requestid=\"{%s}\" updaterchannel=\"%s\" arch=\"%s\" nacl_arch=\"%s\"",
       prod_id.c_str(), chrome_version.c_str(),        // "version"
       chrome_version.c_str(),                         // "prodversion"
       base::GenerateGUID().c_str(),                   // "requestid"
       chrome::OmahaQueryParams::GetChannelString(),   // "updaterchannel"
       chrome::OmahaQueryParams::getArch(),            // "arch"
-      chrome::OmahaQueryParams::getNaclArch(),        // "nacl_arch"
+      chrome::OmahaQueryParams::getNaclArch());       // "nacl_arch"
+#if defined(OS_WIN)
+    const bool is_wow64(
+        base::win::OSInfo::GetInstance()->wow64_status() ==
+        base::win::OSInfo::WOW64_ENABLED);
+    if (is_wow64)
+      base::StringAppendF(&request, " wow64=\"1\"");
+#endif
+    base::StringAppendF(&request, ">");
 
-      // OS version and platform information.
+  // OS version and platform information.
+  base::StringAppendF(
+      &request,
+      "<os platform=\"%s\" version=\"%s\" arch=\"%s\"/>",
       chrome::VersionInfo().OSType().c_str(),                  // "platform"
       base::SysInfo().OperatingSystemVersion().c_str(),        // "version"
-      base::SysInfo().OperatingSystemArchitecture().c_str(),   // "arch"
+      base::SysInfo().OperatingSystemArchitecture().c_str());  // "arch"
 
-      request_body.c_str()));   // The actual payload of the request.
+  // The actual payload of the request.
+  base::StringAppendF(&request, "%s</request>", request_body.c_str());
 
   return request;
 }
@@ -102,9 +121,23 @@ int GetFetchError(const net::URLFetcher& fetcher) {
   }
 }
 
+bool HasDiffUpdate(const CrxUpdateItem* update_item) {
+  return !update_item->crx_diffurls.empty();
+}
 
 bool IsHttpServerError(int status_code) {
   return 500 <= status_code && status_code < 600;
+}
+
+bool DeleteFileAndEmptyParentDirectory(const base::FilePath& filepath) {
+  if (!base::DeleteFile(filepath, false))
+    return false;
+
+  const base::FilePath dirname(filepath.DirName());
+  if (!base::IsDirectoryEmpty(dirname))
+    return true;
+
+  return base::DeleteFile(dirname, false);
 }
 
 }  // namespace component_updater
