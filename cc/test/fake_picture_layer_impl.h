@@ -33,6 +33,7 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   using PictureLayerImpl::CanHaveTilings;
   using PictureLayerImpl::MarkVisibleResourcesAsRequired;
   using PictureLayerImpl::DoPostCommitInitializationIfNeeded;
+  using PictureLayerImpl::MinimumContentsScale;
 
   bool needs_post_commit_initialization() const {
     return needs_post_commit_initialization_;
@@ -55,7 +56,7 @@ class FakePictureLayerImpl : public PictureLayerImpl {
 
   void set_fixed_tile_size(gfx::Size size) { fixed_tile_size_ = size; }
 
-  void CreateDefaultTilingsAndTiles(WhichTree tree);
+  void CreateDefaultTilingsAndTiles();
   void SetAllTilesVisible();
   void SetAllTilesReady();
   void SetAllTilesReadyInTiling(PictureLayerTiling* tiling);

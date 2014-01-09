@@ -190,7 +190,6 @@ LOCAL_SRC_FILES := \
 	cc/resources/texture_mailbox.cc \
 	cc/resources/texture_mailbox_deleter.cc \
 	cc/resources/tile.cc \
-	cc/resources/tile_bundle.cc \
 	cc/resources/tile_manager.cc \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
