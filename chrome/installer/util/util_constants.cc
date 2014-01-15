@@ -27,9 +27,6 @@ const char kChromeAppLauncher[] = "app-launcher";
 // Install Chrome Frame.
 const char kChromeFrame[] = "chrome-frame";
 
-// Installs Chrome Frame from an already installed multi-install of Chrome.
-const char kChromeFrameQuickEnable[] = "quick-enable-cf";
-
 // Run the installer for Chrome SxS.
 const char kChromeSxS[] = "chrome-sxs";
 
@@ -96,10 +93,6 @@ const char kLogFile[] = "log-file";
 // as default browser at system level, if running as non-admin we try to
 // register as default browser only for the current user.
 const char kMakeChromeDefault[] = "make-chrome-default";
-
-// Migrate multi-install Chrome Frame to single-install. Use in conjunction with
-// --uncompressed-archive.
-const char kMigrateChromeFrame[] = "migrate-chrome-frame";
 
 // Tells installer to expect to be run as a subsidiary to an MSI.
 const char kMsi[] = "msi";

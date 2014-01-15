@@ -374,18 +374,7 @@ LoginDisplayHostImpl::~LoginDisplayHostImpl() {
   chrome::EndKeepAlive();
 
   default_host_ = NULL;
-  // TODO(dzhioev): find better place for starting tutorial.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kOobeSkipPostLogin) &&
-      !command_line->HasSwitch(switches::kDisableFirstRunUI) &&
-      ((chromeos::UserManager::Get()->IsCurrentUserNew() &&
-        !command_line->HasSwitch(::switches::kTestType)) ||
-       command_line->HasSwitch(switches::kForceFirstRunUI))) {
-    LaunchFirstRunDialog();
-  }
-
-  // TODO(tengs): This should be refactored together with the first run UI.
-  // See crbug.com/314934.
+  // TODO(tengs): This should be refactored. See crbug.com/314934.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableDriveOfflineFirstRun)) {
     if (UserManager::Get()->IsCurrentUserNew()) {
@@ -1133,7 +1122,10 @@ void ShowLoginWizard(const std::string& first_screen_name) {
       chromeos::WizardController::ShouldAutoStartEnrollment() &&
       !g_browser_process->browser_policy_connector()->IsEnterpriseManaged();
   if (should_show_enrollment_screen) {
-    display_host->StartWizard(chromeos::WizardController::kEnrollmentScreenName,
+    // Shows networks screen instead of enrollment screen to resume the
+    // interrupted auto start enrollment flow because enrollment screen does
+    // not handle flaky network. See http://crbug.com/332572
+    display_host->StartWizard(chromeos::WizardController::kNetworkScreenName,
                               scoped_ptr<DictionaryValue>());
     return;
   }

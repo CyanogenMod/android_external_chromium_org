@@ -254,8 +254,6 @@
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../chrome/common_constants.gyp:common_constants',
-            '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
-            '../chrome_frame/chrome_frame.gyp:npchrome_frame',
             '../rlz/rlz.gyp:rlz_lib',
             '../third_party/zlib/zlib.gyp:zlib',
           ],
@@ -273,10 +271,6 @@
             'installer/mini_installer/chrome.release',
             'installer/setup/archive_patch_helper.cc',
             'installer/setup/archive_patch_helper.h',
-            'installer/setup/cf_migration.cc',
-            'installer/setup/cf_migration.h',
-            'installer/setup/chrome_frame_quick_enable.cc',
-            'installer/setup/chrome_frame_quick_enable.h',
             'installer/setup/install.cc',
             'installer/setup/install.h',
             'installer/setup/install_worker.cc',
@@ -385,15 +379,6 @@
                  'branding_dir_100': 'app/theme/default_100_percent/chromium',
               },
             }],
-            ['target_arch=="x64"', {
-              'dependencies!': [
-                '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-              ],
-              'defines': [
-                'OMIT_CHROME_FRAME',
-              ],
-            }],
           ],
         },
         {
@@ -406,7 +391,6 @@
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
-            '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
           ],
