@@ -81,6 +81,17 @@
             'skia_chrome.gypi',
             'skia_common.gypi',
           ],
+          'link_settings': {
+            'libraries!': [
+              '-lstlport_static',
+            ],
+            'libraries' : [
+              '-lstlport_sh_r8e'
+            ],
+          },
+          'ldflags!': [
+              '-Wl,--fatal-warnings',
+          ],
           'defines': [
             'SKIA_DLL',
             'SKIA_IMPLEMENTATION=1',

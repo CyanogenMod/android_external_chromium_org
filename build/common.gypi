@@ -3728,7 +3728,7 @@
           }, {
             'conditions': [
               ['component=="shared_library"', {
-                  'android_stlport_library': 'stlport_shared',
+                  'android_stlport_library': 'stlport_sh_r8e',
               }, {
                   'android_stlport_library': 'stlport_static',
               }],

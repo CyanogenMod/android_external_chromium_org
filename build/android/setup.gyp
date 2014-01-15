@@ -16,7 +16,7 @@
             {
               'destination': '<(SHARED_LIB_DIR)/',
               'files': [
-                '<(android_stlport_libs_dir)/libstlport_shared.so',
+                '<(android_stlport_libs_dir)/libstlport_sh_r8e.so',
               ],
             },
           ],
@@ -79,4 +79,3 @@
     }, # build_output_dirs
   ]
 }
-
