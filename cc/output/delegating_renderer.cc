@@ -80,7 +80,7 @@ bool DelegatingRenderer::Initialize() {
 
 DelegatingRenderer::~DelegatingRenderer() {}
 
-const RendererCapabilities& DelegatingRenderer::Capabilities() const {
+const RendererCapabilitiesImpl& DelegatingRenderer::Capabilities() const {
   return capabilities_;
 }
 
