@@ -1551,6 +1551,8 @@ public class AwContents {
         mContentViewCore.onAttachedToWindow();
         nativeOnAttachedToWindow(mNativeAwContents, mContainerView.getWidth(),
                 mContainerView.getHeight());
+        mSettings.setEnableSupportedHardwareAcceleratedFeatures(
+            mContainerView.isHardwareAccelerated());
 
         if (mComponentCallbacks != null) return;
         mComponentCallbacks = new AwComponentCallbacks();
@@ -1568,6 +1570,8 @@ public class AwContents {
         }
 
         mContentViewCore.onDetachedFromWindow();
+
+        mSettings.setEnableSupportedHardwareAcceleratedFeatures(false);
 
         if (mComponentCallbacks != null) {
             mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
