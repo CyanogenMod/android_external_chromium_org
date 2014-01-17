@@ -114,8 +114,11 @@ class MediaResourceGetter {
                                                       final String url,
                                                       final String cookies,
                                                       final String userAgent) {
-        return new MediaResourceGetter().extract(
+        MediaResourceGetter getter = new MediaResourceGetter();
+        MediaMetadata metadata = getter.extract(
                 context, url, cookies, userAgent);
+        getter.release();
+        return metadata;
     }
 
     @CalledByNative
@@ -415,5 +418,9 @@ class MediaResourceGetter {
     @VisibleForTesting
     String extractMetadata(int key) {
         return mRetriever.extractMetadata(key);
+    }
+
+    public void release() {
+        mRetriever.release();
     }
 }
