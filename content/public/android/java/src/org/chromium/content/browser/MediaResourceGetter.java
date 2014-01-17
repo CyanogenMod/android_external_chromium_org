@@ -119,6 +119,8 @@ class MediaResourceGetter {
         } catch (RuntimeException e) {
             Log.e(TAG, "Invalid url: " + e);
         }
+        retriever.release();
+
         return new MediaMetadata(durationInMilliseconds, width, height, success);
     }
 }
