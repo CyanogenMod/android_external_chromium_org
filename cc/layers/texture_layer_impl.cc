@@ -214,6 +214,8 @@ void TextureLayerImpl::DidLoseOutputSurface() {
     ResourceProvider* resource_provider =
         layer_tree_impl()->resource_provider();
     resource_provider->DeleteResource(external_texture_resource_);
+  } else {
+    FreeTextureMailbox();
   }
   texture_copy_.reset();
   texture_id_ = 0;
