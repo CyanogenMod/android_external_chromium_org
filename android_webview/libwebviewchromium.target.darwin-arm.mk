@@ -46,9 +46,9 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_skia_config_gyp)/blink_skia_config.stamp \
 	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_freetype_ft2_gyp)/third_party_freetype_ft2_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_opts_gyp)/skia_skia_chrome_opts_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_libjpeg_libjpeg_gyp)/libjpeg.stamp \
 	$(call intermediates-dir-for,GYP,ui_gfx_gfx_jni_headers_gyp)/gfx_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,ui_gfx_gfx_view_jni_headers_gyp)/gfx_view_jni_headers.stamp \
@@ -504,9 +504,9 @@ LOCAL_STATIC_LIBRARIES := \
 	skia_skia_opts_neon_gyp \
 	third_party_sfntly_sfntly_gyp \
 	third_party_freetype_ft2_gyp \
+	third_party_libpng_libpng_gyp \
 	skia_skia_chrome_gyp \
 	skia_skia_chrome_opts_gyp \
-	third_party_libpng_libpng_gyp \
 	ui_ui_gyp \
 	ui_events_events_base_gyp \
 	ui_events_dom4_keycode_converter_gyp \

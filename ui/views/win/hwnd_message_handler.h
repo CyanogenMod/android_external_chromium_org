@@ -123,6 +123,9 @@ class VIEWS_EXPORT HWNDMessageHandler :
   gfx::Rect GetWindowBoundsInScreen() const;
   gfx::Rect GetClientAreaBoundsInScreen() const;
   gfx::Rect GetRestoredBounds() const;
+  // This accounts for the case where the widget size is the client size.
+  gfx::Rect GetClientAreaBounds() const;
+
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* show_state) const;
 
@@ -324,6 +327,10 @@ class VIEWS_EXPORT HWNDMessageHandler :
     MESSAGE_HANDLER_EX(WM_DEADCHAR, OnImeMessages)
     MESSAGE_HANDLER_EX(WM_SYSDEADCHAR, OnImeMessages)
 
+    // Scroll events
+    MESSAGE_HANDLER_EX(WM_VSCROLL, OnScrollMessage)
+    MESSAGE_HANDLER_EX(WM_HSCROLL, OnScrollMessage)
+
     // Touch Events.
     MESSAGE_HANDLER_EX(WM_TOUCH, OnTouchEvent)
 
@@ -406,6 +413,7 @@ class VIEWS_EXPORT HWNDMessageHandler :
   LRESULT OnNotify(int w_param, NMHDR* l_param);
   void OnPaint(HDC dc);
   LRESULT OnReflectedMessage(UINT message, WPARAM w_param, LPARAM l_param);
+  LRESULT OnScrollMessage(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnSetCursor(UINT message, WPARAM w_param, LPARAM l_param);
   void OnSetFocus(HWND last_focused_window);
   LRESULT OnSetIcon(UINT size_type, HICON new_icon);
@@ -526,6 +534,12 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   // Generates touch-ids for touch-events.
   ui::SequentialIDGenerator id_generator_;
+
+  // Indicates if the window needs the WS_VSCROLL and WS_HSCROLL styles.
+  bool needs_scroll_styles_;
+
+  // Set to true if we are in the context of a sizing or moving operation.
+  bool in_size_move_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };

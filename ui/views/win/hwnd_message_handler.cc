@@ -299,6 +299,22 @@ bool ProcessChildWindowMessage(UINT message,
 // The thickness of an auto-hide taskbar in pixels.
 const int kAutoHideTaskbarThicknessPx = 2;
 
+bool IsTopLevelWindow(HWND window) {
+  long style = ::GetWindowLong(window, GWL_STYLE);
+  if (!(style & WS_CHILD))
+    return true;
+  HWND parent = ::GetParent(window);
+  return !parent || (parent == ::GetDesktopWindow());
+}
+
+void AddScrollStylesToWindow(HWND window) {
+  if (::IsWindow(window)) {
+    long current_style = ::GetWindowLong(window, GWL_STYLE);
+    ::SetWindowLong(window, GWL_STYLE,
+                    current_style | WS_VSCROLL | WS_HSCROLL);
+  }
+}
+
 }  // namespace
 
 // A scoping class that prevents a window from being able to redraw in response
@@ -389,7 +405,9 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       waiting_for_redraw_layered_window_contents_(false),
       is_first_nccalc_(true),
       autohide_factory_(this),
-      id_generator_(0) {
+      id_generator_(0),
+      needs_scroll_styles_(false),
+      in_size_move_loop_(false) {
 }
 
 HWNDMessageHandler::~HWNDMessageHandler() {
@@ -406,6 +424,27 @@ void HWNDMessageHandler::Init(HWND parent, const gfx::Rect& bounds) {
 
   // Create the window.
   WindowImpl::Init(parent, bounds);
+
+#if defined(USE_AURA)
+  // Certain trackpad drivers on Windows have bugs where in they don't generate
+  // WM_MOUSEWHEEL messages for the trackpoint and trackpad scrolling gestures
+  // unless there is an entry for Chrome with the class name of the Window.
+  // These drivers check if the window under the trackpoint has the WS_VSCROLL/
+  // WS_HSCROLL style and if yes they generate the legacy WM_VSCROLL/WM_HSCROLL
+  // messages. We add these styles to ensure that trackpad/trackpoint scrolling
+  // work.
+  // TODO(ananta)
+  // Look into moving the WS_VSCROLL and WS_HSCROLL style setting logic to the
+  // CalculateWindowStylesFromInitParams function. Doing it there seems to
+  // cause some interactive tests to fail. Investigation needed.
+  if (IsTopLevelWindow(hwnd())) {
+    long current_style = ::GetWindowLong(hwnd(), GWL_STYLE);
+    if (!(current_style & WS_POPUP)) {
+      AddScrollStylesToWindow(hwnd());
+      needs_scroll_styles_ = true;
+    }
+  }
+#endif
 }
 
 void HWNDMessageHandler::InitModalType(ui::ModalType modal_type) {
@@ -477,6 +516,14 @@ gfx::Rect HWNDMessageHandler::GetRestoredBounds() const {
   gfx::Rect bounds;
   GetWindowPlacement(&bounds, NULL);
   return bounds;
+}
+
+gfx::Rect HWNDMessageHandler::GetClientAreaBounds() const {
+  if (IsMinimized())
+    return gfx::Rect();
+  if (delegate_->WidgetSizeIsClientSize())
+    return GetClientAreaBoundsInScreen();
+  return GetWindowBoundsInScreen();
 }
 
 void HWNDMessageHandler::GetWindowPlacement(
@@ -1053,17 +1100,7 @@ void HWNDMessageHandler::TrackMouseEvents(DWORD mouse_tracking_flags) {
 }
 
 void HWNDMessageHandler::ClientAreaSizeChanged() {
-  RECT r = {0, 0, 0, 0};
-  // In case of minimized window GetWindowRect can return normally unexpected
-  // coordinates.
-  if (!IsMinimized()) {
-    if (delegate_->WidgetSizeIsClientSize())
-      GetClientRect(hwnd(), &r);
-    else
-      GetWindowRect(hwnd(), &r);
-  }
-  gfx::Size s(std::max(0, static_cast<int>(r.right - r.left)),
-              std::max(0, static_cast<int>(r.bottom - r.top)));
+  gfx::Size s = GetClientAreaBounds().size();
   delegate_->HandleClientSizeChanged(s);
   if (use_layered_buffer_)
     layered_window_contents_.reset(new gfx::Canvas(s, 1.0f, false));
@@ -1368,6 +1405,15 @@ LRESULT HWNDMessageHandler::OnDwmCompositionChanged(UINT msg,
 }
 
 void HWNDMessageHandler::OnEnterSizeMove() {
+  in_size_move_loop_ = true;
+
+  // Please refer to the comments in the OnSize function about the scrollbar
+  // hack.
+  // Hide the Windows scrollbar if the scroll styles are present to ensure
+  // that a paint flicker does not occur while sizing.
+  if (needs_scroll_styles_)
+    ShowScrollBar(hwnd(), SB_BOTH, FALSE);
+
   delegate_->HandleBeginWMSizeMove();
   SetMsgHandled(FALSE);
 }
@@ -1380,6 +1426,14 @@ LRESULT HWNDMessageHandler::OnEraseBkgnd(HDC dc) {
 void HWNDMessageHandler::OnExitSizeMove() {
   delegate_->HandleEndWMSizeMove();
   SetMsgHandled(FALSE);
+  in_size_move_loop_ = false;
+  // Please refer to the notes in the OnSize function for information about
+  // the scrolling hack.
+  // We hide the Windows scrollbar in the OnEnterSizeMove function. We need
+  // to add the scroll styles back to ensure that scrolling works in legacy
+  // trackpoint drivers.
+  if (needs_scroll_styles_)
+    AddScrollStylesToWindow(hwnd());
 }
 
 void HWNDMessageHandler::OnGetMinMaxInfo(MINMAXINFO* minmax_info) {
@@ -1811,8 +1865,23 @@ LRESULT HWNDMessageHandler::OnNCHitTest(const CPoint& point) {
 
   // Otherwise, we let Windows do all the native frame non-client handling for
   // us.
+#if defined(USE_AURA)
+  LRESULT hit_test_code = DefWindowProc(hwnd(), WM_NCHITTEST, 0,
+                                        MAKELPARAM(point.x, point.y));
+  // If we faked the WS_VSCROLL and WS_HSCROLL styles for this window, then
+  // Windows returns the HTVSCROLL or HTHSCROLL hit test codes if we hover or
+  // click on the non client portions of the window where the OS scrollbars
+  // would be drawn. These hittest codes are returned even when the scrollbars
+  // are hidden, which is the case in Aura. We fake the hittest code as
+  // HTCLIENT in this case to ensure that we receive client mouse messages as
+  // opposed to non client mouse messages.
+  if (needs_scroll_styles_ && (hit_test_code == HTVSCROLL ||
+      hit_test_code == HTHSCROLL))
+    hit_test_code = HTCLIENT;
+  return hit_test_code;
+#else
   SetMsgHandled(FALSE);
-  return 0;
+#endif
 }
 
 void HWNDMessageHandler::OnNCPaint(HRGN rgn) {
@@ -1951,6 +2020,15 @@ LRESULT HWNDMessageHandler::OnReflectedMessage(UINT message,
   return 0;
 }
 
+LRESULT HWNDMessageHandler::OnScrollMessage(UINT message,
+                                            WPARAM w_param,
+                                            LPARAM l_param) {
+  MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime() };
+  ui::ScrollEvent event(msg);
+  delegate_->HandleScrollEvent(event);
+  return 0;
+}
+
 LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
                                         WPARAM w_param,
                                         LPARAM l_param) {
@@ -2028,6 +2106,21 @@ void HWNDMessageHandler::OnSize(UINT param, const CSize& size) {
   // ResetWindowRegion is going to trigger WM_NCPAINT. By doing it after we've
   // invoked OnSize we ensure the RootView has been laid out.
   ResetWindowRegion(false, true);
+
+#if defined(USE_AURA)
+  // We add the WS_VSCROLL and WS_HSCROLL styles to top level windows to ensure
+  // that legacy trackpad/trackpoint drivers generate the WM_VSCROLL and
+  // WM_HSCROLL messages and scrolling works.
+  // We want the scroll styles to be present on the window. However we don't
+  // want Windows to draw the scrollbars. To achieve this we hide the scroll
+  // bars and readd them to the window style in a posted task to ensure that we
+  // don't get nested WM_SIZE messages.
+  if (needs_scroll_styles_ && !in_size_move_loop_) {
+    ShowScrollBar(hwnd(), SB_BOTH, FALSE);
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&AddScrollStylesToWindow, hwnd()));
+  }
+#endif
 }
 
 void HWNDMessageHandler::OnSysCommand(UINT notification_code,
