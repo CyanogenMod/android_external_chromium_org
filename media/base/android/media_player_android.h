@@ -70,6 +70,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   // called. Otherwise, nothing will happen.
   virtual void SeekTo(base::TimeDelta time) = 0;
 
+  // Suspend the player resources.
+  virtual void Suspend() = 0;
+
   // Release the player resources.
   virtual void Release() = 0;
 

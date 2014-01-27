@@ -57,6 +57,7 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual void Start() OVERRIDE;
   virtual void Pause() OVERRIDE;
   virtual void SeekTo(base::TimeDelta time) OVERRIDE;
+  virtual void Suspend() OVERRIDE;
   virtual void Release() OVERRIDE;
   virtual void SetVolume(double volume) OVERRIDE;
   virtual int GetVideoWidth() OVERRIDE;
@@ -116,6 +117,11 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
 
   // Whether the player is prepared for playback.
   bool prepared_;
+
+  // Whether the player is suspended for playback.
+  bool suspended_;
+
+  base::TimeDelta suspend_time;
 
   // Pending play event while player is preparing.
   bool pending_play_;

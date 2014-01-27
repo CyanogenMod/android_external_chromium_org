@@ -77,6 +77,10 @@ void WebMediaPlayerProxyAndroid::SetVolume(int player_id, double volume) {
   Send(new MediaPlayerHostMsg_SetVolume(routing_id(), player_id, volume));
 }
 
+void WebMediaPlayerProxyAndroid::SuspendResources(int player_id) {
+  Send(new MediaPlayerHostMsg_Suspend(routing_id(), player_id));
+}
+
 void WebMediaPlayerProxyAndroid::ReleaseResources(int player_id) {
   Send(new MediaPlayerHostMsg_Release(routing_id(), player_id));
 }

@@ -53,6 +53,9 @@ class WebMediaPlayerProxyAndroid : public RenderViewObserver {
   // Set the player volume.
   void SetVolume(int player_id, double volume);
 
+  // Suspend resources (decoders) for the player.
+  void SuspendResources(int player_id);
+
   // Release resources for the player.
   void ReleaseResources(int player_id);
 
