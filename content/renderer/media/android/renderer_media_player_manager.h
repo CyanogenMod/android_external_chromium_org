@@ -67,6 +67,9 @@ class RendererMediaPlayerManager : public RenderFrameObserver {
   // Sets the poster image.
   void SetPoster(int player_id, const GURL& poster);
 
+  // Suspends resources for the player.
+  void SuspendResources(int player_id);
+
   // Releases resources for the player.
   void ReleaseResources(int player_id);
 

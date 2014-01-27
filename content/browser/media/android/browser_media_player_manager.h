@@ -111,6 +111,7 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnPause(int player_id, bool is_media_related_action);
   virtual void OnSetVolume(int player_id, double volume);
   virtual void OnSetPoster(int player_id, const GURL& poster);
+  virtual void OnSuspendResources(int player_id);
   virtual void OnReleaseResources(int player_id);
   virtual void OnDestroyPlayer(int player_id);
   virtual void ReleaseFullscreenPlayer(media::MediaPlayerAndroid* player);

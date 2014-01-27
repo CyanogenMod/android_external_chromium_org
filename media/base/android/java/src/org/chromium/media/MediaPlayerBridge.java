@@ -113,6 +113,16 @@ public class MediaPlayerBridge {
     }
 
     @CalledByNative
+    protected boolean suspend() {
+        return getLocalPlayer().suspend();
+    }
+
+    @CalledByNative
+    protected boolean resume() {
+        return getLocalPlayer().resume();
+    }
+
+    @CalledByNative
     protected void release() {
         getLocalPlayer().release();
     }

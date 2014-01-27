@@ -220,6 +220,9 @@ IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_Pause,
                     int /* player_id */,
                     bool /* is_media_related_action */)
 
+// Suspend player resources
+IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_Suspend, int /* player_id */)
+
 // Release player resources, but keep the object for future usage.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_Release, int /* player_id */)
 

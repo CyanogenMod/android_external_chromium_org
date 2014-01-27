@@ -43,6 +43,7 @@ MediaPlayerBridge::MediaPlayerBridge(
                          release_media_resources_cb,
                          frame_url),
       prepared_(false),
+      suspended_(false),
       pending_play_(false),
       url_(url),
       first_party_for_cookies_(first_party_for_cookies),
@@ -360,6 +361,30 @@ base::TimeDelta MediaPlayerBridge::GetDuration() {
           env, j_media_player_bridge_.obj()));
 }
 
+void MediaPlayerBridge::Suspend() {
+  if (j_media_player_bridge_.is_null())
+    return;
+  // If unprepared, call Release()
+  if (!prepared_) {
+    Release();
+    return;
+  }
+  // If already suspended, do nothing
+  if (suspended_)
+    return;
+
+  suspend_time = GetCurrentTime();
+  JNIEnv* env = base::android::AttachCurrentThread();
+  if (Java_MediaPlayerBridge_suspend(env, j_media_player_bridge_.obj())) {
+    time_update_timer_.Stop();
+    pending_play_ = false;
+    listener_->ReleaseMediaPlayerListenerResources();
+    suspended_ = true;
+  } else {
+    Release();
+  }
+}
+
 void MediaPlayerBridge::Release() {
   if (j_media_player_bridge_.is_null())
     return;
@@ -368,6 +393,7 @@ void MediaPlayerBridge::Release() {
   if (prepared_)
     pending_seek_ = GetCurrentTime();
   prepared_ = false;
+  suspended_ = false;
   pending_play_ = false;
   is_surface_in_use_ = false;
   SetVideoSurface(gfx::ScopedJavaSurface());
@@ -462,6 +488,15 @@ void MediaPlayerBridge::UpdateAllowedOperations() {
 
 void MediaPlayerBridge::StartInternal() {
   JNIEnv* env = base::android::AttachCurrentThread();
+  if (suspended_) {
+    SeekInternal(suspend_time);
+    suspended_ = false;
+    if (!Java_MediaPlayerBridge_resume(env, j_media_player_bridge_.obj())) {
+        Release();
+        Prepare();
+        pending_play_ = true;
+    }
+  }
   Java_MediaPlayerBridge_start(env, j_media_player_bridge_.obj());
   if (!time_update_timer_.IsRunning()) {
     time_update_timer_.Start(

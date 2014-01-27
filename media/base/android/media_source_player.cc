@@ -186,6 +186,10 @@ base::TimeDelta MediaSourcePlayer::GetDuration() {
   return duration_;
 }
 
+void MediaSourcePlayer::Suspend() {
+    // Nothing to do
+}
+
 void MediaSourcePlayer::Release() {
   DVLOG(1) << __FUNCTION__;
 

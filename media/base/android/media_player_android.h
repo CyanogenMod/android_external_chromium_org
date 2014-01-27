@@ -54,6 +54,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   // called.
   virtual void SeekTo(base::TimeDelta timestamp) = 0;
 
+  // Suspend the player resources.
+  virtual void Suspend() = 0;
+
   // Release the player resources.
   virtual void Release() = 0;
 

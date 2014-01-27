@@ -123,6 +123,9 @@ bool MediaWebContentsObserver::OnMediaPlayerMessageReceived(
     IPC_MESSAGE_FORWARD(MediaPlayerHostMsg_SetPoster,
                         GetMediaPlayerManager(render_frame_host),
                         BrowserMediaPlayerManager::OnSetPoster)
+    IPC_MESSAGE_FORWARD(MediaPlayerHostMsg_Suspend,
+                        GetMediaPlayerManager(render_frame_host),
+                        BrowserMediaPlayerManager::OnSuspendResources)
     IPC_MESSAGE_FORWARD(MediaPlayerHostMsg_Release,
                         GetMediaPlayerManager(render_frame_host),
                         BrowserMediaPlayerManager::OnReleaseResources)

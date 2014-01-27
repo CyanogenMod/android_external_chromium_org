@@ -106,6 +106,10 @@ void RendererMediaPlayerManager::SetPoster(int player_id, const GURL& poster) {
   Send(new MediaPlayerHostMsg_SetPoster(routing_id(), player_id, poster));
 }
 
+void RendererMediaPlayerManager::SuspendResources(int player_id) {
+  Send(new MediaPlayerHostMsg_Suspend(routing_id(), player_id));
+}
+
 void RendererMediaPlayerManager::ReleaseResources(int player_id) {
   Send(new MediaPlayerHostMsg_Release(routing_id(), player_id));
 }

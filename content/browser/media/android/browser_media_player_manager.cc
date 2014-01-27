@@ -514,6 +514,12 @@ void BrowserMediaPlayerManager::OnSetPoster(int player_id, const GURL& url) {
   // To be overridden by subclasses.
 }
 
+void BrowserMediaPlayerManager::OnSuspendResources(int player_id) {
+  MediaPlayerAndroid* player = GetPlayer(player_id);
+  if (player && player_id != fullscreen_player_id_)
+    player->Suspend();
+}
+
 void BrowserMediaPlayerManager::OnReleaseResources(int player_id) {
   MediaPlayerAndroid* player = GetPlayer(player_id);
   if (player)
