@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -469,8 +469,8 @@ void StatHub::LoadPlugins() {
 #endif // STAT_HUB_DYNAMIC_BIND_ON
 
     LoadProc(new pl_proc::PageLoadProcessor());
-    //TBD: LoadPlugin("libpp_proc_plugin");
-    //TBD: LoadPlugin("libspl_proc_plugin");
+    InitDBOnce(this);
+    LoadPlugin("libpc_proc_plugin");
 }
 
 //=========================================================================
