@@ -22,6 +22,7 @@ enum {
   NSEventPhaseChanged     = 0x1 << 2,
   NSEventPhaseEnded       = 0x1 << 3,
   NSEventPhaseCancelled   = 0x1 << 4,
+  NSEventPhaseMayBegin    = 0x1 << 5
 };
 typedef NSUInteger NSEventPhase;
 
@@ -43,6 +44,7 @@ typedef NSInteger NSWindowAnimationBehavior;
 @interface NSEvent (LionSDK)
 + (BOOL)isSwipeTrackingFromScrollEventsEnabled;
 
+- (NSEventPhase)momentumPhase;
 - (NSEventPhase)phase;
 - (CGFloat)scrollingDeltaX;
 - (CGFloat)scrollingDeltaY;

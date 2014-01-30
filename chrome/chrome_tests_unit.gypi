@@ -198,6 +198,8 @@
         'common/extensions/extension_test_util.h',
         'renderer/chrome_mock_render_thread.cc',
         'renderer/chrome_mock_render_thread.h',
+        'renderer/media/mock_webrtc_logging_message_filter.cc',
+        'renderer/media/mock_webrtc_logging_message_filter.h',
         'renderer/mock_printer.cc',
         'renderer/mock_printer.h',
         'renderer/safe_browsing/mock_feature_extractor_clock.cc',
@@ -414,6 +416,12 @@
               'browser/local_discovery/test_service_discovery_client.cc',
               'browser/local_discovery/test_service_discovery_client.h',
             ]
+        }],
+        ['enable_webrtc==0', {
+          'sources!': [
+            'renderer/media/mock_webrtc_logging_message_filter.cc',
+            'renderer/media/mock_webrtc_logging_message_filter.h',
+          ],
         }],
       ],
     },
@@ -2825,15 +2833,28 @@
     ['OS == "android" and gtest_target_type == "shared_library"', {
       'targets': [
         {
+          'target_name': 'unit_tests_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': 'test/android/unit_tests_apk',
+          },
+          'dependencies': [
+            'chrome_java',
+          ],
+          'includes': [ '../build/java.gypi' ],
+        },
+        {
           'target_name': 'unit_tests_apk',
           'type': 'none',
           'dependencies': [
             'chrome_java',
+            'unit_tests_java',
             'unit_tests',
           ],
           'variables': {
             'test_suite_name': 'unit_tests',
             'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)unit_tests<(SHARED_LIB_SUFFIX)',
+            'android_manifest_path': 'test/android/unit_tests_apk/AndroidManifest.xml',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },

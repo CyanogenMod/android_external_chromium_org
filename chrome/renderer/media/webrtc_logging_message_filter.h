@@ -5,7 +5,6 @@
 #ifndef CHROME_RENDERER_MEDIA_WEBRTC_LOGGING_MESSAGE_FILTER_H_
 #define CHROME_RENDERER_MEDIA_WEBRTC_LOGGING_MESSAGE_FILTER_H_
 
-#include "base/memory/shared_memory.h"
 #include "ipc/ipc_channel_proxy.h"
 
 namespace base {
@@ -23,7 +22,8 @@ class WebRtcLoggingMessageFilter
   explicit WebRtcLoggingMessageFilter(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
 
-  void LoggingStopped();
+  virtual void AddLogMessage(const std::string& message);
+  virtual void LoggingStopped();
 
   const scoped_refptr<base::MessageLoopProxy>& io_message_loop() {
     return io_message_loop_;
@@ -31,6 +31,18 @@ class WebRtcLoggingMessageFilter
 
  protected:
   virtual ~WebRtcLoggingMessageFilter();
+
+  scoped_refptr<base::MessageLoopProxy> io_message_loop_;
+
+  // Owned by this class. The only other pointer to it is in libjingle's logging
+  // file. That's a global pointer used on different threads, so we will leak
+  // this object when we go away to ensure that it outlives any log messages
+  // coming from libjingle.
+  // This is protected for unit test purposes.
+  // TODO(vrk): Remove ChromeWebRtcLogMessageDelegate's pointer to
+  // WebRtcLoggingMessageFilter so that we can write a unit test that doesn't
+  // need this accessor.
+  ChromeWebRtcLogMessageDelegate* log_message_delegate_;
 
  private:
   // IPC::ChannelProxy::MessageFilter implementation.
@@ -41,17 +53,9 @@ class WebRtcLoggingMessageFilter
 
   void CreateLoggingHandler();
 
-  void OnStartLogging(base::SharedMemoryHandle handle, uint32 length);
+  void OnStartLogging();
   void OnStopLogging();
   void Send(IPC::Message* message);
-
-  // Owned by this class. The only other pointer to it is in libjingle's logging
-  // file. That's a global pointer used on different threads, so we will leak
-  // this object when we go away to ensure that it outlives any log messages
-  // coming from libjingle.
-  ChromeWebRtcLogMessageDelegate* log_message_delegate_;
-
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_;
 
   IPC::Channel* channel_;
 

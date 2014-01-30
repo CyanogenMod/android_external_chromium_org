@@ -514,22 +514,37 @@ void RenderWidgetHostViewMac::EnableCoreAnimation() {
 }
 
 bool RenderWidgetHostViewMac::CreateCompositedIOSurface() {
-  if (compositing_iosurface_context_ && compositing_iosurface_)
+  int current_window_number = window_number();
+  bool new_surface_needed = !compositing_iosurface_;
+  bool new_context_needed =
+    !compositing_iosurface_context_ ||
+        (compositing_iosurface_context_ &&
+            compositing_iosurface_context_->window_number() !=
+                current_window_number);
+
+  if (!new_surface_needed && !new_context_needed)
     return true;
 
   ScopedCAActionDisabler disabler;
 
   // Create the GL context and shaders.
-  if (!compositing_iosurface_context_) {
-    compositing_iosurface_context_ =
-        CompositingIOSurfaceContext::Get(window_number());
-    if (!compositing_iosurface_context_) {
+  if (new_context_needed) {
+    scoped_refptr<CompositingIOSurfaceContext> new_context =
+        CompositingIOSurfaceContext::Get(current_window_number);
+    // Un-bind the GL context from this view before binding the new GL
+    // context. Having two GL contexts bound to a view will result in
+    // crashes and corruption.
+    // http://crbug.com/230883
+    ClearBoundContextDrawable();
+    if (!new_context) {
       LOG(ERROR) << "Failed to create CompositingIOSurfaceContext";
       return false;
     }
+    compositing_iosurface_context_ = new_context;
   }
+
   // Create the IOSurface texture.
-  if (!compositing_iosurface_) {
+  if (new_surface_needed) {
     compositing_iosurface_.reset(CompositingIOSurfaceMac::Create());
     if (!compositing_iosurface_) {
       LOG(ERROR) << "Failed to create CompositingIOSurface";
@@ -595,6 +610,9 @@ void RenderWidgetHostViewMac::ClearBoundContextDrawable() {
       cocoa_view_ &&
       [[compositing_iosurface_context_->nsgl_context() view]
           isEqual:cocoa_view_]) {
+    // Disable screen updates because removing the GL context from below can
+    // cause flashes.
+    [[cocoa_view_ window] disableScreenUpdatesUntilFlush];
     [compositing_iosurface_context_->nsgl_context() clearDrawable];
   }
 }
@@ -845,9 +863,9 @@ bool RenderWidgetHostViewMac::HasFocus() const {
 }
 
 bool RenderWidgetHostViewMac::IsSurfaceAvailableForCopy() const {
-  return !!render_widget_host_->GetBackingStore(false) ||
-      software_frame_manager_->HasCurrentFrame() ||
-      (compositing_iosurface_ && compositing_iosurface_->HasIOSurface());
+  return software_frame_manager_->HasCurrentFrame() ||
+         (compositing_iosurface_ && compositing_iosurface_->HasIOSurface()) ||
+         !!render_widget_host_->GetBackingStore(false);
 }
 
 void RenderWidgetHostViewMac::Show() {
@@ -1308,8 +1326,10 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
       RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
       if (frame_subscriber_->ShouldCaptureFrame(present_time,
                                                 &frame, &callback)) {
-        compositing_iosurface_->SetIOSurface(
-            surface_handle, size, surface_scale_factor, latency_info);
+        CGLSetCurrentContext(compositing_iosurface_context_->cgl_context());
+        compositing_iosurface_->SetIOSurfaceWithContextCurrent(
+            compositing_iosurface_context_, surface_handle, size,
+            surface_scale_factor, latency_info);
         compositing_iosurface_->CopyToVideoFrame(
             gfx::Rect(size), frame,
             base::Bind(callback, present_time));
@@ -1338,17 +1358,42 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
     return;
   }
 
+  // Ensure compositing_iosurface_ and compositing_iosurface_context_ be
+  // allocated.
   if (!CreateCompositedIOSurface()) {
     LOG(ERROR) << "Failed to create CompositingIOSurface";
     GotAcceleratedCompositingError();
     return;
   }
 
-  if (!compositing_iosurface_->SetIOSurface(
-          surface_handle, size, surface_scale_factor, latency_info)) {
+  // Make the context current and update the IOSurface with the handle
+  // passed in by the swap command.
+  CGLSetCurrentContext(compositing_iosurface_context_->cgl_context());
+  if (!compositing_iosurface_->SetIOSurfaceWithContextCurrent(
+          compositing_iosurface_context_, surface_handle, size,
+          surface_scale_factor, latency_info)) {
     LOG(ERROR) << "Failed SetIOSurface on CompositingIOSurfaceMac";
     GotAcceleratedCompositingError();
     return;
+  }
+
+  // Grab video frames now that the IOSurface has been set up. Note that this
+  // will be done in an offscreen context, so it is necessary to re-set the
+  // current context afterward.
+  if (frame_subscriber_) {
+    const base::Time present_time = base::Time::Now();
+    scoped_refptr<media::VideoFrame> frame;
+    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
+    if (frame_subscriber_->ShouldCaptureFrame(present_time,
+                                              &frame, &callback)) {
+      // Flush the context that updated the IOSurface, to ensure that the
+      // context that does the copy picks up the correct version.
+      glFlush();
+      compositing_iosurface_->CopyToVideoFrame(
+          gfx::Rect(size), frame,
+          base::Bind(callback, present_time));
+      CGLSetCurrentContext(compositing_iosurface_context_->cgl_context());
+    }
   }
 
   // Create the layer for the composited content only after the IOSurface has
@@ -1464,23 +1509,19 @@ bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
     return true;
   }
 
-  CGLError cgl_error = CGLSetCurrentContext(
-      compositing_iosurface_context_->cgl_context());
-  if (cgl_error != kCGLNoError) {
-    LOG(ERROR) << "CGLSetCurrentContext error in DrawIOSurface: " << cgl_error;
-    return false;
-  }
-
-  [compositing_iosurface_context_->nsgl_context() setView:cocoa_view_];
   bool has_overlay = overlay_view_ && overlay_view_->compositing_iosurface_;
+  if (has_overlay) {
+    // Un-bind the overlay view's OpenGL context, since its content will be
+    // drawn by this context. Not doing this can result in corruption.
+    // http://crbug.com/330701
+    overlay_view_->ClearBoundContextDrawable();
+  }
+  [compositing_iosurface_context_->nsgl_context() setView:cocoa_view_];
 
   gfx::Rect view_rect(NSRectToCGRect([cocoa_view_ frame]));
   if (!compositing_iosurface_->DrawIOSurface(
-      compositing_iosurface_context_,
-      view_rect,
-      scale_factor(),
-      frame_subscriber(),
-      !has_overlay)) {
+          compositing_iosurface_context_, view_rect,
+          scale_factor(), !has_overlay)) {
     return false;
   }
 
@@ -1492,12 +1533,11 @@ bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
     overlay_view_rect.set_y(view_rect.height() -
                             overlay_view_rect.height() -
                             overlay_view_offset_.y());
-    return overlay_view_->compositing_iosurface_->DrawIOSurface(
-        compositing_iosurface_context_,
-        overlay_view_rect,
-        overlay_view_->scale_factor(),
-        overlay_view_->frame_subscriber(),
-        true);
+    if (!overlay_view_->compositing_iosurface_->DrawIOSurface(
+            compositing_iosurface_context_, overlay_view_rect,
+            overlay_view_->scale_factor(), true)) {
+      return false;
+    }
   }
 
   return true;
@@ -1968,17 +2008,9 @@ void RenderWidgetHostViewMac::WindowFrameChanged() {
         GetViewBounds()));
   }
 
-  if (compositing_iosurface_ && use_core_animation_) {
-    scoped_refptr<CompositingIOSurfaceContext> new_context =
-        CompositingIOSurfaceContext::Get(window_number());
-    if (new_context) {
-      // Un-bind the GL context from this view before binding the new GL
-      // context. Having two GL contexts bound to a view will result in
-      // crashes and corruption.
-      // http://crbug.com/230883
-      ClearBoundContextDrawable();
-      compositing_iosurface_context_ = new_context;
-    }
+  if (compositing_iosurface_) {
+    // This will migrate the context to the appropriate window.
+    CreateCompositedIOSurface();
   }
 }
 
@@ -2904,6 +2936,8 @@ void RenderWidgetHostViewMac::FrameSwapped() {
       NSRectFill(dirtyRect);
     }
 
+    CGLSetCurrentContext(
+        renderWidgetHostView_->compositing_iosurface_context_->cgl_context());
     if (renderWidgetHostView_->DrawIOSurfaceWithoutCoreAnimation())
       return;
 

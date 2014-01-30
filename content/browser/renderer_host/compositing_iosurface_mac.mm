@@ -328,7 +328,8 @@ CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
   offscreen_context_ = NULL;
 }
 
-bool CompositingIOSurfaceMac::SetIOSurface(
+bool CompositingIOSurfaceMac::SetIOSurfaceWithContextCurrent(
+    scoped_refptr<CompositingIOSurfaceContext> current_context,
     uint64 io_surface_handle,
     const gfx::Size& size,
     float scale_factor,
@@ -337,14 +338,8 @@ bool CompositingIOSurfaceMac::SetIOSurface(
   scale_factor_ = scale_factor;
   dip_io_surface_size_ = gfx::ToFlooredSize(
       gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor_));
-
-  CGLError cgl_error = CGLSetCurrentContext(offscreen_context_->cgl_context());
-  if (cgl_error != kCGLNoError) {
-    LOG(ERROR) << "CGLSetCurrentContext error in SetIOSurface: " << cgl_error;
-    return false;
-  }
-  bool result = MapIOSurfaceToTexture(io_surface_handle);
-  CGLSetCurrentContext(0);
+  bool result = MapIOSurfaceToTextureWithContextCurrent(
+      current_context, io_surface_handle);
   latency_info_.MergeWith(latency_info);
   return result;
 }
@@ -362,7 +357,6 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
     scoped_refptr<CompositingIOSurfaceContext> drawing_context,
     const gfx::Rect& window_rect,
     float window_scale_factor,
-    RenderWidgetHostViewFrameSubscriber* frame_subscriber,
     bool flush_drawable) {
   DCHECK_EQ(CGLGetCurrentContext(), drawing_context->cgl_context());
 
@@ -450,7 +444,8 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
   }
 
   const bool workaround_needed =
-      drawing_context->IsVendorIntel() && !base::mac::IsOSMountainLionOrLater();
+      drawing_context->IsVendorIntel() &&
+      (!base::mac::IsOSMountainLionOrLater() || base::mac::IsOSMavericks());
   const bool use_glfinish_workaround =
       (workaround_needed || force_on_workaround) && !force_off_workaround;
 
@@ -459,21 +454,11 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
     // http://crbug.com/123409 : work around bugs in graphics driver on
     // MacBook Air with Intel HD graphics, and possibly on other models,
     // by forcing the graphics pipeline to be completely drained at this
-    // point.
-    // This workaround is not necessary on Mountain Lion.
+    // point. This workaround is not necessary on Mountain Lion.
+    // http://crbug.com/318877 : work around a bug where the window does
+    // not finish rendering its contents before displaying them on Mavericks
+    // on Retina MacBook Pro when using the Intel HD graphics GPU.
     glFinish();
-  }
-
-  base::Closure copy_done_callback;
-  if (frame_subscriber) {
-    const base::Time present_time = base::Time::Now();
-    scoped_refptr<media::VideoFrame> frame;
-    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-    if (frame_subscriber->ShouldCaptureFrame(present_time, &frame, &callback)) {
-      copy_done_callback = CopyToVideoFrameWithinContext(
-          gfx::Rect(pixel_io_surface_size_), true, frame,
-          base::Bind(callback, present_time));
-    }
   }
 
   bool result = true;
@@ -568,7 +553,8 @@ base::Closure CompositingIOSurfaceMac::CopyToVideoFrameWithinContext(
       NULL, target, callback);
 }
 
-bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
+bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
+    const scoped_refptr<CompositingIOSurfaceContext>& current_context,
     uint64 io_surface_handle) {
   if (io_surface_.get() && io_surface_handle == io_surface_handle_)
     return true;
@@ -600,7 +586,7 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
   CHECK_AND_SAVE_GL_ERROR();
   GLuint plane = 0;
   CGLError cgl_error = io_surface_support_->CGLTexImageIOSurface2D(
-      offscreen_context_->cgl_context(),
+      current_context->cgl_context(),
       GL_TEXTURE_RECTANGLE_ARB,
       GL_RGBA,
       rounded_size.width(),
