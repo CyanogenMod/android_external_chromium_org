@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "content/browser/android/browser_media_player_manager.h"
+#include "content/browser/power_save_blocker_impl.h"
 #include "content/common/android/surface_texture_peer.h"
 #include "content/public/common/content_switches.h"
 #include "jni/ContentVideoView_jni.h"
@@ -50,6 +51,7 @@ ContentVideoView::ContentVideoView(
       Java_ContentVideoView_createContentVideoView(env, context.obj(),
           reinterpret_cast<int>(this), client.obj()).obj());
   g_content_video_view = this;
+  CreatePowerSaveBlocker();
 }
 
 ContentVideoView::~ContentVideoView() {
@@ -61,14 +63,17 @@ ContentVideoView::~ContentVideoView() {
 void ContentVideoView::OpenVideo() {
   JNIEnv *env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> content_video_view = GetJavaObject(env);
-  if (!content_video_view.is_null())
+  if (!content_video_view.is_null()) {
+    CreatePowerSaveBlocker();
     Java_ContentVideoView_openVideo(env, content_video_view.obj());
+  }
 }
 
 void ContentVideoView::OnMediaPlayerError(int error_type) {
   JNIEnv *env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> content_video_view = GetJavaObject(env);
   if (!content_video_view.is_null()) {
+    power_save_blocker_.reset();
     Java_ContentVideoView_onMediaPlayerError(env, content_video_view.obj(),
         error_type);
   }
@@ -95,8 +100,10 @@ void ContentVideoView::OnBufferingUpdate(int percent) {
 void ContentVideoView::OnPlaybackComplete() {
   JNIEnv *env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> content_video_view = GetJavaObject(env);
-  if (!content_video_view.is_null())
+  if (!content_video_view.is_null()) {
+    power_save_blocker_.reset();
     Java_ContentVideoView_onPlaybackComplete(env, content_video_view.obj());
+  }
 }
 
 void ContentVideoView::OnExitFullscreen() {
@@ -140,15 +147,18 @@ void ContentVideoView::SeekTo(JNIEnv*, jobject obj, jint msec) {
 }
 
 void ContentVideoView::Play(JNIEnv*, jobject obj) {
+  CreatePowerSaveBlocker();
   manager_->FullscreenPlayerPlay();
 }
 
 void ContentVideoView::Pause(JNIEnv*, jobject obj) {
+  power_save_blocker_.reset();
   manager_->FullscreenPlayerPause();
 }
 
 void ContentVideoView::ExitFullscreen(
     JNIEnv*, jobject, jboolean release_media_player) {
+  power_save_blocker_.reset();
   j_content_video_view_.reset();
   manager_->ExitFullscreen(release_media_player);
 }
@@ -172,13 +182,35 @@ ScopedJavaLocalRef<jobject> ContentVideoView::GetJavaObject(JNIEnv* env) {
   return j_content_video_view_.get(env);
 }
 
+gfx::NativeView ContentVideoView::GetNativeView() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> content_video_view = GetJavaObject(env);
+  if (content_video_view.is_null())
+    return NULL;
+
+  return reinterpret_cast<gfx::NativeView>(
+      Java_ContentVideoView_getNativeViewAndroid(env,
+                                                 content_video_view.obj()));
+
+}
+
 void ContentVideoView::DestroyContentVideoView(bool native_view_destroyed) {
   JNIEnv *env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> content_video_view = GetJavaObject(env);
   if (!content_video_view.is_null()) {
+    power_save_blocker_.reset();
     Java_ContentVideoView_destroyContentVideoView(env,
         content_video_view.obj(), native_view_destroyed);
     j_content_video_view_.reset();
   }
+}
+
+void ContentVideoView::CreatePowerSaveBlocker() {
+  if (power_save_blocker_) return;
+  power_save_blocker_.reset(PowerSaveBlocker::Create(
+      PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
+      "Playing video").release());
+  static_cast<PowerSaveBlockerImpl*>(power_save_blocker_.get())->
+      InitDisplaySleepBlocker(GetNativeView());
 }
 }  // namespace content
