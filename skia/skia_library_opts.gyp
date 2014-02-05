@@ -30,6 +30,16 @@
       'includes': [
         'skia_common.gypi',
       ],
+      'variables': {
+        'conditions': [
+          ['clang==1', {
+            'clang_use_integrated_as': 0,
+          }],
+        ],
+      },
+      'includes': [
+        '../build/clang.gypi',
+      ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
@@ -41,6 +51,11 @@
            target_arch != "arm" and target_arch != "mipsel"', {
           'cflags': [
             '-msse2',
+          ],
+        }],
+        [ 'OS == "linux"', {
+          'include_dirs': [
+            '../third_party/skia/include/config',
           ],
         }],
         [ 'target_arch != "arm" and target_arch != "mipsel"', {
@@ -65,12 +80,7 @@
                 '__ARM_HAVE_NEON',
               ],
             }],
-            [ 'arm_version >= 7 and arm_neon_optional == 1', {
-              'defines': [
-                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
-              ],
-            }],
-            [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
+            [ '(clang==0 or clang_use_integrated_as==0) and arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
               'cflags': [
                 # The neon assembly contains conditional instructions which
                 # aren't enclosed in an IT block. The assembler complains
@@ -154,7 +164,22 @@
         '../third_party/skia/include/effects',
         '../third_party/skia/src/core',
       ],
+      'variables': {
+        'conditions': [
+          ['clang==1', {
+	    'clang_use_integrated_as': 0,
+	  }],
+	],
+      },
+      'includes': [
+        '../build/clang.gypi',
+      ],
       'conditions': [
+        [ 'OS == "linux"', {
+          'include_dirs': [
+            '../third_party/skia/include/config',
+          ],
+        }],
         [ 'OS in ["linux", "freebsd", "openbsd", "solaris", "android"]', {
           'cflags': [
             '-mssse3',
@@ -188,6 +213,16 @@
       'includes': [
         'skia_common.gypi',
       ],
+      'variables': {
+        'conditions': [
+          ['clang==1', {
+            'clang_use_integrated_as': 0,
+          }],
+        ],
+      },
+      'includes': [
+        '../build/clang.gypi',
+      ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
@@ -202,6 +237,13 @@
         '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
         '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
       ],
+      'conditions':[
+        [ 'OS == "linux"', {
+          'include_dirs': [
+            '../third_party/skia/include/config',
+          ],
+        }],
+      ]
     },
   ],
   'conditions': [
@@ -213,6 +255,16 @@
       'targets': [
         {
           'target_name': 'skia_opts_neon',
+          'variables': {
+            'conditions': [
+              ['clang==1', {
+	      'clang_use_integrated_as': 0,
+	      }],
+	    ],
+          },
+          'includes': [
+            '../build/clang.gypi',
+          ],
           'type': 'static_library',
           'includes': [
             'skia_common.gypi',
@@ -222,6 +274,13 @@
             '../third_party/skia/include/effects',
             '../third_party/skia/src/core',
             '../third_party/skia/src/opts',
+          ],
+          'conditions':[
+            [ 'OS == "linux"', {
+              'include_dirs': [
+                '../third_party/skia/include/config',
+              ],
+            }],
           ],
           'cflags!': [
             '-fno-omit-frame-pointer',
@@ -256,9 +315,10 @@
                 '__ARM_HAVE_NEON',
               ],
             }],
-            ['arm_neon_optional == 1', {
-              'defines': [
-                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+            ['clang==1 and OS == "android"', {
+              'include_dirs': [
+                 '../..'
+                 '../skia/config',
               ],
             }],
           ],
