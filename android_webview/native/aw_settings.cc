@@ -183,14 +183,20 @@ void AwSettings::PopulateFixedPreferences(WebPreferences* web_prefs) {
 void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
-
-  AwRenderViewHostExt* render_view_host_ext = GetAwRenderViewHostExt();
-  if (!render_view_host_ext) return;
-
   ScopedJavaLocalRef<jobject> scoped_obj = aw_settings_.get(env);
   jobject obj = scoped_obj.obj();
   if (!obj) return;
+  // Grab the lock and call PopulateWebPreferencesLocked.
+  Java_AwSettings_populateWebPreferences(
+      env, obj, reinterpret_cast<jlong>(web_prefs));
+}
 
+void AwSettings::PopulateWebPreferencesLocked(
+    JNIEnv* env, jobject obj, jlong web_prefs_ptr) {
+  AwRenderViewHostExt* render_view_host_ext = GetAwRenderViewHostExt();
+  if (!render_view_host_ext) return;
+
+  WebPreferences* web_prefs = reinterpret_cast<WebPreferences*>(web_prefs_ptr);
   PopulateFixedPreferences(web_prefs);
 
   web_prefs->text_autosizing_enabled =
@@ -282,8 +288,11 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
       Java_AwSettings_getDatabaseEnabledLocked(env, obj);
 
   web_prefs->wide_viewport_quirk = true;
-  web_prefs->double_tap_to_zoom_enabled = web_prefs->use_wide_viewport =
+  web_prefs->use_wide_viewport =
       Java_AwSettings_getUseWideViewportLocked(env, obj);
+
+  web_prefs->double_tap_to_zoom_enabled =
+      Java_AwSettings_supportsDoubleTapZoomLocked(env, obj);
 
   web_prefs->initialize_at_minimum_page_scale =
       Java_AwSettings_getLoadWithOverviewModeLocked(env, obj);

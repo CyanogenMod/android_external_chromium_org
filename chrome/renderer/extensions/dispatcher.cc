@@ -707,7 +707,8 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
   // the same code regardless of context type.
   switch (context->context_type()) {
     case Feature::UNSPECIFIED_CONTEXT:
-    case Feature::WEB_PAGE_CONTEXT: {
+    case Feature::WEB_PAGE_CONTEXT:
+    case Feature::BLESSED_WEB_PAGE_CONTEXT: {
       // Web page context; it's too expensive to run the full bindings code.
       // Hard-code that the app and webstore APIs are available...
       RegisterBinding("app", context);
@@ -1113,7 +1114,8 @@ void Dispatcher::DidCreateScriptContext(
   }
 
   Feature::Context context_type = ClassifyJavaScriptContext(
-      extension_id, extension_group,
+      extension,
+      extension_group,
       UserScriptSlave::GetDataSourceURLForFrame(frame),
       frame->document().securityOrigin());
 
@@ -1528,13 +1530,13 @@ bool Dispatcher::IsSandboxedPage(const GURL& url) const {
 }
 
 Feature::Context Dispatcher::ClassifyJavaScriptContext(
-    const std::string& extension_id,
+    const Extension* extension,
     int extension_group,
     const GURL& url,
     const blink::WebSecurityOrigin& origin) {
   DCHECK_GE(extension_group, 0);
   if (extension_group == EXTENSION_GROUP_CONTENT_SCRIPTS) {
-    return extensions_.Contains(extension_id) ?
+    return extension ?  // TODO(kalman): when does this happen?
         Feature::CONTENT_SCRIPT_CONTEXT : Feature::UNSPECIFIED_CONTEXT;
   }
 
@@ -1549,14 +1551,25 @@ Feature::Context Dispatcher::ClassifyJavaScriptContext(
   if (IsSandboxedPage(url))
     return Feature::WEB_PAGE_CONTEXT;
 
-  if (IsExtensionActive(extension_id))
-    return Feature::BLESSED_EXTENSION_CONTEXT;
+  if (extension && IsExtensionActive(extension->id())) {
+    // |extension| is active in this process, but it could be either a true
+    // extension process or within the extent of a hosted app. In the latter
+    // case this would usually be considered a (blessed) web page context,
+    // unless the extension in question is a component extension, in which case
+    // we cheat and call it blessed.
+    return (extension->is_hosted_app() &&
+            extension->location() != Manifest::COMPONENT) ?
+        Feature::BLESSED_WEB_PAGE_CONTEXT : Feature::BLESSED_EXTENSION_CONTEXT;
+  }
 
   // TODO(kalman): This isUnique() check is wrong, it should be performed as
   // part of IsSandboxedPage().
   if (!origin.isUnique() && extensions_.ExtensionBindingsAllowed(url)) {
-    return extensions_.Contains(extension_id) ?
-        Feature::UNBLESSED_EXTENSION_CONTEXT : Feature::UNSPECIFIED_CONTEXT;
+    if (!extension)  // TODO(kalman): when does this happen?
+      return Feature::UNSPECIFIED_CONTEXT;
+    return extension->is_hosted_app() ?
+        Feature::BLESSED_WEB_PAGE_CONTEXT :
+        Feature::UNBLESSED_EXTENSION_CONTEXT;
   }
 
   if (url.is_valid())
