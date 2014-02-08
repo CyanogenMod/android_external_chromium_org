@@ -921,6 +921,14 @@ public class AwContents {
         // every time the user agent in AwSettings is modified.
         params.setOverrideUserAgent(LoadUrlParams.UA_OVERRIDE_TRUE);
 
+        // We need to clean the favicon information when load a new url. onReceivedIcon
+        // will be called if the page have a favicon. Otherway, the icon should be the
+        // default one
+        if (mFavicon != null) {
+            mFavicon.recycle();
+        }
+        mFavicon = null;
+
         mContentViewCore.loadUrl(params);
 
         // The behavior of WebViewClassic uses the populateVisitedLinks callback in WebKit.
