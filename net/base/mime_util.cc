@@ -392,6 +392,7 @@ static const char* const supported_non_image_types[] = {
   "application/atom+xml",
   "application/rss+xml",
   "application/xhtml+xml",
+  "application/vnd.wap.xhtml+xml",
   "application/json",
   "multipart/related",  // For MHTML support.
   "multipart/x-mixed-replace"

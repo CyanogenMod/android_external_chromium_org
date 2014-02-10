@@ -578,6 +578,11 @@ static const MagicNumber kMagicXML[] = {
                "<html xmlns=\"http://www.w3.org/1999/xhtml\"")
   MAGIC_STRING("application/atom+xml", "<feed")
   MAGIC_STRING("application/rss+xml", "<rss")  // UTF-8
+  MAGIC_STRING("text/vnd.wap.wml", "<wml")  // UTF-8
+};
+
+static const MagicNumber kMagicWML[] = {
+    MAGIC_STRING("text/vnd.wap.wml", "<wml")  // UTF-8
 };
 
 // Returns true and sets result if the content appears to contain XHTML or a
@@ -591,7 +596,7 @@ static const MagicNumber kMagicXML[] = {
 static bool SniffXML(const char* content,
                      size_t size,
                      bool* have_enough_content,
-                     std::string* result) {
+                     std::string* result, bool wml_only = false) {
   // We allow at most 300 bytes of content before we expect the opening tag.
   *have_enough_content &= TruncateSize(300, &size);
   const char* pos = content;
@@ -623,10 +628,16 @@ static bool SniffXML(const char* content,
       continue;
     }
 
-    if (CheckForMagicNumbers(pos, end - pos,
+    if (!wml_only) {
+      if (CheckForMagicNumbers(pos, end - pos,
                              kMagicXML, arraysize(kMagicXML),
                              counter, result))
-      return true;
+        return true;
+    } else if (CheckForMagicNumbers(pos, end - pos,
+                           kMagicWML, arraysize(kMagicWML),
+                           counter, result)) {
+        return true;
+    }
 
     // TODO(evanm): handle RSS 1.0, which is an RDF format and more difficult
     // to identify.
@@ -913,13 +924,15 @@ bool SniffMimeType(const char* content,
       // If the server said the content was text/plain and it doesn't appear
       // to be binary, then we trust it.
       if (hint_is_text_plain) {
+        if (SniffXML(content, content_size, &have_enough_content, result, true))
+            return true;
         return have_enough_content;
       }
     }
   }
 
   // If we have plain XML, sniff XML subtypes.
-  if (type_hint == "text/xml" || type_hint == "application/xml") {
+  if (type_hint == "text/xml" || type_hint == "application/xml" || type_hint == "text/wml") {
     // We're not interested in sniffing these types for images and the like.
     // Instead, we're looking explicitly for a feed.  If we don't find one
     // we're done and return early.

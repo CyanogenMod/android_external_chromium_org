@@ -363,6 +363,25 @@ TEST(MimeSnifferTest, XMLTest) {
                           "text/xml"));
 }
 
+TEST(MimeSnifferTest, WMLTest) {
+  EXPECT_EQ("text/vnd.wap.wml",
+            SniffMimeType("<wml><card id=\"card1\" title=\"WML Tutorial\">",
+                          std::string(),
+                          "application/xml"));
+  EXPECT_EQ("text/vnd.wap.wml",
+            SniffMimeType("<wml><card id=\"card1\" title=\"WML Tutorial\">",
+                          std::string(),
+                          "text/plain"));
+  EXPECT_EQ("text/vnd.wap.wml",
+            SniffMimeType("<wml><card id=\"card1\" title=\"WML Tutorial\">",
+                          std::string(),
+                          "text/wml"));
+  EXPECT_EQ("text/vnd.wap.wml",
+            SniffMimeType("<wml><card id=\"card1\" title=\"WML Tutorial\">",
+                          std::string(),
+                          "text/xml"));
+}
+
 // Test content which is >= 1024 bytes, and includes no open angle bracket.
 // http://code.google.com/p/chromium/issues/detail?id=3521
 TEST(MimeSnifferTest, XMLTestLargeNoAngledBracket) {
