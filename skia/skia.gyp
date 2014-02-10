@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 {
+  'includes': ['../skia/sweskia.gypi'],
   'variables': {
     'conditions': [
       ['clang==1', {
@@ -26,7 +27,7 @@
     # However, in the static mode, we need to build skia as multiple targets
     # in order to support the use case where a platform (e.g. Android) may
     # already have a copy of skia as a system library.
-    ['component=="static_library" and use_system_skia==0', {
+    ['component=="static_library" and use_system_skia==0 and component_skia=="static_library"', {
       'targets': [
         {
           'target_name': 'skia_library',
@@ -38,7 +39,7 @@
         },
       ],
     }],
-    ['component=="static_library" and use_system_skia==1', {
+    ['component=="static_library" and use_system_skia==1 and component_skia=="static_library"', {
       'targets': [
         {
           'target_name': 'skia_library',
@@ -47,7 +48,7 @@
         },
       ],
     }],
-    ['component=="static_library"', {
+    ['component=="static_library" and component_skia=="static_library"', {
       'targets': [
         {
           'target_name': 'skia',
@@ -75,7 +76,8 @@
       'targets': [
         {
           'target_name': 'skia',
-          'type': 'shared_library',
+          'type': '<(component_skia)',
+          'product_name': '<(product_name)',
           'includes': [
             'skia_library.gypi',
             'skia_chrome.gypi',
@@ -92,6 +94,9 @@
           'ldflags!': [
               '-Wl,--fatal-warnings',
           ],
+          'dependencies': [
+              '../build/android/setup.gyp:copy_system_libraries',
+          ],
           'defines': [
             'SKIA_DLL',
             'SKIA_IMPLEMENTATION=1',
@@ -103,6 +108,27 @@
               'GR_GL_IGNORE_ES3_MSAA=0',
             ],
           },
+          'conditions': [
+            [ 'component_skia== "none" and OS=="android"', {
+              'link_settings': {
+                'libraries' : [
+                  '-L<(SHARED_LIB_DIR)/',
+                  '-lsweskia',
+                ],
+              },
+
+              'sources/': [
+                  ['exclude', '\\.(cc|cpp)$'],
+              ],
+
+              'dependencies': [
+                'sweskia',
+              ],
+              'dependencies!': [
+                'skia_library_opts.gyp:skia_opts',
+              ],
+            }],
+          ],
         },
         {
           'target_name': 'skia_library',

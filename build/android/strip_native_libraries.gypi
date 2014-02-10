@@ -34,14 +34,10 @@
   ],
   'outputs': [
     '<(stamp)',
-  ],
-  'conditions': [
-    ['component == "shared_library"', {
-      # Add a fake output to force the build to always re-run this step. This
-      # is required because the real inputs are not known at gyp-time and
-      # changing base.so may not trigger changes to dependent libraries.
-      'outputs': [ '<(stamp).fake' ]
-    }],
+    # Add a fake output to force the build to always re-run this step. This
+    # is required because the real inputs are not known at gyp-time and
+    # changing base.so may not trigger changes to dependent libraries.
+    '<(strip_stamp).fake',
   ],
   'action': [
     'python', '<(DEPTH)/build/android/gyp/strip_library_for_device.py',
