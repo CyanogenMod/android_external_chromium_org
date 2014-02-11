@@ -29,6 +29,7 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        '../build/clang.gypi',
       ],
       'variables': {
         'conditions': [
@@ -37,9 +38,6 @@
           }],
         ],
       },
-      'includes': [
-        '../build/clang.gypi',
-      ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
@@ -109,7 +107,9 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_arm.cpp',
           ],
         }],
-        [ 'target_arch == "arm" and (arm_version < 7 or (arm_neon == 0 and arm_neon_optional == 1))', {
+        # Bring in memset.arm.S if no arm_neon, or if we're detecting neon at runtime, since we
+        # need the non-neon arm memset routines in case the neon check fails.
+        [ 'target_arch == "arm" and (arm_version < 7 or arm_neon == 0 or arm_neon_optional == 1)', {
           'sources': [
             '../third_party/skia/src/opts/memset.arm.S',
           ],
@@ -160,6 +160,7 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        '../build/clang.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -173,9 +174,6 @@
 	  }],
 	],
       },
-      'includes': [
-        '../build/clang.gypi',
-      ],
       'conditions': [
         [ 'OS == "linux"', {
           'include_dirs': [
@@ -214,6 +212,7 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        '../build/clang.gypi',
       ],
       'variables': {
         'conditions': [
@@ -222,9 +221,6 @@
           }],
         ],
       },
-      'includes': [
-        '../build/clang.gypi',
-      ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
@@ -264,25 +260,16 @@
 	      }],
 	    ],
           },
-          'includes': [
-            '../build/clang.gypi',
-          ],
           'type': 'static_library',
           'includes': [
             'skia_common.gypi',
+            '../build/clang.gypi',
           ],
           'include_dirs': [
             '../third_party/skia/include/core',
             '../third_party/skia/include/effects',
             '../third_party/skia/src/core',
             '../third_party/skia/src/opts',
-          ],
-          'conditions':[
-            [ 'OS == "linux"', {
-              'include_dirs': [
-                '../third_party/skia/include/config',
-              ],
-            }],
           ],
           'cflags!': [
             '-fno-omit-frame-pointer',
@@ -312,6 +299,11 @@
             '../third_party/skia/src/opts/SkMorphology_opts_neon.cpp',
           ],
           'conditions': [
+            [ 'OS == "linux"', {
+              'include_dirs': [
+                '../third_party/skia/include/config',
+              ],
+            }],
             ['arm_neon == 1', {
               'defines': [
                 '__ARM_HAVE_NEON',
