@@ -34,16 +34,12 @@ import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
 import org.chromium.content.common.IChildProcessService;
 import org.chromium.content.R;
-import org.chromium.ui.ViewAndroid;
-import org.chromium.ui.ViewAndroidDelegate;
-import org.chromium.ui.WindowAndroid;
 
 @JNINamespace("content")
 public class ContentVideoView
         extends FrameLayout
         implements ContentVideoViewControls.Delegate,
-        SurfaceHolder.Callback, View.OnTouchListener, View.OnKeyListener,
-        ViewAndroidDelegate {
+        SurfaceHolder.Callback, View.OnTouchListener, View.OnKeyListener {
 
     private static final String TAG = "ContentVideoView";
 
@@ -101,9 +97,6 @@ public class ContentVideoView
 
     // Progress view when the video is loading.
     private View mProgressView;
-
-    // The ViewAndroid is used to keep screen on during video playback.
-    private ViewAndroid mViewAndroid;
 
     private Surface mSurface;
 
@@ -216,7 +209,6 @@ public class ContentVideoView
             ContentVideoViewClient client) {
         super(context);
         mNativeContentVideoView = nativeContentVideoView;
-        mViewAndroid = new ViewAndroid(new WindowAndroid(context.getApplicationContext()), this);
         mClient = client;
         initResources(context);
         mCurrentBufferPercentage = 0;
@@ -652,28 +644,6 @@ public class ContentVideoView
             return true;
         }
         return super.onKeyDown(keyCode, event);
-    }
-
-    @Override
-    public View acquireAnchorView() {
-        View anchorView = new View(getContext());
-        addView(anchorView);
-        return anchorView;
-    }
-
-    @Override
-    public void setAnchorViewPosition(View view, float x, float y, float width, float height) {
-        Log.e(TAG, "setAnchorViewPosition isn't implemented");
-    }
-
-    @Override
-    public void releaseAnchorView(View anchorView) {
-        removeView(anchorView);
-    }
-
-    @CalledByNative
-    private long getNativeViewAndroid() {
-        return mViewAndroid.getNativePointer();
     }
 
     private static native ContentVideoView nativeGetSingletonJavaContentVideoView();
