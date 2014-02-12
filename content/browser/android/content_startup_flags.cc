@@ -99,6 +99,9 @@ void SetContentCommandLineFlags(int max_render_process_count,
 
   // Disable user gesture requirement for media playback
   parsed_command_line->AppendSwitch(switches::kDisableGestureRequirementForMediaPlayback);
+
+  // Disable anti-aliasing for canvas
+  parsed_command_line->AppendSwitch(switches::kDisable2dCanvasAntialiasing);
 }
 
 }  // namespace content
