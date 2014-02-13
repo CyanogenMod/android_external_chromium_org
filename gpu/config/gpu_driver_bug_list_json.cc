@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "3.7",
+  "version": "3.10",
   "entries": [
     {
       "id": 1,
@@ -706,6 +706,44 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "disable_framebuffer_multisample"
+      ]
+    },
+    {
+      "id": 54,
+      "cr_bugs": [124764],
+      "description": "Clear uniforms before first program use on all platforms",
+      "features": [
+        "clear_uniforms_before_first_program_use"
+      ]
+    },
+    {
+      "id": 55,
+      "cr_bugs": [333885],
+      "description": "Mesa drivers in Linux handle varyings without static use incorrectly",
+      "os": {
+        "type": "linux"
+      },
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "features": [
+        "count_all_in_varyings_packing"
+      ]
+    },
+    {
+      "id": 56,
+      "cr_bugs": [333885],
+      "description": "Mesa drivers in ChromeOS handle varyings without static use incorrectly",
+      "os": {
+        "type": "chromeos"
+      },
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "features": [
+        "count_all_in_varyings_packing"
       ]
     }
   ]
