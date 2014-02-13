@@ -9,6 +9,11 @@
 #include "content/browser/android/in_process/synchronous_input_event_filter.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #include "content/renderer/media/android/stream_texture_factory_android_synchronous_impl.h"
+#include "gpu/command_buffer/service/in_process_command_buffer.h"
+
+namespace gfx {
+class GLSurface;
+}
 
 namespace gpu {
 class GLInProcessContext;
@@ -50,16 +55,20 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
     return &synchronous_input_event_filter_;
   }
 
+  void SetDeferredGpuService(
+      scoped_refptr<gpu::InProcessCommandBuffer::Service> service);
   void CompositorInitializedHardwareDraw();
   void CompositorReleasedHardwareDraw();
+
+  scoped_refptr<cc::ContextProvider>
+      CreateOnscreenContextProviderForCompositorThread(
+          scoped_refptr<gfx::GLSurface> surface);
 
  private:
   void ReleaseGlobalHardwareResources();
   bool CanCreateMainThreadContext();
   scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
       TryCreateStreamTextureFactory();
-  scoped_ptr<webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl>
-      CreateOffscreenContext();
 
   SynchronousInputEventFilter synchronous_input_event_filter_;
 
@@ -70,7 +79,12 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
   // This is a pointer to the context owned by
   // |offscreen_context_for_main_thread_|.
   gpu::GLInProcessContext* wrapped_gl_context_for_main_thread_;
+  gpu::GLInProcessContext* wrapped_gl_context_for_compositor_thread_;
   scoped_refptr<cc::ContextProvider> offscreen_context_for_compositor_thread_;
+
+  scoped_refptr<gpu::InProcessCommandBuffer::Service> service_;
+  scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
+      video_context_provider_;
 
   // |num_hardware_compositor_lock_| is updated on UI thread only but can be
   // read on renderer main thread.
