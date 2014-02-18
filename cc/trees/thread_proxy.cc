@@ -311,6 +311,11 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
   OnOutputSurfaceInitializeAttempted(success, capabilities);
 }
 
+void ThreadProxy::SetRendererCapabilitiesMainThreadCopy(
+    const RendererCapabilities& capabilities) {
+  renderer_capabilities_main_thread_copy_ = capabilities;
+}
+
 void ThreadProxy::OnOutputSurfaceInitializeAttempted(
     bool success,
     const RendererCapabilities& capabilities) {
@@ -382,6 +387,16 @@ void ThreadProxy::SetNeedsCommit() {
   commit_requested_ = true;
 
   SendCommitRequestToImplThreadIfNeeded();
+}
+
+void ThreadProxy::UpdateRendererCapabilitiesOnImplThread() {
+  DCHECK(IsImplThread());
+  Proxy::MainThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetRendererCapabilitiesMainThreadCopy,
+                 main_thread_weak_ptr_,
+                 layer_tree_host_impl_->GetRendererCapabilities()
+                     .MainThreadCapabilities()));
 }
 
 void ThreadProxy::DidLoseOutputSurfaceOnImplThread() {
