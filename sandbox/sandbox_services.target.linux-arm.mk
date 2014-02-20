@@ -24,7 +24,8 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	sandbox/linux/services/broker_process.cc \
-	sandbox/linux/services/init_process_reaper.cc
+	sandbox/linux/services/init_process_reaper.cc \
+	sandbox/linux/services/thread_helpers.cc
 
 
 # Flags passed to both C and C++ files.
