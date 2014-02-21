@@ -67,6 +67,9 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
     factory_ = factory;
   }
 
+  // Sets the zoom level for all guests within this embedder.
+  void SetZoomLevel(double level);
+
   // WebContentsObserver implementation.
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -97,6 +100,13 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   void CleanUp();
 
   BrowserPluginGuestManager* GetBrowserPluginGuestManager();
+
+  bool DidSendScreenRectsCallback(BrowserPluginGuest* guest);
+
+  bool SetZoomLevelCallback(double level, BrowserPluginGuest* guest);
+
+  bool UnlockMouseIfNecessaryCallback(const NativeWebKeyboardEvent& event,
+                                      BrowserPluginGuest* guest);
 
   // Message handlers.
 
